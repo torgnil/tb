@@ -25,7 +25,7 @@ from pathlib import Path
 
 from .main import compile_file
 
-CURRENT_PHASE = 75
+CURRENT_PHASE = 76
 
 
 @dataclass(slots=True)

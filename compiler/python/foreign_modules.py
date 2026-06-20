@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 import importlib.util
 import json
 from dataclasses import dataclass
@@ -42,13 +43,28 @@ class ForeignModule:
     name: str
     functions: tuple[ForeignFunction, ...]
     constants: tuple[ForeignConstant, ...] = ()
-    link_flags: tuple[str, ...] = ()
-    cflags: tuple[str, ...] = ()
-    c_sources: tuple[str, ...] = ()
+    link_flags: tuple[str, ...] | Callable[[], tuple[str, ...]] = ()
+    cflags: tuple[str, ...] | Callable[[], tuple[str, ...]] = ()
+    c_sources: tuple[str, ...] | Callable[[], tuple[str, ...]] = ()
 
     def constant_declarations(self) -> str:
         lines = [f"const {constant.type_name} {constant.symbol_name} = {constant.value}" for constant in self.constants]
         return "\n".join(lines)
+
+    def resolved_link_flags(self) -> tuple[str, ...]:
+        return self._resolve_metadata(self.link_flags)
+
+    def resolved_cflags(self) -> tuple[str, ...]:
+        return self._resolve_metadata(self.cflags)
+
+    def resolved_c_sources(self) -> tuple[str, ...]:
+        return self._resolve_metadata(self.c_sources)
+
+    @staticmethod
+    def _resolve_metadata(value: tuple[str, ...] | Callable[[], tuple[str, ...]]) -> tuple[str, ...]:
+        if callable(value):
+            return value()
+        return value
 
 
 def _load_foreign_module_definitions() -> dict[str, ForeignModule]:
@@ -111,21 +127,21 @@ def foreign_module_functions(active_modules: list[str]) -> list[ForeignFunction]
 def foreign_module_link_flags(active_modules: list[str]) -> list[str]:
     flags: list[str] = []
     for module_name in active_modules:
-        flags.extend(FOREIGN_MODULES[module_name].link_flags)
+        flags.extend(FOREIGN_MODULES[module_name].resolved_link_flags())
     return flags
 
 
 def foreign_module_cflags(active_modules: list[str]) -> list[str]:
     flags: list[str] = []
     for module_name in active_modules:
-        flags.extend(FOREIGN_MODULES[module_name].cflags)
+        flags.extend(FOREIGN_MODULES[module_name].resolved_cflags())
     return flags
 
 
 def foreign_module_c_sources(active_modules: list[str]) -> list[str]:
     sources: list[str] = []
     for module_name in active_modules:
-        sources.extend(FOREIGN_MODULES[module_name].c_sources)
+        sources.extend(FOREIGN_MODULES[module_name].resolved_c_sources())
     return sources
 
 

@@ -19,18 +19,17 @@ On macOS with Homebrew:
 brew install raylib
 ```
 
-By default the binding expects the Homebrew layout at:
+By default the binding probes these Homebrew-style roots:
 
 ```text
-/opt/homebrew/Cellar/raylib/5.5
+/opt/homebrew/opt/raylib
+/usr/local/opt/raylib
 ```
 
 You can override that with:
 
 ```bash
 export TB_RAYLIB_ROOT=/path/to/raylib
-export TB_RAYLIB_INCLUDE=/path/to/raylib/include
-export TB_RAYLIB_LIB=/path/to/raylib/lib
 ```
 
 ## Build the demo

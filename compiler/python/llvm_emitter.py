@@ -165,6 +165,7 @@ class LLVMEmitter:
             "declare ptr @strstr(ptr, ptr)",
             "declare i64 @strtoll(ptr, ptr, i32)",
             "declare i32 @snprintf(ptr, i64, ptr, ...)",
+            "declare ptr @getenv(ptr)",
             "declare i64 @llvm.ctpop.i64(i64)",
             "declare void @abort() noreturn",
         ]
@@ -3384,6 +3385,20 @@ class LLVMEmitter:
             "  %empty = call ptr @tb_string_copy_range(ptr %option, i64 0)",
             "  ret ptr %empty",
             "}",
+            "",
+            "define private ptr @tb_getenv(ptr %name) {",
+            "entry:",
+            "  %value = call ptr @getenv(ptr %name)",
+            "  %missing = icmp eq ptr %value, null",
+            "  br i1 %missing, label %empty, label %copy",
+            "empty:",
+            "  %empty.data = call ptr @malloc(i64 1)",
+            "  store i8 0, ptr %empty.data",
+            "  ret ptr %empty.data",
+            "copy:",
+            "  %value.copy = call ptr @tb_string_clone(ptr %value)",
+            "  ret ptr %value.copy",
+            "}",
         ]
         )
         helpers.extend(self._emit_record_destroy_helpers())
@@ -5089,6 +5104,11 @@ class LLVMEmitter:
             option = self._emit_string_expression(expression.arguments[1].value, lines, string_lengths)
             temp_name = self._next_temp("optionvalue")
             lines.append(f"  {temp_name} = call ptr @tb_option_value(ptr {args}, ptr {option})")
+            return temp_name
+        if expression.name == "getenv":
+            name = self._emit_string_expression(expression.arguments[0].value, lines, string_lengths)
+            temp_name = self._next_temp("getenv")
+            lines.append(f"  {temp_name} = call ptr @tb_getenv(ptr {name})")
             return temp_name
         if expression.name == "is_digit":
             source = self._emit_string_expression(expression.arguments[0].value, lines, string_lengths)

@@ -226,6 +226,12 @@ STANDARD_LIBRARY: dict[str, BuiltinFunction] = {
             BuiltinOverload(("string[]", "string"), "string", "option_value"),
         ),
     ),
+    "getenv": BuiltinFunction(
+        "getenv",
+        (
+            BuiltinOverload(("string",), "string", "getenv"),
+        ),
+    ),
     "is_empty": BuiltinFunction(
         "is_empty",
         (

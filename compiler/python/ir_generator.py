@@ -2517,6 +2517,15 @@ class IRGenerator:
                     "string",
                     builtin=True,
                 )
+            if expression.name == "getenv" and overload.lowering == "getenv":
+                return IRCallExpression(
+                    "getenv",
+                    [
+                        self._lower_call_argument(expression.arguments[0], "string"),
+                    ],
+                    "string",
+                    builtin=True,
+                )
         if isinstance(expression, FunctionCallExpression):
             if self.function_return_types.get(expression.name) != "string":
                 raise TypeError(f"Expected string-returning function: {expression.name}")

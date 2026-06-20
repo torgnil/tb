@@ -1657,6 +1657,20 @@ bool program_uses_read_file(ProgramIR program):
                         return true
     return false
 
+bool program_uses_getenv(ProgramIR program):
+    for (GlobalDeclIR global_decl in program.globals):
+        for (LinearInstruction op in global_decl.instructions):
+            if (op.kind == 'value' && op.detail == 'call'):
+                if (!op.args.is_empty() && op.args[0] == 'getenv'):
+                    return true
+    for (ParsedFunction function_ir in program.functions):
+        for (BlockIR block in function_ir.blocks):
+            for (LinearInstruction op in block.instructions):
+                if (op.kind == 'value' && op.detail == 'call'):
+                    if (!op.args.is_empty() && op.args[0] == 'getenv'):
+                        return true
+    return false
+
 bool program_uses_time_ms(ProgramIR program):
     for (GlobalDeclIR global_decl in program.globals):
         for (LinearInstruction op in global_decl.instructions):
@@ -2364,6 +2378,23 @@ string[] emit_read_file_helper():
     lines.push('}')
     return lines
 
+string[] emit_getenv_helper():
+    string[] lines = []
+    lines.push('define private ptr @tb_bootstrap_getenv(ptr %name) {')
+    lines.push('entry:')
+    lines.push('  %value = call ptr @getenv(ptr %name)')
+    lines.push('  %missing = icmp eq ptr %value, null')
+    lines.push('  br i1 %missing, label %empty, label %copy')
+    lines.push('empty:')
+    lines.push('  %empty.data = call ptr @malloc(i64 1)')
+    lines.push('  store i8 0, ptr %empty.data')
+    lines.push('  ret ptr %empty.data')
+    lines.push('copy:')
+    lines.push('  %value.copy = call ptr @tb_bootstrap_string_copy(ptr %value)')
+    lines.push('  ret ptr %value.copy')
+    lines.push('}')
+    return lines
+
 string[] emit_file_output_helpers():
     string[] lines = []
     lines.push('@.mode.write = private unnamed_addr constant [2 x i8] c"w\\00"')
@@ -2904,6 +2935,10 @@ string emit_call_value_instruction(ProgramIR program, ParsedFunction function_ir
         if (op.args.length() != 2):
             throw 'unsupported llvm read_file arity'
         return emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_read_file(ptr ' + temp_ref(op.args[1]) + ')')
+    if (call_name == 'getenv'):
+        if (op.args.length() != 2):
+            throw 'unsupported llvm getenv arity'
+        return emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_getenv(ptr ' + temp_ref(op.args[1]) + ')')
     if (call_name == 'time_ms'):
         if (op.args.length() != 1):
             throw 'unsupported llvm time_ms arity'
@@ -5259,6 +5294,7 @@ string[] llvm_codegen_ir(ProgramIR program):
     bool needs_try_catch = program_uses_try_catch(program)
     bool needs_read_lines = program_uses_read_lines(program)
     bool needs_read_file = program_uses_read_file(program)
+    bool needs_getenv = program_uses_getenv(program)
     bool needs_time_ms = program_uses_time_ms(program)
     bool needs_file_output = program_uses_file_output(program)
     bool needs_to_int = program_uses_to_int(program)
@@ -5267,7 +5303,7 @@ string[] llvm_codegen_ir(ProgramIR program):
     bool needs_hash = program_uses_hash(program)
     bool needs_num_hash = program_uses_num_hash(program)
     string[] foreign_modules = active_foreign_modules(program)
-    bool needs_string_helpers = needs_runtime_string_copy || needs_to_int || needs_int_to_string || needs_hash || program_uses_string_helpers_ops(program) || needs_read_lines || needs_read_file
+    bool needs_string_helpers = needs_runtime_string_copy || needs_to_int || needs_int_to_string || needs_hash || program_uses_string_helpers_ops(program) || needs_read_lines || needs_read_file || needs_getenv
     bool needs_string_array_helpers = needs_string_array || needs_string_helpers
     bool needs_runtime_global_init = program_uses_runtime_global_init(program)
     if (needs_num || needs_num_hash):
@@ -5324,6 +5360,8 @@ string[] llvm_codegen_ir(ProgramIR program):
         lines.push('declare i32 @strcmp(ptr, ptr)')
     if (needs_strlen || needs_runtime_string_copy || needs_read_lines || needs_read_file || needs_string_helpers):
         lines.push('declare i64 @strlen(ptr)')
+    if (needs_getenv):
+        lines.push('declare ptr @getenv(ptr)')
     if (needs_string_helpers):
         lines.push('declare ptr @strstr(ptr, ptr)')
     if (needs_string_helpers):
@@ -5406,6 +5444,9 @@ string[] llvm_codegen_ir(ProgramIR program):
             lines.push(helper)
     if (needs_read_file):
         for (string helper in emit_read_file_helper()):
+            lines.push(helper)
+    if (needs_getenv):
+        for (string helper in emit_getenv_helper()):
             lines.push(helper)
     if (needs_time_ms):
         for (string helper in emit_time_ms_helper()):
@@ -5491,6 +5532,7 @@ void llvm_print_ir(ProgramIR program):
     bool needs_try_catch = program_uses_try_catch(program)
     bool needs_read_lines = program_uses_read_lines(program)
     bool needs_read_file = program_uses_read_file(program)
+    bool needs_getenv = program_uses_getenv(program)
     bool needs_time_ms = program_uses_time_ms(program)
     bool needs_file_output = program_uses_file_output(program)
     bool needs_to_int = program_uses_to_int(program)
@@ -5499,7 +5541,7 @@ void llvm_print_ir(ProgramIR program):
     bool needs_hash = program_uses_hash(program)
     bool needs_num_hash = program_uses_num_hash(program)
     string[] foreign_modules = active_foreign_modules(program)
-    bool needs_string_helpers = needs_runtime_string_copy || needs_to_int || needs_int_to_string || needs_hash || program_uses_string_helpers_ops(program) || needs_read_lines || needs_read_file
+    bool needs_string_helpers = needs_runtime_string_copy || needs_to_int || needs_int_to_string || needs_hash || program_uses_string_helpers_ops(program) || needs_read_lines || needs_read_file || needs_getenv
     bool needs_string_array_helpers = needs_string_array || needs_string_helpers
     bool needs_runtime_global_init = program_uses_runtime_global_init(program)
     bool emitted_any_header = false
@@ -5577,6 +5619,9 @@ void llvm_print_ir(ProgramIR program):
         emitted_any_header = true
     if (needs_strlen || needs_runtime_string_copy || needs_read_lines || needs_read_file || needs_string_helpers):
         print('declare i64 @strlen(ptr)')
+        emitted_any_header = true
+    if (needs_getenv):
+        print('declare ptr @getenv(ptr)')
         emitted_any_header = true
     if (needs_string_helpers):
         print('declare ptr @strstr(ptr, ptr)')
@@ -5687,6 +5732,10 @@ void llvm_print_ir(ProgramIR program):
     if (needs_read_file):
         string[] read_file_helper_lines = emit_read_file_helper()
         for (string line in read_file_helper_lines):
+            print(line)
+    if (needs_getenv):
+        string[] getenv_helper_lines = emit_getenv_helper()
+        for (string line in getenv_helper_lines):
             print(line)
     if (needs_time_ms):
         string[] time_ms_helper_lines = emit_time_ms_helper()
