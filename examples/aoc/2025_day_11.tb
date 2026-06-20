@@ -1,0 +1,30 @@
+map<string, string[]> E = {}
+
+cached int no_paths(string device, bool dac, bool fft):
+    int paths = 0
+
+    if (device == 'dac'):
+        dac = true
+    if (device == 'fft'):
+        fft = true
+
+    for (string neighbor : E[device]):
+        if (neighbor == 'out'):
+            if (dac and fft):
+                paths += 1
+        else:
+            paths += no_paths(neighbor, dac, fft)
+    return paths
+
+int main(string[] args):
+    if (args.length() < 2):
+        print('Usage: ' + args[0] + ' <input_file_path>')
+        return 1
+
+    string path = args[1]
+    for (string line : read_lines(path)):
+        string[] s = line.split(' ')
+        E[s[0][:-1]] = s[1:]
+
+    print(no_paths('you', true, true))
+

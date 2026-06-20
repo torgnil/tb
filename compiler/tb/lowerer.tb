@@ -1,0 +1,1858 @@
+# Copyright 2026 Torbjörn Nilsson
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import ir_lib;
+import parser;
+
+record TempResult(string name, string[] lines, int next_temp);
+record TempListResult(string[] names, string[] lines, int next_temp);
+record LinearBlockResult(string[] lines, int next_temp);
+record LinearListResult(string[] lines, int next_temp, int next_label);
+record TempIRResult(string name, LinearInstruction[] instructions, int next_temp);
+record TempIRListResult(string[] names, LinearInstruction[] instructions, int next_temp);
+record LinearIRBlockResult(LinearInstruction[] instructions, int next_temp);
+record LinearIRListResult(LinearInstruction[] instructions, int next_temp, int next_label);
+record LoweredFunctionDeclIR(ParsedFunction function_ir, int next_index);
+
+string quote_string(string value):
+    return '\'' + value + '\''
+
+string join_strings(string[] items, string separator):
+    if (items.is_empty()):
+        return ''
+    string result = items[0]
+    int index = 1
+    while (index < items.length()):
+        result += separator + items[index]
+        index += 1
+    return result
+
+string temp_name(int index):
+    return 't' + index.to_string()
+
+string label_name(int index):
+    return 'L' + index.to_string()
+
+string loop_index_name(int index):
+    return '__for_index_' + index.to_string()
+
+string[] append_lines(string[] left, string[] right):
+    for (string line in right):
+        left.push(line)
+    return left
+
+LinearInstruction[] append_instructions(LinearInstruction[] left, LinearInstruction[] right):
+    LinearInstruction[] result = []
+    for (LinearInstruction op : left):
+        result.push(op)
+    for (LinearInstruction op : right):
+        result.push(op)
+    return result
+
+string[] indent_lines(string[] lines, string indent):
+    string[] result = []
+    for (string line in lines):
+        result.push(indent + line)
+    return result
+
+Node[] tail_nodes(Node[] nodes, int start):
+    Node[] tail = []
+    int index = start
+    while (index < nodes.length()):
+        tail.push(nodes[index])
+        index += 1
+    return tail
+
+Node[] copy_nodes(Node[] nodes):
+    Node[] copied = []
+    for (Node node in nodes):
+        copied.push(node)
+    return copied
+
+bool int_node_is(Node node, string value):
+    return node.kind == 'Int' && node.value == value
+
+bool identifier_node_is(Node node, string value):
+    return node.kind == 'Identifier' && node.value == value
+
+bool binding_index_node_is(Node node, string binding_name, string index_value):
+    if (node.kind != 'Index'):
+        return false
+    if (!identifier_node_is(node.children[0], binding_name)):
+        return false
+    return int_node_is(node.children[1], index_value)
+
+bool add_capture_and_binding_index(Node node, string capture_name, string binding_name, string index_value):
+    if (node.kind != 'Binary' || node.value != '+'):
+        return false
+    if (!identifier_node_is(node.children[0], capture_name)):
+        return false
+    return binding_index_node_is(node.children[1], binding_name, index_value)
+
+Node[] flatten_logical_and_nodes(Node node):
+    if (node.kind == 'Binary' && (node.value == '&&' || node.value == 'and')):
+        Node[] parts = []
+        for (Node child in flatten_logical_and_nodes(node.children[0])):
+            parts.push(child)
+        for (Node child in flatten_logical_and_nodes(node.children[1])):
+            parts.push(child)
+        return parts
+    return [node]
+
+bool is_filter_bounds_lambda(Node lambda_node):
+    BindingIR binding = ir_parse_binding_decl(lambda_node.value)
+    Node[] parts = flatten_logical_and_nodes(lambda_node.children[0])
+    if (parts.length() != 4):
+        return false
+    if (!(parts[0].kind == 'Binary' && parts[0].value == '>=')):
+        return false
+    if (!(parts[1].kind == 'Binary' && parts[1].value == '<')):
+        return false
+    if (!(parts[2].kind == 'Binary' && parts[2].value == '>=')):
+        return false
+    if (!(parts[3].kind == 'Binary' && parts[3].value == '<')):
+        return false
+    if (!add_capture_and_binding_index(parts[0].children[0], 'r', binding.name, '0') || !int_node_is(parts[0].children[1], '0')):
+        return false
+    if (!add_capture_and_binding_index(parts[1].children[0], 'r', binding.name, '0') || !identifier_node_is(parts[1].children[1], 'WIDTH')):
+        return false
+    if (!add_capture_and_binding_index(parts[2].children[0], 'c', binding.name, '1') || !int_node_is(parts[2].children[1], '0')):
+        return false
+    if (!add_capture_and_binding_index(parts[3].children[0], 'c', binding.name, '1') || !identifier_node_is(parts[3].children[1], 'HEIGHT')):
+        return false
+    return true
+
+bool is_grid_eq_lambda(Node lambda_node):
+    BindingIR binding = ir_parse_binding_decl(lambda_node.value)
+    Node body = lambda_node.children[0]
+    if (!(body.kind == 'Binary' && body.value == '==')):
+        return false
+    if (body.children[1].kind != 'String'):
+        return false
+    Node outer_index = body.children[0]
+    if (outer_index.kind != 'Index'):
+        return false
+    Node row_index = outer_index.children[0]
+    if (row_index.kind != 'Index'):
+        return false
+    if (!identifier_node_is(row_index.children[0], 'GRID')):
+        return false
+    if (!add_capture_and_binding_index(row_index.children[1], 'r', binding.name, '0')):
+        return false
+    if (!add_capture_and_binding_index(outer_index.children[1], 'c', binding.name, '1')):
+        return false
+    return true
+
+string lambda2_left_binding(string value):
+    int split = value.index_of(' | ')
+    if (split < 0):
+        return value
+    return value.substring(0, split)
+
+string lambda2_right_binding(string value):
+    int split = value.index_of(' | ')
+    if (split < 0):
+        return ''
+    return value.substring(split + 3)
+
+bool is_identifier_subtraction_lambda(Node lambda_node):
+    if (lambda_node.kind != 'Lambda2'):
+        return false
+    Node body = lambda_node.children[0]
+    if (!(body.kind == 'Binary' && body.value == '-')):
+        return false
+    BindingIR left_binding = ir_parse_binding_decl(lambda2_left_binding(lambda_node.value))
+    BindingIR right_binding = ir_parse_binding_decl(lambda2_right_binding(lambda_node.value))
+    return identifier_node_is(body.children[0], right_binding.name) && identifier_node_is(body.children[1], left_binding.name)
+
+bool is_record_field_subtraction_lambda(Node lambda_node):
+    if (lambda_node.kind != 'Lambda2'):
+        return false
+    Node body = lambda_node.children[0]
+    if (!(body.kind == 'Binary' && body.value == '-')):
+        return false
+    if (!(body.children[0].kind == 'Field' && body.children[1].kind == 'Field')):
+        return false
+    BindingIR left_binding = ir_parse_binding_decl(lambda2_left_binding(lambda_node.value))
+    BindingIR right_binding = ir_parse_binding_decl(lambda2_right_binding(lambda_node.value))
+    if (body.children[0].value != body.children[1].value):
+        return false
+    return identifier_node_is(body.children[0].children[0], left_binding.name) && identifier_node_is(body.children[1].children[0], right_binding.name)
+
+bool is_record_field_desc_subtraction_lambda(Node lambda_node):
+    if (lambda_node.kind != 'Lambda2'):
+        return false
+    Node body = lambda_node.children[0]
+    if (!(body.kind == 'Binary' && body.value == '-')):
+        return false
+    if (!(body.children[0].kind == 'Field' && body.children[1].kind == 'Field')):
+        return false
+    BindingIR left_binding = ir_parse_binding_decl(lambda2_left_binding(lambda_node.value))
+    BindingIR right_binding = ir_parse_binding_decl(lambda2_right_binding(lambda_node.value))
+    if (body.children[0].value != body.children[1].value):
+        return false
+    return identifier_node_is(body.children[0].children[0], right_binding.name) && identifier_node_is(body.children[1].children[0], left_binding.name)
+
+bool is_parse_binding_call_lambda(Node lambda_node):
+    if (lambda_node.kind != 'Lambda'):
+        return false
+    BindingIR binding = ir_parse_binding_decl(lambda_node.value)
+    Node body = lambda_node.children[0]
+    if (body.kind != 'Call' || body.value != 'parse_point' || body.children.length() != 1):
+        return false
+    return identifier_node_is(body.children[0], binding.name)
+
+bool is_string_length_map_lambda(Node lambda_node):
+    if (lambda_node.kind != 'Lambda'):
+        return false
+    BindingIR binding = ir_parse_binding_decl(lambda_node.value)
+    Node body = lambda_node.children[0]
+    if (body.kind != 'Call' || body.value != 'length' || body.children.length() != 1):
+        return false
+    return identifier_node_is(body.children[0], binding.name)
+
+bool is_edge_distance_map_lambda(Node lambda_node):
+    if (lambda_node.kind != 'Lambda'):
+        return false
+    BindingIR binding = ir_parse_binding_decl(lambda_node.value)
+    Node body = lambda_node.children[0]
+    if (body.kind != 'Call' || body.value != 'Edge' || body.children.length() != 3):
+        return false
+    if (!identifier_node_is(body.children[1], binding.name)):
+        return false
+    Node distance_call = body.children[2]
+    if (distance_call.kind != 'Call' || distance_call.value != 'point_distance' || distance_call.children.length() != 2):
+        return false
+    Node point_index = distance_call.children[1]
+    if (point_index.kind != 'Index'):
+        return false
+    return identifier_node_is(point_index.children[1], binding.name)
+
+bool is_edges_for_point_flat_map_lambda(Node lambda_node):
+    if (lambda_node.kind != 'Lambda'):
+        return false
+    BindingIR binding = ir_parse_binding_decl(lambda_node.value)
+    Node body = lambda_node.children[0]
+    if (body.kind != 'Call' || body.value != 'edges_for_point' || body.children.length() != 2):
+        return false
+    return identifier_node_is(body.children[1], binding.name)
+
+TempListResult lower_linear_values(Node[] nodes, int next_temp):
+    string[] names = []
+    string[] lines = []
+    int current_temp = next_temp
+    for (Node child in nodes):
+        TempResult lowered = lower_linear_value(child, current_temp)
+        names.push(lowered.name)
+        lines = append_lines(lines, lowered.lines)
+        current_temp = lowered.next_temp
+    return TempListResult(names, lines, current_temp)
+
+TempIRListResult lower_linear_values_ir(Node[] nodes, int next_temp):
+    string[] names = []
+    LinearInstruction[] instructions = []
+    int current_temp = next_temp
+    for (Node child : nodes):
+        TempIRResult lowered = lower_linear_value_ir(child, current_temp)
+        names.push(lowered.name)
+        instructions = append_instructions(instructions, lowered.instructions)
+        current_temp = lowered.next_temp
+    return TempIRListResult(names, instructions, current_temp)
+
+TempResult lower_linear_value(Node node, int next_temp):
+    if (node.kind == 'Int'):
+        string name = temp_name(next_temp)
+        return TempResult(name, [name + ' = int ' + node.value], next_temp + 1)
+    if (node.kind == 'Num'):
+        string name = temp_name(next_temp)
+        return TempResult(name, [name + ' = num ' + node.value], next_temp + 1)
+    if (node.kind == 'String'):
+        string name = temp_name(next_temp)
+        return TempResult(name, [name + ' = string ' + quote_string(node.value)], next_temp + 1)
+    if (node.kind == 'Bool'):
+        string name = temp_name(next_temp)
+        return TempResult(name, [name + ' = bool ' + node.value], next_temp + 1)
+    if (node.kind == 'Identifier'):
+        string name = temp_name(next_temp)
+        return TempResult(name, [name + ' = identifier ' + node.value], next_temp + 1)
+    if (node.kind == 'Array'):
+        TempListResult items = lower_linear_values(node.children, next_temp)
+        string name = temp_name(items.next_temp)
+        string line = name + ' = array'
+        if (!items.names.is_empty()):
+            line += ' ' + join_strings(items.names, ' ')
+        string[] lines = append_lines(items.lines, [line])
+        return TempResult(name, lines, items.next_temp + 1)
+    if (node.kind == 'Set'):
+        TempListResult items = lower_linear_values(node.children, next_temp)
+        string name = temp_name(items.next_temp)
+        string line = name + ' = set'
+        if (!items.names.is_empty()):
+            line += ' ' + join_strings(items.names, ' ')
+        string[] lines = append_lines(items.lines, [line])
+        return TempResult(name, lines, items.next_temp + 1)
+    if (node.kind == 'Map'):
+        string[] names = []
+        string[] lines = []
+        int current_temp = next_temp
+        for (Node map_item : node.children):
+            TempResult key = lower_linear_value(map_item.children[0], current_temp)
+            TempResult value = lower_linear_value(map_item.children[1], key.next_temp)
+            lines = append_lines(lines, key.lines)
+            lines = append_lines(lines, value.lines)
+            names.push(key.name)
+            names.push(value.name)
+            current_temp = value.next_temp
+        string name = temp_name(current_temp)
+        string line = name + ' = map'
+        if (!names.is_empty()):
+            line += ' ' + join_strings(names, ' ')
+        lines.push(line)
+        return TempResult(name, lines, current_temp + 1)
+    if (node.kind == 'Binary'):
+        TempResult left = lower_linear_value(node.children[0], next_temp)
+        TempResult right = lower_linear_value(node.children[1], left.next_temp)
+        string name = temp_name(right.next_temp)
+        string[] lines = append_lines(left.lines, right.lines)
+        lines.push(name + ' = binary ' + node.value + ' ' + left.name + ' ' + right.name)
+        return TempResult(name, lines, right.next_temp + 1)
+    if (node.kind == 'Ternary'):
+        TempResult condition = lower_linear_value(node.children[0], next_temp)
+        TempResult when_true = lower_linear_value(node.children[1], condition.next_temp)
+        TempResult when_false = lower_linear_value(node.children[2], when_true.next_temp)
+        string name = temp_name(when_false.next_temp)
+        string[] lines = append_lines(condition.lines, when_true.lines)
+        lines = append_lines(lines, when_false.lines)
+        lines.push(name + ' = ternary ' + condition.name + ' ' + when_true.name + ' ' + when_false.name)
+        return TempResult(name, lines, when_false.next_temp + 1)
+    if (node.kind == 'Unary'):
+        TempResult operand = lower_linear_value(node.children[0], next_temp)
+        string name = temp_name(operand.next_temp)
+        string[] lines = append_lines(operand.lines, [name + ' = unary ' + node.value + ' ' + operand.name])
+        return TempResult(name, lines, operand.next_temp + 1)
+    if (node.kind == 'Call'):
+        TempListResult args = lower_linear_values(node.children, next_temp)
+        string name = temp_name(args.next_temp)
+        string line = name + ' = call ' + node.value
+        if (!args.names.is_empty()):
+            line += ' ' + join_strings(args.names, ' ')
+        string[] lines = append_lines(args.lines, [line])
+        return TempResult(name, lines, args.next_temp + 1)
+    if (node.kind == 'CallExpr'):
+        TempListResult args = lower_linear_values(node.children, next_temp)
+        string name = temp_name(args.next_temp)
+        string line = name + ' = call-expr'
+        if (!args.names.is_empty()):
+            line += ' ' + join_strings(args.names, ' ')
+        string[] lines = append_lines(args.lines, [line])
+        return TempResult(name, lines, args.next_temp + 1)
+    if (node.kind == 'Field'):
+        TempResult base = lower_linear_value(node.children[0], next_temp)
+        string name = temp_name(base.next_temp)
+        string[] lines = append_lines(base.lines, [name + ' = field ' + node.value + ' ' + base.name])
+        return TempResult(name, lines, base.next_temp + 1)
+    if (node.kind == 'Slice'):
+        TempResult base = lower_linear_value(node.children[0], next_temp)
+        TempResult start = lower_linear_value(node.children[1], base.next_temp)
+        string[] lines = append_lines(base.lines, start.lines)
+        if (node.children.length() == 2):
+            string name = temp_name(start.next_temp)
+            lines.push(name + ' = slice ' + base.name + ' ' + start.name)
+            return TempResult(name, lines, start.next_temp + 1)
+        TempResult stop = lower_linear_value(node.children[2], start.next_temp)
+        string name = temp_name(stop.next_temp)
+        lines = append_lines(lines, stop.lines)
+        lines.push(name + ' = slice ' + base.name + ' ' + start.name + ' ' + stop.name)
+        return TempResult(name, lines, stop.next_temp + 1)
+    if (node.kind == 'MethodCall'):
+        if (node.value == 'sum' && node.children.length() == 1 && node.children[0].kind == 'MethodCall'):
+            Node mapped = node.children[0]
+            if (mapped.value == 'map_to' && mapped.children.length() == 2 && mapped.children[1].kind == 'Lambda' && is_grid_eq_lambda(mapped.children[1])):
+                Node body = mapped.children[1].children[0]
+                Node outer_index = body.children[0]
+                Node row_index = outer_index.children[0]
+                TempResult base = lower_linear_value(mapped.children[0], next_temp)
+                TempResult grid = lower_linear_value(row_index.children[0], base.next_temp)
+                TempResult row = lower_linear_value(row_index.children[1].children[0], grid.next_temp)
+                TempResult col = lower_linear_value(outer_index.children[1].children[0], row.next_temp)
+                TempResult needle = lower_linear_value(body.children[1], col.next_temp)
+                string name = temp_name(needle.next_temp)
+                string[] lines = append_lines(base.lines, grid.lines)
+                lines = append_lines(lines, row.lines)
+                lines = append_lines(lines, col.lines)
+                lines = append_lines(lines, needle.lines)
+                lines.push(name + ' = method-call-lambda sum_grid_eq ' + base.name + ' ' + mapped.children[1].value + ' ' + grid.name + ' ' + row.name + ' ' + col.name + ' ' + needle.name)
+                return TempResult(name, lines, needle.next_temp + 1)
+        TempResult base = lower_linear_value(node.children[0], next_temp)
+        if (node.value == 'create_prio_q'):
+            if (node.children.length() == 2 && node.children[1].kind == 'Lambda2'):
+                if (is_identifier_subtraction_lambda(node.children[1])):
+                    string name = temp_name(base.next_temp)
+                    string[] lines = base.lines
+                    lines.push(name + ' = method-call-lambda create_prio_q_int_desc ' + base.name + ' ' + lambda2_left_binding(node.children[1].value) + ' ' + lambda2_right_binding(node.children[1].value))
+                    return TempResult(name, lines, base.next_temp + 1)
+                if (is_record_field_desc_subtraction_lambda(node.children[1])):
+                    string name = temp_name(base.next_temp)
+                    string field_name = node.children[1].children[0].children[0].value
+                    string[] lines = base.lines
+                    lines.push(name + ' = method-call-lambda create_prio_q_record_field_desc ' + base.name + ' ' + lambda2_left_binding(node.children[1].value) + ' ' + lambda2_right_binding(node.children[1].value) + ' ' + field_name)
+                    return TempResult(name, lines, base.next_temp + 1)
+        if (node.value == 'filter'):
+            if (node.children.length() == 2):
+                if (node.children[1].kind == 'Lambda' && is_filter_bounds_lambda(node.children[1])):
+                    Node[] parts = flatten_logical_and_nodes(node.children[1].children[0])
+                    TempResult row = lower_linear_value(parts[0].children[0].children[0], base.next_temp)
+                    TempResult col = lower_linear_value(parts[2].children[0].children[0], row.next_temp)
+                    TempResult width = lower_linear_value(parts[1].children[1], col.next_temp)
+                    TempResult height = lower_linear_value(parts[3].children[1], width.next_temp)
+                    string name = temp_name(height.next_temp)
+                    string[] lines = append_lines(base.lines, row.lines)
+                    lines = append_lines(lines, col.lines)
+                    lines = append_lines(lines, width.lines)
+                    lines = append_lines(lines, height.lines)
+                    lines.push(name + ' = method-call-lambda filter_bounds ' + base.name + ' ' + node.children[1].value + ' ' + row.name + ' ' + col.name + ' ' + width.name + ' ' + height.name)
+                    return TempResult(name, lines, height.next_temp + 1)
+        if (node.value == 'map_to'):
+            if (node.children.length() == 2):
+                if (node.children[1].kind == 'Lambda'):
+                    if (is_parse_binding_call_lambda(node.children[1])):
+                        string name = temp_name(base.next_temp)
+                        string[] lines = base.lines
+                        lines.push(name + ' = method-call-lambda map_to_parse_point ' + base.name + ' ' + node.children[1].value)
+                        return TempResult(name, lines, base.next_temp + 1)
+                    if (is_string_length_map_lambda(node.children[1])):
+                        string name = temp_name(base.next_temp)
+                        string[] lines = base.lines
+                        lines.push(name + ' = method-call-lambda map_to_string_length ' + base.name + ' ' + node.children[1].value)
+                        return TempResult(name, lines, base.next_temp + 1)
+                    if (is_edge_distance_map_lambda(node.children[1])):
+                        Node body = node.children[1].children[0]
+                        Node distance_call = body.children[2]
+                        Node point_index = distance_call.children[1]
+                        TempResult capture_i = lower_linear_value(body.children[0], base.next_temp)
+                        TempResult capture_left = lower_linear_value(distance_call.children[0], capture_i.next_temp)
+                        TempResult capture_points = lower_linear_value(point_index.children[0], capture_left.next_temp)
+                        string name = temp_name(capture_points.next_temp)
+                        string[] lines = append_lines(base.lines, capture_i.lines)
+                        lines = append_lines(lines, capture_left.lines)
+                        lines = append_lines(lines, capture_points.lines)
+                        lines.push(name + ' = method-call-lambda map_to_edge_distance ' + base.name + ' ' + node.children[1].value + ' ' + capture_i.name + ' ' + capture_left.name + ' ' + capture_points.name)
+                        return TempResult(name, lines, capture_points.next_temp + 1)
+                    Node lambda_body = node.children[1].children[0]
+                    BindingIR binding = ir_parse_binding_decl(node.children[1].value)
+                    if (lambda_body.kind == 'Binary'):
+                        if (lambda_body.children.length() == 2):
+                            if (lambda_body.children[0].kind == 'Identifier' && lambda_body.children[0].value == binding.name):
+                                TempResult right = lower_linear_value(lambda_body.children[1], base.next_temp)
+                                string name = temp_name(right.next_temp)
+                                string[] lines = append_lines(base.lines, right.lines)
+                                lines.push(name + ' = method-call-lambda ' + node.value + ' ' + base.name + ' ' + node.children[1].value + ' ' + lambda_body.value + ' ' + right.name)
+                                return TempResult(name, lines, right.next_temp + 1)
+        if (node.value == 'flat_map'):
+            if (node.children.length() == 2):
+                if (node.children[1].kind == 'Lambda' && is_edges_for_point_flat_map_lambda(node.children[1])):
+                    Node body = node.children[1].children[0]
+                    TempResult capture_points = lower_linear_value(body.children[0], base.next_temp)
+                    string name = temp_name(capture_points.next_temp)
+                    string[] lines = append_lines(base.lines, capture_points.lines)
+                    lines.push(name + ' = method-call-lambda flat_map_edges_for_point ' + base.name + ' ' + node.children[1].value + ' ' + capture_points.name)
+                    return TempResult(name, lines, capture_points.next_temp + 1)
+        if (node.value == 'sort'):
+            if (node.children.length() == 2 && node.children[1].kind == 'Lambda2'):
+                BindingIR left_binding = ir_parse_binding_decl(lambda2_left_binding(node.children[1].value))
+                BindingIR right_binding = ir_parse_binding_decl(lambda2_right_binding(node.children[1].value))
+                string name = temp_name(base.next_temp)
+                string[] lines = base.lines
+                if (is_identifier_subtraction_lambda(node.children[1])):
+                    lines.push(name + ' = method-call-lambda sort_int_desc ' + base.name + ' ' + lambda2_left_binding(node.children[1].value) + ' ' + lambda2_right_binding(node.children[1].value))
+                    return TempResult(name, lines, base.next_temp + 1)
+                if (is_record_field_subtraction_lambda(node.children[1])):
+                    string field_name = node.children[1].children[0].children[0].value
+                    lines.push(name + ' = method-call-lambda sort_record_field_asc ' + base.name + ' ' + lambda2_left_binding(node.children[1].value) + ' ' + lambda2_right_binding(node.children[1].value) + ' ' + field_name)
+                    return TempResult(name, lines, base.next_temp + 1)
+        TempListResult args = lower_linear_values(tail_nodes(node.children, 1), base.next_temp)
+        string name = temp_name(args.next_temp)
+        string line = name + ' = method-call ' + node.value + ' ' + base.name
+        if (!args.names.is_empty()):
+            line += ' ' + join_strings(args.names, ' ')
+        string[] lines = append_lines(base.lines, args.lines)
+        lines.push(line)
+        return TempResult(name, lines, args.next_temp + 1)
+    if (node.kind == 'Index'):
+        TempResult base = lower_linear_value(node.children[0], next_temp)
+        TempResult item = lower_linear_value(node.children[1], base.next_temp)
+        string name = temp_name(item.next_temp)
+        string[] lines = append_lines(base.lines, item.lines)
+        lines.push(name + ' = index ' + base.name + ' ' + item.name)
+        return TempResult(name, lines, item.next_temp + 1)
+
+    string name = temp_name(next_temp)
+    return TempResult(name, [name + ' = unsupported ' + node.kind], next_temp + 1)
+
+TempIRResult lower_linear_value_ir(Node node, int next_temp):
+    if (node.kind == 'Int'):
+        string name = temp_name(next_temp)
+        return TempIRResult(name, [LinearInstruction('value', name, 'int', 'plain', 'int', [node.value])], next_temp + 1)
+    if (node.kind == 'Num'):
+        string name = temp_name(next_temp)
+        return TempIRResult(name, [LinearInstruction('value', name, 'num', 'plain', 'num', [node.value])], next_temp + 1)
+    if (node.kind == 'String'):
+        string name = temp_name(next_temp)
+        return TempIRResult(name, [LinearInstruction('value', name, 'string', 'owned', 'string', [quote_string(node.value)])], next_temp + 1)
+    if (node.kind == 'Bool'):
+        string name = temp_name(next_temp)
+        return TempIRResult(name, [LinearInstruction('value', name, 'bool', 'plain', 'bool', [node.value])], next_temp + 1)
+    if (node.kind == 'Identifier'):
+        string name = temp_name(next_temp)
+        return TempIRResult(name, [LinearInstruction('value', name, 'unknown', 'borrowed', 'identifier', [node.value])], next_temp + 1)
+    if (node.kind == 'Array'):
+        TempIRListResult items = lower_linear_values_ir(node.children, next_temp)
+        string name = temp_name(items.next_temp)
+        LinearInstruction[] instructions = append_instructions(items.instructions, [LinearInstruction('value', name, 'array', 'owned', 'array', items.names)])
+        return TempIRResult(name, instructions, items.next_temp + 1)
+    if (node.kind == 'Set'):
+        TempIRListResult items = lower_linear_values_ir(node.children, next_temp)
+        string name = temp_name(items.next_temp)
+        LinearInstruction[] instructions = append_instructions(items.instructions, [LinearInstruction('value', name, 'set', 'owned', 'set', items.names)])
+        return TempIRResult(name, instructions, items.next_temp + 1)
+    if (node.kind == 'Map'):
+        string[] names = []
+        LinearInstruction[] instructions = []
+        int current_temp = next_temp
+        for (Node map_item : node.children):
+            TempIRResult key = lower_linear_value_ir(map_item.children[0], current_temp)
+            TempIRResult value = lower_linear_value_ir(map_item.children[1], key.next_temp)
+            instructions = append_instructions(instructions, key.instructions)
+            instructions = append_instructions(instructions, value.instructions)
+            names.push(key.name)
+            names.push(value.name)
+            current_temp = value.next_temp
+        string name = temp_name(current_temp)
+        instructions.push(LinearInstruction('value', name, 'map', 'owned', 'map', names))
+        return TempIRResult(name, instructions, current_temp + 1)
+    if (node.kind == 'Binary'):
+        TempIRResult left = lower_linear_value_ir(node.children[0], next_temp)
+        TempIRResult right = lower_linear_value_ir(node.children[1], left.next_temp)
+        string name = temp_name(right.next_temp)
+        LinearInstruction[] instructions = append_instructions(left.instructions, right.instructions)
+        instructions.push(LinearInstruction('value', name, 'unknown', 'unknown', 'binary', [node.value, left.name, right.name]))
+        return TempIRResult(name, instructions, right.next_temp + 1)
+    if (node.kind == 'Ternary'):
+        TempIRResult condition = lower_linear_value_ir(node.children[0], next_temp)
+        TempIRResult when_true = lower_linear_value_ir(node.children[1], condition.next_temp)
+        TempIRResult when_false = lower_linear_value_ir(node.children[2], when_true.next_temp)
+        string name = temp_name(when_false.next_temp)
+        LinearInstruction[] instructions = append_instructions(condition.instructions, when_true.instructions)
+        instructions = append_instructions(instructions, when_false.instructions)
+        instructions.push(LinearInstruction('value', name, 'unknown', 'unknown', 'ternary', [condition.name, when_true.name, when_false.name]))
+        return TempIRResult(name, instructions, when_false.next_temp + 1)
+    if (node.kind == 'Unary'):
+        TempIRResult operand = lower_linear_value_ir(node.children[0], next_temp)
+        string name = temp_name(operand.next_temp)
+        LinearInstruction[] instructions = append_instructions(operand.instructions, [LinearInstruction('value', name, 'unknown', 'unknown', 'unary', [node.value, operand.name])])
+        return TempIRResult(name, instructions, operand.next_temp + 1)
+    if (node.kind == 'Call'):
+        TempIRListResult args = lower_linear_values_ir(node.children, next_temp)
+        string name = temp_name(args.next_temp)
+        string[] call_args = [node.value]
+        for (string arg_name : args.names):
+            call_args.push(arg_name)
+        LinearInstruction[] instructions = append_instructions(args.instructions, [LinearInstruction('value', name, 'unknown', 'unknown', 'call', call_args)])
+        return TempIRResult(name, instructions, args.next_temp + 1)
+    if (node.kind == 'CallExpr'):
+        TempIRListResult args = lower_linear_values_ir(node.children, next_temp)
+        string name = temp_name(args.next_temp)
+        LinearInstruction[] instructions = append_instructions(args.instructions, [LinearInstruction('value', name, 'unknown', 'unknown', 'call-expr', args.names)])
+        return TempIRResult(name, instructions, args.next_temp + 1)
+    if (node.kind == 'Field'):
+        TempIRResult base = lower_linear_value_ir(node.children[0], next_temp)
+        string name = temp_name(base.next_temp)
+        LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', name, 'unknown', 'borrowed', 'field', [node.value, base.name])])
+        return TempIRResult(name, instructions, base.next_temp + 1)
+    if (node.kind == 'Slice'):
+        TempIRResult base = lower_linear_value_ir(node.children[0], next_temp)
+        TempIRResult start = lower_linear_value_ir(node.children[1], base.next_temp)
+        LinearInstruction[] instructions = append_instructions(base.instructions, start.instructions)
+        if (node.children.length() == 2):
+            string name = temp_name(start.next_temp)
+            instructions.push(LinearInstruction('value', name, 'unknown', 'unknown', 'slice', [base.name, start.name]))
+            return TempIRResult(name, instructions, start.next_temp + 1)
+        TempIRResult stop = lower_linear_value_ir(node.children[2], start.next_temp)
+        string name = temp_name(stop.next_temp)
+        instructions = append_instructions(instructions, stop.instructions)
+        instructions.push(LinearInstruction('value', name, 'unknown', 'unknown', 'slice', [base.name, start.name, stop.name]))
+        return TempIRResult(name, instructions, stop.next_temp + 1)
+    if (node.kind == 'MethodCall'):
+        if (node.value == 'sum' && node.children.length() == 1 && node.children[0].kind == 'MethodCall'):
+            Node mapped = node.children[0]
+            if (mapped.value == 'map_to' && mapped.children.length() == 2 && mapped.children[1].kind == 'Lambda' && is_grid_eq_lambda(mapped.children[1])):
+                Node body = mapped.children[1].children[0]
+                Node outer_index = body.children[0]
+                Node row_index = outer_index.children[0]
+                TempIRResult base = lower_linear_value_ir(mapped.children[0], next_temp)
+                TempIRResult grid = lower_linear_value_ir(row_index.children[0], base.next_temp)
+                TempIRResult row = lower_linear_value_ir(row_index.children[1].children[0], grid.next_temp)
+                TempIRResult col = lower_linear_value_ir(outer_index.children[1].children[0], row.next_temp)
+                TempIRResult needle = lower_linear_value_ir(body.children[1], col.next_temp)
+                string name = temp_name(needle.next_temp)
+                LinearInstruction[] instructions = append_instructions(base.instructions, grid.instructions)
+                instructions = append_instructions(instructions, row.instructions)
+                instructions = append_instructions(instructions, col.instructions)
+                instructions = append_instructions(instructions, needle.instructions)
+                instructions.push(LinearInstruction('value', name, 'unknown', 'unknown', 'method-call-lambda', ['sum_grid_eq', base.name, mapped.children[1].value, grid.name, row.name, col.name, needle.name]))
+                return TempIRResult(name, instructions, needle.next_temp + 1)
+        TempIRResult base = lower_linear_value_ir(node.children[0], next_temp)
+        if (node.value == 'create_prio_q'):
+            if (node.children.length() == 2 && node.children[1].kind == 'Lambda2'):
+                if (is_identifier_subtraction_lambda(node.children[1])):
+                    string name = temp_name(base.next_temp)
+                    LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', name, 'unknown', 'owned', 'method-call-lambda', ['create_prio_q_int_desc', base.name, lambda2_left_binding(node.children[1].value), lambda2_right_binding(node.children[1].value)])])
+                    return TempIRResult(name, instructions, base.next_temp + 1)
+                if (is_record_field_desc_subtraction_lambda(node.children[1])):
+                    string name = temp_name(base.next_temp)
+                    string field_name = node.children[1].children[0].children[0].value
+                    LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', name, 'unknown', 'owned', 'method-call-lambda', ['create_prio_q_record_field_desc', base.name, lambda2_left_binding(node.children[1].value), lambda2_right_binding(node.children[1].value), field_name])])
+                    return TempIRResult(name, instructions, base.next_temp + 1)
+        if (node.value == 'filter'):
+            if (node.children.length() == 2):
+                if (node.children[1].kind == 'Lambda' && is_filter_bounds_lambda(node.children[1])):
+                    Node[] parts = flatten_logical_and_nodes(node.children[1].children[0])
+                    TempIRResult row = lower_linear_value_ir(parts[0].children[0].children[0], base.next_temp)
+                    TempIRResult col = lower_linear_value_ir(parts[2].children[0].children[0], row.next_temp)
+                    TempIRResult width = lower_linear_value_ir(parts[1].children[1], col.next_temp)
+                    TempIRResult height = lower_linear_value_ir(parts[3].children[1], width.next_temp)
+                    string name = temp_name(height.next_temp)
+                    LinearInstruction[] instructions = append_instructions(base.instructions, row.instructions)
+                    instructions = append_instructions(instructions, col.instructions)
+                    instructions = append_instructions(instructions, width.instructions)
+                    instructions = append_instructions(instructions, height.instructions)
+                    instructions.push(LinearInstruction('value', name, 'unknown', 'unknown', 'method-call-lambda', ['filter_bounds', base.name, node.children[1].value, row.name, col.name, width.name, height.name]))
+                    return TempIRResult(name, instructions, height.next_temp + 1)
+        if (node.value == 'map_to'):
+            if (node.children.length() == 2):
+                if (node.children[1].kind == 'Lambda'):
+                    if (is_parse_binding_call_lambda(node.children[1])):
+                        LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', temp_name(base.next_temp), 'unknown', 'unknown', 'method-call-lambda', ['map_to_parse_point', base.name, node.children[1].value])])
+                        return TempIRResult(temp_name(base.next_temp), instructions, base.next_temp + 1)
+                    if (is_string_length_map_lambda(node.children[1])):
+                        LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', temp_name(base.next_temp), 'unknown', 'unknown', 'method-call-lambda', ['map_to_string_length', base.name, node.children[1].value])])
+                        return TempIRResult(temp_name(base.next_temp), instructions, base.next_temp + 1)
+                    if (is_edge_distance_map_lambda(node.children[1])):
+                        Node body = node.children[1].children[0]
+                        Node distance_call = body.children[2]
+                        Node point_index = distance_call.children[1]
+                        TempIRResult capture_i = lower_linear_value_ir(body.children[0], base.next_temp)
+                        TempIRResult capture_left = lower_linear_value_ir(distance_call.children[0], capture_i.next_temp)
+                        TempIRResult capture_points = lower_linear_value_ir(point_index.children[0], capture_left.next_temp)
+                        string name = temp_name(capture_points.next_temp)
+                        LinearInstruction[] instructions = append_instructions(base.instructions, capture_i.instructions)
+                        instructions = append_instructions(instructions, capture_left.instructions)
+                        instructions = append_instructions(instructions, capture_points.instructions)
+                        instructions.push(LinearInstruction('value', name, 'unknown', 'unknown', 'method-call-lambda', ['map_to_edge_distance', base.name, node.children[1].value, capture_i.name, capture_left.name, capture_points.name]))
+                        return TempIRResult(name, instructions, capture_points.next_temp + 1)
+                    Node lambda_body = node.children[1].children[0]
+                    BindingIR binding = ir_parse_binding_decl(node.children[1].value)
+                    if (lambda_body.kind == 'Binary'):
+                        if (lambda_body.children.length() == 2):
+                            if (lambda_body.children[0].kind == 'Identifier' && lambda_body.children[0].value == binding.name):
+                                TempIRResult right = lower_linear_value_ir(lambda_body.children[1], base.next_temp)
+                                string name = temp_name(right.next_temp)
+                                LinearInstruction[] instructions = append_instructions(base.instructions, right.instructions)
+                                instructions.push(LinearInstruction('value', name, 'unknown', 'unknown', 'method-call-lambda', [node.value, base.name, node.children[1].value, lambda_body.value, right.name]))
+                                return TempIRResult(name, instructions, right.next_temp + 1)
+        if (node.value == 'flat_map'):
+            if (node.children.length() == 2):
+                if (node.children[1].kind == 'Lambda' && is_edges_for_point_flat_map_lambda(node.children[1])):
+                    Node body = node.children[1].children[0]
+                    TempIRResult capture_points = lower_linear_value_ir(body.children[0], base.next_temp)
+                    string name = temp_name(capture_points.next_temp)
+                    LinearInstruction[] instructions = append_instructions(base.instructions, capture_points.instructions)
+                    instructions.push(LinearInstruction('value', name, 'unknown', 'unknown', 'method-call-lambda', ['flat_map_edges_for_point', base.name, node.children[1].value, capture_points.name]))
+                    return TempIRResult(name, instructions, capture_points.next_temp + 1)
+        if (node.value == 'sort'):
+            if (node.children.length() == 2 && node.children[1].kind == 'Lambda2'):
+                BindingIR left_binding = ir_parse_binding_decl(lambda2_left_binding(node.children[1].value))
+                BindingIR right_binding = ir_parse_binding_decl(lambda2_right_binding(node.children[1].value))
+                string name = temp_name(base.next_temp)
+                if (is_identifier_subtraction_lambda(node.children[1])):
+                    LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', name, 'unknown', 'borrowed', 'method-call-lambda', ['sort_int_desc', base.name, lambda2_left_binding(node.children[1].value), lambda2_right_binding(node.children[1].value)])])
+                    return TempIRResult(name, instructions, base.next_temp + 1)
+                if (is_record_field_subtraction_lambda(node.children[1])):
+                    string field_name = node.children[1].children[0].children[0].value
+                    LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', name, 'unknown', 'borrowed', 'method-call-lambda', ['sort_record_field_asc', base.name, lambda2_left_binding(node.children[1].value), lambda2_right_binding(node.children[1].value), field_name])])
+                    return TempIRResult(name, instructions, base.next_temp + 1)
+        TempIRListResult args = lower_linear_values_ir(tail_nodes(node.children, 1), base.next_temp)
+        string name = temp_name(args.next_temp)
+        string[] call_args = [node.value, base.name]
+        for (string arg_name : args.names):
+            call_args.push(arg_name)
+        LinearInstruction[] instructions = append_instructions(base.instructions, args.instructions)
+        string result_type = 'unknown'
+        if (node.value == 'length'):
+            result_type = 'int'
+        string ownership_mode = 'unknown'
+        if (result_type == 'int' || result_type == 'bool'):
+            ownership_mode = 'plain'
+        instructions.push(LinearInstruction('value', name, result_type, ownership_mode, 'method-call', call_args))
+        return TempIRResult(name, instructions, args.next_temp + 1)
+    if (node.kind == 'Index'):
+        TempIRResult base = lower_linear_value_ir(node.children[0], next_temp)
+        TempIRResult item = lower_linear_value_ir(node.children[1], base.next_temp)
+        string name = temp_name(item.next_temp)
+        LinearInstruction[] instructions = append_instructions(base.instructions, item.instructions)
+        instructions.push(LinearInstruction('value', name, 'unknown', 'borrowed', 'index', [base.name, item.name]))
+        return TempIRResult(name, instructions, item.next_temp + 1)
+
+    string name = temp_name(next_temp)
+    return TempIRResult(name, [LinearInstruction('value', name, 'unknown', 'unknown', 'unsupported', [node.kind])], next_temp + 1)
+
+bool is_straight_line_statement(Node node):
+    return node.kind == 'VarDecl' || node.kind == 'Assign' || node.kind == 'ExprStmt' || node.kind == 'Return' || node.kind == 'Throw'
+
+Node[] lowerer_for_body_nodes(Node node):
+    return tail_nodes(node.children, 3)
+
+Node[] if_then_nodes(Node node):
+    Node[] then_nodes = []
+    int index = 1
+    while (index < node.children.length()):
+        Node child = node.children[index]
+        if (child.kind != 'Else'):
+            then_nodes.push(child)
+        index += 1
+    return then_nodes
+
+Node[] if_else_nodes(Node node):
+    int index = 1
+    while (index < node.children.length()):
+        Node child = node.children[index]
+        if (child.kind == 'Else'):
+            return copy_nodes(child.children)
+        index += 1
+    Node[] empty = []
+    return empty
+
+Node[] switch_case_body(Node case_node):
+    return tail_nodes(case_node.children, 1)
+
+Node[] switch_default_body(Node node):
+    for (Node child : tail_nodes(node.children, 1)):
+        if (child.kind == 'Default'):
+            return copy_nodes(child.children)
+    Node[] empty = []
+    return empty
+
+bool is_linear_statement(Node node):
+    if (is_straight_line_statement(node)):
+        return true
+    if (node.kind == 'Break' || node.kind == 'Continue'):
+        return true
+    if (node.kind == 'If'):
+        if (!is_linear_body(if_then_nodes(node))):
+            return false
+        return is_linear_body(if_else_nodes(node))
+    if (node.kind == 'While'):
+        return is_linear_body(tail_nodes(node.children, 1))
+    if (node.kind == 'For'):
+        if (!is_straight_line_statement(node.children[0])):
+            return false
+        if (!is_straight_line_statement(node.children[2])):
+            return false
+        return is_linear_body(lowerer_for_body_nodes(node))
+    if (node.kind == 'ForEach'):
+        return is_linear_body(tail_nodes(node.children, 1))
+    if (node.kind == 'Try'):
+        if (!is_linear_body(try_body_nodes(node))):
+            return false
+        Node catch_body = catch_node(node)
+        return is_linear_body(catch_body.children)
+    if (node.kind == 'Switch'):
+        for (Node child : tail_nodes(node.children, 1)):
+            if (child.kind == 'Case' && !is_linear_body(switch_case_body(child))):
+                return false
+            if (child.kind == 'Default' && !is_linear_body(child.children)):
+                return false
+        return true
+    return false
+
+bool is_linear_body(Node[] nodes):
+    for (Node node in nodes):
+        if (!is_linear_statement(node)):
+            return false
+    return true
+
+LinearBlockResult lower_linear_statement(Node node, int next_temp, string indent):
+    if (node.kind == 'VarDecl'):
+        TempResult value = lower_linear_value(node.children[0], next_temp)
+        string[] lines = []
+        for (string line in value.lines):
+            lines.push(indent + line)
+        lines.push(indent + 'set ' + node.value + ' ' + value.name)
+        return LinearBlockResult(lines, value.next_temp)
+    if (node.kind == 'Assign'):
+        TempResult target = lower_linear_value(node.children[0], next_temp)
+        TempResult value = lower_linear_value(node.children[1], target.next_temp)
+        string[] lines = []
+        for (string line in target.lines):
+            lines.push(indent + line)
+        for (string line in value.lines):
+            lines.push(indent + line)
+        lines.push(indent + 'assign ' + target.name + ' ' + value.name)
+        return LinearBlockResult(lines, value.next_temp)
+    if (node.kind == 'ExprStmt'):
+        TempResult value = lower_linear_value(node.children[0], next_temp)
+        string[] lines = []
+        for (string line in value.lines):
+            lines.push(indent + line)
+        lines.push(indent + 'drop ' + value.name)
+        return LinearBlockResult(lines, value.next_temp)
+    if (node.kind == 'Return'):
+        if (node.children.is_empty()):
+            return LinearBlockResult([indent + 'return'], next_temp)
+        TempResult value = lower_linear_value(node.children[0], next_temp)
+        string[] lines = []
+        for (string line in value.lines):
+            lines.push(indent + line)
+        lines.push(indent + 'return ' + value.name)
+        return LinearBlockResult(lines, value.next_temp)
+    if (node.kind == 'Throw'):
+        TempResult value = lower_linear_value(node.children[0], next_temp)
+        string[] lines = []
+        for (string line in value.lines):
+            lines.push(indent + line)
+        lines.push(indent + 'throw ' + value.name)
+        return LinearBlockResult(lines, value.next_temp)
+    return LinearBlockResult([indent + 'unsupported-straight-line ' + node.kind], next_temp)
+
+LinearIRBlockResult lower_linear_statement_ir(Node node, int next_temp):
+    if (node.kind == 'VarDecl'):
+        TempIRResult value = lower_linear_value_ir(node.children[0], next_temp)
+        LinearInstruction[] instructions = append_instructions(value.instructions, [LinearInstruction('set', '', '', '', node.value, [value.name])])
+        return LinearIRBlockResult(instructions, value.next_temp)
+    if (node.kind == 'Assign'):
+        Node target = node.children[0]
+        if (target.kind == 'Identifier'):
+            TempIRResult value = lower_linear_value_ir(node.children[1], next_temp)
+            LinearInstruction[] instructions = append_instructions(value.instructions, [LinearInstruction('assign_local', '', '', '', target.value, [value.name])])
+            return LinearIRBlockResult(instructions, value.next_temp)
+        if (target.kind == 'Field'):
+            TempIRResult base = lower_linear_value_ir(target.children[0], next_temp)
+            TempIRResult value = lower_linear_value_ir(node.children[1], base.next_temp)
+            LinearInstruction[] instructions = append_instructions(base.instructions, value.instructions)
+            instructions.push(LinearInstruction('assign_field', '', '', '', target.value, [base.name, value.name]))
+            return LinearIRBlockResult(instructions, value.next_temp)
+        if (target.kind == 'Index'):
+            TempIRResult base = lower_linear_value_ir(target.children[0], next_temp)
+            TempIRResult item = lower_linear_value_ir(target.children[1], base.next_temp)
+            TempIRResult value = lower_linear_value_ir(node.children[1], item.next_temp)
+            LinearInstruction[] instructions = append_instructions(base.instructions, item.instructions)
+            instructions = append_instructions(instructions, value.instructions)
+            instructions.push(LinearInstruction('assign_index', '', '', '', '', [base.name, item.name, value.name]))
+            return LinearIRBlockResult(instructions, value.next_temp)
+        TempIRResult target_value = lower_linear_value_ir(target, next_temp)
+        TempIRResult value = lower_linear_value_ir(node.children[1], target_value.next_temp)
+        LinearInstruction[] instructions = append_instructions(target_value.instructions, value.instructions)
+        instructions.push(LinearInstruction('assign', '', '', '', '', [target_value.name, value.name]))
+        return LinearIRBlockResult(instructions, value.next_temp)
+    if (node.kind == 'ExprStmt'):
+        TempIRResult value = lower_linear_value_ir(node.children[0], next_temp)
+        LinearInstruction[] instructions = append_instructions(value.instructions, [LinearInstruction('drop', '', '', '', '', [value.name])])
+        return LinearIRBlockResult(instructions, value.next_temp)
+    if (node.kind == 'Return'):
+        if (node.children.is_empty()):
+            return LinearIRBlockResult([LinearInstruction('return', '', '', '', '', [])], next_temp)
+        TempIRResult value = lower_linear_value_ir(node.children[0], next_temp)
+        LinearInstruction[] instructions = append_instructions(value.instructions, [LinearInstruction('return', '', '', '', '', [value.name])])
+        return LinearIRBlockResult(instructions, value.next_temp)
+    if (node.kind == 'Throw'):
+        TempIRResult value = lower_linear_value_ir(node.children[0], next_temp)
+        LinearInstruction[] instructions = append_instructions(value.instructions, [LinearInstruction('throw', '', '', '', '', [value.name])])
+        return LinearIRBlockResult(instructions, value.next_temp)
+    return LinearIRBlockResult([LinearInstruction('unsupported', '', '', '', node.kind, [])], next_temp)
+
+LinearBlockResult lower_linear_block(Node[] nodes, int next_temp, string indent):
+    string[] lines = []
+    int current_temp = next_temp
+    for (Node node in nodes):
+        LinearBlockResult lowered = lower_linear_statement(node, current_temp, indent)
+        lines = append_lines(lines, lowered.lines)
+        current_temp = lowered.next_temp
+    return LinearBlockResult(lines, current_temp)
+
+LinearListResult lower_linear_statement_list(Node[] nodes, int next_temp, int next_label, string indent, string break_label, string continue_label):
+    if (nodes.is_empty()):
+        string[] empty_lines = []
+        return LinearListResult(empty_lines, next_temp, next_label)
+
+    Node node = nodes[0]
+    Node[] rest_nodes = tail_nodes(nodes, 1)
+
+    if (node.kind == 'Break'):
+        if (break_label == ''):
+            return LinearListResult([indent + 'unsupported-linear Break'], next_temp, next_label)
+        return LinearListResult([indent + 'jump ' + break_label], next_temp, next_label)
+
+    if (node.kind == 'Continue'):
+        if (continue_label == ''):
+            return LinearListResult([indent + 'unsupported-linear Continue'], next_temp, next_label)
+        return LinearListResult([indent + 'jump ' + continue_label], next_temp, next_label)
+
+    if (is_straight_line_statement(node)):
+        LinearBlockResult statement = lower_linear_statement(node, next_temp, indent)
+        LinearListResult rest = lower_linear_statement_list(rest_nodes, statement.next_temp, next_label, indent, break_label, continue_label)
+        return LinearListResult(append_lines(statement.lines, rest.lines), rest.next_temp, rest.next_label)
+
+    if (node.kind == 'If'):
+        TempResult condition = lower_linear_value(node.children[0], next_temp)
+        string then_label = label_name(next_label)
+        string else_label = label_name(next_label + 1)
+        string after_label = label_name(next_label + 2)
+        LinearListResult then_part = lower_linear_statement_list(if_then_nodes(node), condition.next_temp, next_label + 3, indent, break_label, continue_label)
+        LinearListResult else_part = lower_linear_statement_list(if_else_nodes(node), then_part.next_temp, then_part.next_label, indent, break_label, continue_label)
+        LinearListResult rest = lower_linear_statement_list(rest_nodes, else_part.next_temp, else_part.next_label, indent, break_label, continue_label)
+
+        string[] lines = []
+        lines = append_lines(lines, indent_lines(condition.lines, indent))
+        lines.push(indent + 'branch_if ' + condition.name + ' ' + then_label + ' ' + else_label)
+        lines.push(indent + 'label ' + then_label)
+        lines = append_lines(lines, then_part.lines)
+        lines.push(indent + 'jump ' + after_label)
+        lines.push(indent + 'label ' + else_label)
+        lines = append_lines(lines, else_part.lines)
+        lines.push(indent + 'jump ' + after_label)
+        lines.push(indent + 'label ' + after_label)
+        lines = append_lines(lines, rest.lines)
+        return LinearListResult(lines, rest.next_temp, rest.next_label)
+
+    if (node.kind == 'While'):
+        string cond_label = label_name(next_label)
+        string body_label = label_name(next_label + 1)
+        string end_label = label_name(next_label + 2)
+        TempResult condition = lower_linear_value(node.children[0], next_temp)
+        LinearListResult body = lower_linear_statement_list(tail_nodes(node.children, 1), condition.next_temp, next_label + 3, indent, end_label, cond_label)
+        LinearListResult rest = lower_linear_statement_list(rest_nodes, body.next_temp, body.next_label, indent, break_label, continue_label)
+
+        string[] lines = [indent + 'jump ' + cond_label, indent + 'label ' + cond_label]
+        lines = append_lines(lines, indent_lines(condition.lines, indent))
+        lines.push(indent + 'branch_if ' + condition.name + ' ' + body_label + ' ' + end_label)
+        lines.push(indent + 'label ' + body_label)
+        lines = append_lines(lines, body.lines)
+        lines.push(indent + 'jump ' + cond_label)
+        lines.push(indent + 'label ' + end_label)
+        lines = append_lines(lines, rest.lines)
+        return LinearListResult(lines, rest.next_temp, rest.next_label)
+
+    if (node.kind == 'For'):
+        string cond_label = label_name(next_label)
+        string body_label = label_name(next_label + 1)
+        string update_label = label_name(next_label + 2)
+        string end_label = label_name(next_label + 3)
+        LinearBlockResult init_statement = lower_linear_statement(node.children[0], next_temp, indent)
+        TempResult condition = lower_linear_value(node.children[1], init_statement.next_temp)
+        LinearListResult body = lower_linear_statement_list(lowerer_for_body_nodes(node), condition.next_temp, next_label + 4, indent, end_label, update_label)
+        LinearBlockResult update_statement = lower_linear_statement(node.children[2], body.next_temp, indent)
+        LinearListResult rest = lower_linear_statement_list(rest_nodes, update_statement.next_temp, body.next_label, indent, break_label, continue_label)
+
+        string[] lines = []
+        lines = append_lines(lines, init_statement.lines)
+        lines.push(indent + 'jump ' + cond_label)
+        lines.push(indent + 'label ' + cond_label)
+        lines = append_lines(lines, indent_lines(condition.lines, indent))
+        lines.push(indent + 'branch_if ' + condition.name + ' ' + body_label + ' ' + end_label)
+        lines.push(indent + 'label ' + body_label)
+        lines = append_lines(lines, body.lines)
+        lines.push(indent + 'jump ' + update_label)
+        lines.push(indent + 'label ' + update_label)
+        lines = append_lines(lines, update_statement.lines)
+        lines.push(indent + 'jump ' + cond_label)
+        lines.push(indent + 'label ' + end_label)
+        lines = append_lines(lines, rest.lines)
+        return LinearListResult(lines, rest.next_temp, rest.next_label)
+
+    if (node.kind == 'ForEach'):
+        string cond_label = label_name(next_label)
+        string body_label = label_name(next_label + 1)
+        string end_label = label_name(next_label + 2)
+        string continue_loop_label = label_name(next_label + 3)
+        string index_name = loop_index_name(next_label)
+        TempResult iterable = lower_linear_value(node.children[0], next_temp)
+        string index_init = temp_name(iterable.next_temp)
+        string index_check = temp_name(iterable.next_temp + 1)
+        string iterable_len = temp_name(iterable.next_temp + 2)
+        string cond_value = temp_name(iterable.next_temp + 3)
+        string index_item = temp_name(iterable.next_temp + 4)
+        string item_value = temp_name(iterable.next_temp + 5)
+        LinearListResult body = lower_linear_statement_list(tail_nodes(node.children, 1), iterable.next_temp + 6, next_label + 4, indent, end_label, continue_loop_label)
+        int post_body_temp = body.next_temp + 4
+        LinearListResult rest = lower_linear_statement_list(rest_nodes, post_body_temp, body.next_label, indent, break_label, continue_label)
+
+        string[] lines = indent_lines(iterable.lines, indent)
+        lines.push(indent + index_init + ' = int 0')
+        lines.push(indent + 'set int ' + index_name + ' ' + index_init)
+        lines.push(indent + 'jump ' + cond_label)
+        lines.push(indent + 'label ' + cond_label)
+        lines.push(indent + index_check + ' = identifier ' + index_name)
+        lines.push(indent + iterable_len + ' = method-call length ' + iterable.name)
+        lines.push(indent + cond_value + ' = binary < ' + index_check + ' ' + iterable_len)
+        lines.push(indent + 'branch_if ' + cond_value + ' ' + body_label + ' ' + end_label)
+        lines.push(indent + 'label ' + body_label)
+        lines.push(indent + index_item + ' = identifier ' + index_name)
+        lines.push(indent + item_value + ' = index ' + iterable.name + ' ' + index_item)
+        lines.push(indent + 'set ' + node.value + ' ' + item_value)
+        lines = append_lines(lines, body.lines)
+        lines.push(indent + 'label ' + continue_loop_label)
+        string next_index_ref = temp_name(body.next_temp)
+        string one_value = temp_name(body.next_temp + 1)
+        string bumped_index = temp_name(body.next_temp + 2)
+        string index_target = temp_name(body.next_temp + 3)
+        lines.push(indent + next_index_ref + ' = identifier ' + index_name)
+        lines.push(indent + one_value + ' = int 1')
+        lines.push(indent + bumped_index + ' = binary + ' + next_index_ref + ' ' + one_value)
+        lines.push(indent + index_target + ' = identifier ' + index_name)
+        lines.push(indent + 'assign ' + index_target + ' ' + bumped_index)
+        lines.push(indent + 'jump ' + cond_label)
+        lines.push(indent + 'label ' + end_label)
+        lines = append_lines(lines, rest.lines)
+        return LinearListResult(lines, rest.next_temp, rest.next_label)
+
+    if (node.kind == 'Try'):
+        string catch_label = label_name(next_label)
+        string after_label = label_name(next_label + 1)
+        Node catch_part = catch_node(node)
+        LinearListResult try_part = lower_linear_statement_list(try_body_nodes(node), next_temp, next_label + 2, indent, break_label, continue_label)
+        LinearListResult catch_part_lines = lower_linear_statement_list(catch_part.children, try_part.next_temp, try_part.next_label, indent, break_label, continue_label)
+        LinearListResult rest = lower_linear_statement_list(rest_nodes, catch_part_lines.next_temp, catch_part_lines.next_label, indent, break_label, continue_label)
+
+        string[] lines = [indent + 'try ' + catch_label]
+        lines = append_lines(lines, try_part.lines)
+        lines.push(indent + 'jump ' + after_label)
+        lines.push(indent + 'label ' + catch_label)
+        lines.push(indent + 'catch ' + catch_part.value)
+        lines = append_lines(lines, catch_part_lines.lines)
+        lines.push(indent + 'jump ' + after_label)
+        lines.push(indent + 'label ' + after_label)
+        lines = append_lines(lines, rest.lines)
+        return LinearListResult(lines, rest.next_temp, rest.next_label)
+
+    if (node.kind == 'Switch'):
+        Node[] cases = []
+        Node[] default_nodes = []
+        for (Node child : tail_nodes(node.children, 1)):
+            if (child.kind == 'Case'):
+                cases.push(child)
+            else if (child.kind == 'Default'):
+                default_nodes = child.children
+        TempResult subject = lower_linear_value(node.children[0], next_temp)
+        int reserved_labels = 1 + cases.length() * 2
+        if (!default_nodes.is_empty()):
+            reserved_labels += 1
+        string after_label = label_name(next_label)
+        string default_label = after_label
+        if (!default_nodes.is_empty()):
+            default_label = label_name(next_label + 1 + cases.length() * 2)
+
+        string[] lines = indent_lines(subject.lines, indent)
+        int current_temp = subject.next_temp
+        int current_next_label = next_label + reserved_labels
+
+        if (!cases.is_empty()):
+            lines.push(indent + 'jump ' + label_name(next_label + 1))
+        else if (!default_nodes.is_empty()):
+            lines.push(indent + 'jump ' + default_label)
+
+        int case_index = 0
+        while (case_index < cases.length()):
+            Node case_node = cases[case_index]
+            string check_label = label_name(next_label + 1 + case_index * 2)
+            string body_label = label_name(next_label + 2 + case_index * 2)
+            string next_check_label = after_label
+            if (case_index + 1 < cases.length()):
+                next_check_label = label_name(next_label + 1 + (case_index + 1) * 2)
+            else if (!default_nodes.is_empty()):
+                next_check_label = default_label
+
+            lines.push(indent + 'label ' + check_label)
+            TempResult case_value = lower_linear_value(case_node.children[0], current_temp)
+            lines = append_lines(lines, indent_lines(case_value.lines, indent))
+            string compare_name = temp_name(case_value.next_temp)
+            lines.push(indent + compare_name + ' = binary == ' + subject.name + ' ' + case_value.name)
+            lines.push(indent + 'branch_if ' + compare_name + ' ' + body_label + ' ' + next_check_label)
+            lines.push(indent + 'label ' + body_label)
+            LinearListResult body = lower_linear_statement_list(switch_case_body(case_node), case_value.next_temp + 1, current_next_label, indent, break_label, continue_label)
+            lines = append_lines(lines, body.lines)
+            lines.push(indent + 'jump ' + after_label)
+            current_temp = body.next_temp
+            current_next_label = body.next_label
+            case_index += 1
+        if (!default_nodes.is_empty()):
+            lines.push(indent + 'label ' + default_label)
+            LinearListResult default_body = lower_linear_statement_list(default_nodes, current_temp, current_next_label, indent, break_label, continue_label)
+            lines = append_lines(lines, default_body.lines)
+            lines.push(indent + 'jump ' + after_label)
+            current_temp = default_body.next_temp
+            current_next_label = default_body.next_label
+        lines.push(indent + 'label ' + after_label)
+        LinearListResult rest = lower_linear_statement_list(rest_nodes, current_temp, current_next_label, indent, break_label, continue_label)
+        lines = append_lines(lines, rest.lines)
+        return LinearListResult(lines, rest.next_temp, rest.next_label)
+
+    return LinearListResult([indent + 'unsupported-linear ' + node.kind], next_temp, next_label)
+
+LinearIRListResult lower_linear_statement_list_ir(Node[] nodes, int next_temp, int next_label, string break_label, string continue_label):
+    if (nodes.is_empty()):
+        LinearInstruction[] empty_instructions = []
+        return LinearIRListResult(empty_instructions, next_temp, next_label)
+
+    Node node = nodes[0]
+    Node[] rest_nodes = tail_nodes(nodes, 1)
+
+    if (node.kind == 'Break'):
+        if (break_label == ''):
+            return LinearIRListResult([LinearInstruction('unsupported', '', '', '', 'Break', [])], next_temp, next_label)
+        return LinearIRListResult([LinearInstruction('jump', '', '', '', break_label, [])], next_temp, next_label)
+
+    if (node.kind == 'Continue'):
+        if (continue_label == ''):
+            return LinearIRListResult([LinearInstruction('unsupported', '', '', '', 'Continue', [])], next_temp, next_label)
+        return LinearIRListResult([LinearInstruction('jump', '', '', '', continue_label, [])], next_temp, next_label)
+
+    if (is_straight_line_statement(node)):
+        LinearIRBlockResult statement = lower_linear_statement_ir(node, next_temp)
+        LinearIRListResult rest = lower_linear_statement_list_ir(rest_nodes, statement.next_temp, next_label, break_label, continue_label)
+        return LinearIRListResult(append_instructions(statement.instructions, rest.instructions), rest.next_temp, rest.next_label)
+
+    if (node.kind == 'If'):
+        TempIRResult condition = lower_linear_value_ir(node.children[0], next_temp)
+        string then_label = label_name(next_label)
+        string else_label = label_name(next_label + 1)
+        string after_label = label_name(next_label + 2)
+        LinearIRListResult then_part = lower_linear_statement_list_ir(if_then_nodes(node), condition.next_temp, next_label + 3, break_label, continue_label)
+        LinearIRListResult else_part = lower_linear_statement_list_ir(if_else_nodes(node), then_part.next_temp, then_part.next_label, break_label, continue_label)
+        LinearIRListResult rest = lower_linear_statement_list_ir(rest_nodes, else_part.next_temp, else_part.next_label, break_label, continue_label)
+
+        LinearInstruction[] instructions = []
+        instructions = append_instructions(instructions, condition.instructions)
+        instructions.push(LinearInstruction('branch_if', '', '', '', '', [condition.name, then_label, else_label]))
+        instructions.push(LinearInstruction('label', '', '', '', then_label, []))
+        instructions = append_instructions(instructions, then_part.instructions)
+        instructions.push(LinearInstruction('jump', '', '', '', after_label, []))
+        instructions.push(LinearInstruction('label', '', '', '', else_label, []))
+        instructions = append_instructions(instructions, else_part.instructions)
+        instructions.push(LinearInstruction('jump', '', '', '', after_label, []))
+        instructions.push(LinearInstruction('label', '', '', '', after_label, []))
+        instructions = append_instructions(instructions, rest.instructions)
+        return LinearIRListResult(instructions, rest.next_temp, rest.next_label)
+
+    if (node.kind == 'While'):
+        string cond_label = label_name(next_label)
+        string body_label = label_name(next_label + 1)
+        string end_label = label_name(next_label + 2)
+        TempIRResult condition = lower_linear_value_ir(node.children[0], next_temp)
+        LinearIRListResult body = lower_linear_statement_list_ir(tail_nodes(node.children, 1), condition.next_temp, next_label + 3, end_label, cond_label)
+        LinearIRListResult rest = lower_linear_statement_list_ir(rest_nodes, body.next_temp, body.next_label, break_label, continue_label)
+
+        LinearInstruction[] instructions = [LinearInstruction('jump', '', '', '', cond_label, []), LinearInstruction('label', '', '', '', cond_label, [])]
+        instructions = append_instructions(instructions, condition.instructions)
+        instructions.push(LinearInstruction('branch_if', '', '', '', '', [condition.name, body_label, end_label]))
+        instructions.push(LinearInstruction('label', '', '', '', body_label, []))
+        instructions = append_instructions(instructions, body.instructions)
+        instructions.push(LinearInstruction('jump', '', '', '', cond_label, []))
+        instructions.push(LinearInstruction('label', '', '', '', end_label, []))
+        instructions = append_instructions(instructions, rest.instructions)
+        return LinearIRListResult(instructions, rest.next_temp, rest.next_label)
+
+    if (node.kind == 'For'):
+        string cond_label = label_name(next_label)
+        string body_label = label_name(next_label + 1)
+        string update_label = label_name(next_label + 2)
+        string end_label = label_name(next_label + 3)
+        LinearIRBlockResult init_statement = lower_linear_statement_ir(node.children[0], next_temp)
+        TempIRResult condition = lower_linear_value_ir(node.children[1], init_statement.next_temp)
+        LinearIRListResult body = lower_linear_statement_list_ir(lowerer_for_body_nodes(node), condition.next_temp, next_label + 4, end_label, update_label)
+        LinearIRBlockResult update_statement = lower_linear_statement_ir(node.children[2], body.next_temp)
+        LinearIRListResult rest = lower_linear_statement_list_ir(rest_nodes, update_statement.next_temp, body.next_label, break_label, continue_label)
+
+        LinearInstruction[] instructions = []
+        instructions = append_instructions(instructions, init_statement.instructions)
+        instructions.push(LinearInstruction('jump', '', '', '', cond_label, []))
+        instructions.push(LinearInstruction('label', '', '', '', cond_label, []))
+        instructions = append_instructions(instructions, condition.instructions)
+        instructions.push(LinearInstruction('branch_if', '', '', '', '', [condition.name, body_label, end_label]))
+        instructions.push(LinearInstruction('label', '', '', '', body_label, []))
+        instructions = append_instructions(instructions, body.instructions)
+        instructions.push(LinearInstruction('jump', '', '', '', update_label, []))
+        instructions.push(LinearInstruction('label', '', '', '', update_label, []))
+        instructions = append_instructions(instructions, update_statement.instructions)
+        instructions.push(LinearInstruction('jump', '', '', '', cond_label, []))
+        instructions.push(LinearInstruction('label', '', '', '', end_label, []))
+        instructions = append_instructions(instructions, rest.instructions)
+        return LinearIRListResult(instructions, rest.next_temp, rest.next_label)
+
+    if (node.kind == 'ForEach'):
+        string cond_label = label_name(next_label)
+        string body_label = label_name(next_label + 1)
+        string end_label = label_name(next_label + 2)
+        string continue_loop_label = label_name(next_label + 3)
+        string index_name = loop_index_name(next_label)
+        TempIRResult iterable = lower_linear_value_ir(node.children[0], next_temp)
+        string index_init = temp_name(iterable.next_temp)
+        string index_check = temp_name(iterable.next_temp + 1)
+        string iterable_len = temp_name(iterable.next_temp + 2)
+        string cond_value = temp_name(iterable.next_temp + 3)
+        string index_item = temp_name(iterable.next_temp + 4)
+        string item_value = temp_name(iterable.next_temp + 5)
+        LinearIRListResult body = lower_linear_statement_list_ir(tail_nodes(node.children, 1), iterable.next_temp + 6, next_label + 4, end_label, continue_loop_label)
+        int post_body_temp = body.next_temp + 4
+        LinearIRListResult rest = lower_linear_statement_list_ir(rest_nodes, post_body_temp, body.next_label, break_label, continue_label)
+
+        LinearInstruction[] instructions = []
+        instructions = append_instructions(instructions, iterable.instructions)
+        instructions.push(LinearInstruction('value', index_init, 'int', 'plain', 'int', ['0']))
+        instructions.push(LinearInstruction('set', '', '', '', 'int ' + index_name, [index_init]))
+        instructions.push(LinearInstruction('jump', '', '', '', cond_label, []))
+        instructions.push(LinearInstruction('label', '', '', '', cond_label, []))
+        instructions.push(LinearInstruction('value', index_check, 'unknown', 'borrowed', 'identifier', [index_name]))
+        instructions.push(LinearInstruction('value', iterable_len, 'int', 'plain', 'method-call', ['length', iterable.name]))
+        instructions.push(LinearInstruction('value', cond_value, 'unknown', 'unknown', 'binary', ['<', index_check, iterable_len]))
+        instructions.push(LinearInstruction('branch_if', '', '', '', '', [cond_value, body_label, end_label]))
+        instructions.push(LinearInstruction('label', '', '', '', body_label, []))
+        instructions.push(LinearInstruction('value', index_item, 'unknown', 'borrowed', 'identifier', [index_name]))
+        instructions.push(LinearInstruction('value', item_value, 'unknown', 'borrowed', 'index', [iterable.name, index_item]))
+        instructions.push(LinearInstruction('set', '', '', '', node.value, [item_value]))
+        instructions = append_instructions(instructions, body.instructions)
+        instructions.push(LinearInstruction('label', '', '', '', continue_loop_label, []))
+        string next_index_ref = temp_name(body.next_temp)
+        string one_value = temp_name(body.next_temp + 1)
+        string bumped_index = temp_name(body.next_temp + 2)
+        instructions.push(LinearInstruction('value', next_index_ref, 'unknown', 'borrowed', 'identifier', [index_name]))
+        instructions.push(LinearInstruction('value', one_value, 'int', 'plain', 'int', ['1']))
+        instructions.push(LinearInstruction('value', bumped_index, 'unknown', 'unknown', 'binary', ['+', next_index_ref, one_value]))
+        instructions.push(LinearInstruction('assign_local', '', '', '', index_name, [bumped_index]))
+        instructions.push(LinearInstruction('jump', '', '', '', cond_label, []))
+        instructions.push(LinearInstruction('label', '', '', '', end_label, []))
+        instructions = append_instructions(instructions, rest.instructions)
+        return LinearIRListResult(instructions, rest.next_temp, rest.next_label)
+
+    if (node.kind == 'Try'):
+        string catch_label = label_name(next_label)
+        string after_label = label_name(next_label + 1)
+        Node catch_part = catch_node(node)
+        LinearIRListResult try_part = lower_linear_statement_list_ir(try_body_nodes(node), next_temp, next_label + 2, break_label, continue_label)
+        LinearIRListResult catch_part_instructions = lower_linear_statement_list_ir(catch_part.children, try_part.next_temp, try_part.next_label, break_label, continue_label)
+        LinearIRListResult rest = lower_linear_statement_list_ir(rest_nodes, catch_part_instructions.next_temp, catch_part_instructions.next_label, break_label, continue_label)
+
+        LinearInstruction[] instructions = [LinearInstruction('try', '', '', '', catch_label, [])]
+        instructions = append_instructions(instructions, try_part.instructions)
+        instructions.push(LinearInstruction('jump', '', '', '', after_label, []))
+        instructions.push(LinearInstruction('label', '', '', '', catch_label, []))
+        instructions.push(LinearInstruction('catch', '', '', '', catch_part.value, []))
+        instructions = append_instructions(instructions, catch_part_instructions.instructions)
+        instructions.push(LinearInstruction('jump', '', '', '', after_label, []))
+        instructions.push(LinearInstruction('label', '', '', '', after_label, []))
+        instructions = append_instructions(instructions, rest.instructions)
+        return LinearIRListResult(instructions, rest.next_temp, rest.next_label)
+
+    if (node.kind == 'Switch'):
+        Node[] cases = []
+        Node[] default_nodes = []
+        for (Node child : tail_nodes(node.children, 1)):
+            if (child.kind == 'Case'):
+                cases.push(child)
+            else if (child.kind == 'Default'):
+                default_nodes = child.children
+        TempIRResult subject = lower_linear_value_ir(node.children[0], next_temp)
+        int reserved_labels = 1 + cases.length() * 2
+        if (!default_nodes.is_empty()):
+            reserved_labels += 1
+        string after_label = label_name(next_label)
+        string default_label = after_label
+        if (!default_nodes.is_empty()):
+            default_label = label_name(next_label + 1 + cases.length() * 2)
+
+        LinearInstruction[] instructions = []
+        instructions = append_instructions(instructions, subject.instructions)
+        int current_temp = subject.next_temp
+        int current_next_label = next_label + reserved_labels
+
+        if (!cases.is_empty()):
+            instructions.push(LinearInstruction('jump', '', '', '', label_name(next_label + 1), []))
+        else if (!default_nodes.is_empty()):
+            instructions.push(LinearInstruction('jump', '', '', '', default_label, []))
+
+        int case_index = 0
+        while (case_index < cases.length()):
+            Node case_node = cases[case_index]
+            string check_label = label_name(next_label + 1 + case_index * 2)
+            string body_label = label_name(next_label + 2 + case_index * 2)
+            string next_check_label = after_label
+            if (case_index + 1 < cases.length()):
+                next_check_label = label_name(next_label + 1 + (case_index + 1) * 2)
+            else if (!default_nodes.is_empty()):
+                next_check_label = default_label
+
+            instructions.push(LinearInstruction('label', '', '', '', check_label, []))
+            TempIRResult case_value = lower_linear_value_ir(case_node.children[0], current_temp)
+            instructions = append_instructions(instructions, case_value.instructions)
+            string compare_name = temp_name(case_value.next_temp)
+            instructions.push(LinearInstruction('value', compare_name, 'unknown', 'unknown', 'binary', ['==', subject.name, case_value.name]))
+            instructions.push(LinearInstruction('branch_if', '', '', '', '', [compare_name, body_label, next_check_label]))
+            instructions.push(LinearInstruction('label', '', '', '', body_label, []))
+            LinearIRListResult body = lower_linear_statement_list_ir(switch_case_body(case_node), case_value.next_temp + 1, current_next_label, break_label, continue_label)
+            instructions = append_instructions(instructions, body.instructions)
+            instructions.push(LinearInstruction('jump', '', '', '', after_label, []))
+            current_temp = body.next_temp
+            current_next_label = body.next_label
+            case_index += 1
+        if (!default_nodes.is_empty()):
+            instructions.push(LinearInstruction('label', '', '', '', default_label, []))
+            LinearIRListResult default_body = lower_linear_statement_list_ir(default_nodes, current_temp, current_next_label, break_label, continue_label)
+            instructions = append_instructions(instructions, default_body.instructions)
+            instructions.push(LinearInstruction('jump', '', '', '', after_label, []))
+            current_temp = default_body.next_temp
+            current_next_label = default_body.next_label
+        instructions.push(LinearInstruction('label', '', '', '', after_label, []))
+        LinearIRListResult rest = lower_linear_statement_list_ir(rest_nodes, current_temp, current_next_label, break_label, continue_label)
+        instructions = append_instructions(instructions, rest.instructions)
+        return LinearIRListResult(instructions, rest.next_temp, rest.next_label)
+
+    return LinearIRListResult([LinearInstruction('unsupported', '', '', '', node.kind, [])], next_temp, next_label)
+
+string[] lower_block_lines(Node[] statements, string indent):
+    string[] lines = [indent + 'block']
+    for (Node statement in statements):
+        string[] child_lines = lower_statement_lines(statement, indent + '  ')
+        for (string line in child_lines):
+            lines.push(line)
+    return lines
+
+string[] lower_value_lines(Node node, string indent):
+    if (node.kind == 'Int'):
+        return [indent + 'int ' + node.value]
+    if (node.kind == 'Num'):
+        return [indent + 'num ' + node.value]
+    if (node.kind == 'String'):
+        return [indent + 'string ' + quote_string(node.value)]
+    if (node.kind == 'Bool'):
+        return [indent + 'bool ' + node.value]
+    if (node.kind == 'Identifier'):
+        return [indent + 'identifier ' + node.value]
+    if (node.kind == 'Array'):
+        string[] lines = [indent + 'array']
+        for (Node child in node.children):
+            string[] child_lines = lower_value_lines(child, indent + '  ')
+            for (string line in child_lines):
+                lines.push(line)
+        return lines
+    if (node.kind == 'Set'):
+        string[] lines = [indent + 'set']
+        for (Node child in node.children):
+            string[] child_lines = lower_value_lines(child, indent + '  ')
+            for (string line in child_lines):
+                lines.push(line)
+        return lines
+    if (node.kind == 'Map'):
+        string[] lines = [indent + 'map']
+        for (Node map_item : node.children):
+            lines.push(indent + '  entry')
+            lines.push(indent + '    key')
+            string[] key_lines = lower_value_lines(map_item.children[0], indent + '      ')
+            for (string line in key_lines):
+                lines.push(line)
+            lines.push(indent + '    value')
+            string[] value_lines = lower_value_lines(map_item.children[1], indent + '      ')
+            for (string line in value_lines):
+                lines.push(line)
+        return lines
+    if (node.kind == 'Binary'):
+        string[] lines = [indent + 'binary ' + node.value]
+        string[] left_lines = lower_value_lines(node.children[0], indent + '  ')
+        for (string line in left_lines):
+            lines.push(line)
+        string[] right_lines = lower_value_lines(node.children[1], indent + '  ')
+        for (string line in right_lines):
+            lines.push(line)
+        return lines
+    if (node.kind == 'Unary'):
+        string[] lines = [indent + 'unary ' + node.value]
+        string[] operand_lines = lower_value_lines(node.children[0], indent + '  ')
+        for (string line in operand_lines):
+            lines.push(line)
+        return lines
+    if (node.kind == 'Call'):
+        string[] lines = [indent + 'call ' + node.value]
+        for (Node child in node.children):
+            string[] child_lines = lower_value_lines(child, indent + '  ')
+            for (string line in child_lines):
+                lines.push(line)
+        return lines
+    if (node.kind == 'CallExpr'):
+        string[] lines = [indent + 'call-expr']
+        for (Node child in node.children):
+            string[] child_lines = lower_value_lines(child, indent + '  ')
+            for (string line in child_lines):
+                lines.push(line)
+        return lines
+    if (node.kind == 'Field'):
+        string[] lines = [indent + 'field ' + node.value]
+        string[] base_lines = lower_value_lines(node.children[0], indent + '  ')
+        for (string line in base_lines):
+            lines.push(line)
+        return lines
+    if (node.kind == 'Slice'):
+        string[] lines = [indent + 'slice']
+        for (Node child in node.children):
+            string[] child_lines = lower_value_lines(child, indent + '  ')
+            for (string line in child_lines):
+                lines.push(line)
+        return lines
+    if (node.kind == 'MethodCall'):
+        string[] lines = [indent + 'method-call ' + node.value]
+        string[] base_lines = lower_value_lines(node.children[0], indent + '  ')
+        for (string line in base_lines):
+            lines.push(line)
+        int index = 1
+        while (index < node.children.length()):
+            string[] arg_lines = lower_value_lines(node.children[index], indent + '  ')
+            for (string line in arg_lines):
+                lines.push(line)
+            index += 1
+        return lines
+    if (node.kind == 'Index'):
+        string[] lines = [indent + 'index']
+        string[] base_lines = lower_value_lines(node.children[0], indent + '  ')
+        for (string line in base_lines):
+            lines.push(line)
+        string[] item_lines = lower_value_lines(node.children[1], indent + '  ')
+        for (string line in item_lines):
+            lines.push(line)
+        return lines
+    return [indent + '<unsupported-value ' + node.kind + '>']
+
+string[] lower_statement_lines(Node node, string indent):
+    if (node.kind == 'VarDecl'):
+        string[] lines = [indent + 'let ' + node.value]
+        lines.push(indent + '  init')
+        string[] value_lines = lower_value_lines(node.children[0], indent + '    ')
+        for (string line in value_lines):
+            lines.push(line)
+        return lines
+    if (node.kind == 'Assign'):
+        string[] lines = [indent + 'assign']
+        lines.push(indent + '  target')
+        string[] target_lines = lower_value_lines(node.children[0], indent + '    ')
+        for (string line in target_lines):
+            lines.push(line)
+        lines.push(indent + '  value')
+        string[] value_lines = lower_value_lines(node.children[1], indent + '    ')
+        for (string line in value_lines):
+            lines.push(line)
+        return lines
+    if (node.kind == 'ExprStmt'):
+        string[] lines = [indent + 'expr']
+        string[] value_lines = lower_value_lines(node.children[0], indent + '  ')
+        for (string line in value_lines):
+            lines.push(line)
+        return lines
+    if (node.kind == 'Return'):
+        string[] lines = [indent + 'return']
+        if (!node.children.is_empty()):
+            lines.push(indent + '  value')
+            string[] value_lines = lower_value_lines(node.children[0], indent + '    ')
+            for (string line in value_lines):
+                lines.push(line)
+        return lines
+    if (node.kind == 'Break'):
+        return [indent + 'break']
+    if (node.kind == 'Continue'):
+        return [indent + 'continue']
+    if (node.kind == 'ImportDecl'):
+        return [indent + 'import ' + node.value]
+    if (node.kind == 'Throw'):
+        string[] lines = [indent + 'throw']
+        lines.push(indent + '  value')
+        string[] value_lines = lower_value_lines(node.children[0], indent + '    ')
+        for (string line in value_lines):
+            lines.push(line)
+        return lines
+    if (node.kind == 'FieldDecl'):
+        return [indent + 'field ' + node.value]
+    if (node.kind == 'EnumValue'):
+        return [indent + 'value ' + node.value]
+    if (node.kind == 'RecordDecl'):
+        string[] lines = [indent + 'record ' + node.value]
+        for (Node child in node.children):
+            lines.push(lower_statement_lines(child, indent + '  ')[0])
+        return lines
+    if (node.kind == 'EnumDecl'):
+        string[] lines = [indent + 'enum ' + node.value]
+        for (Node child in node.children):
+            lines.push(lower_statement_lines(child, indent + '  ')[0])
+        return lines
+    if (node.kind == 'Function' || node.kind == 'CachedFunction'):
+        string head = 'func '
+        if (node.kind == 'CachedFunction'):
+            head = 'cached func '
+        string[] lines = [indent + head + node.value]
+        lines.push(indent + '  params')
+        Node[] body_nodes = []
+        for (Node child in node.children):
+            if (child.kind == 'Param'):
+                lines.push(indent + '    param ' + child.value)
+            else:
+                body_nodes.push(child)
+        string[] body_lines = []
+        if (is_linear_body(body_nodes)):
+            body_lines = [indent + '  entry']
+            LinearListResult linear = lower_linear_statement_list(body_nodes, 0, 1, indent + '    ', '', '')
+            body_lines = append_lines(body_lines, linear.lines)
+        else:
+            body_lines = lower_block_lines(body_nodes, indent + '  ')
+        for (string line in body_lines):
+            lines.push(line)
+        return lines
+    if (node.kind == 'While'):
+        string[] lines = [indent + 'while']
+        lines.push(indent + '  cond')
+        string[] condition_lines = lower_value_lines(node.children[0], indent + '    ')
+        for (string line in condition_lines):
+            lines.push(line)
+        lines.push(indent + '  body')
+        Node[] body_nodes = []
+        int index = 1
+        while (index < node.children.length()):
+            body_nodes.push(node.children[index])
+            index += 1
+        string[] body_lines = lower_block_lines(body_nodes, indent + '    ')
+        for (string line in body_lines):
+            lines.push(line)
+        return lines
+    if (node.kind == 'For'):
+        string[] lines = [indent + 'for']
+        lines.push(indent + '  init')
+        string[] init_lines = lower_statement_lines(node.children[0], indent + '    ')
+        for (string line in init_lines):
+            lines.push(line)
+        lines.push(indent + '  cond')
+        string[] condition_lines = lower_value_lines(node.children[1], indent + '    ')
+        for (string line in condition_lines):
+            lines.push(line)
+        lines.push(indent + '  update')
+        string[] update_lines = lower_statement_lines(node.children[2], indent + '    ')
+        for (string line in update_lines):
+            lines.push(line)
+        lines.push(indent + '  body')
+        string[] body_lines = lower_block_lines(lowerer_for_body_nodes(node), indent + '    ')
+        for (string line in body_lines):
+            lines.push(line)
+        return lines
+    if (node.kind == 'ForEach'):
+        string[] lines = [indent + 'foreach ' + node.value]
+        lines.push(indent + '  iterable')
+        string[] iterable_lines = lower_value_lines(node.children[0], indent + '    ')
+        for (string line in iterable_lines):
+            lines.push(line)
+        lines.push(indent + '  body')
+        Node[] body_nodes = []
+        int index = 1
+        while (index < node.children.length()):
+            body_nodes.push(node.children[index])
+            index += 1
+        string[] body_lines = lower_block_lines(body_nodes, indent + '    ')
+        for (string line in body_lines):
+            lines.push(line)
+        return lines
+    if (node.kind == 'Try'):
+        string[] lines = [indent + 'try']
+        lines.push(indent + '  body')
+        string[] try_lines = lower_block_lines(try_body_nodes(node), indent + '    ')
+        for (string line in try_lines):
+            lines.push(line)
+        Node catch_part = catch_node(node)
+        lines.push(indent + '  catch ' + catch_part.value)
+        string[] catch_lines = lower_block_lines(catch_part.children, indent + '    ')
+        for (string line in catch_lines):
+            lines.push(line)
+        return lines
+    if (node.kind == 'Switch'):
+        string[] lines = [indent + 'switch']
+        lines.push(indent + '  subject')
+        string[] subject_lines = lower_value_lines(node.children[0], indent + '    ')
+        for (string line in subject_lines):
+            lines.push(line)
+        for (Node child : tail_nodes(node.children, 1)):
+            if (child.kind == 'Case'):
+                lines.push(indent + '  case')
+                string[] case_value_lines = lower_value_lines(child.children[0], indent + '    ')
+                for (string line in case_value_lines):
+                    lines.push(line)
+                lines.push(indent + '    body')
+                string[] body_lines = lower_block_lines(switch_case_body(child), indent + '      ')
+                for (string line in body_lines):
+                    lines.push(line)
+            else if (child.kind == 'Default'):
+                lines.push(indent + '  default')
+                string[] body_lines = lower_block_lines(child.children, indent + '    ')
+                for (string line in body_lines):
+                    lines.push(line)
+        return lines
+    if (node.kind == 'If'):
+        string[] lines = [indent + 'if']
+        lines.push(indent + '  cond')
+        string[] condition_lines = lower_value_lines(node.children[0], indent + '    ')
+        for (string line in condition_lines):
+            lines.push(line)
+        lines.push(indent + '  then')
+        Node[] then_nodes = []
+        Node[] else_nodes = []
+        int index = 1
+        while (index < node.children.length()):
+            Node child = node.children[index]
+            if (child.kind == 'Else'):
+                else_nodes = child.children
+            else:
+                then_nodes.push(child)
+            index += 1
+        string[] then_lines = lower_block_lines(then_nodes, indent + '    ')
+        for (string line in then_lines):
+            lines.push(line)
+        if (!else_nodes.is_empty()):
+            lines.push(indent + '  else')
+            string[] else_lines = lower_block_lines(else_nodes, indent + '    ')
+            for (string line in else_lines):
+                lines.push(line)
+        return lines
+    return [indent + '<unsupported-stmt ' + node.kind + '>']
+
+string[] lower_program(Node program):
+    string[] lines = ['program']
+    for (Node child in program.children):
+        string[] child_lines = lower_statement_lines(child, '  ')
+        for (string line in child_lines):
+            lines.push(line)
+    return lines
+
+string[] lower_source(string source):
+    Node program = parse_source(source)
+    return lower_program(program)
+
+BindingIR[] collect_function_locals(LinearInstruction[] instructions):
+    BindingIR[] locals = []
+    for (LinearInstruction op : instructions):
+        if (op.kind == 'set' || op.kind == 'catch'):
+            BindingIR local_decl = ir_parse_binding_decl(op.detail)
+            bool seen = false
+            for (BindingIR existing : locals):
+                if (existing.type_name == local_decl.type_name && existing.name == local_decl.name):
+                    seen = true
+            if (!seen):
+                locals.push(local_decl)
+    return locals
+
+bool top_level_function_starts(Token[] tokens, int index):
+    if (!(token_at(tokens, index).kind == 'KEYWORD' || token_at(tokens, index).kind == 'IDENTIFIER')):
+        return false
+    if (!could_start_type(tokens, index)):
+        return false
+    int after_type = type_end(tokens, index)
+    if (after_type + 1 >= tokens.length()):
+        return false
+    if (token_at(tokens, after_type).kind != 'IDENTIFIER'):
+        return false
+    if (!token_is(token_at(tokens, after_type + 1), 'SYMBOL', '(')):
+        return false
+    int current = after_type + 2
+    int paren_depth = 1
+    while (current < tokens.length()):
+        Token token = token_at(tokens, current)
+        if (token_is(token, 'SYMBOL', '(')):
+            paren_depth += 1
+        else if (token_is(token, 'SYMBOL', ')')):
+            paren_depth -= 1
+            if (paren_depth == 0):
+                current += 1
+                break
+        current += 1
+    if (paren_depth != 0 || current >= tokens.length()):
+        return false
+    return token_is(token_at(tokens, current), 'SYMBOL', ':') || token_is(token_at(tokens, current), 'SYMBOL', '{')
+
+LoweredFunctionDeclIR lower_function_declaration_from_parts(FunctionDeclParseResult function_decl):
+    BindingIR[] params = []
+    for (string param_binding in function_decl.params):
+        params.push(ir_parse_binding_decl(param_binding))
+    if (!is_linear_body(function_decl.body_nodes)):
+        throw 'shared bootstrap IR currently requires linear entry lowering'
+    LinearIRListResult linear = lower_linear_statement_list_ir(function_decl.body_nodes, 0, 1, '', '')
+    BindingIR[] locals = collect_function_locals(linear.instructions)
+    BlockIR[] blocks = linear_instructions_to_blocks(linear.instructions)
+    string header = 'func ' + function_decl.return_type + ' ' + function_decl.name
+    if (function_decl.is_cached):
+        header = 'cached func ' + function_decl.return_type + ' ' + function_decl.name
+    return LoweredFunctionDeclIR(ParsedFunction(header, function_decl.name.substring(0), function_decl.return_type.substring(0), params, locals, blocks), function_decl.next_index)
+
+TerminatorIR empty_terminator():
+    string[] empty_args = []
+    return TerminatorIR('', empty_args)
+
+TerminatorIR lower_block_terminator(LinearInstruction op):
+    if (op.kind == 'jump'):
+        return TerminatorIR('jump', [op.detail])
+    if (op.kind == 'branch_if'):
+        return TerminatorIR('branch_if', op.args)
+    if (op.kind == 'return'):
+        return TerminatorIR('return', op.args)
+    if (op.kind == 'throw'):
+        return TerminatorIR('throw', op.args)
+    throw 'unsupported block terminator instruction: ' + op.kind
+
+BlockIR make_block(string label, LinearInstruction[] instructions, TerminatorIR terminator):
+    return BlockIR(label, instructions, terminator)
+
+BlockIR[] linear_instructions_to_blocks(LinearInstruction[] instructions):
+    BlockIR[] blocks = []
+    string current_label = 'entry'
+    LinearInstruction[] current_instructions = []
+    TerminatorIR current_terminator = empty_terminator()
+
+    for (LinearInstruction op : instructions):
+        if (op.kind == 'label'):
+            if (current_label != '' && (current_label != 'entry' || !current_instructions.is_empty() || current_terminator.kind != '')):
+                blocks.push(make_block(current_label, current_instructions, current_terminator))
+            current_label = op.detail.substring(0)
+            current_instructions = []
+            current_terminator = empty_terminator()
+            continue
+        if (current_label == ''):
+            continue
+        if (op.kind == 'jump' || op.kind == 'branch_if' || op.kind == 'return' || op.kind == 'throw'):
+            current_terminator = lower_block_terminator(op)
+            blocks.push(make_block(current_label, current_instructions, current_terminator))
+            current_label = ''
+            current_instructions = []
+            current_terminator = empty_terminator()
+            continue
+        current_instructions.push(op)
+    if (current_label != '' && (current_label != 'entry' || !current_instructions.is_empty() || current_terminator.kind != '')):
+        blocks.push(make_block(current_label, current_instructions, current_terminator))
+    return blocks
+
+ProgramIR lower_program_ir(Node program):
+    ImportDeclIR[] imports = []
+    GlobalDeclIR[] globals = []
+    RecordDeclIR[] records = []
+    EnumDeclIR[] enums = []
+    ParsedFunction[] functions = []
+    for (Node child : program.children):
+        if (child.kind == 'ImportDecl'):
+            imports.push(ImportDeclIR('import ' + child.value))
+        else if (child.kind == 'VarDecl'):
+            TempIRResult value = lower_linear_value_ir(child.children[0], 0)
+            globals.push(GlobalDeclIR('global ' + child.value, value.instructions, value.name))
+        else if (child.kind == 'RecordDecl'):
+            string[] fields = []
+            for (Node field_decl : child.children):
+                fields.push('field ' + field_decl.value)
+            records.push(RecordDeclIR('record ' + child.value, fields))
+        else if (child.kind == 'EnumDecl'):
+            string[] values = []
+            for (Node value_decl : child.children):
+                values.push('value ' + value_decl.value)
+            enums.push(EnumDeclIR('enum ' + child.value, values))
+        else if (child.kind == 'Function' || child.kind == 'CachedFunction'):
+            BindingIR[] params = []
+            Node[] body_nodes = []
+            for (Node fn_child : child.children):
+                if (fn_child.kind == 'Param'):
+                    params.push(ir_parse_binding_decl(fn_child.value))
+                else:
+                    body_nodes.push(fn_child)
+            if (!is_linear_body(body_nodes)):
+                throw 'shared bootstrap IR currently requires linear entry lowering'
+            LinearIRListResult linear = lower_linear_statement_list_ir(body_nodes, 0, 1, '', '')
+            BindingIR[] locals = collect_function_locals(linear.instructions)
+            BlockIR[] blocks = linear_instructions_to_blocks(linear.instructions)
+            string header = 'func ' + child.value
+            if (child.kind == 'CachedFunction'):
+                header = 'cached func ' + child.value
+            BindingIR signature_binding = ir_parse_binding_decl(child.value)
+            functions.push(ParsedFunction(header, signature_binding.name.substring(0), signature_binding.type_name.substring(0), params, locals, blocks))
+        else:
+            throw 'unsupported top-level node in shared bootstrap IR: ' + child.kind
+    return ProgramIR(imports, globals, records, enums, functions)
+
+ProgramIR lower_tokens_ir(Token[] tokens):
+    ImportDeclIR[] imports = []
+    GlobalDeclIR[] globals = []
+    RecordDeclIR[] records = []
+    EnumDeclIR[] enums = []
+    ParsedFunction[] functions = []
+
+    int current = skip_statement_separators(tokens, 0)
+    while (!token_is(token_at(tokens, current), 'EOF', '')):
+        Token token = token_at(tokens, current)
+        if (token_is(token, 'KEYWORD', 'cached')):
+            FunctionDeclParseResult function_decl = parse_function_declaration_parts(tokens, current + 1, true)
+            LoweredFunctionDeclIR lowered_function = lower_function_declaration_from_parts(function_decl)
+            functions.push(lowered_function.function_ir)
+            current = skip_statement_separators(tokens, lowered_function.next_index)
+            continue
+        if (top_level_function_starts(tokens, current)):
+            FunctionDeclParseResult function_decl = parse_function_declaration_parts(tokens, current, false)
+            LoweredFunctionDeclIR lowered_function = lower_function_declaration_from_parts(function_decl)
+            functions.push(lowered_function.function_ir)
+            current = skip_statement_separators(tokens, lowered_function.next_index)
+            continue
+        ParseResult statement = parse_statement(tokens, current)
+        Node child = statement.node
+        if (child.kind == 'ImportDecl'):
+            imports.push(ImportDeclIR('import ' + child.value))
+        else if (child.kind == 'VarDecl'):
+            TempIRResult value = lower_linear_value_ir(child.children[0], 0)
+            globals.push(GlobalDeclIR('global ' + child.value, value.instructions, value.name))
+        else if (child.kind == 'RecordDecl'):
+            string[] fields = []
+            for (Node field_decl : child.children):
+                fields.push('field ' + field_decl.value)
+            records.push(RecordDeclIR('record ' + child.value, fields))
+        else if (child.kind == 'EnumDecl'):
+            string[] values = []
+            for (Node value_decl : child.children):
+                values.push('value ' + value_decl.value)
+            enums.push(EnumDeclIR('enum ' + child.value, values))
+        else if (child.kind == 'Function' || child.kind == 'CachedFunction'):
+            BindingIR[] params = []
+            Node[] body_nodes = []
+            for (Node fn_child : child.children):
+                if (fn_child.kind == 'Param'):
+                    params.push(ir_parse_binding_decl(fn_child.value))
+                else:
+                    body_nodes.push(fn_child)
+            if (!is_linear_body(body_nodes)):
+                throw 'shared bootstrap IR currently requires linear entry lowering'
+            LinearIRListResult linear = lower_linear_statement_list_ir(body_nodes, 0, 1, '', '')
+            BindingIR[] locals = collect_function_locals(linear.instructions)
+            BlockIR[] blocks = linear_instructions_to_blocks(linear.instructions)
+            string header = 'func ' + child.value
+            if (child.kind == 'CachedFunction'):
+                header = 'cached func ' + child.value
+            BindingIR signature_binding = ir_parse_binding_decl(child.value)
+            functions.push(ParsedFunction(header, signature_binding.name.substring(0), signature_binding.type_name.substring(0), params, locals, blocks))
+        else:
+            throw 'unsupported top-level node in shared bootstrap IR: ' + child.kind
+        current = skip_statement_separators(tokens, statement.next_index)
+    return ProgramIR(imports, globals, records, enums, functions)
+
+ProgramIR lower_source_ir(string source):
+    Token[] tokens = lex_source(source)
+    return lower_tokens_ir(tokens)

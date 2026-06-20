@@ -1,0 +1,137 @@
+# Copyright 2026 Torbjörn Nilsson
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import raylib;
+
+int main(string[] args):
+    const int SCREEN_WIDTH = 640
+    const int SCREEN_HEIGHT = 360
+    const int PADDLE_WIDTH = 100
+    const int PADDLE_HEIGHT = 16
+    const int PADDLE_Y = 320
+    const int PADDLE_SPEED = 6
+    const int BALL_RADIUS = 10
+    const int BASE_BALL_DX = 3
+    const int BASE_BALL_DY = 4
+    const int MISS_VOLUME = 30
+    const int HIT_VOLUME = 55
+    const int WALL_VOLUME = 40
+    int paddle_x = 270
+    int ball_x = 320
+    int ball_y = 40
+    int ball_dx = 3
+    int ball_dy = 4
+    int score = 0
+    int high_score = 0
+    int background = 0
+    int noise = 0
+    int hit = 0
+    int wall = 0
+
+    raylib.InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, 'tb raylib')
+    raylib.InitAudioDevice()
+    background = raylib.LoadTexture('assets/background_space.png')
+    noise = raylib.LoadSound('assets/white_noise.wav')
+    hit = raylib.LoadSound('assets/hit_tone.wav')
+    wall = raylib.LoadSound('assets/wall_tone.wav')
+    raylib.SetSoundVolume(noise, MISS_VOLUME)
+    raylib.SetSoundVolume(hit, HIT_VOLUME)
+    raylib.SetSoundVolume(wall, WALL_VOLUME)
+    raylib.SetTargetFPS(60)
+    while (!raylib.WindowShouldClose()):
+        if (raylib.IsKeyDown(raylib.KEY_LEFT)):
+            paddle_x -= PADDLE_SPEED
+        if (raylib.IsKeyDown(raylib.KEY_RIGHT)):
+            paddle_x += PADDLE_SPEED
+
+        if (paddle_x < 0):
+            paddle_x = 0
+        if (paddle_x + PADDLE_WIDTH > raylib.GetScreenWidth()):
+            paddle_x = raylib.GetScreenWidth() - PADDLE_WIDTH
+
+        ball_x += ball_dx
+        ball_y += ball_dy
+
+        if (ball_x - BALL_RADIUS <= 0):
+            ball_x = BALL_RADIUS
+            ball_dx = -ball_dx
+            raylib.PlaySound(wall)
+        if (ball_x + BALL_RADIUS >= raylib.GetScreenWidth()):
+            ball_x = raylib.GetScreenWidth() - BALL_RADIUS
+            ball_dx = -ball_dx
+            raylib.PlaySound(wall)
+        if (ball_y - BALL_RADIUS <= 0):
+            ball_y = BALL_RADIUS
+            ball_dy = -ball_dy
+            raylib.PlaySound(wall)
+
+        if (ball_dy > 0):
+            if (ball_y + BALL_RADIUS >= PADDLE_Y):
+                if (ball_y - BALL_RADIUS <= PADDLE_Y + PADDLE_HEIGHT):
+                    if (ball_x >= paddle_x):
+                        if (ball_x <= paddle_x + PADDLE_WIDTH):
+                            ball_y = PADDLE_Y - BALL_RADIUS
+                            ball_dy = -ball_dy
+                            raylib.PlaySound(hit)
+                            if (ball_dy < 10):
+                                if (ball_dy < 0):
+                                    ball_dy -= 1
+                                else:
+                                    ball_dy += 1
+                            if (ball_x < paddle_x + (PADDLE_WIDTH / 3)):
+                                ball_dx = -4
+                            else:
+                                if (ball_x > paddle_x + ((PADDLE_WIDTH * 2) / 3)):
+                                    ball_dx = 4
+                                else:
+                                    if (ball_dx < 0):
+                                        ball_dx = -2
+                                    else:
+                                        ball_dx = 2
+                            if (ball_dx < 0):
+                                if (-ball_dx < 10):
+                                    ball_dx -= 1
+                            else:
+                                if (ball_dx < 10):
+                                    ball_dx += 1
+                            score += 1
+                            if (score > high_score):
+                                high_score = score
+
+        if (ball_y - BALL_RADIUS > raylib.GetScreenHeight()):
+            raylib.PlaySound(noise)
+            paddle_x = (raylib.GetScreenWidth() - PADDLE_WIDTH) / 2
+            ball_x = raylib.GetScreenWidth() / 2
+            ball_y = 40
+            ball_dx = BASE_BALL_DX
+            ball_dy = BASE_BALL_DY
+            score = 0
+
+        raylib.BeginDrawing()
+        raylib.ClearBackground(raylib.BLACK)
+        raylib.DrawTexture(background, 0, 0, raylib.WHITE)
+        raylib.DrawText('move with arrows and keep the ball alive', 20, 20, 24, raylib.WHITE)
+        raylib.DrawText('score: ' + score, 20, 52, 20, raylib.WHITE)
+        raylib.DrawText('best: ' + high_score, 20, 78, 20, raylib.WHITE)
+        raylib.DrawLine(0, PADDLE_Y + PADDLE_HEIGHT + 20, raylib.GetScreenWidth(), PADDLE_Y + PADDLE_HEIGHT + 20, raylib.LIGHTGRAY)
+        raylib.DrawRectangle(paddle_x, PADDLE_Y, PADDLE_WIDTH, PADDLE_HEIGHT, raylib.BLUE)
+        raylib.DrawCircle(ball_x, ball_y, BALL_RADIUS, raylib.RED)
+        raylib.EndDrawing()
+    raylib.UnloadTexture(background)
+    raylib.UnloadSound(wall)
+    raylib.UnloadSound(hit)
+    raylib.UnloadSound(noise)
+    raylib.CloseAudioDevice()
+    raylib.CloseWindow()
+    return 0

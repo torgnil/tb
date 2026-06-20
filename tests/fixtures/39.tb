@@ -1,0 +1,92 @@
+bool column_has_content(string[] lines, int column) {
+    for (string line : lines) {
+        if (line[column] != ' ') {
+            return true;
+        }
+    }
+    return false;
+}
+
+int read_digits(string line, int start, int end) {
+    string digits = '';
+
+    for (int column : range(start, end)) {
+        string ch = line[column];
+        digits = digits + ch.replace(' ', '');
+    }
+
+    return digits.to_int();
+}
+
+string read_operator(string line, int start, int end) {
+    for (int column : range(start, end)) {
+        string ch = line[column];
+        if (ch != ' ') {
+            return ch;
+        }
+    }
+    return '+';
+}
+
+int solve_problem(string[] lines, int start, int end) {
+    int operator_row = lines.length() - 1;
+    string op = read_operator(lines[operator_row], start, end);
+    int subtotal = 0;
+
+    for (int row : range(operator_row)) {
+        int value = read_digits(lines[row], start, end);
+
+        if (row == 0) {
+            subtotal = value;
+        } else {
+            if (op == '*') {
+                subtotal = subtotal * value;
+            } else {
+                subtotal += value;
+            }
+        }
+    }
+
+    return subtotal;
+}
+
+int find_segment_end(string[] lines, int start, int width) {
+    for (int column : range(start, width)) {
+        if (!column_has_content(lines, column)) {
+            return column;
+        }
+    }
+    return width;
+}
+
+int max_width(string[] lines) {
+    int width = 0;
+
+    for (string line : lines) {
+        int line_width = line.length();
+        if (line_width > width) {
+            width = line_width;
+        }
+    }
+
+    return width;
+}
+
+int main(string[] args) {
+    string[] lines = read_lines('test-files/39.in');
+    int width = max_width(lines);
+    int total = 0;
+
+    for (int column : range(width)) {
+        bool has_content = column_has_content(lines, column);
+        bool starts_problem = has_content && (column == 0 || !column_has_content(lines, column - 1));
+
+        if (starts_problem) {
+            int end = find_segment_end(lines, column, width);
+            total += solve_problem(lines, column, end);
+        }
+    }
+
+    print(total);
+    return 0;
+}

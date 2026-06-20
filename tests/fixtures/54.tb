@@ -1,0 +1,98 @@
+record Point(int x, int y, int z);
+record Edge(int a, int b, int distance);
+
+int point_distance(Point left, Point right) {
+    int dx = left.x - right.x;
+    int dy = left.y - right.y;
+    int dz = left.z - right.z;
+    return dx * dx + dy * dy + dz * dz;
+}
+
+Edge[] build_edges(Point[] points) {
+    Edge[] edges = [];
+    for (int i : range(points.length())) {
+        Point left = points[i];
+        for (int j : range(i + 1, points.length())) {
+            Point right = points[j];
+            edges.push(Edge(i, j, point_distance(left, right)));
+        }
+    }
+    return edges;
+}
+
+int find_root(int[] parents, int node) {
+    if (parents[node] != node) {
+        parents[node] = find_root(parents, parents[node]);
+    }
+    return parents[node];
+}
+
+bool unite(int[] parents, int[] sizes, int left, int right) {
+    int left_root = find_root(parents, left);
+    int right_root = find_root(parents, right);
+    if (left_root == right_root) {
+        return false;
+    }
+    if (sizes[left_root] < sizes[right_root]) {
+        int temp = left_root;
+        left_root = right_root;
+        right_root = temp;
+    }
+    parents[right_root] = left_root;
+    sizes[left_root] = sizes[left_root] + sizes[right_root];
+    return true;
+}
+
+int[] collect_group_sizes(int[] parents, int[] sizes) {
+    int[] groups = [];
+    for (int i : range(parents.length())) {
+        int root = find_root(parents, i);
+        if (root == i) {
+            groups.push(sizes[i]);
+        }
+    }
+    return groups;
+}
+
+int main(string[] args) {
+    const int PART_1_CONNECTIONS = 10;
+    const string[] LINES = read_lines('test-files/54.in');
+    Point[] points = [];
+    for (string line : LINES) {
+        string[] parts = line.split(',');
+        points.push(Point(parts[0].to_int(), parts[1].to_int(), parts[2].to_int()));
+    }
+    Edge[] edges = build_edges(points);
+    edges.sort((Edge left, Edge right) -> left.distance - right.distance);
+
+    int[] parents = [];
+    int[] sizes = [];
+    for (int i : range(points.length())) {
+        parents.push(i);
+        sizes.push(1);
+    }
+
+    int components = points.length();
+    int part_1 = 0;
+    int part_2 = 0;
+
+    for (int i : range(edges.length())) {
+        Edge edge = edges[i];
+        if (unite(parents, sizes, edge.a, edge.b)) {
+            components -= 1;
+        }
+        if (i == PART_1_CONNECTIONS - 1) {
+            int[] groups = collect_group_sizes(parents, sizes);
+            groups.sort((int a, int b) -> b - a);
+            part_1 = groups[0] * groups[1] * groups[2];
+        }
+        if (components == 1) {
+            part_2 = points[edge.a].x * points[edge.b].x;
+            break;
+        }
+    }
+
+    print(part_1);
+    print(part_2);
+    return 0;
+}

@@ -1,0 +1,44 @@
+record Pos(int r, int c);
+
+const string[] LINES = read_lines('test-files/52.in');
+const int WIDTH = LINES[0].length();
+const int HEIGHT = LINES.length();
+set<int> splits = {};
+
+int encode(Pos pos) {
+    return pos.r * WIDTH + pos.c;
+}
+
+cached int solve(Pos pos) {
+    Pos down = Pos(pos.r + 1, pos.c);
+    if (down.r == HEIGHT) {
+        return 1;
+    }
+
+    int result = 0;
+    string tile = LINES[down.r][down.c];
+
+    if (tile == '.') {
+        result = solve(down);
+    }
+
+    if (tile == '^') {
+        splits.add(encode(down));
+        if (down.c > 0 and LINES[down.r][down.c - 1] == '.') {
+            result += solve(Pos(down.r, down.c - 1));
+        }
+        if (down.c + 1 < WIDTH and LINES[down.r][down.c + 1] == '.') {
+            result += solve(Pos(down.r, down.c + 1));
+        }
+    }
+
+    return result;
+}
+
+int main(string[] args) {
+    int part_2 = solve(Pos(0, WIDTH / 2));
+    int part_1 = splits.length();
+    print(part_1);
+    print(part_2);
+    return 0;
+}

@@ -1,0 +1,35 @@
+int normalize_position(int position):
+    while (position < 0):
+        position += 100
+    while (position >= 100):
+        position -= 100
+    return position
+
+int main(string[] args):
+    if (args.length() < 2):
+        print('Usage: ' + args[0] + ' <input_file_path>')
+        return 1
+    string path = args[1]
+
+    string[] lines = read_lines(path)
+    int position = 50
+    int password = 0
+
+    for (string raw_line : lines):
+        string line = raw_line.trim()
+        if (line.length() > 0):
+            string direction = line[0]
+            int distance = to_int(substring(line, 1))
+
+            if (direction == 'L'):
+                position -= distance
+            else:
+                position += distance
+
+            position = normalize_position(position)
+
+            if (position == 0):
+                password += 1
+
+    print(password)
+    return 0

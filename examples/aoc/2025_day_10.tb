@@ -1,0 +1,81 @@
+int find_char(string text, string needle, int start, int end):
+    int i = start
+    while (i < end):
+        if (text[i] == needle):
+            return i
+        i++
+    return -1
+
+int parse_mask_from_diagram(string diagram):
+    int mask = 0
+    for (int i : range(diagram.length())):
+        if (diagram[i] == '#'):
+            mask = mask | (1 << i)
+    return mask
+
+int parse_button_mask(string content):
+    string trimmed = content.trim()
+    if (trimmed.length() == 0):
+        return 0
+
+    int mask = 0
+    string[] parts = trimmed.split(',')
+    for (string part : parts):
+        string value = part.trim()
+        if (value.length() > 0):
+            mask = mask | (1 << to_int(value))
+    return mask
+
+int solve_machine(string line):
+    int diagram_start = line.index_of('[')
+    int diagram_end = line.index_of(']')
+    string diagram = line[diagram_start + 1:diagram_end]
+    int target = parse_mask_from_diagram(diagram)
+
+    int stop = line.index_of('{')
+    if (stop < 0):
+        stop = line.length()
+
+    int[] buttons = []
+    int search_from = diagram_end + 1
+    while (true):
+        int button_start = find_char(line, '(', search_from, stop)
+        if (button_start < 0):
+            break
+
+        int button_end = find_char(line, ')', button_start + 1, stop)
+        buttons.push(parse_button_mask(line[button_start + 1:button_end]))
+        search_from = button_end + 1
+
+    int button_count = buttons.length()
+    int subset_count = 1 << button_count
+    int best = -1
+    for (int subset : range(subset_count)):
+        int state = 0
+        for (int i : range(button_count)):
+            if (((subset >> i) & 1) == 1):
+                state = state ^ buttons[i]
+
+        if (state == target):
+            int presses = popcount(subset)
+            if (best < 0 || presses < best):
+                best = presses
+
+    return best
+
+int main(string[] args):
+    if (args.length() < 2):
+        print('Usage: ' + args[0] + ' <input_file_path>')
+        return 1
+    string path = args[1]
+
+    string[] lines = read_lines(path)
+    int total = 0
+    for (string line : lines):
+        string trimmed = line.trim()
+        if (trimmed.length() == 0):
+            continue
+        total += solve_machine(trimmed)
+
+    print(total)
+    return 0

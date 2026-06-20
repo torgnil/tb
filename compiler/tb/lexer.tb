@@ -1,0 +1,547 @@
+# Copyright 2026 Torbjörn Nilsson
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+record Token(string kind, string value, int line, int column);
+record LexResult(Token token, int next_index);
+record Depths(int paren, int bracket, int brace);
+record StripLineResult(string line, bool in_block_comment, bool in_string);
+
+int LEXER_STAT_SOURCE_BYTES = 0;
+int LEXER_STAT_SPLIT_LINES = 0;
+int LEXER_STAT_TOKEN_COUNT = 0;
+int LEXER_STAT_TOKEN_VALUE_BYTES = 0;
+int LEXER_STAT_STRING_APPEND_OPS = 0;
+int LEXER_STAT_STRING_APPEND_BYTES = 0;
+int LEXER_STAT_LINE_MERGE_OPS = 0;
+int LEXER_STAT_LINE_MERGE_BYTES = 0;
+int LEXER_STAT_CHAR_AT_OPS = 0;
+int LEXER_STAT_SUBSTRING_OPS = 0;
+int LEXER_STAT_SUBSTRING_BYTES = 0;
+
+const string[] KEYWORDS = [
+    'import', 'int', 'string', 'bool', 'num', 'void', 'const', 'record', 'enum',
+    'if', 'else', 'while', 'for', 'in', 'not', 'and', 'or', 'switch', 'case', 'default', 'return', 'break', 'continue', 'cached',
+    'throw', 'try', 'catch', 'true', 'false'
+];
+
+const string[] THREE_CHAR_SYMBOLS = [
+    '<<=', '>>='
+];
+
+const string[] TWO_CHAR_SYMBOLS = [
+    '==', '!=', '<=', '>=', '&&', '||', '->', '<<', '>>',
+    '+=', '-=', '*=', '/=', '%=', '|=', '&=', '^=', '++', '--'
+];
+
+const string[] ONE_CHAR_SYMBOLS = [
+    '(', ')', '{', '}', '[', ']', ',', '.', ':', ';',
+    '+', '-', '*', '/', '%', '!', '=', '<', '>', '?', '^', '|', '&'
+];
+
+void reset_lexer_stats():
+    LEXER_STAT_SOURCE_BYTES = 0
+    LEXER_STAT_SPLIT_LINES = 0
+    LEXER_STAT_TOKEN_COUNT = 0
+    LEXER_STAT_TOKEN_VALUE_BYTES = 0
+    LEXER_STAT_STRING_APPEND_OPS = 0
+    LEXER_STAT_STRING_APPEND_BYTES = 0
+    LEXER_STAT_LINE_MERGE_OPS = 0
+    LEXER_STAT_LINE_MERGE_BYTES = 0
+    LEXER_STAT_CHAR_AT_OPS = 0
+    LEXER_STAT_SUBSTRING_OPS = 0
+    LEXER_STAT_SUBSTRING_BYTES = 0
+
+void lexer_stat_append(int added_bytes):
+    LEXER_STAT_STRING_APPEND_OPS += 1
+    LEXER_STAT_STRING_APPEND_BYTES += added_bytes
+
+string lexer_char_at(string line, int index):
+    LEXER_STAT_CHAR_AT_OPS += 1
+    return line.char_at(index)
+
+string lexer_substring(string line, int start, int end):
+    LEXER_STAT_SUBSTRING_OPS += 1
+    LEXER_STAT_SUBSTRING_BYTES += end - start
+    return line.substring(start, end)
+
+void lexer_stat_token(Token token):
+    LEXER_STAT_TOKEN_COUNT += 1
+    LEXER_STAT_TOKEN_VALUE_BYTES += token.value.length()
+
+string[] lexer_stats_lines():
+    return [
+        'source_bytes=' + LEXER_STAT_SOURCE_BYTES,
+        'split_lines=' + LEXER_STAT_SPLIT_LINES,
+        'token_count=' + LEXER_STAT_TOKEN_COUNT,
+        'token_value_bytes=' + LEXER_STAT_TOKEN_VALUE_BYTES,
+        'string_append_ops=' + LEXER_STAT_STRING_APPEND_OPS,
+        'string_append_bytes=' + LEXER_STAT_STRING_APPEND_BYTES,
+        'line_merge_ops=' + LEXER_STAT_LINE_MERGE_OPS,
+        'line_merge_bytes=' + LEXER_STAT_LINE_MERGE_BYTES,
+        'char_at_ops=' + LEXER_STAT_CHAR_AT_OPS,
+        'substring_ops=' + LEXER_STAT_SUBSTRING_OPS,
+        'substring_bytes=' + LEXER_STAT_SUBSTRING_BYTES
+    ]
+
+bool is_identifier_start(string ch):
+    return ch == '_' || ch.is_alpha()
+
+bool is_identifier_part(string ch):
+    return is_identifier_start(ch) || ch.is_digit()
+
+string word_kind(string value):
+    if (value.length() == 2):
+        if (value == 'if' || value == 'in'):
+            return 'KEYWORD'
+    else if (value.length() == 3):
+        if (value == 'int' || value == 'num' || value == 'for' || value == 'and' || value == 'not' || value == 'try'):
+            return 'KEYWORD'
+    else if (value.length() == 4):
+        if (value == 'bool' || value == 'void' || value == 'else' || value == 'case' || value == 'enum' || value == 'true'):
+            return 'KEYWORD'
+    else if (value.length() == 5):
+        if (value == 'const' || value == 'while' || value == 'break' || value == 'throw' || value == 'catch' || value == 'false'):
+            return 'KEYWORD'
+    else if (value.length() == 6):
+        if (value == 'import' || value == 'string' || value == 'record' || value == 'return' || value == 'cached' || value == 'switch'):
+            return 'KEYWORD'
+    else if (value.length() == 7):
+        if (value == 'default'):
+            return 'KEYWORD'
+    else if (value.length() == 8):
+        if (value == 'continue'):
+            return 'KEYWORD'
+    return 'IDENTIFIER'
+
+string lexer_error(int line, int column, string message, string value):
+    return 'Lexer error at ' + line.to_string() + ':' + column.to_string() + ': ' + message + ' [' + value + ']'
+
+string decode_escape(int line, int column, string value):
+    if (value == '\\'):
+        return '\\'
+    if (value == '\''):
+        return '\''
+    if (value == 'n'):
+        return '\n'
+    if (value == 'r'):
+        return '\r'
+    if (value == 't'):
+        return '\t'
+    throw lexer_error(line, column, 'unsupported string escape', value)
+
+string match_symbol(string line, int index):
+    string ch = lexer_char_at(line, index)
+    if (ch == '<'):
+        if (index + 1 < line.length()):
+            string next = lexer_char_at(line, index + 1)
+            if (next == '<'):
+                if (index + 2 < line.length()):
+                    string third = lexer_char_at(line, index + 2)
+                    if (third == '='):
+                        return '<<='
+                return '<<'
+            if (next == '='):
+                return '<='
+        return '<'
+    if (ch == '>'):
+        if (index + 1 < line.length()):
+            string next = lexer_char_at(line, index + 1)
+            if (next == '>'):
+                if (index + 2 < line.length()):
+                    string third = lexer_char_at(line, index + 2)
+                    if (third == '='):
+                        return '>>='
+                return '>>'
+            if (next == '='):
+                return '>='
+        return '>'
+    if (ch == '='):
+        if (index + 1 < line.length()):
+            string next = lexer_char_at(line, index + 1)
+            if (next == '='):
+                return '=='
+        return '='
+    if (ch == '!'):
+        if (index + 1 < line.length()):
+            string next = lexer_char_at(line, index + 1)
+            if (next == '='):
+                return '!='
+        return '!'
+    if (ch == '&'):
+        if (index + 1 < line.length()):
+            string next = lexer_char_at(line, index + 1)
+            if (next == '&'):
+                return '&&'
+            if (next == '='):
+                return '&='
+        return '&'
+    if (ch == '|'):
+        if (index + 1 < line.length()):
+            string next = lexer_char_at(line, index + 1)
+            if (next == '|'):
+                return '||'
+            if (next == '='):
+                return '|='
+        return '|'
+    if (ch == '-'):
+        if (index + 1 < line.length()):
+            string next = lexer_char_at(line, index + 1)
+            if (next == '>'):
+                return '->'
+            if (next == '='):
+                return '-='
+            if (next == '-'):
+                return '--'
+        return '-'
+    if (ch == '+'):
+        if (index + 1 < line.length()):
+            string next = lexer_char_at(line, index + 1)
+            if (next == '='):
+                return '+='
+            if (next == '+'):
+                return '++'
+        return '+'
+    if (ch == '*'):
+        if (index + 1 < line.length()):
+            string next = lexer_char_at(line, index + 1)
+            if (next == '='):
+                return '*='
+        return '*'
+    if (ch == '/'):
+        if (index + 1 < line.length()):
+            string next = lexer_char_at(line, index + 1)
+            if (next == '='):
+                return '/='
+        return '/'
+    if (ch == '%'):
+        if (index + 1 < line.length()):
+            string next = lexer_char_at(line, index + 1)
+            if (next == '='):
+                return '%='
+        return '%'
+    if (ch == '^'):
+        if (index + 1 < line.length()):
+            string next = lexer_char_at(line, index + 1)
+            if (next == '='):
+                return '^='
+        return '^'
+    if (ch == '(' || ch == ')' || ch == '{' || ch == '}' || ch == '[' || ch == ']' || ch == ',' || ch == '.' || ch == ':' || ch == ';' || ch == '?'):
+        return ch.substring(0)
+    return ''
+
+bool int_literal_exceeds_i64(string value):
+    return value.length() > 19
+
+int count_leading_spaces(string line, int line_number):
+    int count = 0
+    while (count < line.length()):
+        string ch = lexer_char_at(line, count)
+        if (ch == ' '):
+            count += 1
+            continue
+        if (ch == '\t'):
+            throw lexer_error(line_number, count + 1, 'tabs are not allowed in indentation', '')
+        break
+    return count
+
+bool is_blank_or_comment_line(string line):
+    int index = 0
+    while (index < line.length()):
+        string ch = lexer_char_at(line, index)
+        if (ch == ' '):
+            index += 1
+            continue
+        if (ch == '\t'):
+            index += 1
+            continue
+        if (ch == '#'):
+            return true
+        if (ch == '/' && index + 1 < line.length() && lexer_char_at(line, index + 1) == '/'):
+            return true
+        return false
+    return true
+
+bool string_literal_continues(string line):
+    if (!line.contains('\'')):
+        return false
+    bool in_string = false
+    int index = 0
+    while (index < line.length()):
+        string ch = lexer_char_at(line, index)
+        if (in_string && ch == '\\'):
+            index += 2
+            continue
+        if (ch == '\''):
+            in_string = !in_string
+        index += 1
+    return in_string
+
+int stack_top(int[] values):
+    return values[values.length() - 1]
+
+bool layout_is_active(Depths depths):
+    return depths.paren == 0 && depths.bracket == 0 && depths.brace == 0
+
+Depths update_depths(Depths depths, Token token):
+    if (token.kind != 'SYMBOL'):
+        return depths
+
+    if (token.value == '('):
+        return Depths(depths.paren + 1, depths.bracket, depths.brace)
+    if (token.value == ')'):
+        if (depths.paren == 0):
+            throw lexer_error(token.line, token.column, 'unmatched closing delimiter', token.value)
+        return Depths(depths.paren - 1, depths.bracket, depths.brace)
+    if (token.value == '['):
+        return Depths(depths.paren, depths.bracket + 1, depths.brace)
+    if (token.value == ']'):
+        if (depths.bracket == 0):
+            throw lexer_error(token.line, token.column, 'unmatched closing delimiter', token.value)
+        return Depths(depths.paren, depths.bracket - 1, depths.brace)
+    if (token.value == '{'):
+        return Depths(depths.paren, depths.bracket, depths.brace + 1)
+    if (token.value == '}'):
+        if (depths.brace == 0):
+            throw lexer_error(token.line, token.column, 'unmatched closing delimiter', token.value)
+        return Depths(depths.paren, depths.bracket, depths.brace - 1)
+
+    return depths
+
+LexResult lex_string(string line, int index, int line_number):
+    int column = index + 1
+    string value = ''
+    int current = index + 1
+
+    while (current < line.length()):
+        string ch = lexer_char_at(line, current)
+
+        if (ch == '\\'):
+            if (current + 1 >= line.length()):
+                throw lexer_error(line_number, current + 1, 'unterminated string escape', '')
+            string escaped = lexer_char_at(line, current + 1)
+            value = value + decode_escape(line_number, current + 1, escaped)
+            lexer_stat_append(1)
+            current += 2
+            continue
+
+        if (ch == '\''):
+            return LexResult(Token('STRING', value, line_number, column), current + 1)
+
+        value = value + ch
+        lexer_stat_append(1)
+        current += 1
+
+    throw lexer_error(line_number, column, 'unterminated string literal', '')
+
+Token[] lex_line(string line, int line_number):
+    Token[] tokens = []
+    int index = 0
+
+    while (index < line.length()):
+        string ch = lexer_char_at(line, index)
+
+        if (ch.is_space()):
+            index += 1
+            continue
+
+        if (line.starts_with_at('//', index) || line.starts_with_at('#', index)):
+            break
+
+        int column = index + 1
+
+        if (is_identifier_start(ch)):
+            int end = index + 1
+            while (end < line.length() && is_identifier_part(lexer_char_at(line, end))):
+                end += 1
+            string value = lexer_substring(line, index, end)
+            Token token = Token(word_kind(value), value, line_number, column)
+            tokens.push(token)
+            lexer_stat_token(token)
+            index = end
+            continue
+
+        if (ch.is_digit()):
+            int end = index + 1
+            while (end < line.length() && lexer_char_at(line, end).is_digit()):
+                end += 1
+            if (end + 1 <= line.length() && end < line.length() && lexer_char_at(line, end) == '.' && end + 1 < line.length() && lexer_char_at(line, end + 1).is_digit()):
+                end += 1
+                while (end < line.length() && lexer_char_at(line, end).is_digit()):
+                    end += 1
+                Token token = Token('NUM', lexer_substring(line, index, end), line_number, column)
+                tokens.push(token)
+                lexer_stat_token(token)
+            else:
+                string value = lexer_substring(line, index, end)
+                if (int_literal_exceeds_i64(value)):
+                    Token token = Token('NUM', value, line_number, column)
+                    tokens.push(token)
+                    lexer_stat_token(token)
+                else:
+                    Token token = Token('INT', value, line_number, column)
+                    tokens.push(token)
+                    lexer_stat_token(token)
+            index = end
+            continue
+
+        if (ch == '\''):
+            LexResult result = lex_string(line, index, line_number)
+            tokens.push(result.token)
+            lexer_stat_token(result.token)
+            index = result.next_index
+            continue
+
+        string symbol = match_symbol(line, index)
+        if (symbol != ''):
+            Token token = Token('SYMBOL', symbol, line_number, column)
+            tokens.push(token)
+            lexer_stat_token(token)
+            index += symbol.length()
+            continue
+
+        throw lexer_error(line_number, column, 'unsupported character', ch)
+
+    return tokens
+
+StripLineResult strip_block_comments_from_line(string line, bool in_block_comment, bool in_string):
+    if (!in_block_comment && !in_string && !line.contains('/*') && !line.contains('*/')):
+        return StripLineResult(line, false, false)
+
+    string result = ''
+    int index = 0
+    while (index < line.length()):
+        if (in_block_comment):
+            if (line.starts_with_at('*/', index)):
+                in_block_comment = false
+                index += 2
+                continue
+            index += 1
+            continue
+
+        string ch = lexer_char_at(line, index)
+        if (in_string):
+            result += ch
+            lexer_stat_append(ch.length())
+            if (ch == '\\' && index + 1 < line.length()):
+                string escaped = lexer_char_at(line, index + 1)
+                result += escaped
+                lexer_stat_append(escaped.length())
+                index += 2
+                continue
+            if (ch == '\''):
+                in_string = false
+            index += 1
+            continue
+
+        if (line.starts_with_at('/*', index)):
+            in_block_comment = true
+            index += 2
+            continue
+
+        result += ch
+        lexer_stat_append(ch.length())
+        if (ch == '\''):
+            in_string = true
+        index += 1
+
+    return StripLineResult(result, in_block_comment, in_string)
+
+Token[] lex_source_lines(string[] lines):
+    Token[] tokens = []
+    if (lines.is_empty()):
+        tokens.push(Token('EOF', '', 1, 1))
+        return tokens
+
+    int line_number = 1
+    int[] indent_stack = [0]
+    Depths depths = Depths(0, 0, 0)
+    bool in_block_comment = false
+    bool in_string = false
+
+    int physical_index = 0
+    while (physical_index < lines.length()):
+        StripLineResult stripped_line = strip_block_comments_from_line(lines[physical_index], in_block_comment, in_string)
+        string line = stripped_line.line
+        in_block_comment = stripped_line.in_block_comment
+        in_string = stripped_line.in_string
+        int start_line_number = line_number
+        while (string_literal_continues(line) && physical_index + 1 < lines.length()):
+            physical_index += 1
+            StripLineResult continued_line = strip_block_comments_from_line(lines[physical_index], in_block_comment, in_string)
+            line = line + '\n' + continued_line.line
+            LEXER_STAT_LINE_MERGE_OPS += 1
+            LEXER_STAT_LINE_MERGE_BYTES += 1 + continued_line.line.length()
+            in_block_comment = continued_line.in_block_comment
+            in_string = continued_line.in_string
+            line_number += 1
+
+        bool layout_active = layout_is_active(depths)
+
+        if (is_blank_or_comment_line(line)):
+            line_number += 1
+            physical_index += 1
+            continue
+
+        if (layout_active):
+            int indent = count_leading_spaces(line, start_line_number)
+            int current_indent = stack_top(indent_stack)
+
+            if (indent > current_indent):
+                indent_stack.push(indent)
+                tokens.push(Token('INDENT', '', start_line_number, 1))
+            else if (indent < current_indent):
+                while (indent < stack_top(indent_stack)):
+                    indent_stack.pop()
+                    tokens.push(Token('DEDENT', '', start_line_number, 1))
+                if (indent != stack_top(indent_stack)):
+                    throw lexer_error(start_line_number, 1, 'indentation does not match any outer level', indent.to_string())
+
+        Token[] line_tokens = lex_line(line, start_line_number)
+        for (Token token in line_tokens):
+            tokens.push(token)
+            depths = update_depths(depths, token)
+
+        if (layout_is_active(depths)):
+            tokens.push(Token('NEWLINE', '', start_line_number, line.length() + 1))
+        line_number += 1
+        physical_index += 1
+
+    if (in_block_comment):
+        throw lexer_error(line_number, 1, 'unterminated block comment', '')
+    if (!layout_is_active(depths)):
+        throw lexer_error(line_number, 1, 'unterminated delimiter', '')
+
+    while (indent_stack.length() > 1):
+        indent_stack.pop()
+        tokens.push(Token('DEDENT', '', line_number, 1))
+
+    tokens.push(Token('EOF', '', line_number, 1))
+    return tokens
+
+Token[] lex_source(string source):
+    reset_lexer_stats()
+    LEXER_STAT_SOURCE_BYTES = source.length()
+    if (source == ''):
+        Token token = Token('EOF', '', 1, 1)
+        lexer_stat_token(token)
+        return [token]
+    string[] lines = source.split_lines()
+    LEXER_STAT_SPLIT_LINES = lines.length()
+    return lex_source_lines(lines)
+
+string format_token(Token token):
+    string head = token.kind + '@' + token.line.to_string() + ':' + token.column.to_string()
+    if (token.value == ''):
+        return head
+    return head + ' ' + token.value

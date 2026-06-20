@@ -1,0 +1,260 @@
+# Copyright 2026 Torbjörn Nilsson
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import type_ir_lib;
+
+string enum_name_from_header(string header):
+    return strip_prefix(header, 'enum ')
+
+string[] collect_enum_names(EnumDeclIR[] enums):
+    string[] names = []
+    for (EnumDeclIR enum_decl in enums):
+        names.push(enum_name_from_header(enum_decl.header).substring(0))
+    return names
+
+string[] collect_record_names(RecordDeclIR[] records):
+    string[] names = []
+    for (RecordDeclIR record_decl in records):
+        names.push(strip_prefix(record_decl.header, 'record ').substring(0))
+    return names
+
+bool is_managed_type(string type_name, string[] record_names, string[] enum_names):
+    if (type_name == '' || type_name == 'unknown' || type_name == 'int' || type_name == 'bool'):
+        return false
+    if (type_name == 'string'):
+        return true
+    if (type_name.ends_with('[]')):
+        return true
+    if (type_name.starts_with('set<') || type_name.starts_with('map<')):
+        return true
+    if (type_name in enum_names):
+        return false
+    if (type_name in record_names):
+        return true
+    return false
+
+LinearInstruction[] collect_function_instructions(ParsedFunction function_ir):
+    LinearInstruction[] instructions = []
+    for (BlockIR block in function_ir.blocks):
+        for (LinearInstruction op in block.instructions):
+            instructions.push(op)
+    return instructions
+
+string lookup_temp_result_type(ParsedFunction function_ir, string name):
+    string result_type = 'unknown'
+    for (BlockIR block in function_ir.blocks):
+        for (LinearInstruction op in block.instructions):
+            if (result_type == 'unknown' && op.lhs == name):
+                result_type = op.result_type.substring(0)
+    return result_type
+
+string lookup_temp_ownership_mode(ParsedFunction function_ir, string name):
+    string ownership_mode = 'unknown'
+    for (BlockIR block in function_ir.blocks):
+        for (LinearInstruction op in block.instructions):
+            if (ownership_mode == 'unknown' && op.lhs == name):
+                ownership_mode = op.ownership_mode.substring(0)
+    return ownership_mode
+
+BindingIR[] managed_bindings(ParsedFunction function_ir, string[] record_names, string[] enum_names):
+    BindingIR[] result = []
+    for (BindingIR param_decl in function_ir.params):
+        if (is_managed_type(param_decl.type_name, record_names, enum_names)):
+            result.push(param_decl)
+    for (BindingIR local_decl in function_ir.locals):
+        if (is_managed_type(local_decl.type_name, record_names, enum_names)):
+            result.push(local_decl)
+    return result
+
+bool binding_is_managed(string binding_decl, BindingIR[] managed):
+    BindingIR binding = ir_parse_binding_decl(binding_decl)
+    for (BindingIR local_decl in managed):
+        if (local_decl.type_name == binding.type_name && local_decl.name == binding.name):
+            return true
+    return false
+
+string binding_decl(BindingIR binding):
+    return binding.type_name + ' ' + binding.name
+
+string identifier_target_binding(ParsedFunction function_ir, string temp_name):
+    string result = ''
+    for (BlockIR block in function_ir.blocks):
+        for (LinearInstruction op in block.instructions):
+            if (op.lhs == temp_name && op.kind == 'value' && op.detail == 'identifier'):
+                string name = op.args[0]
+                for (BindingIR local_decl in function_ir.locals):
+                    if (result == '' && local_decl.name == name):
+                        result = local_decl.type_name.substring(0) + ' ' + local_decl.name.substring(0)
+                for (BindingIR param_decl in function_ir.params):
+                    if (result == '' && param_decl.name == name):
+                        result = param_decl.type_name.substring(0) + ' ' + param_decl.name.substring(0)
+    return result
+
+string named_binding_decl(ParsedFunction function_ir, string name):
+    string result = ''
+    for (BindingIR local_decl in function_ir.locals):
+        if (result == '' && local_decl.name == name):
+            result = local_decl.type_name.substring(0) + ' ' + local_decl.name.substring(0)
+    for (BindingIR param_decl in function_ir.params):
+        if (result == '' && param_decl.name == name):
+            result = param_decl.type_name.substring(0) + ' ' + param_decl.name.substring(0)
+    return result
+
+string field_target_type(ParsedFunction function_ir, LinearInstruction op, RecordFieldIR[] record_fields):
+    string base_type = lookup_temp_result_type(function_ir, op.args[0])
+    string record_name = record_name_from_type(base_type)
+    if (record_name == ''):
+        return 'unknown'
+    return lookup_record_field_type(record_fields, record_name, op.detail)
+
+string index_target_type(ParsedFunction function_ir, LinearInstruction op):
+    string base_type = lookup_temp_result_type(function_ir, op.args[0])
+    if (base_type.ends_with('[]')):
+        return array_item_type(base_type)
+    if (base_type.starts_with('map<')):
+        return map_value_type(base_type)
+    return 'unknown'
+
+BindingIR[] initialized_managed_locals(ParsedFunction function_ir, BindingIR[] managed):
+    BindingIR[] result = []
+    for (BlockIR block in function_ir.blocks):
+        for (LinearInstruction op in block.instructions):
+            string binding_name = ''
+            if (op.kind == 'set' || op.kind == 'catch'):
+                binding_name = op.detail.substring(0)
+            if (binding_name != '' && binding_is_managed(binding_name, managed)):
+                BindingIR binding = ir_parse_binding_decl(binding_name)
+                bool exists = false
+                for (BindingIR existing in result):
+                    if (existing.type_name == binding.type_name && existing.name == binding.name):
+                        exists = true
+                if (!exists):
+                    result.push(binding)
+    return result
+
+LinearInstruction[] move_temp_if_owned(ParsedFunction function_ir, string temp_name, string[] record_names, string[] enum_names):
+    LinearInstruction[] result = []
+    string value_type = lookup_temp_result_type(function_ir, temp_name)
+    string ownership_mode = lookup_temp_ownership_mode(function_ir, temp_name)
+    if (ownership_mode == 'owned' && is_managed_type(value_type, record_names, enum_names)):
+        result.push(LinearInstruction('move_temp', '', '', '', value_type, [temp_name]))
+    return result
+
+LinearInstruction copy_instruction(LinearInstruction op):
+    string[] copied_args = []
+    for (string arg in op.args):
+        copied_args.push(arg.substring(0))
+    return LinearInstruction(op.kind.substring(0), op.lhs.substring(0), op.result_type.substring(0), op.ownership_mode.substring(0), op.detail.substring(0), copied_args)
+
+LinearInstruction[] apply_ownership_to_instructions(ParsedFunction function_ir, string block_label, LinearInstruction[] instructions, BindingIR[] managed, RecordFieldIR[] record_fields, string[] record_names, string[] enum_names, string[] seen_sets):
+    LinearInstruction[] result = []
+    for (LinearInstruction op in instructions):
+        if (op.kind == 'set' && binding_is_managed(op.detail, managed)):
+            if (op.detail in seen_sets || block_label != 'entry'):
+                result.push(LinearInstruction('release_local', '', '', '', op.detail, []))
+            if (!(op.detail in seen_sets)):
+                seen_sets.push(op.detail)
+            result = append_instructions(result, move_temp_if_owned(function_ir, op.args[0], record_names, enum_names))
+        if (op.kind == 'assign_local'):
+            string binding_decl = named_binding_decl(function_ir, op.detail)
+            if (binding_decl != '' && binding_is_managed(binding_decl, managed)):
+                result.push(LinearInstruction('release_local', '', '', '', binding_decl, []))
+            result = append_instructions(result, move_temp_if_owned(function_ir, op.args[0], record_names, enum_names))
+        else if (op.kind == 'assign_field'):
+            string target_type = field_target_type(function_ir, op, record_fields)
+            if (is_managed_type(target_type, record_names, enum_names)):
+                result.push(LinearInstruction('release_field', '', '', '', op.detail, [op.args[0]]))
+            result = append_instructions(result, move_temp_if_owned(function_ir, op.args[1], record_names, enum_names))
+        else if (op.kind == 'assign_index'):
+            string target_type = index_target_type(function_ir, op)
+            if (is_managed_type(target_type, record_names, enum_names)):
+                result.push(LinearInstruction('release_index', '', '', '', '', [op.args[0], op.args[1]]))
+            result = append_instructions(result, move_temp_if_owned(function_ir, op.args[2], record_names, enum_names))
+        else if (op.kind == 'assign'):
+            string binding_decl = identifier_target_binding(function_ir, op.args[0])
+            if (binding_decl != '' && binding_is_managed(binding_decl, managed)):
+                result.push(LinearInstruction('release_local', '', '', '', binding_decl, []))
+            result = append_instructions(result, move_temp_if_owned(function_ir, op.args[1], record_names, enum_names))
+        else if (op.kind == 'drop'):
+            string value_type = lookup_temp_result_type(function_ir, op.args[0])
+            string ownership_mode = lookup_temp_ownership_mode(function_ir, op.args[0])
+            if (ownership_mode == 'owned' && is_managed_type(value_type, record_names, enum_names)):
+                result.push(LinearInstruction('release_temp', '', '', '', value_type, [op.args[0]]))
+        result.push(copy_instruction(op))
+    return result
+
+TerminatorIR apply_ownership_to_terminator(ParsedFunction function_ir, TerminatorIR terminator, BindingIR[] managed, string[] record_names, string[] enum_names):
+    if (terminator.kind == 'return' || terminator.kind == 'throw'):
+        if (terminator.args.is_empty()):
+            return terminator
+        string value_type = lookup_temp_result_type(function_ir, terminator.args[0])
+        if (is_managed_type(value_type, record_names, enum_names)):
+            if (terminator.kind == 'return'):
+                return TerminatorIR('return_owned', terminator.args)
+            return TerminatorIR('throw_owned', terminator.args)
+    return terminator
+
+LinearInstruction[] exit_cleanup_instructions(ParsedFunction function_ir, TerminatorIR terminator, BindingIR[] initialized_managed):
+    LinearInstruction[] result = []
+    if (!(terminator.kind == 'return' || terminator.kind == 'throw' || terminator.kind == 'return_owned' || terminator.kind == 'throw_owned')):
+        return result
+    string transferred_binding = ''
+    if ((terminator.kind == 'return_owned' || terminator.kind == 'throw_owned') && !terminator.args.is_empty()):
+        transferred_binding = identifier_target_binding(function_ir, terminator.args[0])
+    for (BindingIR binding in initialized_managed):
+        string current = binding_decl(binding)
+        if (current != transferred_binding):
+            result.push(LinearInstruction('release_local', '', '', '', current, []))
+    return result
+
+LinearInstruction[] transfer_terminator_instructions(ParsedFunction function_ir, TerminatorIR terminator, string[] record_names, string[] enum_names):
+    LinearInstruction[] result = []
+    if ((terminator.kind == 'return_owned' || terminator.kind == 'throw_owned') && !terminator.args.is_empty()):
+        result = append_instructions(result, move_temp_if_owned(function_ir, terminator.args[0], record_names, enum_names))
+    return result
+
+BlockIR apply_ownership_to_block(ParsedFunction function_ir, BlockIR block, BindingIR[] managed, BindingIR[] initialized_managed, RecordFieldIR[] record_fields, string[] record_names, string[] enum_names, string[] seen_sets):
+    LinearInstruction[] instructions = apply_ownership_to_instructions(function_ir, block.label, block.instructions, managed, record_fields, record_names, enum_names, seen_sets)
+    TerminatorIR terminator = apply_ownership_to_terminator(function_ir, block.terminator, managed, record_names, enum_names)
+    instructions = append_instructions(instructions, transfer_terminator_instructions(function_ir, terminator, record_names, enum_names))
+    instructions = append_instructions(instructions, exit_cleanup_instructions(function_ir, terminator, initialized_managed))
+    return BlockIR(block.label, instructions, terminator)
+
+ParsedFunction apply_ownership_to_function(ParsedFunction function_ir, RecordFieldIR[] record_fields, string[] record_names, string[] enum_names):
+    BindingIR[] managed = managed_bindings(function_ir, record_names, enum_names)
+    BindingIR[] initialized_managed = initialized_managed_locals(function_ir, managed)
+    BlockIR[] blocks = []
+    string[] seen_sets = []
+    for (BlockIR block in function_ir.blocks):
+        blocks.push(apply_ownership_to_block(function_ir, block, managed, initialized_managed, record_fields, record_names, enum_names, seen_sets))
+    return ParsedFunction(function_ir.header, function_ir.name, function_ir.return_type, function_ir.params, function_ir.locals, blocks)
+
+ProgramIR owned_program_ir(ProgramIR program):
+    RecordFieldIR[] record_fields = collect_record_fields(program.records)
+    string[] record_names = collect_record_names(program.records)
+    string[] enum_names = collect_enum_names(program.enums)
+    ParsedFunction[] functions = []
+    for (ParsedFunction function_ir in program.functions):
+        functions.push(apply_ownership_to_function(function_ir, record_fields, record_names, enum_names))
+    return ProgramIR(program.imports, program.globals, program.records, program.enums, functions)
+
+ProgramIR owned_source_ir(string source):
+    ProgramIR typed_program = typed_source_ir(source)
+    ProgramIR owned_program = owned_program_ir(typed_program)
+    return owned_program
+
+ProgramIR owned_tokens_ir(Token[] tokens):
+    ProgramIR typed_program = typed_tokens_ir(tokens)
+    ProgramIR owned_program = owned_program_ir(typed_program)
+    return owned_program

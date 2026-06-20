@@ -1,0 +1,85 @@
+record Point(int x, int y);
+record Segment(int fixed, int start, int end);
+
+const string[] LINES = read_lines('test-files/58.in');
+
+Point parse_point(string line) {
+    string[] parts = line.split(',');
+    return Point(parts[0].to_int(), parts[1].to_int());
+}
+
+bool intersects_segment(Segment segment, int fixed, int value) {
+    return segment.fixed == fixed and segment.start <= value and value <= segment.end;
+}
+
+bool is_inside(Segment[] verticals, Segment[] horizontals, int x1, int y1, int x2, int y2) {
+    for (int i = 0; i < verticals.length(); i++) {
+        Segment vertical = verticals[i];
+        if (x1 < vertical.fixed and vertical.fixed < x2) {
+            if (vertical.start <= y1 and y1 <= vertical.end) {
+                return false;
+            }
+            if (vertical.start <= y2 and y2 <= vertical.end) {
+                return false;
+            }
+        }
+    }
+
+    for (int i = 0; i < horizontals.length(); i++) {
+        Segment horizontal = horizontals[i];
+        if (y1 < horizontal.fixed and horizontal.fixed < y2) {
+            if (horizontal.start <= x1 and x1 <= horizontal.end) {
+                return false;
+            }
+            if (horizontal.start <= x2 and x2 <= horizontal.end) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+int main(string[] args) {
+    Point[] tiles = [];
+    for (int line_index = 0; line_index < LINES.length(); line_index++) {
+        tiles.push(parse_point(LINES[line_index]));
+    }
+    tiles.push(tiles[0]);
+
+    Segment[] verticals = [];
+    Segment[] horizontals = [];
+    for (int edge_index = 0; edge_index + 1 < tiles.length(); edge_index++) {
+        Point left = tiles[edge_index];
+        Point right = tiles[edge_index + 1];
+        if (left.x == right.x) {
+            verticals.push(Segment(left.x, min(left.y, right.y), max(left.y, right.y)));
+        }
+        if (left.y == right.y) {
+            horizontals.push(Segment(left.y, min(left.x, right.x), max(left.x, right.x)));
+        }
+    }
+
+    int part_1 = 0;
+    int part_2 = 0;
+    for (int i = 0; i < tiles.length(); i++) {
+        for (int j = i + 1; j < tiles.length(); j++) {
+            Point left = tiles[i];
+            Point right = tiles[j];
+            int x1 = min(left.x, right.x);
+            int y1 = min(left.y, right.y);
+            int x2 = max(left.x, right.x);
+            int y2 = max(left.y, right.y);
+            int rectangle_size = (abs(right.x - left.x) + 1) * (abs(right.y - left.y) + 1);
+            if (rectangle_size > part_1) {
+                part_1 = rectangle_size;
+            }
+            if (is_inside(verticals, horizontals, x1, y1, x2, y2) and rectangle_size > part_2) {
+                part_2 = rectangle_size;
+            }
+        }
+    }
+
+    print(part_1);
+    print(part_2);
+    return 0;
+}

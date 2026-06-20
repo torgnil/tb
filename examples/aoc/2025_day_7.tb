@@ -1,0 +1,49 @@
+# Find the row and column of 'S'
+record Start(int row, int col);
+
+int find_start_column(string line):
+    for (int col = 0; col < line.length(); col++):
+        if (line[col] == 'S'):
+            return col
+    return -1
+
+bool[] make_bool_array(int size, bool value):
+    bool[] result = []
+    for (int i = 0; i < size; i++):
+        result.push(value)
+    return result
+
+int count_splits(string[] lines):
+    int width = lines[0].length()
+    int start_col = find_start_column(lines[0])
+    bool[] active = make_bool_array(width, false)
+    active[start_col] = true
+    int splits = 0
+
+    for (int row = 1; row < lines.length(); row++):
+        string line = lines[row]
+        bool[] next_active = make_bool_array(width, false)
+        for (int c = 0; c < width; c++):
+            if (!active[c]):
+                continue
+            if (line[c] == '^'):
+                splits += 1
+                if (c > 0):
+                    next_active[c - 1] = true
+                if (c + 1 < width):
+                    next_active[c + 1] = true
+            else:
+                next_active[c] = true
+        active = next_active
+
+    return splits
+
+int main(string[] args):
+    if (args.length() < 2):
+        print('Usage: ' + args[0] + ' <input_file_path>')
+        return 1
+    string path = args[1]
+
+    string[] lines = read_lines(path)
+    print(count_splits(lines))
+    return 0

@@ -1,0 +1,36 @@
+bool is_fresh(int id, int[] starts, int[] ends) {
+    for (int i : range(starts.length())) {
+        if (id >= starts[i] && id <= ends[i]) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+int main(string[] args) {
+    string[] lines = read_lines('test-files/34.in');
+    int[] starts = [];
+    int[] ends = [];
+    bool reading_ranges = true;
+    int fresh = 0;
+
+    for (string line : lines) {
+        if (line.is_empty()) {
+            reading_ranges = false;
+        } else {
+            if (reading_ranges) {
+                string[] bounds = line.split('-');
+                starts.push(bounds[0].to_int());
+                ends.push(bounds[1].to_int());
+            } else {
+                if (is_fresh(line.to_int(), starts, ends)) {
+                    fresh += 1;
+                }
+            }
+        }
+    }
+
+    print(fresh);
+    return 0;
+}

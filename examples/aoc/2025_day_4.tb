@@ -1,0 +1,40 @@
+int count_neighbors(string[] grid, int row, int col):
+    int count = 0
+    int height = grid.length()
+    for (int dr = 0 - 1; dr <= 1; dr++):
+        for (int dc = 0 - 1; dc <= 1; dc++):
+            if (dr == 0 && dc == 0):
+                continue
+
+            int next_row = row + dr
+            int next_col = col + dc
+            if (next_row < 0 || next_row >= height):
+                continue
+            if (next_col < 0 || next_col >= grid[next_row].length()):
+                continue
+            if (grid[next_row][next_col] == '@'):
+                count += 1
+    return count
+
+int solve(string[] lines):
+    string[] grid = []
+    for (string line : lines):
+        if (line.length() > 0):
+            grid.push(line)
+
+    int total = 0
+    for (int row = 0; row < grid.length(); row++):
+        for (int col = 0; col < grid[row].length(); col++):
+            if (grid[row][col] == '@' && count_neighbors(grid, row, col) < 4):
+                total += 1
+
+    return total
+
+int main(string[] args):
+    if (args.length() < 2):
+        print('Usage: ' + args[0] + ' <input_file_path>')
+        return 1
+    string path = args[1]
+
+    print(solve(read_lines(path)))
+    return 0

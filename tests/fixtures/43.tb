@@ -1,0 +1,33 @@
+int main(string[] args) {
+    string[] lines = read_lines('test-files/43.in');
+    set<int> active = {lines[0].index_of('S')};
+    int total = 0;
+
+    for (string line : lines[1:]) {
+        int[] queue = [];
+        set<int> seen = {};
+        set<int> next = {};
+
+        for (int beam : active) {
+            queue.push(beam);
+        }
+
+        for (int pos : queue) {
+            if (not (pos in seen)) {
+                seen.add(pos);
+                if (line[pos] == '^') {
+                    total += 1;
+                    queue.push(pos - 1);
+                    queue.push(pos + 1);
+                } else {
+                    next.add(pos);
+                }
+            }
+        }
+
+        active = next;
+    }
+
+    print(total);
+    return 0;
+}

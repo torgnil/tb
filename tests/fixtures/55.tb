@@ -1,0 +1,100 @@
+record Point(int x, int y, int z);
+record Edge(int a, int b, int distance);
+record NodeState(int parent, int size);
+
+int point_distance(Point left, Point right) {
+    int dx = left.x - right.x;
+    int dy = left.y - right.y;
+    int dz = left.z - right.z;
+    return dx * dx + dy * dy + dz * dz;
+}
+
+Point parse_point(string line) {
+    string[] parts = line.split(',');
+    return Point(parts[0].to_int(), parts[1].to_int(), parts[2].to_int());
+}
+
+Edge[] edges_for_point(Point[] points, int i) {
+    Point left = points[i];
+    return range(i + 1, points.length()).map_to(int j -> Edge(i, j, point_distance(left, points[j])));
+}
+
+int find_root(NodeState[] nodes, int node) {
+    NodeState state = nodes[node];
+    if (state.parent != node) {
+        state.parent = find_root(nodes, state.parent);
+        nodes[node] = state;
+    }
+    return state.parent;
+}
+
+bool unite(NodeState[] nodes, int left, int right) {
+    int left_root = find_root(nodes, left);
+    int right_root = find_root(nodes, right);
+    if (left_root == right_root) {
+        return false;
+    }
+    NodeState left_state = nodes[left_root];
+    NodeState right_state = nodes[right_root];
+    if (left_state.size < right_state.size) {
+        int temp = left_root;
+        left_root = right_root;
+        right_root = temp;
+        NodeState temp_state = left_state;
+        left_state = right_state;
+        right_state = temp_state;
+    }
+    right_state.parent = left_root;
+    nodes[right_root] = right_state;
+    left_state.size = left_state.size + right_state.size;
+    nodes[left_root] = left_state;
+    return true;
+}
+
+int[] collect_group_sizes(NodeState[] nodes) {
+    int[] groups = [];
+    for (int i : range(nodes.length())) {
+        int root = find_root(nodes, i);
+        if (root == i) {
+            groups.push(nodes[i].size);
+        }
+    }
+    return groups;
+}
+
+int main(string[] args) {
+    const string[] LINES = read_lines('test-files/55.in');
+    const int PART_1_CONNECTIONS = LINES.length() < 500 ? 10 : 1000;
+    Point[] points = LINES.map_to(string line -> parse_point(line));
+    Edge[] edges = range(points.length()).flat_map(int i -> edges_for_point(points, i));
+    edges.sort((Edge left, Edge right) -> left.distance - right.distance);
+
+    NodeState[] nodes = [];
+    for (int i : range(points.length())) {
+        nodes.push(NodeState(i, 1));
+    }
+
+    int components = points.length();
+    int part_1 = 0;
+    int part_2 = 0;
+
+    for (int i : range(edges.length())) {
+        Edge edge = edges[i];
+        if (unite(nodes, edge.a, edge.b)) {
+            components -= 1;
+        }
+        if (i == PART_1_CONNECTIONS - 1) {
+            int[] groups = collect_group_sizes(nodes);
+            groups.sort((int a, int b) -> b - a);
+            part_1 = groups[0] * groups[1] * groups[2];
+        }
+        if (components == 1) {
+            part_2 = points[edge.a].x * points[edge.b].x;
+            break;
+        }
+    }
+
+    print(part_1);
+    print(part_2);
+    return 0;
+}

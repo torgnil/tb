@@ -1,0 +1,26 @@
+int main(string[] args) {
+    string[] GRID = read_lines('test-files/30.in');
+    int[][] DIRS = [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]];
+    int count = 0;
+    int WIDTH = GRID[0].length();
+    int HEIGHT = GRID.length();
+    for (int r = 0; r < WIDTH; r++) {
+        for (int c = 0; c < HEIGHT; c++) {
+            if (
+                GRID[r][c] == '@' and
+                DIRS
+                    .filter(int[] d ->
+                        r + d[0] >= 0 and
+                        r + d[0] < WIDTH and
+                        c + d[1] >= 0 and
+                        c + d[1] < HEIGHT)
+                    .map_to(int[] d -> GRID[r + d[0]][c + d[1]] == '@')
+                    .sum() < 4
+            ) {
+                count++;
+            }
+        }
+    }
+    print(count);
+    return 0;
+}

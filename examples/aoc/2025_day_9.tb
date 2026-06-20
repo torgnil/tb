@@ -1,0 +1,32 @@
+record Point(int x, int y);
+
+Point parse_point(string line):
+    string[] parts = split(trim(line), ',')
+    return Point(to_int(parts[0]), to_int(parts[1]))
+
+int rectangle_area(Point a, Point b):
+    int width = abs(a.x - b.x) + 1
+    int height = abs(a.y - b.y) + 1
+    return width * height
+
+int solve(string path):
+    string[] lines = read_lines(path)
+    Point[] points = lines.map_to(string line -> parse_point(line))
+    int best = 0
+
+    for (int i : range(points.length())):
+        for (int j : range(i + 1, points.length())):
+            int area = rectangle_area(points[i], points[j])
+            if (area > best):
+                best = area
+
+    return best
+
+int main(string[] args):
+    if (args.length() < 2):
+        print('Usage: ' + args[0] + ' <input_file_path>')
+        return 1
+    string path = args[1]
+
+    print(solve(path))
+    return 0

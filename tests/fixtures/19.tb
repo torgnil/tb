@@ -1,0 +1,46 @@
+bool is_invalid(int id) {
+    string text = '' + id;
+    int size = text.length();
+    int half = size / 2;
+
+    if (size % 2 != 0 || half == 0) {
+        return false;
+    }
+
+    for (int i = 0; i < half; i++) {
+        if (text[i] != text[i + half]) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+int invalid_sum(int lo, int hi) {
+    int total = 0;
+
+    for (int id = lo; id <= hi; id++) {
+        if (is_invalid(id)) {
+            total += id;
+        }
+    }
+
+    return total;
+}
+
+int main(string[] args) {
+    int total = 0;
+    string[] lines = read_lines('test-files/19.in');
+    for (string line : lines) {
+        string[] ranges = line.split(',');
+        for (string range : ranges) {
+            if (!range.is_empty() && range.contains('-')) {
+                string[] bounds = range.split('-');
+                total += invalid_sum(bounds[0].to_int(), bounds[1].to_int());
+            }
+        }
+    }
+
+    print(total);
+    return 0;
+}

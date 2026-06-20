@@ -1,0 +1,1069 @@
+# Copyright 2026 Torbjörn Nilsson
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import lexer;
+
+record Node(string kind, string value, Node[] children);
+record ParseResult(Node node, int next_index);
+record ParseNodesResult(Node[] nodes, int next_index);
+record TypeParseResult(string value, int next_index, int pending_closers);
+record BindingParseResult(string binding, int next_index);
+record FunctionDeclParseResult(string return_type, string name, string[] params, Node[] body_nodes, int next_index, bool is_cached);
+
+string parser_error(Token token, string message):
+    return 'Parser error at ' + token.line.to_string() + ':' + token.column.to_string() + ': ' + message + ' [' + token.kind + ' ' + token.value + ']'
+
+string join_type_strings(string[] items, string separator):
+    if (items.is_empty()):
+        return ''
+    string result = items[0]
+    int index = 1
+    while (index < items.length()):
+        result += separator + items[index]
+        index += 1
+    return result
+
+Token token_at(Token[] tokens, int index):
+    return tokens[index]
+
+bool token_is(Token token, string kind, string value):
+    return token.kind == kind && token.value == value
+
+bool could_start_type(Token[] tokens, int index):
+    if (index >= tokens.length()):
+        return false
+    Token token = token_at(tokens, index)
+    if (token.kind != 'KEYWORD' && token.kind != 'IDENTIFIER'):
+        return false
+    if (token.kind == 'KEYWORD'):
+        return true
+    if (index + 1 >= tokens.length()):
+        return false
+    Token next = token_at(tokens, index + 1)
+    return next.kind == 'IDENTIFIER' || token_is(next, 'SYMBOL', '<') || token_is(next, 'SYMBOL', '[')
+
+int skip_newlines(Token[] tokens, int index):
+    while (index < tokens.length()):
+        if (token_at(tokens, index).kind != 'NEWLINE'):
+            break
+        index += 1
+    return index
+
+int skip_statement_separators(Token[] tokens, int index):
+    int current = index
+    while (current < tokens.length()):
+        Token token = token_at(tokens, current)
+        if (token.kind == 'NEWLINE'):
+            current += 1
+            continue
+        if (token_is(token, 'SYMBOL', ';')):
+            current += 1
+            continue
+        break
+    return current
+
+int expect_kind(Token[] tokens, int index, string kind):
+    Token token = token_at(tokens, index)
+    if (token.kind != kind):
+        throw parser_error(token, 'expected ' + kind)
+    return index + 1
+
+int expect_symbol(Token[] tokens, int index, string value):
+    Token token = token_at(tokens, index)
+    if (!token_is(token, 'SYMBOL', value)):
+        throw parser_error(token, 'expected symbol ' + value)
+    return index + 1
+
+ParseResult parse_primary(Token[] tokens, int index):
+    Token token = token_at(tokens, index)
+
+    if (token.kind == 'KEYWORD'):
+        int after_type = type_end(tokens, index)
+        if (after_type + 1 < tokens.length()):
+            Token binding_name = token_at(tokens, after_type)
+            Token arrow = token_at(tokens, after_type + 1)
+            if (binding_name.kind == 'IDENTIFIER'):
+                if (token_is(arrow, 'SYMBOL', '->')):
+                    BindingParseResult binding = parse_typed_binding(tokens, index)
+                    ParseResult body = parse_expression(tokens, binding.next_index + 1)
+                    return ParseResult(Node('Lambda', binding.binding, [body.node]), body.next_index)
+    if (token.kind == 'IDENTIFIER'):
+        if (index + 2 < tokens.length()):
+            Token next = token_at(tokens, index + 1)
+            Token arrow = token_at(tokens, index + 2)
+            if (next.kind == 'IDENTIFIER'):
+                if (token_is(arrow, 'SYMBOL', '->')):
+                    BindingParseResult binding = parse_typed_binding(tokens, index)
+                    ParseResult body = parse_expression(tokens, binding.next_index + 1)
+                    return ParseResult(Node('Lambda', binding.binding, [body.node]), body.next_index)
+        if (index + 4 < tokens.length()):
+            Token left_bracket = token_at(tokens, index + 1)
+            Token right_bracket = token_at(tokens, index + 2)
+            Token binding_name = token_at(tokens, index + 3)
+            Token arrow = token_at(tokens, index + 4)
+            if (token_is(left_bracket, 'SYMBOL', '[')):
+                if (token_is(right_bracket, 'SYMBOL', ']')):
+                    if (binding_name.kind == 'IDENTIFIER'):
+                        if (token_is(arrow, 'SYMBOL', '->')):
+                            BindingParseResult binding = parse_typed_binding(tokens, index)
+                            ParseResult body = parse_expression(tokens, binding.next_index + 1)
+                            return ParseResult(Node('Lambda', binding.binding, [body.node]), body.next_index)
+
+    if (token_is(token, 'SYMBOL', '(')):
+        int current = index + 1
+        if (current >= tokens.length()):
+            throw parser_error(token, 'expected primary expression')
+        bool first_can_be_typed_binding = token_at(tokens, current).kind == 'KEYWORD'
+        if (!first_can_be_typed_binding && token_at(tokens, current).kind == 'IDENTIFIER'):
+            if (current + 1 < tokens.length()):
+                first_can_be_typed_binding = token_at(tokens, current + 1).kind == 'IDENTIFIER'
+            if (!first_can_be_typed_binding && current + 3 < tokens.length()):
+                Token left_bracket = token_at(tokens, current + 1)
+                Token right_bracket = token_at(tokens, current + 2)
+                Token binding_name = token_at(tokens, current + 3)
+                if (token_is(left_bracket, 'SYMBOL', '[')):
+                    if (token_is(right_bracket, 'SYMBOL', ']')):
+                        first_can_be_typed_binding = binding_name.kind == 'IDENTIFIER'
+        if (first_can_be_typed_binding):
+            int first_type_end = type_end(tokens, current)
+            if (first_type_end + 1 < tokens.length()):
+                Token first_name = token_at(tokens, first_type_end)
+                Token comma = token_at(tokens, first_type_end + 1)
+                if (first_name.kind == 'IDENTIFIER'):
+                    if (token_is(comma, 'SYMBOL', ',')):
+                        int second_start = first_type_end + 2
+                        if (second_start < tokens.length()):
+                            bool second_can_be_typed_binding = token_at(tokens, second_start).kind == 'KEYWORD'
+                            if (!second_can_be_typed_binding && token_at(tokens, second_start).kind == 'IDENTIFIER'):
+                                if (second_start + 1 < tokens.length()):
+                                    second_can_be_typed_binding = token_at(tokens, second_start + 1).kind == 'IDENTIFIER'
+                                if (!second_can_be_typed_binding && second_start + 3 < tokens.length()):
+                                    Token left_bracket = token_at(tokens, second_start + 1)
+                                    Token right_bracket = token_at(tokens, second_start + 2)
+                                    Token binding_name = token_at(tokens, second_start + 3)
+                                    if (token_is(left_bracket, 'SYMBOL', '[')):
+                                        if (token_is(right_bracket, 'SYMBOL', ']')):
+                                            second_can_be_typed_binding = binding_name.kind == 'IDENTIFIER'
+                            if (second_can_be_typed_binding):
+                                int second_type_end = type_end(tokens, second_start)
+                                if (second_type_end + 2 < tokens.length()):
+                                    Token second_name = token_at(tokens, second_type_end)
+                                    Token close_paren = token_at(tokens, second_type_end + 1)
+                                    Token arrow = token_at(tokens, second_type_end + 2)
+                                    if (second_name.kind == 'IDENTIFIER'):
+                                        if (token_is(close_paren, 'SYMBOL', ')')):
+                                            if (token_is(arrow, 'SYMBOL', '->')):
+                                                BindingParseResult left_binding = parse_typed_binding(tokens, current)
+                                                BindingParseResult right_binding = parse_typed_binding(tokens, second_start)
+                                                ParseResult body = parse_expression(tokens, second_type_end + 3)
+                                                return ParseResult(Node('Lambda2', left_binding.binding + ' | ' + right_binding.binding, [body.node]), body.next_index)
+
+    if (token.kind == 'INT'):
+        return ParseResult(Node('Int', token.value, []), index + 1)
+    if (token.kind == 'NUM'):
+        return ParseResult(Node('Num', token.value, []), index + 1)
+    if (token.kind == 'STRING'):
+        return ParseResult(Node('String', token.value, []), index + 1)
+    if (token_is(token, 'KEYWORD', 'true') || token_is(token, 'KEYWORD', 'false')):
+        return ParseResult(Node('Bool', token.value, []), index + 1)
+    if (token.kind == 'IDENTIFIER'):
+        return ParseResult(Node('Identifier', token.value, []), index + 1)
+    if (token_is(token, 'SYMBOL', '[')):
+        int current = index + 1
+        Node[] items = []
+        if (!token_is(token_at(tokens, current), 'SYMBOL', ']')):
+            while (true):
+                ParseResult item = parse_expression(tokens, current)
+                items.push(item.node)
+                current = item.next_index
+                if (token_is(token_at(tokens, current), 'SYMBOL', ',')):
+                    current += 1
+                    continue
+                break
+        current = expect_symbol(tokens, current, ']')
+        return ParseResult(Node('Array', '', items), current)
+    if (token_is(token, 'SYMBOL', '{')):
+        int current = index + 1
+        if (token_is(token_at(tokens, current), 'SYMBOL', '}')):
+            current = expect_symbol(tokens, current, '}')
+            return ParseResult(Node('Map', '', []), current)
+
+        ParseResult first = parse_expression(tokens, current)
+        current = first.next_index
+        if (token_is(token_at(tokens, current), 'SYMBOL', ':')):
+            Node[] entries = []
+            current += 1
+            ParseResult first_value = parse_expression(tokens, current)
+            entries.push(Node('MapEntry', '', [first.node, first_value.node]))
+            current = first_value.next_index
+            while (token_is(token_at(tokens, current), 'SYMBOL', ',')):
+                current += 1
+                ParseResult key = parse_expression(tokens, current)
+                current = expect_symbol(tokens, key.next_index, ':')
+                ParseResult value = parse_expression(tokens, current)
+                entries.push(Node('MapEntry', '', [key.node, value.node]))
+                current = value.next_index
+            current = expect_symbol(tokens, current, '}')
+            return ParseResult(Node('Map', '', entries), current)
+
+        Node[] items = [first.node]
+        while (token_is(token_at(tokens, current), 'SYMBOL', ',')):
+            current += 1
+            ParseResult item = parse_expression(tokens, current)
+            items.push(item.node)
+            current = item.next_index
+        current = expect_symbol(tokens, current, '}')
+        return ParseResult(Node('Set', '', items), current)
+    if (token_is(token, 'SYMBOL', '(')):
+        ParseResult inner = parse_expression(tokens, index + 1)
+        int current = expect_symbol(tokens, inner.next_index, ')')
+        return ParseResult(inner.node, current)
+
+    throw parser_error(token, 'expected primary expression')
+
+ParseNodesResult parse_argument_nodes(Token[] tokens, int index):
+    Node[] args = []
+    int current = index
+    if (!token_is(token_at(tokens, current), 'SYMBOL', ')')):
+        while (true):
+            ParseResult argument = parse_expression(tokens, current)
+            args.push(argument.node)
+            current = argument.next_index
+            if (token_is(token_at(tokens, current), 'SYMBOL', ',')):
+                current += 1
+                continue
+            break
+    return ParseNodesResult(args, current)
+
+ParseResult parse_postfix(Token[] tokens, int index):
+    ParseResult current_result = parse_primary(tokens, index)
+    int current = current_result.next_index
+    Node current_node = current_result.node
+
+    while (current < tokens.length()):
+        Token token = token_at(tokens, current)
+        if (token_is(token, 'SYMBOL', '(')):
+            ParseNodesResult args = parse_argument_nodes(tokens, current + 1)
+            current = expect_symbol(tokens, args.next_index, ')')
+            if (current_node.kind == 'Identifier'):
+                current_node = Node('Call', current_node.value, args.nodes)
+            else if (current_node.kind == 'Field'):
+                Node[] children = [current_node.children[0]]
+                for (Node arg in args.nodes):
+                    children.push(arg)
+                current_node = Node('MethodCall', current_node.value, children)
+            else:
+                Node[] children = [current_node]
+                for (Node arg in args.nodes):
+                    children.push(arg)
+                current_node = Node('CallExpr', '', children)
+            continue
+        if (token_is(token, 'SYMBOL', '[')):
+            if (token_is(token_at(tokens, current + 1), 'SYMBOL', ':')):
+                int slice_current = current + 2
+                Node[] slice_children = [current_node, Node('Int', '0', [])]
+                if (!token_is(token_at(tokens, slice_current), 'SYMBOL', ']')):
+                    ParseResult slice_end = parse_expression(tokens, slice_current)
+                    slice_children.push(slice_end.node)
+                    slice_current = slice_end.next_index
+                current = expect_symbol(tokens, slice_current, ']')
+                current_node = Node('Slice', '', slice_children)
+            else:
+                ParseResult item = parse_expression(tokens, current + 1)
+                if (token_is(token_at(tokens, item.next_index), 'SYMBOL', ':')):
+                    int slice_current = item.next_index + 1
+                    Node[] slice_children = [current_node, item.node]
+                    if (!token_is(token_at(tokens, slice_current), 'SYMBOL', ']')):
+                        ParseResult slice_end = parse_expression(tokens, slice_current)
+                        slice_children.push(slice_end.node)
+                        slice_current = slice_end.next_index
+                    current = expect_symbol(tokens, slice_current, ']')
+                    current_node = Node('Slice', '', slice_children)
+                else:
+                    current = expect_symbol(tokens, item.next_index, ']')
+                    current_node = Node('Index', '', [current_node, item.node])
+            continue
+        if (token_is(token, 'SYMBOL', '.')):
+            Token name_token = token_at(tokens, current + 1)
+            if (name_token.kind != 'IDENTIFIER'):
+                throw parser_error(name_token, 'expected field name')
+            current += 2
+            current_node = Node('Field', name_token.value, [current_node])
+            continue
+        break
+
+    return ParseResult(current_node, current)
+
+ParseResult parse_unary(Token[] tokens, int index):
+    Token token = token_at(tokens, index)
+    if (token_is(token, 'SYMBOL', '!') || token_is(token, 'SYMBOL', '-') || token_is(token, 'KEYWORD', 'not')):
+        ParseResult operand = parse_unary(tokens, index + 1)
+        return ParseResult(Node('Unary', token.value, [operand.node]), operand.next_index)
+    return parse_postfix(tokens, index)
+
+bool token_infix_is(Token token, string[] ops):
+    if (token.kind != 'SYMBOL' && token.kind != 'KEYWORD'):
+        return false
+    return token.value in ops
+
+ParseResult parse_level_operand(Token[] tokens, int index, int level):
+    if (level == 1):
+        return parse_unary(tokens, index)
+    if (level == 2):
+        return parse_multiplicative(tokens, index)
+    if (level == 3):
+        return parse_additive(tokens, index)
+    if (level == 4):
+        return parse_shift(tokens, index)
+    if (level == 5):
+        return parse_bitwise_and(tokens, index)
+    if (level == 6):
+        return parse_bitwise_xor(tokens, index)
+    if (level == 7):
+        return parse_bitwise_or(tokens, index)
+    if (level == 8):
+        return parse_comparison(tokens, index)
+    if (level == 9):
+        return parse_equality(tokens, index)
+    if (level == 10):
+        return parse_logical_and(tokens, index)
+    return parse_unary(tokens, index)
+
+ParseResult parse_left_binary(Token[] tokens, int index, string[] ops, int level):
+    ParseResult left = parse_level_operand(tokens, index, level)
+    if (level == 1):
+        left = parse_unary(tokens, index)
+
+    int current = left.next_index
+
+    while (current < tokens.length()):
+        Token token = token_at(tokens, current)
+        if (!token_infix_is(token, ops)):
+            break
+        ParseResult right = parse_level_operand(tokens, current + 1, level)
+        left = ParseResult(Node('Binary', token.value, [left.node, right.node]), right.next_index)
+        current = left.next_index
+    return left
+
+ParseResult parse_multiplicative(Token[] tokens, int index):
+    return parse_left_binary(tokens, index, ['*', '/', '%'], 1)
+
+ParseResult parse_additive(Token[] tokens, int index):
+    return parse_left_binary(tokens, index, ['+', '-'], 2)
+
+ParseResult parse_shift(Token[] tokens, int index):
+    return parse_left_binary(tokens, index, ['<<', '>>'], 3)
+
+ParseResult parse_bitwise_and(Token[] tokens, int index):
+    return parse_left_binary(tokens, index, ['&'], 4)
+
+ParseResult parse_bitwise_xor(Token[] tokens, int index):
+    return parse_left_binary(tokens, index, ['^'], 5)
+
+ParseResult parse_bitwise_or(Token[] tokens, int index):
+    return parse_left_binary(tokens, index, ['|'], 6)
+
+ParseResult parse_comparison(Token[] tokens, int index):
+    ParseResult left = parse_left_binary(tokens, index, ['<', '>', '<=', '>=', 'in'], 7)
+    int current = left.next_index
+
+    while (current + 1 < tokens.length()):
+        Token token = token_at(tokens, current)
+        Token next = token_at(tokens, current + 1)
+        if (!token_is(token, 'KEYWORD', 'not') || !token_is(next, 'KEYWORD', 'in')):
+            break
+        ParseResult right = parse_shift(tokens, current + 2)
+        left = ParseResult(Node('Binary', 'not in', [left.node, right.node]), right.next_index)
+        current = left.next_index
+    return left
+
+ParseResult parse_equality(Token[] tokens, int index):
+    return parse_left_binary(tokens, index, ['==', '!='], 8)
+
+ParseResult parse_logical_and(Token[] tokens, int index):
+    return parse_left_binary(tokens, index, ['&&', 'and'], 9)
+
+ParseResult parse_logical_or(Token[] tokens, int index):
+    return parse_left_binary(tokens, index, ['||', 'or'], 10)
+
+ParseResult parse_conditional(Token[] tokens, int index):
+    ParseResult condition = parse_logical_or(tokens, index)
+    int current = condition.next_index
+    if (!token_is(token_at(tokens, current), 'SYMBOL', '?')):
+        return condition
+    ParseResult when_true = parse_expression(tokens, current + 1)
+    current = expect_symbol(tokens, when_true.next_index, ':')
+    ParseResult when_false = parse_conditional(tokens, current)
+    return ParseResult(Node('Ternary', '', [condition.node, when_true.node, when_false.node]), when_false.next_index)
+
+ParseResult parse_expression(Token[] tokens, int index):
+    return parse_conditional(tokens, index)
+
+TypeParseResult parse_type_info(Token[] tokens, int index):
+    Token token = token_at(tokens, index)
+    if (token.kind != 'KEYWORD' && token.kind != 'IDENTIFIER'):
+        throw parser_error(token, 'expected type')
+
+    string result = token.value
+    int current = index + 1
+    int pending_closers = 0
+    bool closed_by_pending = false
+    if (token_is(token_at(tokens, current), 'SYMBOL', '<')):
+        current += 1
+        string[] inner_types = []
+        while (true):
+            TypeParseResult inner = parse_type_info(tokens, current)
+            inner_types.push(inner.value)
+            current = inner.next_index
+            if (inner.pending_closers > 0):
+                pending_closers = inner.pending_closers - 1
+                closed_by_pending = true
+                break
+            if (token_is(token_at(tokens, current), 'SYMBOL', ',')):
+                current += 1
+                continue
+            break
+        if (!closed_by_pending):
+            if (token_is(token_at(tokens, current), 'SYMBOL', '>')):
+                current += 1
+            else if (token_is(token_at(tokens, current), 'SYMBOL', '>>')):
+                current += 1
+                pending_closers = 1
+            else:
+                throw parser_error(token_at(tokens, current), 'expected symbol >')
+        result = result + '<' + join_type_strings(inner_types, ', ') + '>'
+    while (current + 1 < tokens.length()):
+        if (!token_is(token_at(tokens, current), 'SYMBOL', '[')):
+            break
+        if (!token_is(token_at(tokens, current + 1), 'SYMBOL', ']')):
+            break
+        result = result + '[]'
+        current += 2
+    return TypeParseResult(result, current, pending_closers)
+
+string parse_type(Token[] tokens, int index):
+    return parse_type_info(tokens, index).value
+
+int type_end(Token[] tokens, int index):
+    return parse_type_info(tokens, index).next_index
+
+BindingParseResult parse_typed_binding(Token[] tokens, int index):
+    string type_name = parse_type(tokens, index)
+    int current = type_end(tokens, index)
+    Token name_token = token_at(tokens, current)
+    if (name_token.kind != 'IDENTIFIER'):
+        throw parser_error(name_token, 'expected name')
+    current += 1
+    while (current + 1 < tokens.length()):
+        if (!token_is(token_at(tokens, current), 'SYMBOL', '[')):
+            break
+        if (!token_is(token_at(tokens, current + 1), 'SYMBOL', ']')):
+            break
+        type_name = type_name + '[]'
+        current += 2
+    return BindingParseResult(type_name + ' ' + name_token.value, current)
+
+ParseResult parse_return_statement(Token[] tokens, int index):
+    if (index + 1 >= tokens.length()):
+        return ParseResult(Node('Return', '', []), index + 1)
+    Token next = token_at(tokens, index + 1)
+    if (next.kind == 'NEWLINE' || next.kind == 'DEDENT' || next.kind == 'EOF' || token_is(next, 'SYMBOL', ';') || token_is(next, 'SYMBOL', '}')):
+        return ParseResult(Node('Return', '', []), index + 1)
+    ParseResult value = parse_expression(tokens, index + 1)
+    return ParseResult(Node('Return', '', [value.node]), value.next_index)
+
+ParseResult parse_throw_statement(Token[] tokens, int index):
+    ParseResult value = parse_expression(tokens, index + 1)
+    return ParseResult(Node('Throw', '', [value.node]), value.next_index)
+
+ParseResult parse_continue_statement(Token[] tokens, int index):
+    return ParseResult(Node('Continue', '', []), index + 1)
+
+ParseResult parse_break_statement(Token[] tokens, int index):
+    return ParseResult(Node('Break', '', []), index + 1)
+
+ParseResult parse_import_statement(Token[] tokens, int index):
+    Token name_token = token_at(tokens, index + 1)
+    if (name_token.kind != 'IDENTIFIER'):
+        throw parser_error(name_token, 'expected import name')
+    int current = index + 2
+    if (token_is(token_at(tokens, current), 'SYMBOL', ';')):
+        current += 1
+    return ParseResult(Node('ImportDecl', name_token.value, []), current)
+
+ParseResult parse_expression_statement(Token[] tokens, int index):
+    ParseResult expression = parse_expression(tokens, index)
+    return ParseResult(Node('ExprStmt', '', [expression.node]), expression.next_index)
+
+bool is_assignment_target(Node node):
+    return node.kind == 'Identifier' || node.kind == 'Field' || node.kind == 'Index'
+
+bool is_assignment_operator_token(Token token):
+    string op_value = token.value
+    return token.kind == 'SYMBOL' && (op_value == '=' || op_value == '+=' || op_value == '-=' || op_value == '*=' || op_value == '/=' || op_value == '%=' || op_value == '&=' || op_value == '|=' || op_value == '^=' || op_value == '<<=' || op_value == '>>=')
+
+bool is_increment_operator_token(Token token):
+    return token.kind == 'SYMBOL' && (token.value == '++' || token.value == '--')
+
+ParseResult parse_increment_from_target(Token[] tokens, Node target_node, int next_index):
+    if (!is_assignment_target(target_node)):
+        throw parser_error(token_at(tokens, next_index), 'invalid increment target')
+    Token op_token = token_at(tokens, next_index)
+    if (!is_increment_operator_token(op_token)):
+        throw parser_error(op_token, 'expected increment operator')
+    string binary_op = '+'
+    if (op_token.value == '--'):
+        binary_op = '-'
+    Node one_value = Node('Int', '1', [])
+    Node compound_value = Node('Binary', binary_op, [target_node, one_value])
+    return ParseResult(Node('Assign', '', [target_node, compound_value]), next_index + 1)
+
+ParseResult parse_assignment_from_target(Token[] tokens, Node target_node, int next_index):
+    if (!is_assignment_target(target_node)):
+        throw parser_error(token_at(tokens, next_index), 'invalid assignment target')
+    Token op_token = token_at(tokens, next_index)
+    string op_value = op_token.value
+    if (!is_assignment_operator_token(op_token)):
+        throw parser_error(op_token, 'expected assignment operator')
+    ParseResult value = parse_expression(tokens, next_index + 1)
+    if (op_value == '='):
+        return ParseResult(Node('Assign', '', [target_node, value.node]), value.next_index)
+    string binary_op = op_value[0]
+    if (op_value == '<<='):
+        binary_op = '<<'
+    else if (op_value == '>>='):
+        binary_op = '>>'
+    Node compound_value = Node('Binary', binary_op, [target_node, value.node])
+    return ParseResult(Node('Assign', '', [target_node, compound_value]), value.next_index)
+
+ParseResult parse_increment_statement(Token[] tokens, int index):
+    ParseResult target = parse_postfix(tokens, index)
+    return parse_increment_from_target(tokens, target.node, target.next_index)
+
+ParseResult parse_assignment_statement(Token[] tokens, int index):
+    ParseResult target = parse_postfix(tokens, index)
+    return parse_assignment_from_target(tokens, target.node, target.next_index)
+
+ParseResult parse_variable_declaration(Token[] tokens, int index):
+    bool is_const = token_is(token_at(tokens, index), 'KEYWORD', 'const')
+    int current = index
+    if (is_const):
+        current += 1
+    BindingParseResult binding = parse_typed_binding(tokens, current)
+    current = binding.next_index
+    current = expect_symbol(tokens, current, '=')
+    ParseResult value = parse_expression(tokens, current)
+    string label = binding.binding
+    if (is_const):
+        label = 'const ' + label
+    return ParseResult(Node('VarDecl', label, [value.node]), value.next_index)
+
+ParseResult parse_record_declaration(Token[] tokens, int index):
+    int current = index + 1
+    Token name_token = token_at(tokens, current)
+    if (name_token.kind != 'IDENTIFIER'):
+        throw parser_error(name_token, 'expected record name')
+    current += 1
+    current = expect_symbol(tokens, current, '(')
+
+    Node[] fields = []
+    if (!token_is(token_at(tokens, current), 'SYMBOL', ')')):
+        while (true):
+            string field_type = parse_type(tokens, current)
+            current = type_end(tokens, current)
+            Token field_name = token_at(tokens, current)
+            if (field_name.kind != 'IDENTIFIER'):
+                throw parser_error(field_name, 'expected record field name')
+            fields.push(Node('FieldDecl', field_type + ' ' + field_name.value, []))
+            current += 1
+            if (token_is(token_at(tokens, current), 'SYMBOL', ',')):
+                current += 1
+                continue
+            break
+    current = expect_symbol(tokens, current, ')')
+    if (token_is(token_at(tokens, current), 'SYMBOL', ';')):
+        current += 1
+    return ParseResult(Node('RecordDecl', name_token.value, fields), current)
+
+ParseResult parse_enum_declaration(Token[] tokens, int index):
+    int current = index + 1
+    Token name_token = token_at(tokens, current)
+    if (name_token.kind != 'IDENTIFIER'):
+        throw parser_error(name_token, 'expected enum name')
+    current += 1
+    current = expect_symbol(tokens, current, '{')
+
+    Node[] values = []
+    while (!token_is(token_at(tokens, current), 'SYMBOL', '}')):
+        Token value_token = token_at(tokens, current)
+        if (value_token.kind != 'IDENTIFIER'):
+            throw parser_error(value_token, 'expected enum value')
+        values.push(Node('EnumValue', value_token.value, []))
+        current += 1
+        if (token_is(token_at(tokens, current), 'SYMBOL', ',')):
+            current += 1
+            continue
+        break
+    current = expect_symbol(tokens, current, '}')
+    return ParseResult(Node('EnumDecl', name_token.value, values), current)
+
+ParseNodesResult parse_block(Token[] tokens, int index):
+    if (token_is(token_at(tokens, index), 'SYMBOL', '{')):
+        Node[] statements = []
+        int current = index + 1
+        current = skip_statement_separators(tokens, current)
+
+        while (!token_is(token_at(tokens, current), 'SYMBOL', '}')):
+            ParseResult statement = parse_statement(tokens, current)
+            statements.push(statement.node)
+            current = skip_statement_separators(tokens, statement.next_index)
+
+        current = expect_symbol(tokens, current, '}')
+        return ParseNodesResult(statements, current)
+
+    Node[] statements = []
+    int current = expect_kind(tokens, index, 'INDENT')
+    current = skip_statement_separators(tokens, current)
+
+    while (!token_is(token_at(tokens, current), 'DEDENT', '')):
+        ParseResult statement = parse_statement(tokens, current)
+        statements.push(statement.node)
+        current = skip_statement_separators(tokens, statement.next_index)
+
+    current += 1
+    return ParseNodesResult(statements, current)
+
+Node wrap_else(Node[] statements):
+    return Node('Else', '', statements)
+
+Node[] try_body_nodes(Node node):
+    Node[] body_nodes = []
+    for (Node child in node.children):
+        if (child.kind != 'Catch'):
+            body_nodes.push(child)
+    return body_nodes
+
+Node catch_node(Node node):
+    for (Node child in node.children):
+        if (child.kind == 'Catch'):
+            return child
+    return Node('Catch', '', [])
+
+ParseResult parse_while_statement(Token[] tokens, int index):
+    ParseResult condition = parse_expression(tokens, index + 1)
+    int current = condition.next_index
+    ParseNodesResult body = ParseNodesResult([], current)
+    if (token_is(token_at(tokens, current), 'SYMBOL', ':')):
+        current += 1
+        current = expect_kind(tokens, current, 'NEWLINE')
+        body = parse_block(tokens, current)
+    else if (token_is(token_at(tokens, current), 'SYMBOL', '{')):
+        body = parse_block(tokens, current)
+    else:
+        throw parser_error(token_at(tokens, current), 'expected while body')
+    Node[] children = [condition.node]
+    for (Node statement in body.nodes):
+        children.push(statement)
+    return ParseResult(Node('While', '', children), body.next_index)
+
+ParseResult parse_for_clause_statement(Token[] tokens, int index):
+    Token token = token_at(tokens, index)
+    if (token_is(token, 'KEYWORD', 'const') || token.kind == 'KEYWORD' || token.kind == 'IDENTIFIER'):
+        int type_index = index
+        if (token_is(token, 'KEYWORD', 'const')):
+            type_index = index + 1
+        if (could_start_type(tokens, type_index)):
+            int after_type = type_end(tokens, type_index)
+            if (after_type < tokens.length() && token_at(tokens, after_type).kind == 'IDENTIFIER'):
+                int probe = after_type + 1
+                while (probe + 1 < tokens.length()):
+                    if (!token_is(token_at(tokens, probe), 'SYMBOL', '[')):
+                        break
+                    if (!token_is(token_at(tokens, probe + 1), 'SYMBOL', ']')):
+                        break
+                    probe += 2
+                if (probe < tokens.length() && token_is(token_at(tokens, probe), 'SYMBOL', '=')):
+                    return parse_variable_declaration(tokens, index)
+    ParseResult expression = parse_expression(tokens, index)
+    if (expression.next_index < tokens.length()):
+        Token op_token = token_at(tokens, expression.next_index)
+        if (is_assignment_operator_token(op_token)):
+            return parse_assignment_from_target(tokens, expression.node, expression.next_index)
+        if (is_increment_operator_token(op_token)):
+            return parse_increment_from_target(tokens, expression.node, expression.next_index)
+    return ParseResult(Node('ExprStmt', '', [expression.node]), expression.next_index)
+
+Node[] parser_tail_nodes(Node[] nodes, int start):
+    Node[] rest = []
+    int index = start
+    while (index < nodes.length()):
+        rest.push(nodes[index])
+        index += 1
+    return rest
+
+Node[] for_body_nodes(Node node):
+    return parser_tail_nodes(node.children, 3)
+
+ParseResult parse_for_c_statement(Token[] tokens, int index):
+    int current = index + 1
+    current = expect_symbol(tokens, current, '(')
+
+    Node init = Node('ExprStmt', '', [Node('Int', '0', [])])
+    if (!token_is(token_at(tokens, current), 'SYMBOL', ';')):
+        ParseResult init_result = parse_for_clause_statement(tokens, current)
+        init = init_result.node
+        current = init_result.next_index
+    current = expect_symbol(tokens, current, ';')
+
+    Node condition = Node('Bool', 'true', [])
+    if (!token_is(token_at(tokens, current), 'SYMBOL', ';')):
+        ParseResult condition_result = parse_expression(tokens, current)
+        condition = condition_result.node
+        current = condition_result.next_index
+    current = expect_symbol(tokens, current, ';')
+
+    Node update = Node('ExprStmt', '', [Node('Int', '0', [])])
+    if (!token_is(token_at(tokens, current), 'SYMBOL', ')')):
+        ParseResult update_result = parse_for_clause_statement(tokens, current)
+        update = update_result.node
+        current = update_result.next_index
+    current = expect_symbol(tokens, current, ')')
+
+    ParseNodesResult body = ParseNodesResult([], current)
+    if (token_is(token_at(tokens, current), 'SYMBOL', ':')):
+        current += 1
+        current = expect_kind(tokens, current, 'NEWLINE')
+        body = parse_block(tokens, current)
+    else if (token_is(token_at(tokens, current), 'SYMBOL', '{')):
+        body = parse_block(tokens, current)
+    else:
+        throw parser_error(token_at(tokens, current), 'expected for body')
+
+    Node[] children = [init, condition, update]
+    for (Node statement in body.nodes):
+        children.push(statement)
+    return ParseResult(Node('For', '', children), body.next_index)
+
+ParseResult parse_for_each_statement(Token[] tokens, int index):
+    int current = index + 1
+    current = expect_symbol(tokens, current, '(')
+
+    string binding = ''
+    Token first = token_at(tokens, current)
+    if (first.kind == 'KEYWORD' || first.kind == 'IDENTIFIER'):
+        int after_type = type_end(tokens, current)
+        if (after_type < tokens.length() && token_at(tokens, after_type).kind == 'IDENTIFIER'):
+            BindingParseResult typed_binding = parse_typed_binding(tokens, current)
+            binding = typed_binding.binding
+            current = typed_binding.next_index
+        else:
+            Token name_token = token_at(tokens, current)
+            if (name_token.kind != 'IDENTIFIER'):
+                throw parser_error(name_token, 'expected loop binding')
+            binding = name_token.value
+            current += 1
+    else:
+        Token name_token = token_at(tokens, current)
+        if (name_token.kind != 'IDENTIFIER'):
+            throw parser_error(name_token, 'expected loop binding')
+        binding = name_token.value
+        current += 1
+
+    Token separator = token_at(tokens, current)
+    if (token_is(separator, 'SYMBOL', ':') || token_is(separator, 'KEYWORD', 'in')):
+        current += 1
+    else:
+        throw parser_error(separator, 'expected : or in')
+    ParseResult iterable = parse_expression(tokens, current)
+    current = expect_symbol(tokens, iterable.next_index, ')')
+    ParseNodesResult body = ParseNodesResult([], current)
+    if (token_is(token_at(tokens, current), 'SYMBOL', ':')):
+        current += 1
+        current = expect_kind(tokens, current, 'NEWLINE')
+        body = parse_block(tokens, current)
+    else if (token_is(token_at(tokens, current), 'SYMBOL', '{')):
+        body = parse_block(tokens, current)
+    else:
+        throw parser_error(token_at(tokens, current), 'expected foreach body')
+
+    Node[] children = [iterable.node]
+    for (Node statement in body.nodes):
+        children.push(statement)
+    return ParseResult(Node('ForEach', binding, children), body.next_index)
+
+ParseResult parse_try_statement(Token[] tokens, int index):
+    int current = index + 1
+    current = expect_symbol(tokens, current, ':')
+    current = expect_kind(tokens, current, 'NEWLINE')
+    ParseNodesResult body = parse_block(tokens, current)
+    current = skip_newlines(tokens, body.next_index)
+
+    if (!token_is(token_at(tokens, current), 'KEYWORD', 'catch')):
+        throw parser_error(token_at(tokens, current), 'expected catch')
+    current += 1
+    current = expect_symbol(tokens, current, '(')
+    string catch_type = parse_type(tokens, current)
+    current = type_end(tokens, current)
+    Token name_token = token_at(tokens, current)
+    if (name_token.kind != 'IDENTIFIER'):
+        throw parser_error(name_token, 'expected catch binding')
+    string binding = catch_type + ' ' + name_token.value
+    current += 1
+    current = expect_symbol(tokens, current, ')')
+    current = expect_symbol(tokens, current, ':')
+    current = expect_kind(tokens, current, 'NEWLINE')
+    ParseNodesResult catch_body = parse_block(tokens, current)
+
+    Node[] children = body.nodes
+    children.push(Node('Catch', binding, catch_body.nodes))
+    return ParseResult(Node('Try', '', children), catch_body.next_index)
+
+ParseResult parse_if_statement(Token[] tokens, int index):
+    ParseResult condition = parse_expression(tokens, index + 1)
+    int current = condition.next_index
+    ParseNodesResult body = ParseNodesResult([], current)
+    if (token_is(token_at(tokens, current), 'SYMBOL', ':')):
+        current += 1
+        current = expect_kind(tokens, current, 'NEWLINE')
+        body = parse_block(tokens, current)
+    else if (token_is(token_at(tokens, current), 'SYMBOL', '{')):
+        body = parse_block(tokens, current)
+    else:
+        throw parser_error(token_at(tokens, current), 'expected if body')
+    Node[] children = [condition.node]
+    for (Node statement in body.nodes):
+        children.push(statement)
+    current = body.next_index
+
+    if (current < tokens.length()):
+        if (token_is(token_at(tokens, current), 'KEYWORD', 'else')):
+            if (current + 1 < tokens.length()):
+                if (token_is(token_at(tokens, current + 1), 'KEYWORD', 'if')):
+                    ParseResult else_if = parse_if_statement(tokens, current + 1)
+                    children.push(wrap_else([else_if.node]))
+                    return ParseResult(Node('If', '', children), else_if.next_index)
+            current += 1
+            ParseNodesResult else_body = ParseNodesResult([], current)
+            if (token_is(token_at(tokens, current), 'SYMBOL', ':')):
+                current += 1
+                current = expect_kind(tokens, current, 'NEWLINE')
+                else_body = parse_block(tokens, current)
+            else if (token_is(token_at(tokens, current), 'SYMBOL', '{')):
+                else_body = parse_block(tokens, current)
+            else:
+                throw parser_error(token_at(tokens, current), 'expected else body')
+            children.push(wrap_else(else_body.nodes))
+            current = else_body.next_index
+
+    return ParseResult(Node('If', '', children), current)
+
+ParseResult parse_switch_statement(Token[] tokens, int index):
+    int current = index + 1
+    current = expect_symbol(tokens, current, '(')
+    ParseResult subject = parse_expression(tokens, current)
+    current = expect_symbol(tokens, subject.next_index, ')')
+    bool brace_body = false
+    if (token_is(token_at(tokens, current), 'SYMBOL', ':')):
+        current += 1
+        current = expect_kind(tokens, current, 'NEWLINE')
+        current = expect_kind(tokens, current, 'INDENT')
+        current = skip_newlines(tokens, current)
+    else if (token_is(token_at(tokens, current), 'SYMBOL', '{')):
+        brace_body = true
+        current += 1
+        current = skip_statement_separators(tokens, current)
+    else:
+        throw parser_error(token_at(tokens, current), 'expected switch body')
+
+    Node[] children = [subject.node]
+    while (!(brace_body && token_is(token_at(tokens, current), 'SYMBOL', '}')) && !(!brace_body && token_is(token_at(tokens, current), 'DEDENT', ''))):
+        Token token = token_at(tokens, current)
+        if (token_is(token, 'KEYWORD', 'case')):
+            ParseResult case_value = parse_expression(tokens, current + 1)
+            current = expect_symbol(tokens, case_value.next_index, ':')
+            ParseNodesResult body = ParseNodesResult([], current)
+            if (token_is(token_at(tokens, current), 'SYMBOL', '{')):
+                body = parse_block(tokens, current)
+            else:
+                current = expect_kind(tokens, current, 'NEWLINE')
+                body = parse_block(tokens, current)
+            Node[] case_children = [case_value.node]
+            for (Node statement in body.nodes):
+                case_children.push(statement)
+            children.push(Node('Case', '', case_children))
+            current = skip_statement_separators(tokens, body.next_index)
+            continue
+        if (token_is(token, 'KEYWORD', 'default')):
+            current += 1
+            current = expect_symbol(tokens, current, ':')
+            ParseNodesResult body = ParseNodesResult([], current)
+            if (token_is(token_at(tokens, current), 'SYMBOL', '{')):
+                body = parse_block(tokens, current)
+            else:
+                current = expect_kind(tokens, current, 'NEWLINE')
+                body = parse_block(tokens, current)
+            children.push(Node('Default', '', body.nodes))
+            current = skip_statement_separators(tokens, body.next_index)
+            continue
+        throw parser_error(token, 'expected case or default')
+    current += 1
+    return ParseResult(Node('Switch', '', children), current)
+
+FunctionDeclParseResult parse_function_declaration_parts(Token[] tokens, int index, bool is_cached):
+    string return_type = parse_type(tokens, index)
+    int current = type_end(tokens, index)
+    Token name_token = token_at(tokens, current)
+    if (name_token.kind != 'IDENTIFIER'):
+        throw parser_error(name_token, 'expected function name')
+    current += 1
+    current = expect_symbol(tokens, current, '(')
+
+    string[] params = []
+    if (!token_is(token_at(tokens, current), 'SYMBOL', ')')):
+        while (true):
+            BindingParseResult param_binding = parse_typed_binding(tokens, current)
+            params.push(param_binding.binding)
+            current = param_binding.next_index
+            if (token_is(token_at(tokens, current), 'SYMBOL', ',')):
+                current += 1
+                continue
+            break
+    current = expect_symbol(tokens, current, ')')
+    ParseNodesResult body = ParseNodesResult([], current)
+    if (token_is(token_at(tokens, current), 'SYMBOL', ':')):
+        current += 1
+        current = expect_kind(tokens, current, 'NEWLINE')
+        body = parse_block(tokens, current)
+    else if (token_is(token_at(tokens, current), 'SYMBOL', '{')):
+        body = parse_block(tokens, current)
+    else:
+        throw parser_error(token_at(tokens, current), 'expected function body')
+
+    return FunctionDeclParseResult(return_type, name_token.value, params, body.nodes, body.next_index, is_cached)
+
+ParseResult parse_function_declaration(Token[] tokens, int index, bool is_cached):
+    FunctionDeclParseResult function_decl = parse_function_declaration_parts(tokens, index, is_cached)
+    Node[] children = []
+    for (string param_binding in function_decl.params):
+        children.push(Node('Param', param_binding, []))
+    for (Node statement in function_decl.body_nodes):
+        children.push(statement)
+    string kind = 'Function'
+    if (function_decl.is_cached):
+        kind = 'CachedFunction'
+    return ParseResult(Node(kind, function_decl.return_type + ' ' + function_decl.name, children), function_decl.next_index)
+
+ParseResult parse_statement(Token[] tokens, int index):
+    Token token = token_at(tokens, index)
+
+    if (token_is(token, 'KEYWORD', 'record')):
+        return parse_record_declaration(tokens, index)
+    if (token_is(token, 'KEYWORD', 'enum')):
+        return parse_enum_declaration(tokens, index)
+    if (token_is(token, 'KEYWORD', 'import')):
+        return parse_import_statement(tokens, index)
+    if (token_is(token, 'KEYWORD', 'if')):
+        return parse_if_statement(tokens, index)
+    if (token_is(token, 'KEYWORD', 'switch')):
+        return parse_switch_statement(tokens, index)
+    if (token_is(token, 'KEYWORD', 'for')):
+        int current = index + 2
+        int paren_depth = 1
+        bool is_c_style = false
+        while (current < tokens.length()):
+            if (paren_depth <= 0):
+                break
+            Token current_token = token_at(tokens, current)
+            if (token_is(current_token, 'SYMBOL', '(')):
+                paren_depth += 1
+            else if (token_is(current_token, 'SYMBOL', ')')):
+                paren_depth -= 1
+            else if (paren_depth == 1 && token_is(current_token, 'SYMBOL', ';')):
+                is_c_style = true
+            current += 1
+        if (is_c_style):
+            return parse_for_c_statement(tokens, index)
+        return parse_for_each_statement(tokens, index)
+    if (token_is(token, 'KEYWORD', 'while')):
+        return parse_while_statement(tokens, index)
+    if (token_is(token, 'KEYWORD', 'try')):
+        return parse_try_statement(tokens, index)
+    if (token_is(token, 'KEYWORD', 'continue')):
+        return parse_continue_statement(tokens, index)
+    if (token_is(token, 'KEYWORD', 'break')):
+        return parse_break_statement(tokens, index)
+    if (token_is(token, 'KEYWORD', 'throw')):
+        return parse_throw_statement(tokens, index)
+    if (token_is(token, 'KEYWORD', 'return')):
+        return parse_return_statement(tokens, index)
+    if (token_is(token, 'KEYWORD', 'cached')):
+        return parse_function_declaration(tokens, index + 1, true)
+    if (token_is(token, 'KEYWORD', 'const') || token.kind == 'KEYWORD' || token.kind == 'IDENTIFIER'):
+        int type_index = index
+        if (token_is(token, 'KEYWORD', 'const')):
+            type_index = index + 1
+        if (could_start_type(tokens, type_index)):
+            int after_type = type_end(tokens, type_index)
+            if (after_type < tokens.length() && token_at(tokens, after_type).kind == 'IDENTIFIER'):
+                int probe = after_type + 1
+                while (probe + 1 < tokens.length()):
+                    if (!token_is(token_at(tokens, probe), 'SYMBOL', '[')):
+                        break
+                    if (!token_is(token_at(tokens, probe + 1), 'SYMBOL', ']')):
+                        break
+                    probe += 2
+                if (probe < tokens.length() && token_is(token_at(tokens, probe), 'SYMBOL', '(')):
+                    return parse_function_declaration(tokens, index, false)
+                if (probe < tokens.length() && token_is(token_at(tokens, probe), 'SYMBOL', '=')):
+                    return parse_variable_declaration(tokens, index)
+
+    if (token.kind == 'IDENTIFIER'):
+        ParseResult target = parse_postfix(tokens, index)
+        if (target.next_index < tokens.length()):
+            Token op_token = token_at(tokens, target.next_index)
+            if (op_token.kind == 'SYMBOL' && (op_token.value == '=' || op_token.value == '+=' || op_token.value == '-=' || op_token.value == '*=' || op_token.value == '/=' || op_token.value == '%=' || op_token.value == '&=' || op_token.value == '|=' || op_token.value == '^=' || op_token.value == '<<=' || op_token.value == '>>=')):
+                return parse_assignment_statement(tokens, index)
+            if (op_token.kind == 'SYMBOL' && (op_token.value == '++' || op_token.value == '--')):
+                return parse_increment_statement(tokens, index)
+            if (op_token.kind == 'NEWLINE' || op_token.kind == 'DEDENT' || op_token.kind == 'EOF' || token_is(op_token, 'SYMBOL', ';') || token_is(op_token, 'SYMBOL', '}')):
+                return ParseResult(Node('ExprStmt', '', [target.node]), target.next_index)
+        else:
+            return ParseResult(Node('ExprStmt', '', [target.node]), target.next_index)
+
+    return parse_expression_statement(tokens, index)
+
+Node parse_program(Token[] tokens):
+    Node[] statements = []
+    int current = skip_statement_separators(tokens, 0)
+
+    while (!token_is(token_at(tokens, current), 'EOF', '')):
+        ParseResult statement = parse_statement(tokens, current)
+        statements.push(statement.node)
+        current = skip_statement_separators(tokens, statement.next_index)
+
+    return Node('Program', '', statements)
+
+Node parse_source(string source):
+    return parse_program(lex_source(source))
+
+string[] format_node_lines(Node node, string indent):
+    string head = indent + node.kind
+    if (node.value != ''):
+        head = head + ' ' + node.value
+    string[] lines = [head]
+    for (Node child in node.children):
+        string[] child_lines = format_node_lines(child, indent + '  ')
+        for (string line in child_lines):
+            lines.push(line)
+    return lines

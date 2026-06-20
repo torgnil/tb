@@ -1,0 +1,35 @@
+bool is_invalid_id(int id):
+    string digits = to_string(id)
+    int digit_count = digits.length()
+    if (digit_count % 2 != 0):
+        return false
+
+    int half = digit_count / 2
+    string left = digits[0:half]
+    string right = digits[half:digit_count]
+    return left == right
+
+int main(string[] args):
+    if (args.length() < 2):
+        print('Usage: ' + args[0] + ' <input_file_path>')
+        return 1
+    string path = args[1]
+
+    string[] ranges = read_file(path).trim().split(',')
+    int total = 0
+
+    for (string range_text : ranges):
+        string trimmed = range_text.trim()
+        if (trimmed == ''):
+            continue
+
+        string[] bounds = trimmed.split('-')
+        int start = to_int(bounds[0])
+        int end = to_int(bounds[1])
+
+        for (int value = start; value <= end; value++):
+            if (is_invalid_id(value)):
+                total += value
+
+    print(total)
+    return 0

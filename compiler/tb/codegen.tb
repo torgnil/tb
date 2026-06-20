@@ -1,0 +1,181 @@
+# Copyright 2026 Torbjörn Nilsson
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import ownership_ir_lib;
+
+string temp_ref(string name):
+    return '%' + name
+
+string[] temp_refs(string[] names):
+    string[] refs = []
+    for (string name in names):
+        refs.push(temp_ref(name))
+    return refs
+
+string emit_instruction(LinearInstruction op):
+    if (op.kind == 'try'):
+        return '    try ' + op.detail
+    if (op.kind == 'catch'):
+        return '    catch ' + op.detail
+    if (op.kind == 'release_local'):
+        return '    release_local ' + op.detail
+    if (op.kind == 'move_temp'):
+        return '    move_temp ' + op.detail + ' ' + temp_ref(op.args[0])
+    if (op.kind == 'release_temp'):
+        return '    release_temp ' + op.detail + ' ' + temp_ref(op.args[0])
+    if (op.kind == 'release_field'):
+        return '    release_field ' + op.detail + ' ' + temp_ref(op.args[0])
+    if (op.kind == 'release_index'):
+        return '    release_index ' + temp_ref(op.args[0]) + ' ' + temp_ref(op.args[1])
+    if (op.kind == 'set'):
+        return '    local.set ' + op.detail + ' ' + temp_ref(op.args[0])
+    if (op.kind == 'assign_local'):
+        return '    store.local ' + op.detail + ' ' + temp_ref(op.args[0])
+    if (op.kind == 'assign_field'):
+        return '    store.field ' + op.detail + ' ' + temp_ref(op.args[0]) + ' ' + temp_ref(op.args[1])
+    if (op.kind == 'assign_index'):
+        return '    store.index ' + temp_ref(op.args[0]) + ' ' + temp_ref(op.args[1]) + ' ' + temp_ref(op.args[2])
+    if (op.kind == 'assign'):
+        return '    store ' + temp_ref(op.args[0]) + ' ' + temp_ref(op.args[1])
+    if (op.kind == 'drop'):
+        return '    drop ' + temp_ref(op.args[0])
+
+    if (op.kind != 'value'):
+        throw 'unsupported parsed instruction kind: ' + op.kind
+
+    string lhs = temp_ref(op.lhs)
+    if (op.detail == 'int'):
+        return '    ' + lhs + ' = const.int ' + op.args[0]
+    if (op.detail == 'bool'):
+        return '    ' + lhs + ' = const.bool ' + op.args[0]
+    if (op.detail == 'string'):
+        return '    ' + lhs + ' = const.string ' + op.args[0]
+    if (op.detail == 'identifier'):
+        return '    ' + lhs + ' = load.identifier ' + op.args[0]
+    if (op.detail == 'unary'):
+        return '    ' + lhs + ' = unary.' + op.args[0] + ' ' + temp_ref(op.args[1])
+    if (op.detail == 'binary'):
+        string op_name = op.args[0]
+        if (op_name == 'not in'):
+            op_name = 'not_in'
+        return '    ' + lhs + ' = binary.' + op_name + ' ' + temp_ref(op.args[1]) + ' ' + temp_ref(op.args[2])
+    if (op.detail == 'call'):
+        string line = '    ' + lhs + ' = call ' + op.args[0]
+        string[] refs = temp_refs(ir_tail_strings(op.args, 1))
+        if (!refs.is_empty()):
+            line += ' ' + join_strings(refs, ' ')
+        return line
+    if (op.detail == 'call-expr'):
+        string line = '    ' + lhs + ' = call.expr'
+        string[] refs = temp_refs(op.args)
+        if (!refs.is_empty()):
+            line += ' ' + join_strings(refs, ' ')
+        return line
+    if (op.detail == 'method-call'):
+        string line = '    ' + lhs + ' = call.method ' + op.args[0]
+        string[] refs = temp_refs(ir_tail_strings(op.args, 1))
+        if (!refs.is_empty()):
+            line += ' ' + join_strings(refs, ' ')
+        return line
+    if (op.detail == 'field'):
+        return '    ' + lhs + ' = field ' + op.args[0] + ' ' + temp_ref(op.args[1])
+    if (op.detail == 'index'):
+        return '    ' + lhs + ' = index ' + temp_ref(op.args[0]) + ' ' + temp_ref(op.args[1])
+    if (op.detail == 'array'):
+        string line = '    ' + lhs + ' = array'
+        string[] refs = temp_refs(op.args)
+        if (!refs.is_empty()):
+            line += ' ' + join_strings(refs, ' ')
+        return line
+    if (op.detail == 'set'):
+        string line = '    ' + lhs + ' = set'
+        string[] refs = temp_refs(op.args)
+        if (!refs.is_empty()):
+            line += ' ' + join_strings(refs, ' ')
+        return line
+    if (op.detail == 'map'):
+        string line = '    ' + lhs + ' = map'
+        string[] refs = temp_refs(op.args)
+        if (!refs.is_empty()):
+            line += ' ' + join_strings(refs, ' ')
+        return line
+
+    throw 'unsupported parsed value kind: ' + op.detail
+
+string emit_terminator(TerminatorIR terminator):
+    if (terminator.kind == 'jump'):
+        return '    jump ' + terminator.args[0]
+    if (terminator.kind == 'branch_if'):
+        return '    branch_if ' + temp_ref(terminator.args[0]) + ' ' + terminator.args[1] + ' ' + terminator.args[2]
+    if (terminator.kind == 'return'):
+        if (terminator.args.is_empty()):
+            return '    return'
+        return '    return ' + temp_ref(terminator.args[0])
+    if (terminator.kind == 'return_owned'):
+        if (terminator.args.is_empty()):
+            return '    return.owned'
+        return '    return.owned ' + temp_ref(terminator.args[0])
+    if (terminator.kind == 'throw'):
+        return '    throw ' + temp_ref(terminator.args[0])
+    if (terminator.kind == 'throw_owned'):
+        return '    throw.owned ' + temp_ref(terminator.args[0])
+    throw 'unsupported terminator kind: ' + terminator.kind
+
+string[] emit_global(GlobalDeclIR global_decl):
+    string[] lines = [global_decl.header]
+    for (LinearInstruction op in global_decl.instructions):
+        lines.push(emit_instruction(op))
+    lines.push('  init ' + temp_ref(global_decl.value_name))
+    return lines
+
+string[] emit_function(ParsedFunction function_ir):
+    string[] lines = [function_ir.header]
+    for (BindingIR param : function_ir.params):
+        lines.push('  ' + ir_format_param_binding(param))
+    if (!function_ir.locals.is_empty()):
+        lines.push('  locals')
+        for (BindingIR local_decl : function_ir.locals):
+            lines.push('    ' + ir_format_local_binding(local_decl))
+    for (BlockIR block in function_ir.blocks):
+        lines.push('  ' + block.label + ':')
+        for (LinearInstruction op in block.instructions):
+            lines.push(emit_instruction(op))
+        if (block.terminator.kind != ''):
+            lines.push(emit_terminator(block.terminator))
+    return lines
+
+string[] codegen_ir(ProgramIR program):
+    string[] lines = ['module']
+    for (ImportDeclIR import_decl in program.imports):
+        lines.push(import_decl.header)
+    for (GlobalDeclIR global_decl in program.globals):
+        string[] global_lines = emit_global(global_decl)
+        for (string global_line in global_lines):
+            lines.push(global_line)
+    for (RecordDeclIR record_decl in program.records):
+        lines.push(record_decl.header)
+        for (string field in record_decl.fields):
+            lines.push('  ' + field)
+    for (EnumDeclIR enum_decl in program.enums):
+        lines.push(enum_decl.header)
+        for (string value in enum_decl.values):
+            lines.push('  ' + value)
+    for (ParsedFunction function_ir in program.functions):
+        string[] function_lines = emit_function(function_ir)
+        for (string function_line in function_lines):
+            lines.push(function_line)
+    return lines
+
+string[] codegen_source(string source):
+    return codegen_ir(owned_source_ir(source))

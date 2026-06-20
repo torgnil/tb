@@ -1,0 +1,53 @@
+int parse_dimension(string text, string separator, int index):
+    string[] parts = text.split(separator)
+    return parts[index].to_int()
+
+int sum_presents(string text):
+    int total = 0
+    string[] parts = text.trim().split(' ')
+    for (string part : parts):
+        string value = part.trim()
+        if (value.length() == 0):
+            continue
+        total += value.to_int()
+    return total
+
+bool can_fit_fast(string line):
+    int colon = line.index_of(':')
+    string size_text = line[0:colon]
+    string presents_text = line[colon + 1:]
+
+    int width = parse_dimension(size_text, 'x', 0)
+    int height = parse_dimension(size_text, 'x', 1)
+    int presents = sum_presents(presents_text)
+    return width * height >= presents * 7
+
+bool is_tree_line(string line):
+    int colon = line.index_of(':')
+    if (colon < 0):
+        return false
+    string header = line[0:colon]
+    return header.index_of('x') >= 0
+
+int solve(string path):
+    string[] lines = read_lines(path)
+    int total = 0
+
+    for (string raw_line : lines):
+        string line = raw_line.trim()
+        if (line.length() == 0):
+            continue
+        if (!is_tree_line(line)):
+            continue
+        if (can_fit_fast(line)):
+            total += 1
+
+    return total
+
+int main(string[] args):
+    if (args.length() < 2):
+        print('Usage: ' + args[0] + ' <input_file_path>')
+        return 1
+    string path = args[1]
+    print(solve(path))
+    return 0

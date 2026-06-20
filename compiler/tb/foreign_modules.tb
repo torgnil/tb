@@ -1,0 +1,484 @@
+# Copyright 2026 Torbjörn Nilsson
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+string raylib_default_root():
+    return '/opt/homebrew/Cellar/raylib/5.5'
+
+bool is_foreign_module(string name):
+    return name == 'raylib'
+
+string raylib_member_symbol(string member_name):
+    if (member_name == 'InitWindow'):
+        return '__tb_foreign_raylib_InitWindow'
+    if (member_name == 'WindowShouldClose'):
+        return '__tb_foreign_raylib_WindowShouldClose'
+    if (member_name == 'GetFrameTimeMillis'):
+        return '__tb_foreign_raylib_GetFrameTimeMillis'
+    if (member_name == 'GetTimeMillis'):
+        return '__tb_foreign_raylib_GetTimeMillis'
+    if (member_name == 'SetTargetFPS'):
+        return '__tb_foreign_raylib_SetTargetFPS'
+    if (member_name == 'BeginDrawing'):
+        return '__tb_foreign_raylib_BeginDrawing'
+    if (member_name == 'EndDrawing'):
+        return '__tb_foreign_raylib_EndDrawing'
+    if (member_name == 'ClearBackground'):
+        return '__tb_foreign_raylib_ClearBackground'
+    if (member_name == 'LoadTexture'):
+        return '__tb_foreign_raylib_LoadTexture'
+    if (member_name == 'DrawText'):
+        return '__tb_foreign_raylib_DrawText'
+    if (member_name == 'DrawTexture'):
+        return '__tb_foreign_raylib_DrawTexture'
+    if (member_name == 'UnloadTexture'):
+        return '__tb_foreign_raylib_UnloadTexture'
+    if (member_name == 'DrawRectangle'):
+        return '__tb_foreign_raylib_DrawRectangle'
+    if (member_name == 'DrawCircle'):
+        return '__tb_foreign_raylib_DrawCircle'
+    if (member_name == 'DrawLine'):
+        return '__tb_foreign_raylib_DrawLine'
+    if (member_name == 'IsKeyDown'):
+        return '__tb_foreign_raylib_IsKeyDown'
+    if (member_name == 'IsKeyPressed'):
+        return '__tb_foreign_raylib_IsKeyPressed'
+    if (member_name == 'GetMouseX'):
+        return '__tb_foreign_raylib_GetMouseX'
+    if (member_name == 'GetMouseY'):
+        return '__tb_foreign_raylib_GetMouseY'
+    if (member_name == 'IsMouseButtonDown'):
+        return '__tb_foreign_raylib_IsMouseButtonDown'
+    if (member_name == 'InitAudioDevice'):
+        return '__tb_foreign_raylib_InitAudioDevice'
+    if (member_name == 'CloseAudioDevice'):
+        return '__tb_foreign_raylib_CloseAudioDevice'
+    if (member_name == 'LoadSound'):
+        return '__tb_foreign_raylib_LoadSound'
+    if (member_name == 'PlaySound'):
+        return '__tb_foreign_raylib_PlaySound'
+    if (member_name == 'SetSoundVolume'):
+        return '__tb_foreign_raylib_SetSoundVolume'
+    if (member_name == 'UnloadSound'):
+        return '__tb_foreign_raylib_UnloadSound'
+    if (member_name == 'GetScreenWidth'):
+        return '__tb_foreign_raylib_GetScreenWidth'
+    if (member_name == 'GetScreenHeight'):
+        return '__tb_foreign_raylib_GetScreenHeight'
+    if (member_name == 'CloseWindow'):
+        return '__tb_foreign_raylib_CloseWindow'
+    if (member_name == 'BLACK'):
+        return '__tb_foreign_raylib_BLACK'
+    if (member_name == 'WHITE'):
+        return '__tb_foreign_raylib_WHITE'
+    if (member_name == 'RED'):
+        return '__tb_foreign_raylib_RED'
+    if (member_name == 'GREEN'):
+        return '__tb_foreign_raylib_GREEN'
+    if (member_name == 'BLUE'):
+        return '__tb_foreign_raylib_BLUE'
+    if (member_name == 'YELLOW'):
+        return '__tb_foreign_raylib_YELLOW'
+    if (member_name == 'RAYWHITE'):
+        return '__tb_foreign_raylib_RAYWHITE'
+    if (member_name == 'LIGHTGRAY'):
+        return '__tb_foreign_raylib_LIGHTGRAY'
+    if (member_name == 'DARKGRAY'):
+        return '__tb_foreign_raylib_DARKGRAY'
+    if (member_name == 'KEY_SPACE'):
+        return '__tb_foreign_raylib_KEY_SPACE'
+    if (member_name == 'KEY_ESCAPE'):
+        return '__tb_foreign_raylib_KEY_ESCAPE'
+    if (member_name == 'KEY_RIGHT'):
+        return '__tb_foreign_raylib_KEY_RIGHT'
+    if (member_name == 'KEY_LEFT'):
+        return '__tb_foreign_raylib_KEY_LEFT'
+    if (member_name == 'KEY_DOWN'):
+        return '__tb_foreign_raylib_KEY_DOWN'
+    if (member_name == 'KEY_UP'):
+        return '__tb_foreign_raylib_KEY_UP'
+    if (member_name == 'MOUSE_BUTTON_LEFT'):
+        return '__tb_foreign_raylib_MOUSE_BUTTON_LEFT'
+    if (member_name == 'MOUSE_BUTTON_RIGHT'):
+        return '__tb_foreign_raylib_MOUSE_BUTTON_RIGHT'
+    if (member_name == 'MOUSE_BUTTON_MIDDLE'):
+        return '__tb_foreign_raylib_MOUSE_BUTTON_MIDDLE'
+    return ''
+
+string foreign_module_member_symbol(string module_name, string member_name):
+    if (module_name == 'raylib'):
+        return raylib_member_symbol(member_name)
+    return ''
+
+bool string_has_prefix_at(string value, string prefix, int start):
+    if (start < 0 || start + prefix.length() > value.length()):
+        return false
+    int index = 0
+    while (index < prefix.length()):
+        if (value[start + index] != prefix[index]):
+            return false
+        index += 1
+    return true
+
+string foreign_function_return_type(string symbol_name):
+    if (symbol_name == '__tb_foreign_raylib_InitWindow'):
+        return 'void'
+    if (symbol_name == '__tb_foreign_raylib_WindowShouldClose'):
+        return 'bool'
+    if (symbol_name == '__tb_foreign_raylib_GetFrameTimeMillis'):
+        return 'int'
+    if (symbol_name == '__tb_foreign_raylib_GetTimeMillis'):
+        return 'int'
+    if (symbol_name == '__tb_foreign_raylib_SetTargetFPS'):
+        return 'void'
+    if (symbol_name == '__tb_foreign_raylib_BeginDrawing'):
+        return 'void'
+    if (symbol_name == '__tb_foreign_raylib_EndDrawing'):
+        return 'void'
+    if (symbol_name == '__tb_foreign_raylib_ClearBackground'):
+        return 'void'
+    if (symbol_name == '__tb_foreign_raylib_LoadTexture'):
+        return 'int'
+    if (symbol_name == '__tb_foreign_raylib_DrawText'):
+        return 'void'
+    if (symbol_name == '__tb_foreign_raylib_DrawTexture'):
+        return 'void'
+    if (symbol_name == '__tb_foreign_raylib_UnloadTexture'):
+        return 'void'
+    if (symbol_name == '__tb_foreign_raylib_DrawRectangle'):
+        return 'void'
+    if (symbol_name == '__tb_foreign_raylib_DrawCircle'):
+        return 'void'
+    if (symbol_name == '__tb_foreign_raylib_DrawLine'):
+        return 'void'
+    if (symbol_name == '__tb_foreign_raylib_IsKeyDown'):
+        return 'bool'
+    if (symbol_name == '__tb_foreign_raylib_IsKeyPressed'):
+        return 'bool'
+    if (symbol_name == '__tb_foreign_raylib_GetMouseX'):
+        return 'int'
+    if (symbol_name == '__tb_foreign_raylib_GetMouseY'):
+        return 'int'
+    if (symbol_name == '__tb_foreign_raylib_IsMouseButtonDown'):
+        return 'bool'
+    if (symbol_name == '__tb_foreign_raylib_InitAudioDevice'):
+        return 'void'
+    if (symbol_name == '__tb_foreign_raylib_CloseAudioDevice'):
+        return 'void'
+    if (symbol_name == '__tb_foreign_raylib_LoadSound'):
+        return 'int'
+    if (symbol_name == '__tb_foreign_raylib_PlaySound'):
+        return 'void'
+    if (symbol_name == '__tb_foreign_raylib_SetSoundVolume'):
+        return 'void'
+    if (symbol_name == '__tb_foreign_raylib_UnloadSound'):
+        return 'void'
+    if (symbol_name == '__tb_foreign_raylib_GetScreenWidth'):
+        return 'int'
+    if (symbol_name == '__tb_foreign_raylib_GetScreenHeight'):
+        return 'int'
+    if (symbol_name == '__tb_foreign_raylib_CloseWindow'):
+        return 'void'
+    return 'unknown'
+
+string[] foreign_function_param_types(string symbol_name):
+    if (symbol_name == '__tb_foreign_raylib_InitWindow'):
+        return ['int', 'int', 'string']
+    if (symbol_name == '__tb_foreign_raylib_WindowShouldClose'):
+        return []
+    if (symbol_name == '__tb_foreign_raylib_GetFrameTimeMillis'):
+        return []
+    if (symbol_name == '__tb_foreign_raylib_GetTimeMillis'):
+        return []
+    if (symbol_name == '__tb_foreign_raylib_SetTargetFPS'):
+        return ['int']
+    if (symbol_name == '__tb_foreign_raylib_BeginDrawing'):
+        return []
+    if (symbol_name == '__tb_foreign_raylib_EndDrawing'):
+        return []
+    if (symbol_name == '__tb_foreign_raylib_ClearBackground'):
+        return ['int']
+    if (symbol_name == '__tb_foreign_raylib_LoadTexture'):
+        return ['string']
+    if (symbol_name == '__tb_foreign_raylib_DrawText'):
+        return ['string', 'int', 'int', 'int', 'int']
+    if (symbol_name == '__tb_foreign_raylib_DrawTexture'):
+        return ['int', 'int', 'int', 'int']
+    if (symbol_name == '__tb_foreign_raylib_UnloadTexture'):
+        return ['int']
+    if (symbol_name == '__tb_foreign_raylib_DrawRectangle'):
+        return ['int', 'int', 'int', 'int', 'int']
+    if (symbol_name == '__tb_foreign_raylib_DrawCircle'):
+        return ['int', 'int', 'int', 'int']
+    if (symbol_name == '__tb_foreign_raylib_DrawLine'):
+        return ['int', 'int', 'int', 'int', 'int']
+    if (symbol_name == '__tb_foreign_raylib_IsKeyDown'):
+        return ['int']
+    if (symbol_name == '__tb_foreign_raylib_IsKeyPressed'):
+        return ['int']
+    if (symbol_name == '__tb_foreign_raylib_GetMouseX'):
+        return []
+    if (symbol_name == '__tb_foreign_raylib_GetMouseY'):
+        return []
+    if (symbol_name == '__tb_foreign_raylib_IsMouseButtonDown'):
+        return ['int']
+    if (symbol_name == '__tb_foreign_raylib_InitAudioDevice'):
+        return []
+    if (symbol_name == '__tb_foreign_raylib_CloseAudioDevice'):
+        return []
+    if (symbol_name == '__tb_foreign_raylib_LoadSound'):
+        return ['string']
+    if (symbol_name == '__tb_foreign_raylib_PlaySound'):
+        return ['int']
+    if (symbol_name == '__tb_foreign_raylib_SetSoundVolume'):
+        return ['int', 'int']
+    if (symbol_name == '__tb_foreign_raylib_UnloadSound'):
+        return ['int']
+    if (symbol_name == '__tb_foreign_raylib_GetScreenWidth'):
+        return []
+    if (symbol_name == '__tb_foreign_raylib_GetScreenHeight'):
+        return []
+    if (symbol_name == '__tb_foreign_raylib_CloseWindow'):
+        return []
+    string[] empty = []
+    return empty
+
+string foreign_function_llvm_declaration(string symbol_name):
+    if (symbol_name == '__tb_foreign_raylib_InitWindow'):
+        return 'declare void @__tb_foreign_raylib_InitWindow(i64, i64, ptr)'
+    if (symbol_name == '__tb_foreign_raylib_WindowShouldClose'):
+        return 'declare i1 @__tb_foreign_raylib_WindowShouldClose()'
+    if (symbol_name == '__tb_foreign_raylib_GetFrameTimeMillis'):
+        return 'declare i64 @__tb_foreign_raylib_GetFrameTimeMillis()'
+    if (symbol_name == '__tb_foreign_raylib_GetTimeMillis'):
+        return 'declare i64 @__tb_foreign_raylib_GetTimeMillis()'
+    if (symbol_name == '__tb_foreign_raylib_SetTargetFPS'):
+        return 'declare void @__tb_foreign_raylib_SetTargetFPS(i64)'
+    if (symbol_name == '__tb_foreign_raylib_BeginDrawing'):
+        return 'declare void @__tb_foreign_raylib_BeginDrawing()'
+    if (symbol_name == '__tb_foreign_raylib_EndDrawing'):
+        return 'declare void @__tb_foreign_raylib_EndDrawing()'
+    if (symbol_name == '__tb_foreign_raylib_ClearBackground'):
+        return 'declare void @__tb_foreign_raylib_ClearBackground(i64)'
+    if (symbol_name == '__tb_foreign_raylib_LoadTexture'):
+        return 'declare i64 @__tb_foreign_raylib_LoadTexture(ptr)'
+    if (symbol_name == '__tb_foreign_raylib_DrawText'):
+        return 'declare void @__tb_foreign_raylib_DrawText(ptr, i64, i64, i64, i64)'
+    if (symbol_name == '__tb_foreign_raylib_DrawTexture'):
+        return 'declare void @__tb_foreign_raylib_DrawTexture(i64, i64, i64, i64)'
+    if (symbol_name == '__tb_foreign_raylib_UnloadTexture'):
+        return 'declare void @__tb_foreign_raylib_UnloadTexture(i64)'
+    if (symbol_name == '__tb_foreign_raylib_DrawRectangle'):
+        return 'declare void @__tb_foreign_raylib_DrawRectangle(i64, i64, i64, i64, i64)'
+    if (symbol_name == '__tb_foreign_raylib_DrawCircle'):
+        return 'declare void @__tb_foreign_raylib_DrawCircle(i64, i64, i64, i64)'
+    if (symbol_name == '__tb_foreign_raylib_DrawLine'):
+        return 'declare void @__tb_foreign_raylib_DrawLine(i64, i64, i64, i64, i64)'
+    if (symbol_name == '__tb_foreign_raylib_IsKeyDown'):
+        return 'declare i1 @__tb_foreign_raylib_IsKeyDown(i64)'
+    if (symbol_name == '__tb_foreign_raylib_IsKeyPressed'):
+        return 'declare i1 @__tb_foreign_raylib_IsKeyPressed(i64)'
+    if (symbol_name == '__tb_foreign_raylib_GetMouseX'):
+        return 'declare i64 @__tb_foreign_raylib_GetMouseX()'
+    if (symbol_name == '__tb_foreign_raylib_GetMouseY'):
+        return 'declare i64 @__tb_foreign_raylib_GetMouseY()'
+    if (symbol_name == '__tb_foreign_raylib_IsMouseButtonDown'):
+        return 'declare i1 @__tb_foreign_raylib_IsMouseButtonDown(i64)'
+    if (symbol_name == '__tb_foreign_raylib_InitAudioDevice'):
+        return 'declare void @__tb_foreign_raylib_InitAudioDevice()'
+    if (symbol_name == '__tb_foreign_raylib_CloseAudioDevice'):
+        return 'declare void @__tb_foreign_raylib_CloseAudioDevice()'
+    if (symbol_name == '__tb_foreign_raylib_LoadSound'):
+        return 'declare i64 @__tb_foreign_raylib_LoadSound(ptr)'
+    if (symbol_name == '__tb_foreign_raylib_PlaySound'):
+        return 'declare void @__tb_foreign_raylib_PlaySound(i64)'
+    if (symbol_name == '__tb_foreign_raylib_SetSoundVolume'):
+        return 'declare void @__tb_foreign_raylib_SetSoundVolume(i64, i64)'
+    if (symbol_name == '__tb_foreign_raylib_UnloadSound'):
+        return 'declare void @__tb_foreign_raylib_UnloadSound(i64)'
+    if (symbol_name == '__tb_foreign_raylib_GetScreenWidth'):
+        return 'declare i64 @__tb_foreign_raylib_GetScreenWidth()'
+    if (symbol_name == '__tb_foreign_raylib_GetScreenHeight'):
+        return 'declare i64 @__tb_foreign_raylib_GetScreenHeight()'
+    if (symbol_name == '__tb_foreign_raylib_CloseWindow'):
+        return 'declare void @__tb_foreign_raylib_CloseWindow()'
+    return ''
+
+string[] raylib_function_symbols():
+    return [
+        '__tb_foreign_raylib_InitWindow',
+        '__tb_foreign_raylib_WindowShouldClose',
+        '__tb_foreign_raylib_GetFrameTimeMillis',
+        '__tb_foreign_raylib_GetTimeMillis',
+        '__tb_foreign_raylib_SetTargetFPS',
+        '__tb_foreign_raylib_BeginDrawing',
+        '__tb_foreign_raylib_EndDrawing',
+        '__tb_foreign_raylib_ClearBackground',
+        '__tb_foreign_raylib_LoadTexture',
+        '__tb_foreign_raylib_DrawText',
+        '__tb_foreign_raylib_DrawTexture',
+        '__tb_foreign_raylib_UnloadTexture',
+        '__tb_foreign_raylib_DrawRectangle',
+        '__tb_foreign_raylib_DrawCircle',
+        '__tb_foreign_raylib_DrawLine',
+        '__tb_foreign_raylib_IsKeyDown',
+        '__tb_foreign_raylib_IsKeyPressed',
+        '__tb_foreign_raylib_GetMouseX',
+        '__tb_foreign_raylib_GetMouseY',
+        '__tb_foreign_raylib_IsMouseButtonDown',
+        '__tb_foreign_raylib_InitAudioDevice',
+        '__tb_foreign_raylib_CloseAudioDevice',
+        '__tb_foreign_raylib_LoadSound',
+        '__tb_foreign_raylib_PlaySound',
+        '__tb_foreign_raylib_SetSoundVolume',
+        '__tb_foreign_raylib_UnloadSound',
+        '__tb_foreign_raylib_GetScreenWidth',
+        '__tb_foreign_raylib_GetScreenHeight',
+        '__tb_foreign_raylib_CloseWindow'
+    ]
+
+string raylib_constant_declarations():
+    string decls = 'const int __tb_foreign_raylib_BLACK = 0;\n'
+    decls += 'const int __tb_foreign_raylib_WHITE = 1;\n'
+    decls += 'const int __tb_foreign_raylib_RED = 2;\n'
+    decls += 'const int __tb_foreign_raylib_GREEN = 3;\n'
+    decls += 'const int __tb_foreign_raylib_BLUE = 4;\n'
+    decls += 'const int __tb_foreign_raylib_YELLOW = 5;\n'
+    decls += 'const int __tb_foreign_raylib_RAYWHITE = 6;\n'
+    decls += 'const int __tb_foreign_raylib_LIGHTGRAY = 7;\n'
+    decls += 'const int __tb_foreign_raylib_DARKGRAY = 8;\n'
+    decls += 'const int __tb_foreign_raylib_KEY_SPACE = 32;\n'
+    decls += 'const int __tb_foreign_raylib_KEY_ESCAPE = 256;\n'
+    decls += 'const int __tb_foreign_raylib_KEY_RIGHT = 262;\n'
+    decls += 'const int __tb_foreign_raylib_KEY_LEFT = 263;\n'
+    decls += 'const int __tb_foreign_raylib_KEY_DOWN = 264;\n'
+    decls += 'const int __tb_foreign_raylib_KEY_UP = 265;\n'
+    decls += 'const int __tb_foreign_raylib_MOUSE_BUTTON_LEFT = 0;\n'
+    decls += 'const int __tb_foreign_raylib_MOUSE_BUTTON_RIGHT = 1;\n'
+    decls += 'const int __tb_foreign_raylib_MOUSE_BUTTON_MIDDLE = 2;'
+    return decls
+
+string injected_foreign_module_declarations(string[] active_modules):
+    string injected = ''
+    for (string module_name in active_modules):
+        if (module_name == 'raylib'):
+            if (injected != ''):
+                injected += '\n'
+            injected += raylib_constant_declarations()
+    return injected
+
+string _rewrite_module_uses(string source, string module_name):
+    string output = ''
+    int index = 0
+    bool line_comment = false
+    bool block_comment = false
+    bool in_string = false
+    while (index < source.length()):
+        string current = source[index]
+        string next = ''
+        if (index + 1 < source.length()):
+            next = source[index + 1]
+        if (in_string):
+            output += current
+            if (current == '\''):
+                in_string = false
+            index += 1
+            continue
+        if (line_comment):
+            output += current
+            if (current == '\n'):
+                line_comment = false
+            index += 1
+            continue
+        if (block_comment):
+            output += current
+            if (current == '*' && next == '/'):
+                output += next
+                index += 2
+                block_comment = false
+            else:
+                index += 1
+            continue
+        if (current == '\''):
+            output += current
+            in_string = true
+            index += 1
+            continue
+        if (current == '#'):
+            output += current
+            line_comment = true
+            index += 1
+            continue
+        if (current == '/' && next == '*'):
+            output += current + next
+            block_comment = true
+            index += 2
+            continue
+        if (string_has_prefix_at(source, module_name, index)):
+            string before = ''
+            if (index > 0):
+                before = source[index - 1]
+            int after_index = index + module_name.length()
+            string after = ''
+            if (after_index < source.length()):
+                after = source[after_index]
+            if ((before == '' || !(before.is_alnum() || before == '_')) && after == '.'):
+                int member_start = after_index + 1
+                int member_end = member_start
+                while (member_end < source.length() && (source[member_end].is_alnum() || source[member_end] == '_')):
+                    member_end += 1
+                string member_name = source.substring(member_start, member_end)
+                string replacement = foreign_module_member_symbol(module_name, member_name)
+                if (replacement != ''):
+                    output += replacement
+                    index = member_end
+                    continue
+        output += current
+        index += 1
+    return output
+
+string rewrite_foreign_module_uses(string source, string[] active_modules):
+    string rewritten = source
+    for (string module_name in active_modules):
+        rewritten = _rewrite_module_uses(rewritten, module_name)
+    return rewritten
+
+string[] foreign_module_llvm_declarations(string[] active_modules):
+    string[] lines = []
+    for (string module_name in active_modules):
+        if (module_name == 'raylib'):
+            for (string symbol_name in raylib_function_symbols()):
+                lines.push(foreign_function_llvm_declaration(symbol_name))
+    return lines
+
+string[] foreign_module_link_flags(string[] active_modules):
+    string[] flags = []
+    for (string module_name in active_modules):
+        if (module_name == 'raylib'):
+            flags.push(raylib_default_root() + '/lib/libraylib.550.dylib')
+            flags.push('-Wl,-rpath,' + raylib_default_root() + '/lib')
+    return flags
+
+string[] foreign_module_cflags(string[] active_modules):
+    string[] flags = []
+    for (string module_name in active_modules):
+        if (module_name == 'raylib'):
+            flags.push('-I' + raylib_default_root() + '/include')
+    return flags
+
+string[] foreign_module_c_sources(string[] active_modules):
+    string[] sources = []
+    for (string module_name in active_modules):
+        if (module_name == 'raylib'):
+            sources.push('raylib-tb/raylib_tb.c')
+    return sources

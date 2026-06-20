@@ -1,0 +1,76 @@
+string char_or_space(string text, int index):
+    if (index < text.length()):
+        return text[index]
+    return ' '
+
+bool is_separator_column(string[] lines, int column):
+    for (string line : lines):
+        if (char_or_space(line, column) != ' '):
+            return false
+    return true
+
+int max_line_length(string[] lines):
+    int best = 0
+    for (string line : lines):
+        if (line.length() > best):
+            best = line.length()
+    return best
+
+string slice_or_empty(string text, int start, int end):
+    if (start >= text.length()):
+        return ''
+
+    int actual_end = end
+    if (actual_end > text.length()):
+        actual_end = text.length()
+    return text[start:actual_end]
+
+int solve_problem(string[] lines, int start, int end):
+    int[] numbers = []
+    int operator_row = lines.length() - 1
+    string op = ''
+
+    for (int row : range(lines.length())):
+        string part = slice_or_empty(lines[row], start, end).trim()
+        if (row == operator_row):
+            op = part
+        else if (part.length() > 0):
+            numbers.push(to_int(part))
+
+    int value = numbers[0]
+    for (int i = 1; i < numbers.length(); i++):
+        if (op == '+'):
+            value = value + numbers[i]
+        else:
+            value = value * numbers[i]
+    return value
+
+int solve_sheet(string[] lines):
+    int total = 0
+    int width = max_line_length(lines)
+    int column = 0
+
+    while (column < width):
+        while (column < width && is_separator_column(lines, column)):
+            column++
+
+        if (column >= width):
+            break
+
+        int start = column
+        while (column < width && !is_separator_column(lines, column)):
+            column++
+
+        total += solve_problem(lines, start, column)
+
+    return total
+
+int main(string[] args):
+    if (args.length() < 2):
+        print('Usage: ' + args[0] + ' <input_file_path>')
+        return 1
+    string path = args[1]
+
+    string[] lines = read_lines(path)
+    print(solve_sheet(lines))
+    return 0
