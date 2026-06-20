@@ -133,6 +133,8 @@ int LLVM_METHOD_VALUE_COUNT = 0;
 int LLVM_METHOD_VALUE_BYTES = 0;
 int LLVM_METHOD_STRING_COUNT = 0;
 int LLVM_METHOD_STRING_BYTES = 0;
+string LLVM_LOOKUP_CACHE_FUNCTION_KEY = '';
+string[] LLVM_LOOKUP_CACHE_TEMP_TYPE_SLOTS = [];
 
 string join_llvm_strings(string[] items, string separator):
     if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
@@ -620,6 +622,26 @@ bool is_bootstrap_c_main(ParsedFunction function_ir):
 bool is_cached_function_header(string header):
     return header.starts_with('cached func ')
 
+string lookup_cache_temp_name(string name):
+    if (name.starts_with('%')):
+        return name.substring(1)
+    return name
+
+LinearInstruction[] flatten_function_instructions(ParsedFunction function_ir):
+    LinearInstruction[] instructions = []
+    for (BlockIR block in function_ir.blocks):
+        for (LinearInstruction op in block.instructions):
+            instructions.push(op)
+    return instructions
+
+void ensure_function_lookup_cache(ParsedFunction function_ir):
+    string cache_key = function_ir.header
+    if (LLVM_LOOKUP_CACHE_FUNCTION_KEY == cache_key):
+        return
+    LLVM_LOOKUP_CACHE_FUNCTION_KEY = cache_key.substring(0)
+    LinearInstruction[] instructions = flatten_function_instructions(function_ir)
+    LLVM_LOOKUP_CACHE_TEMP_TYPE_SLOTS = collect_temp_type_slots(instructions)
+
 BindingIR lookup_named_binding(ParsedFunction function_ir, string name):
     for (BindingIR param_decl in function_ir.params):
         if (param_decl.name == name):
@@ -734,12 +756,7 @@ string enclosing_try_suffix(ParsedFunction function_ir, string block_label):
         return ''
     return catch_try_suffix(function_ir, function_ir.blocks[catch_block_index].label)
 
-string lookup_temp_llvm_type(ParsedFunction function_ir, string temp_name):
-    if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
-        LLVM_LOOKUP_TEMP_TYPE_CALLS += 1
-    string lookup_name = temp_name
-    if (lookup_name.starts_with('%')):
-        lookup_name = lookup_name.substring(1)
+string lookup_temp_llvm_type_uncached(ParsedFunction function_ir, string lookup_name):
     string result_type = 'unknown'
     for (BlockIR block in function_ir.blocks):
         for (LinearInstruction op in block.instructions):
@@ -788,10 +805,24 @@ string lookup_temp_llvm_type(ParsedFunction function_ir, string temp_name):
                             return result_type
     return result_type
 
+string lookup_temp_llvm_type(ParsedFunction function_ir, string temp_name):
+    if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
+        LLVM_LOOKUP_TEMP_TYPE_CALLS += 1
+    string lookup_name = lookup_cache_temp_name(temp_name)
+    ensure_function_lookup_cache(function_ir)
+    string cached_type = lookup_temp_type_slot(LLVM_LOOKUP_CACHE_TEMP_TYPE_SLOTS, lookup_name)
+    if (cached_type != 'unknown' && cached_type != '[]'):
+        return cached_type
+    string result_type = lookup_temp_llvm_type_uncached(function_ir, lookup_name)
+    if (result_type != 'unknown'):
+        LLVM_LOOKUP_CACHE_TEMP_TYPE_SLOTS = set_temp_type_slot(LLVM_LOOKUP_CACHE_TEMP_TYPE_SLOTS, lookup_name, result_type)
+    return result_type
+
 LinearInstruction lookup_temp_instruction(ParsedFunction function_ir, string temp_name):
+    string lookup_name = lookup_cache_temp_name(temp_name)
     for (BlockIR block in function_ir.blocks):
         for (LinearInstruction op in block.instructions):
-            if (op.lhs == temp_name):
+            if (op.lhs == lookup_name):
                 return op
     return LinearInstruction('', '', '', '', '', [])
 
