@@ -12,8 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-string raylib_default_root():
-    return '/opt/homebrew/Cellar/raylib/5.5'
+string[] raylib_roots():
+    return [
+        '/opt/homebrew/opt/raylib',
+        '/usr/local/opt/raylib',
+        '/opt/homebrew/Cellar/raylib/5.5',
+        '/usr/local/Cellar/raylib/5.5'
+    ]
 
 bool is_foreign_module(string name):
     return name == 'raylib'
@@ -465,15 +470,18 @@ string[] foreign_module_link_flags(string[] active_modules):
     string[] flags = []
     for (string module_name in active_modules):
         if (module_name == 'raylib'):
-            flags.push(raylib_default_root() + '/lib/libraylib.550.dylib')
-            flags.push('-Wl,-rpath,' + raylib_default_root() + '/lib')
+            for (string root in raylib_roots()):
+                flags.push('-L' + root + '/lib')
+                flags.push('-Wl,-rpath,' + root + '/lib')
+            flags.push('-lraylib')
     return flags
 
 string[] foreign_module_cflags(string[] active_modules):
     string[] flags = []
     for (string module_name in active_modules):
         if (module_name == 'raylib'):
-            flags.push('-I' + raylib_default_root() + '/include')
+            for (string root in raylib_roots()):
+                flags.push('-I' + root + '/include')
     return flags
 
 string[] foreign_module_c_sources(string[] active_modules):

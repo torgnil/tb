@@ -81,6 +81,7 @@ from .ir import (
     IRCallArgument,
     IRCallExpression,
     IRComparison,
+    IRCloseFile,
     IRBreak,
     IRContinue,
     IRDeclareArray,
@@ -371,6 +372,10 @@ class IRGenerator:
             if not isinstance(statement.arguments[0], Identifier) or self.variable_types.get(statement.arguments[0].name) != "file":
                 raise TypeError("write_line requires a file variable")
             return IRWriteLine(statement.arguments[0].name, self._lower_string_expression(statement.arguments[1]))
+        if statement.name == "close" and overload.lowering == "close_file":
+            if not isinstance(statement.arguments[0], Identifier) or self.variable_types.get(statement.arguments[0].name) != "file":
+                raise TypeError("close requires a file variable")
+            return IRCloseFile(statement.arguments[0].name)
         if statement.name == "push" and overload.lowering == "array_push":
             if not isinstance(statement.arguments[0], Identifier):
                 raise TypeError("push requires an array variable")

@@ -700,6 +700,40 @@ string[] emit_try_restore_lines(string try_suffix, string temp_suffix):
         '  store ptr %tb.exc.prev.restore.' + temp_suffix + ', ptr ' + exception_handler_symbol()
     ]
 
+int block_index_by_label(ParsedFunction function_ir, string label):
+    int block_index = 0
+    while (block_index < function_ir.blocks.length()):
+        if (function_ir.blocks[block_index].label == label):
+            return block_index
+        block_index += 1
+    return -1
+
+int enclosing_try_catch_block_index(ParsedFunction function_ir, string block_label):
+    int block_index = block_index_by_label(function_ir, block_label)
+    if (block_index < 0):
+        return -1
+    int best_try_block_index = -1
+    int best_catch_block_index = -1
+    int scan_block_index = 0
+    while (scan_block_index <= block_index):
+        BlockIR block = function_ir.blocks[scan_block_index]
+        int instruction_index = 0
+        for (LinearInstruction op in block.instructions):
+            if (op.kind == 'try'):
+                int catch_block_index = block_index_by_label(function_ir, op.detail)
+                if (catch_block_index > block_index && scan_block_index >= best_try_block_index):
+                    best_try_block_index = scan_block_index
+                    best_catch_block_index = catch_block_index
+            instruction_index += 1
+        scan_block_index += 1
+    return best_catch_block_index
+
+string enclosing_try_suffix(ParsedFunction function_ir, string block_label):
+    int catch_block_index = enclosing_try_catch_block_index(function_ir, block_label)
+    if (catch_block_index < 0):
+        return ''
+    return catch_try_suffix(function_ir, function_ir.blocks[catch_block_index].label)
+
 string lookup_temp_llvm_type(ParsedFunction function_ir, string temp_name):
     if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
         LLVM_LOOKUP_TEMP_TYPE_CALLS += 1
@@ -2184,15 +2218,29 @@ string emit_string_constant(StringConstIR constant):
 string[] emit_read_lines_helper():
     string[] lines = []
     lines.push('@.mode.read = private unnamed_addr constant [2 x i8] c"r\\00"')
+    lines.push('@.fmt.read_lines.open.error = private unnamed_addr constant [8 x i8] c"%s: %s\\0A\\00"')
+    lines.push('@.msg.read_lines = private unnamed_addr constant [11 x i8] c"read_lines\\00"')
     lines.push('define private ptr @tb_bootstrap_read_lines(ptr %path) {')
     lines.push('entry:')
     lines.push('  %mode = getelementptr inbounds [2 x i8], ptr @.mode.read, i32 0, i32 0')
     lines.push('  %file = call ptr @fopen(ptr %path, ptr %mode)')
     lines.push('  %file.ok = icmp ne ptr %file, null')
-    lines.push('  br i1 %file.ok, label %count.setup, label %empty')
-    lines.push('empty:')
-    lines.push('  %empty.array = call ptr @tb_bootstrap_string_array_new(i32 0)')
-    lines.push('  ret ptr %empty.array')
+    lines.push('  br i1 %file.ok, label %count.setup, label %open.fail')
+    lines.push('open.fail:')
+    lines.push('  %handler = load ptr, ptr ' + exception_handler_symbol())
+    lines.push('  %has.handler = icmp ne ptr %handler, null')
+    lines.push('  br i1 %has.handler, label %open.unwind, label %open.fatal')
+    lines.push('open.unwind:')
+    lines.push('  %path.copy = call ptr @tb_bootstrap_string_copy(ptr %path)')
+    lines.push('  store ptr %path.copy, ptr ' + exception_message_symbol())
+    lines.push('  call void @longjmp(ptr %handler, i32 1)')
+    lines.push('  unreachable')
+    lines.push('open.fatal:')
+    lines.push('  %fmt = getelementptr inbounds [8 x i8], ptr @.fmt.read_lines.open.error, i32 0, i32 0')
+    lines.push('  %msg = getelementptr inbounds [11 x i8], ptr @.msg.read_lines, i32 0, i32 0')
+    lines.push('  %print = call i32 @printf(ptr %fmt, ptr %msg, ptr %path)')
+    lines.push('  call void @exit(i32 1)')
+    lines.push('  unreachable')
     lines.push('count.setup:')
     lines.push('  %line.slot = alloca ptr')
     lines.push('  %cap.slot = alloca i64')
@@ -2258,16 +2306,29 @@ string[] emit_read_lines_helper():
 string[] emit_read_file_helper():
     string[] lines = []
     lines.push('@.mode.read = private unnamed_addr constant [2 x i8] c"r\\00"')
+    lines.push('@.fmt.read_file.open.error = private unnamed_addr constant [8 x i8] c"%s: %s\\0A\\00"')
+    lines.push('@.msg.read_file = private unnamed_addr constant [10 x i8] c"read_file\\00"')
     lines.push('define private ptr @tb_bootstrap_read_file(ptr %path) {')
     lines.push('entry:')
     lines.push('  %mode = getelementptr inbounds [2 x i8], ptr @.mode.read, i32 0, i32 0')
     lines.push('  %file = call ptr @fopen(ptr %path, ptr %mode)')
     lines.push('  %file.ok = icmp ne ptr %file, null')
-    lines.push('  br i1 %file.ok, label %setup, label %empty')
-    lines.push('empty:')
-    lines.push('  %empty.data = call ptr @malloc(i64 1)')
-    lines.push('  store i8 0, ptr %empty.data')
-    lines.push('  ret ptr %empty.data')
+    lines.push('  br i1 %file.ok, label %setup, label %open.fail')
+    lines.push('open.fail:')
+    lines.push('  %handler = load ptr, ptr ' + exception_handler_symbol())
+    lines.push('  %has.handler = icmp ne ptr %handler, null')
+    lines.push('  br i1 %has.handler, label %open.unwind, label %open.fatal')
+    lines.push('open.unwind:')
+    lines.push('  %path.copy = call ptr @tb_bootstrap_string_copy(ptr %path)')
+    lines.push('  store ptr %path.copy, ptr ' + exception_message_symbol())
+    lines.push('  call void @longjmp(ptr %handler, i32 1)')
+    lines.push('  unreachable')
+    lines.push('open.fatal:')
+    lines.push('  %fmt = getelementptr inbounds [8 x i8], ptr @.fmt.read_file.open.error, i32 0, i32 0')
+    lines.push('  %msg = getelementptr inbounds [10 x i8], ptr @.msg.read_file, i32 0, i32 0')
+    lines.push('  %print = call i32 @printf(ptr %fmt, ptr %msg, ptr %path)')
+    lines.push('  call void @exit(i32 1)')
+    lines.push('  unreachable')
     lines.push('setup:')
     lines.push('  %line.slot = alloca ptr')
     lines.push('  %cap.slot = alloca i64')
@@ -2316,6 +2377,11 @@ string[] emit_file_output_helpers():
     lines.push('entry:')
     lines.push('  %write = call i32 @fputs(ptr %line, ptr %file)')
     lines.push('  %nl = call i32 @fputc(i32 10, ptr %file)')
+    lines.push('  ret void')
+    lines.push('}')
+    lines.push('define private void @tb_bootstrap_close_write(ptr %file) {')
+    lines.push('entry:')
+    lines.push('  %close = call i32 @fclose(ptr %file)')
     lines.push('  ret void')
     lines.push('}')
     return lines
@@ -2867,6 +2933,10 @@ string emit_call_value_instruction(ProgramIR program, ParsedFunction function_ir
         if (op.args.length() != 2):
             throw 'unsupported llvm open arity'
         return emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_open_write(ptr ' + temp_ref(op.args[1]) + ')')
+    if (call_name == 'close'):
+        if (op.args.length() != 2):
+            throw 'unsupported llvm close arity'
+        return emit_tracked_builtin_call_line('  call void @tb_bootstrap_close_write(ptr ' + temp_ref(op.args[1]) + ')')
     if (call_name == 'to_int'):
         if (op.args.length() != 2):
             throw 'unsupported llvm to_int arity'
@@ -4207,34 +4277,44 @@ string emit_instruction(ProgramIR program, ParsedFunction function_ir, string bl
 
 string[] emit_terminator(ParsedFunction function_ir, BlockIR block, TerminatorIR terminator, string temp_suffix):
     if (terminator.kind == 'jump'):
-        string[] lines = emit_try_restore_lines(block_try_suffix(block), temp_suffix)
+        string[] lines = []
+        int catch_block_index = enclosing_try_catch_block_index(function_ir, block.label)
+        int target_block_index = block_index_by_label(function_ir, terminator.args[0])
+        if (catch_block_index >= 0 && target_block_index >= catch_block_index):
+            lines = emit_try_restore_lines(enclosing_try_suffix(function_ir, block.label), temp_suffix)
         lines.push('  br label %' + terminator.args[0])
         return lines
     if (terminator.kind == 'branch_if'):
-        string[] lines = emit_try_restore_lines(block_try_suffix(block), temp_suffix)
+        string[] lines = []
         lines.push('  br i1 ' + temp_ref(terminator.args[0]) + ', label %' + terminator.args[1] + ', label %' + terminator.args[2])
         return lines
     if (terminator.kind == 'return'):
         string result_type = function_ir.return_type
         require_backend_value_type(result_type, 'return')
+        string try_suffix = block_try_suffix(block)
+        if (try_suffix == ''):
+            try_suffix = enclosing_try_suffix(function_ir, block.label)
         if (normalize_llvm_type_name(result_type) == 'void'):
-            string[] lines = emit_try_restore_lines(block_try_suffix(block), temp_suffix)
+            string[] lines = emit_try_restore_lines(try_suffix, temp_suffix)
             lines.push('  ret void')
             return lines
         if (is_bootstrap_c_main(function_ir) && normalize_llvm_type_name(result_type) == 'int'):
             string exit_name = '%exit.' + temp_suffix
-            string[] lines = emit_try_restore_lines(block_try_suffix(block), temp_suffix)
+            string[] lines = emit_try_restore_lines(try_suffix, temp_suffix)
             lines.push('  ' + exit_name + ' = trunc i64 ' + temp_ref(terminator.args[0]) + ' to i32')
             lines.push('  ret i32 ' + exit_name)
             return lines
-        string[] lines = emit_try_restore_lines(block_try_suffix(block), temp_suffix)
+        string[] lines = emit_try_restore_lines(try_suffix, temp_suffix)
         lines.push('  ret ' + llvm_type(result_type) + ' ' + temp_ref(terminator.args[0]))
         return lines
     if (terminator.kind == 'return_owned'):
         string result_type = function_ir.return_type
         require_backend_value_type(result_type, 'return_owned')
+        string try_suffix = block_try_suffix(block)
+        if (try_suffix == ''):
+            try_suffix = enclosing_try_suffix(function_ir, block.label)
         if (normalize_llvm_type_name(result_type) == 'void'):
-            string[] lines = emit_try_restore_lines(block_try_suffix(block), temp_suffix)
+            string[] lines = emit_try_restore_lines(try_suffix, temp_suffix)
             lines.push('  ret void')
             return lines
         if (normalize_llvm_type_name(result_type) == 'string'):
@@ -4242,7 +4322,7 @@ string[] emit_terminator(ParsedFunction function_ir, BlockIR block, TerminatorIR
             string returned_value = temp_ref(terminator.args[0])
             if (temp_is_string(function_ir, terminator.args[0]) && !temp_needs_backend_free(function_ir, terminator.args[0])):
                 returned_value = emit_string_owned_value(function_ir, terminator.args[0], 'return.' + temp_suffix)
-            for (string restore_line in emit_try_restore_lines(block_try_suffix(block), temp_suffix)):
+            for (string restore_line in emit_try_restore_lines(try_suffix, temp_suffix)):
                 lines.push(restore_line)
             lines.push('  ret ptr ' + returned_value)
             return lines
@@ -4251,7 +4331,7 @@ string[] emit_terminator(ParsedFunction function_ir, BlockIR block, TerminatorIR
             string returned_value = temp_ref(terminator.args[0])
             if (temp_is_string_array(function_ir, terminator.args[0]) && !temp_needs_backend_free(function_ir, terminator.args[0])):
                 returned_value = emit_string_array_owned_value(function_ir, terminator.args[0], 'return.' + temp_suffix)
-            for (string restore_line in emit_try_restore_lines(block_try_suffix(block), temp_suffix)):
+            for (string restore_line in emit_try_restore_lines(try_suffix, temp_suffix)):
                 lines.push(restore_line)
             lines.push('  ret ptr ' + returned_value)
             return lines
@@ -4260,7 +4340,7 @@ string[] emit_terminator(ParsedFunction function_ir, BlockIR block, TerminatorIR
             string returned_value = temp_ref(terminator.args[0])
             if (temp_is_map(function_ir, terminator.args[0]) && !temp_needs_backend_free(function_ir, terminator.args[0])):
                 returned_value = emit_map_owned_value(function_ir, terminator.args[0], 'return.' + temp_suffix)
-            for (string restore_line in emit_try_restore_lines(block_try_suffix(block), temp_suffix)):
+            for (string restore_line in emit_try_restore_lines(try_suffix, temp_suffix)):
                 lines.push(restore_line)
             lines.push('  ret ptr ' + returned_value)
             return lines
@@ -4269,17 +4349,17 @@ string[] emit_terminator(ParsedFunction function_ir, BlockIR block, TerminatorIR
             string returned_value = temp_ref(terminator.args[0])
             if (temp_is_record(function_ir, terminator.args[0]) && !temp_needs_backend_free(function_ir, terminator.args[0])):
                 returned_value = emit_record_owned_value(function_ir, terminator.args[0], 'return.' + temp_suffix)
-            for (string restore_line in emit_try_restore_lines(block_try_suffix(block), temp_suffix)):
+            for (string restore_line in emit_try_restore_lines(try_suffix, temp_suffix)):
                 lines.push(restore_line)
             lines.push('  ret ptr ' + returned_value)
             return lines
         if (is_bootstrap_c_main(function_ir) && normalize_llvm_type_name(result_type) == 'int'):
             string exit_name = '%exit.' + temp_suffix
-            string[] lines = emit_try_restore_lines(block_try_suffix(block), temp_suffix)
+            string[] lines = emit_try_restore_lines(try_suffix, temp_suffix)
             lines.push('  ' + exit_name + ' = trunc i64 ' + temp_ref(terminator.args[0]) + ' to i32')
             lines.push('  ret i32 ' + exit_name)
             return lines
-        string[] lines = emit_try_restore_lines(block_try_suffix(block), temp_suffix)
+        string[] lines = emit_try_restore_lines(try_suffix, temp_suffix)
         lines.push('  ret ' + llvm_type(result_type) + ' ' + temp_ref(terminator.args[0]))
         return lines
     if (terminator.kind == 'throw' || terminator.kind == 'throw_owned'):
@@ -5187,7 +5267,7 @@ string[] llvm_codegen_ir(ProgramIR program):
     bool needs_hash = program_uses_hash(program)
     bool needs_num_hash = program_uses_num_hash(program)
     string[] foreign_modules = active_foreign_modules(program)
-    bool needs_string_helpers = needs_runtime_string_copy || needs_to_int || needs_int_to_string || needs_hash || program_uses_string_helpers_ops(program)
+    bool needs_string_helpers = needs_runtime_string_copy || needs_to_int || needs_int_to_string || needs_hash || program_uses_string_helpers_ops(program) || needs_read_lines || needs_read_file
     bool needs_string_array_helpers = needs_string_array || needs_string_helpers
     bool needs_runtime_global_init = program_uses_runtime_global_init(program)
     if (needs_num || needs_num_hash):
@@ -5216,7 +5296,7 @@ string[] llvm_codegen_ir(ProgramIR program):
     if (!string_constants.is_empty()):
         for (StringConstIR constant in string_constants):
             lines.push(emit_string_constant(constant))
-    if (needs_throw || needs_try_catch):
+    if (needs_throw || needs_try_catch || needs_read_lines || needs_read_file):
         lines.push(exception_handler_symbol() + ' = internal global ptr null')
         lines.push(exception_message_symbol() + ' = internal global ptr null')
     for (string map_type in map_types):
@@ -5228,17 +5308,17 @@ string[] llvm_codegen_ir(ProgramIR program):
         lines.push('declare void @qsort(ptr, i64, i64, ptr)')
     if (needs_try_catch):
         lines.push('declare i32 @setjmp(ptr) returns_twice')
-    if (needs_throw || needs_try_catch):
+    if (needs_throw || needs_try_catch || needs_read_lines || needs_read_file):
         lines.push('declare void @longjmp(ptr, i32) noreturn')
     if (needs_string_array_helpers || needs_string_array_array || needs_bool_array || needs_int_array || needs_int_array_array || needs_record_array || needs_backend_free || needs_records || needs_maps || needs_read_lines || needs_read_file):
         lines.push('declare void @free(ptr)')
-    if (needs_print_int || needs_print_string_array || needs_print_int_array || needs_print_num || needs_num || needs_int_array || needs_int_set || needs_string_array_helpers):
+    if (needs_print_int || needs_print_string_array || needs_print_int_array || needs_print_num || needs_num || needs_int_array || needs_int_set || needs_string_array_helpers || needs_read_lines || needs_read_file):
         lines.push('declare i32 @printf(ptr, ...)')
     if (needs_int_set):
         lines.push('declare i32 @putchar(i32)')
     if (needs_print_string || needs_print_bool || needs_throw):
         lines.push('declare i32 @puts(ptr)')
-    if (needs_throw):
+    if (needs_throw || needs_read_lines || needs_read_file):
         lines.push('declare void @exit(i32)')
     if (needs_strcmp || needs_string_search || needs_string_array_helpers):
         lines.push('declare i32 @strcmp(ptr, ptr)')
@@ -5266,7 +5346,7 @@ string[] llvm_codegen_ir(ProgramIR program):
     if (needs_file_output):
         lines.push('declare i32 @fputs(ptr, ptr)')
         lines.push('declare i32 @fputc(i32, ptr)')
-    if (needs_read_lines || needs_read_file):
+    if (needs_read_lines || needs_read_file || needs_file_output):
         lines.push('declare i32 @fclose(ptr)')
     if (needs_read_lines):
         lines.push('declare void @rewind(ptr)')
@@ -5419,7 +5499,7 @@ void llvm_print_ir(ProgramIR program):
     bool needs_hash = program_uses_hash(program)
     bool needs_num_hash = program_uses_num_hash(program)
     string[] foreign_modules = active_foreign_modules(program)
-    bool needs_string_helpers = needs_runtime_string_copy || needs_to_int || needs_int_to_string || needs_hash || program_uses_string_helpers_ops(program)
+    bool needs_string_helpers = needs_runtime_string_copy || needs_to_int || needs_int_to_string || needs_hash || program_uses_string_helpers_ops(program) || needs_read_lines || needs_read_file
     bool needs_string_array_helpers = needs_string_array || needs_string_helpers
     bool needs_runtime_global_init = program_uses_runtime_global_init(program)
     bool emitted_any_header = false
@@ -5457,7 +5537,7 @@ void llvm_print_ir(ProgramIR program):
         for (StringConstIR constant in string_constants):
             print(emit_string_constant(constant))
         emitted_any_header = true
-    if (needs_throw || needs_try_catch):
+    if (needs_throw || needs_try_catch || needs_read_lines || needs_read_file):
         print(exception_handler_symbol() + ' = internal global ptr null')
         print(exception_message_symbol() + ' = internal global ptr null')
         emitted_any_header = true
@@ -5474,13 +5554,13 @@ void llvm_print_ir(ProgramIR program):
     if (needs_try_catch):
         print('declare i32 @setjmp(ptr) returns_twice')
         emitted_any_header = true
-    if (needs_throw || needs_try_catch):
+    if (needs_throw || needs_try_catch || needs_read_lines || needs_read_file):
         print('declare void @longjmp(ptr, i32) noreturn')
         emitted_any_header = true
     if (needs_string_array_helpers || needs_string_array_array || needs_bool_array || needs_int_array || needs_int_array_array || needs_record_array || needs_backend_free || needs_records || needs_maps || needs_read_lines || needs_read_file):
         print('declare void @free(ptr)')
         emitted_any_header = true
-    if (needs_print_int || needs_print_string_array || needs_print_int_array || needs_print_num || needs_num || needs_int_array || needs_int_set || needs_string_array_helpers):
+    if (needs_print_int || needs_print_string_array || needs_print_int_array || needs_print_num || needs_num || needs_int_array || needs_int_set || needs_string_array_helpers || needs_read_lines || needs_read_file):
         print('declare i32 @printf(ptr, ...)')
         emitted_any_header = true
     if (needs_int_set):
@@ -5489,7 +5569,7 @@ void llvm_print_ir(ProgramIR program):
     if (needs_print_string || needs_print_bool || needs_throw):
         print('declare i32 @puts(ptr)')
         emitted_any_header = true
-    if (needs_throw):
+    if (needs_throw || needs_read_lines || needs_read_file):
         print('declare void @exit(i32)')
         emitted_any_header = true
     if (needs_strcmp || needs_string_search || needs_string_array_helpers):
@@ -5526,7 +5606,7 @@ void llvm_print_ir(ProgramIR program):
         print('declare i32 @fputs(ptr, ptr)')
         print('declare i32 @fputc(i32, ptr)')
         emitted_any_header = true
-    if (needs_read_lines || needs_read_file):
+    if (needs_read_lines || needs_read_file || needs_file_output):
         print('declare i32 @fclose(ptr)')
         emitted_any_header = true
     if (needs_read_lines):

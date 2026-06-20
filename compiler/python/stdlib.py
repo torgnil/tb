@@ -331,6 +331,12 @@ STANDARD_LIBRARY: dict[str, BuiltinFunction] = {
             BuiltinOverload(("file", "string"), "void", "write_line"),
         ),
     ),
+    "close": BuiltinFunction(
+        "close",
+        (
+            BuiltinOverload(("file",), "void", "close_file"),
+        ),
+    ),
     "push": BuiltinFunction(
         "push",
         (
