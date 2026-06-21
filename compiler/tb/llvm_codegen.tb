@@ -3310,6 +3310,21 @@ string emit_string_method_call_value_instruction(ProgramIR program, ParsedFuncti
         return '  ' + lhs + '.len32 = call i32 @tb_bootstrap_string_array_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64'
     if (method_name == 'is_empty' && method_base_type == 'string[][]'):
         return '  ' + lhs + '.len32 = call i32 @tb_bootstrap_string_array_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = icmp eq i32 ' + temp_ref(op.lhs + '.len32') + ', 0'
+    if (method_name == 'push' && method_base_type == 'string[][]'):
+        if (op.args.length() != 3):
+            throw 'unsupported llvm string[][] push arity'
+        string[] lines = emit_string_array_materialize_if_needed(function_ir, op.args[2], op.lhs + '.push')
+        string stored_value = temp_ref(op.args[2])
+        string owned_flag = 'false'
+        if (temp_is_string_array(function_ir, op.args[2])):
+            if (temp_needs_backend_free(function_ir, op.args[2])):
+                owned_flag = 'true'
+            else:
+                stored_value = emit_string_array_owned_value(function_ir, op.args[2], op.lhs + '.push')
+                owned_flag = 'true'
+        lines.push('  ' + lhs + '.len32 = call i32 @tb_bootstrap_string_array_array_push(ptr ' + temp_ref(op.args[1]) + ', ptr ' + stored_value + ', i1 ' + owned_flag + ')')
+        lines.push('  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64')
+        return join_llvm_strings(lines, '\n')
     if (method_name == 'push' && method_base_type == 'string[]'):
         if (op.args.length() != 3):
             throw 'unsupported llvm string[] push arity'
@@ -3620,6 +3635,21 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
         return '  ' + lhs + '.len32 = call i32 @tb_bootstrap_int_array_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64'
     if (method_name == 'is_empty' && method_base_type == 'int[][]'):
         return '  ' + lhs + '.len32 = call i32 @tb_bootstrap_int_array_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = icmp eq i32 ' + temp_ref(op.lhs + '.len32') + ', 0'
+    if (method_name == 'push' && method_base_type == 'int[][]'):
+        if (op.args.length() != 3):
+            throw 'unsupported llvm int[][] push arity'
+        string[] lines = emit_int_array_materialize_if_needed(function_ir, op.args[2], op.lhs + '.push')
+        string stored_value = temp_ref(op.args[2])
+        string owned_flag = 'false'
+        if (temp_is_int_array(function_ir, op.args[2])):
+            if (temp_needs_backend_free(function_ir, op.args[2])):
+                owned_flag = 'true'
+            else:
+                stored_value = emit_int_array_owned_value(function_ir, op.args[2], op.lhs + '.push')
+                owned_flag = 'true'
+        lines.push('  ' + lhs + '.len32 = call i32 @tb_bootstrap_int_array_array_push(ptr ' + temp_ref(op.args[1]) + ', ptr ' + stored_value + ', i1 ' + owned_flag + ')')
+        lines.push('  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64')
+        return join_llvm_strings(lines, '\n')
     if (method_name == 'length' && method_base_type.ends_with('[]') && record_name_from_type(array_item_type(method_base_type)) != ''):
         string record_name = record_name_from_type(array_item_type(method_base_type))
         return '  ' + lhs + '.len32 = call i32 @tb_bootstrap_record_array_length_' + record_name + '(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64'

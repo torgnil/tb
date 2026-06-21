@@ -204,8 +204,8 @@ if [ "$include_python" -eq 1 ]; then
     fi
 fi
 
-printf "%-20s %5s %10s %10s %10s %10s %10s %10s %8s\n" \
-    "benchmark" "runs" "tb_best" "tb_avg" "py3_best" "py3_avg" "pypy_best" "pypy_avg" "status"
+printf "%-20s %5s %10s %10s %10s %10s %10s %10s %10s %10s %8s\n" \
+    "benchmark" "runs" "tb_best" "tb_avg" "py3_best" "py3_avg" "tb/py3" "pypy_best" "pypy_avg" "tb/pypy" "status"
 echo "Warmup: 1 unreported run before timing" >&2
 
 index=1
@@ -272,7 +272,15 @@ for source in "${benchmarks[@]}"; do
         pypy_avg="-"
     fi
 
-    printf "%-20s %5s %10s %10s %10s %10s %10s %10s %8s\n" \
-        "$name" "$runs" "$tb_best" "$tb_avg" "$py3_best" "$py3_avg" "$pypy_best" "$pypy_avg" "$status"
+    if [ "$include_python" -eq 1 ]; then
+        tb_vs_py3=$(awk -v tb="$tb_avg" -v py="$py3_avg" 'BEGIN { printf "%.2fx", tb / py }')
+        tb_vs_pypy=$(awk -v tb="$tb_avg" -v py="$pypy_avg" 'BEGIN { printf "%.2fx", tb / py }')
+    else
+        tb_vs_py3="-"
+        tb_vs_pypy="-"
+    fi
+
+    printf "%-20s %5s %10s %10s %10s %10s %10s %10s %10s %10s %8s\n" \
+        "$name" "$runs" "$tb_best" "$tb_avg" "$py3_best" "$py3_avg" "$tb_vs_py3" "$pypy_best" "$pypy_avg" "$tb_vs_pypy" "$status"
     index=$((index + 1))
 done
