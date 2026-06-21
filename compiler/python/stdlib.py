@@ -226,6 +226,12 @@ STANDARD_LIBRARY: dict[str, BuiltinFunction] = {
             BuiltinOverload(("string[]", "string"), "string", "option_value"),
         ),
     ),
+    "getenv": BuiltinFunction(
+        "getenv",
+        (
+            BuiltinOverload(("string",), "string", "getenv"),
+        ),
+    ),
     "is_empty": BuiltinFunction(
         "is_empty",
         (
@@ -329,6 +335,12 @@ STANDARD_LIBRARY: dict[str, BuiltinFunction] = {
         "write_line",
         (
             BuiltinOverload(("file", "string"), "void", "write_line"),
+        ),
+    ),
+    "close": BuiltinFunction(
+        "close",
+        (
+            BuiltinOverload(("file",), "void", "close_file"),
         ),
     ),
     "push": BuiltinFunction(

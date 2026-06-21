@@ -382,6 +382,11 @@ class IRWriteLine:
 
 
 @dataclass(slots=True)
+class IRCloseFile:
+    file_name: str
+
+
+@dataclass(slots=True)
 class IRForLoop:
     initializer: IRDeclareInt | IRAssignInt
     condition: "IRCondition"

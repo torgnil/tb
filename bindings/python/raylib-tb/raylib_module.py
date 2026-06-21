@@ -20,12 +20,46 @@ from pathlib import Path
 from compiler_py.foreign_modules import ForeignConstant, ForeignFunction, ForeignModule
 
 
-RAYLIB_DEFAULT_ROOT = Path("/opt/homebrew/Cellar/raylib/5.5")
-RAYLIB_ROOT = Path(os.environ.get("TB_RAYLIB_ROOT", str(RAYLIB_DEFAULT_ROOT)))
-RAYLIB_INCLUDE = Path(os.environ.get("TB_RAYLIB_INCLUDE", str(RAYLIB_ROOT / "include")))
-RAYLIB_LIB = Path(os.environ.get("TB_RAYLIB_LIB", str(RAYLIB_ROOT / "lib")))
-RAYLIB_DYLIB = RAYLIB_LIB / "libraylib.550.dylib"
+RAYLIB_FALLBACK_ROOTS = (
+    Path("/opt/homebrew/opt/raylib"),
+    Path("/usr/local/opt/raylib"),
+)
 RAYLIB_WRAPPER_C = Path(__file__).resolve().parent / "raylib_tb.c"
+
+
+def _raylib_header_path(root: Path) -> Path:
+    return root / "include" / "raylib.h"
+
+
+def _raylib_checked_roots() -> tuple[Path, ...]:
+    override = os.environ.get("TB_RAYLIB_ROOT", "").strip()
+    if override:
+        return (Path(override), *RAYLIB_FALLBACK_ROOTS)
+    return RAYLIB_FALLBACK_ROOTS
+
+
+def _resolve_raylib_root() -> Path:
+    override = os.environ.get("TB_RAYLIB_ROOT", "").strip()
+    if override:
+        root = Path(override)
+        if _raylib_header_path(root).is_file():
+            return root
+        raise RuntimeError(f"TB_RAYLIB_ROOT missing raylib header: {_raylib_header_path(root)}")
+    for root in RAYLIB_FALLBACK_ROOTS:
+        if _raylib_header_path(root).is_file():
+            return root
+    checked = ", ".join(str(root) for root in _raylib_checked_roots())
+    raise RuntimeError(f"unable to find raylib; set TB_RAYLIB_ROOT to a raylib install root. checked: {checked}")
+
+
+def _raylib_link_flags() -> tuple[str, ...]:
+    lib_dir = _resolve_raylib_root() / "lib"
+    return (f"-L{lib_dir}", f"-Wl,-rpath,{lib_dir}", "-lraylib")
+
+
+def _raylib_cflags() -> tuple[str, ...]:
+    include_dir = _resolve_raylib_root() / "include"
+    return (f"-I{include_dir}",)
 
 
 FOREIGN_MODULE = ForeignModule(
@@ -81,8 +115,8 @@ FOREIGN_MODULE = ForeignModule(
         ForeignConstant("MOUSE_BUTTON_RIGHT", "__tb_foreign_raylib_MOUSE_BUTTON_RIGHT", "int", "1"),
         ForeignConstant("MOUSE_BUTTON_MIDDLE", "__tb_foreign_raylib_MOUSE_BUTTON_MIDDLE", "int", "2"),
     ),
-    link_flags=(str(RAYLIB_DYLIB), f"-Wl,-rpath,{RAYLIB_LIB}"),
-    cflags=(f"-I{RAYLIB_INCLUDE}",),
+    link_flags=_raylib_link_flags,
+    cflags=_raylib_cflags,
     c_sources=(str(RAYLIB_WRAPPER_C),),
 )
 

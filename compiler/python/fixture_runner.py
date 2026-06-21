@@ -25,7 +25,7 @@ from pathlib import Path
 
 from .main import compile_file
 
-CURRENT_PHASE = 70
+CURRENT_PHASE = 76
 
 
 @dataclass(slots=True)
@@ -61,6 +61,9 @@ def run_fixture(input_path: Path, expected_path: Path) -> FixtureResult:
         workspace_path = tmp_path / "workspace"
         fixture_workspace = workspace_path / input_path.parent.name
         shutil.copytree(input_path.parent, fixture_workspace)
+        if input_path.parent.name != "test-files":
+            compat_workspace = workspace_path / "test-files"
+            shutil.copytree(input_path.parent, compat_workspace)
         source_text = input_path.read_text(encoding="utf-8")
         expected_output = expected_path.read_text(encoding="utf-8")
         runtime_output_target = _find_runtime_output_target(source_text)

@@ -39,6 +39,7 @@ from .ir import (
     IRCallArgument,
     IRCallExpression,
     IRComparison,
+    IRCloseFile,
     IRBreak,
     IRContinue,
     IRDeclareArray,
@@ -164,6 +165,7 @@ class LLVMEmitter:
             "declare ptr @strstr(ptr, ptr)",
             "declare i64 @strtoll(ptr, ptr, i32)",
             "declare i32 @snprintf(ptr, i64, ptr, ...)",
+            "declare ptr @getenv(ptr)",
             "declare i64 @llvm.ctpop.i64(i64)",
             "declare void @abort() noreturn",
         ]
@@ -2859,7 +2861,7 @@ class LLVMEmitter:
             f"  %mode = getelementptr inbounds [{len(self.FILE_READ_MODE_BYTES)} x i8], ptr @{self.FILE_READ_MODE_LABEL}, i32 0, i32 0",
             "  %file = call ptr @fopen(ptr %path, ptr %mode)",
             "  %is_null = icmp eq ptr %file, null",
-            "  br i1 %is_null, label %return_null, label %read",
+            "  br i1 %is_null, label %open_fail, label %read",
             "read:",
             "  call i32 @fseek(ptr %file, i64 0, i32 2)",
             "  %size = call i64 @ftell(ptr %file)",
@@ -2871,16 +2873,22 @@ class LLVMEmitter:
             "  store i8 0, ptr %terminator",
             "  call i32 @fclose(ptr %file)",
             "  ret ptr %buffer",
-            "return_null:",
+            "open_fail:",
+            "  call void @tb_set_exception(ptr %path)",
             "  ret ptr null",
             "}",
             "",
             "define private ptr @tb_read_lines(ptr %path) {",
             "entry:",
             "  %content = call ptr @tb_read_file(ptr %path)",
+            "  %pending = load i1, ptr @__tb_exception_pending",
+            "  br i1 %pending, label %return_null, label %split",
+            "split:",
             "  %lines = call ptr @tb_split_lines(ptr %content)",
             "  call void @tb_release(ptr %content)",
             "  ret ptr %lines",
+            "return_null:",
+            "  ret ptr null",
             "}",
             "",
             "%tb_timeval = type { i64, i64 }",
@@ -3376,6 +3384,20 @@ class LLVMEmitter:
             "missing:",
             "  %empty = call ptr @tb_string_copy_range(ptr %option, i64 0)",
             "  ret ptr %empty",
+            "}",
+            "",
+            "define private ptr @tb_getenv(ptr %name) {",
+            "entry:",
+            "  %value = call ptr @getenv(ptr %name)",
+            "  %missing = icmp eq ptr %value, null",
+            "  br i1 %missing, label %empty, label %copy",
+            "empty:",
+            "  %empty.data = call ptr @malloc(i64 1)",
+            "  store i8 0, ptr %empty.data",
+            "  ret ptr %empty.data",
+            "copy:",
+            "  %value.copy = call ptr @tb_string_clone(ptr %value)",
+            "  ret ptr %value.copy",
             "}",
         ]
         )
@@ -4802,11 +4824,13 @@ class LLVMEmitter:
             source = self._emit_string_expression(expression.arguments[0].value, lines, string_lengths)
             temp_name = self._next_temp("readfile")
             lines.append(f"  {temp_name} = call ptr @tb_read_file(ptr {source})")
+            self._emit_exception_dispatch_if_pending(lines)
             return temp_name
         if expression.name == "read_lines":
             source = self._emit_string_expression(expression.arguments[0].value, lines, string_lengths)
             temp_name = self._next_temp("readlines")
             lines.append(f"  {temp_name} = call ptr @tb_read_lines(ptr {source})")
+            self._emit_exception_dispatch_if_pending(lines)
             return temp_name
         if expression.name == "time_ms":
             temp_name = self._next_temp("timems")
@@ -5080,6 +5104,11 @@ class LLVMEmitter:
             option = self._emit_string_expression(expression.arguments[1].value, lines, string_lengths)
             temp_name = self._next_temp("optionvalue")
             lines.append(f"  {temp_name} = call ptr @tb_option_value(ptr {args}, ptr {option})")
+            return temp_name
+        if expression.name == "getenv":
+            name = self._emit_string_expression(expression.arguments[0].value, lines, string_lengths)
+            temp_name = self._next_temp("getenv")
+            lines.append(f"  {temp_name} = call ptr @tb_getenv(ptr {name})")
             return temp_name
         if expression.name == "is_digit":
             source = self._emit_string_expression(expression.arguments[0].value, lines, string_lengths)
@@ -5741,7 +5770,17 @@ class LLVMEmitter:
                 f"  {mode_pointer} = getelementptr inbounds [{len(self.FILE_MODE_BYTES)} x i8], ptr @{self.FILE_MODE_LABEL}, i32 0, i32 0"
             )
             lines.append(f"  {file_handle} = call ptr @fopen(ptr {path_pointer}, ptr {mode_pointer})")
+            is_null = self._next_temp("file.is_null")
+            open_fail = self._next_label("file.open_fail")
+            open_done = self._next_label("file.open_done")
+            lines.append(f"  {is_null} = icmp eq ptr {file_handle}, null")
+            lines.append(f"  br i1 {is_null}, label %{open_fail}, label %{open_done}")
+            lines.append(f"{open_fail}:")
+            lines.append(f"  call void @tb_set_exception(ptr {path_pointer})")
+            lines.append(f"  br label %{open_done}")
+            lines.append(f"{open_done}:")
             lines.append(f"  store ptr {file_handle}, ptr {slot_name}")
+            self._emit_exception_dispatch_if_pending(lines)
             return False
         if isinstance(instruction, IRWriteLine):
             slot_name = self.file_slots.get(instruction.file_name)
@@ -5758,6 +5797,27 @@ class LLVMEmitter:
                 f"  {format_pointer} = getelementptr inbounds [{len(self.FILE_LINE_FORMAT_BYTES)} x i8], ptr @{self.FILE_LINE_FORMAT_LABEL}, i32 0, i32 0"
             )
             lines.append(f"  call i32 (ptr, ptr, ...) @fprintf(ptr {file_handle}, ptr {format_pointer}, ptr {string_pointer})")
+            return False
+        if isinstance(instruction, IRCloseFile):
+            slot_name = self.file_slots.get(instruction.file_name)
+            if slot_name is None:
+                global_slot = self.global_file_symbols.get(instruction.file_name)
+                if global_slot is None:
+                    raise TypeError(f"Unknown file variable: {instruction.file_name}")
+                slot_name = f"@{global_slot}"
+            file_handle = self._next_temp("file")
+            is_null = self._next_temp("file.is_null")
+            close_done = self._next_label("file.close_done")
+            lines.append(f"  {file_handle} = load ptr, ptr {slot_name}")
+            lines.append(f"  {is_null} = icmp eq ptr {file_handle}, null")
+            lines.append(f"  br i1 {is_null}, label %{close_done}, label %file.close_do.{self.label_counter}")
+            lines.append(f"file.close_do.{self.label_counter}:")
+            self.label_counter += 1
+            lines.append(f"  call i32 @fclose(ptr {file_handle})")
+            lines.append(f"  br label %{close_done}")
+            lines.append(f"{close_done}:")
+            if slot_name in self.open_file_slots:
+                self.open_file_slots.remove(slot_name)
             return False
         if isinstance(instruction, IRForLoop):
             return self._emit_for_loop(instruction, lines, string_lengths)
@@ -6632,8 +6692,16 @@ class LLVMEmitter:
     def _emit_close_open_files(self, lines: list[str]) -> None:
         for slot_name in self.open_file_slots:
             file_handle = self._next_temp("file")
+            is_null = self._next_temp("file.is_null")
+            close_done = self._next_label("file.cleanup_done")
             lines.append(f"  {file_handle} = load ptr, ptr {slot_name}")
+            lines.append(f"  {is_null} = icmp eq ptr {file_handle}, null")
+            lines.append(f"  br i1 {is_null}, label %{close_done}, label %file.cleanup_do.{self.label_counter}")
+            lines.append(f"file.cleanup_do.{self.label_counter}:")
+            self.label_counter += 1
             lines.append(f"  call i32 @fclose(ptr {file_handle})")
+            lines.append(f"  br label %{close_done}")
+            lines.append(f"{close_done}:")
 
 
 def emit_llvm(module: IRModule) -> str:

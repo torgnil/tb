@@ -12,11 +12,59 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-string raylib_default_root():
-    return '/opt/homebrew/Cellar/raylib/5.5'
+string[] raylib_roots():
+    return [
+        '/opt/homebrew/opt/raylib',
+        '/usr/local/opt/raylib'
+    ]
 
 bool is_foreign_module(string name):
     return name == 'raylib'
+
+string raylib_header_path(string root):
+    return root + '/include/raylib.h'
+
+bool raylib_root_is_valid(string root):
+    if (root == ''):
+        return false
+    bool result = false
+    try:
+        string header = read_file(raylib_header_path(root))
+        result = true
+    catch (exception err):
+        result = false
+    return result
+
+string join_raylib_roots(string[] roots):
+    string joined = ''
+    bool first = true
+    for (string root in roots):
+        if (first):
+            joined = root
+            first = false
+        else:
+            joined += ', ' + root
+    return joined
+
+string[] raylib_checked_roots():
+    string[] roots = []
+    string override = getenv('TB_RAYLIB_ROOT')
+    if (override != ''):
+        roots.push(override)
+    for (string root in raylib_roots()):
+        roots.push(root)
+    return roots
+
+string raylib_root():
+    string override = getenv('TB_RAYLIB_ROOT')
+    if (override != ''):
+        if (raylib_root_is_valid(override)):
+            return override
+        throw 'TB_RAYLIB_ROOT missing raylib header: ' + raylib_header_path(override)
+    for (string root in raylib_roots()):
+        if (raylib_root_is_valid(root)):
+            return root
+    throw 'unable to find raylib; set TB_RAYLIB_ROOT to a raylib install root. checked: ' + join_raylib_roots(raylib_checked_roots())
 
 string raylib_member_symbol(string member_name):
     if (member_name == 'InitWindow'):
@@ -465,15 +513,18 @@ string[] foreign_module_link_flags(string[] active_modules):
     string[] flags = []
     for (string module_name in active_modules):
         if (module_name == 'raylib'):
-            flags.push(raylib_default_root() + '/lib/libraylib.550.dylib')
-            flags.push('-Wl,-rpath,' + raylib_default_root() + '/lib')
+            string root = raylib_root()
+            flags.push('-L' + root + '/lib')
+            flags.push('-Wl,-rpath,' + root + '/lib')
+            flags.push('-lraylib')
     return flags
 
 string[] foreign_module_cflags(string[] active_modules):
     string[] flags = []
     for (string module_name in active_modules):
         if (module_name == 'raylib'):
-            flags.push('-I' + raylib_default_root() + '/include')
+            string root = raylib_root()
+            flags.push('-I' + root + '/include')
     return flags
 
 string[] foreign_module_c_sources(string[] active_modules):

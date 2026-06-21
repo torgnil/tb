@@ -19,6 +19,86 @@ import foreign_modules;
 record FunctionSigIR(string name, string return_type);
 record RecordFieldIR(string record_name, string field_name, string field_type);
 record EnumTypeIR(string name, string[] values);
+record RefineInstructionsResult(LinearInstruction[] instructions, string[] temp_types);
+
+int TYPE_IR_PROFILE_ACTIVE = 0;
+int TYPE_IR_LOOKUP_BINDING_CALLS = 0;
+int TYPE_IR_LOOKUP_BINDING_SCAN_TOTAL = 0;
+int TYPE_IR_LOOKUP_FUNCTION_CALLS = 0;
+int TYPE_IR_LOOKUP_FUNCTION_SCAN_TOTAL = 0;
+int TYPE_IR_LOOKUP_RECORD_FIELD_CALLS = 0;
+int TYPE_IR_LOOKUP_RECORD_FIELD_SCAN_TOTAL = 0;
+int TYPE_IR_RECORD_TYPE_EXISTS_CALLS = 0;
+int TYPE_IR_RECORD_TYPE_EXISTS_SCAN_TOTAL = 0;
+int TYPE_IR_RECORD_CONSTRUCTOR_ARG_TYPES_CALLS = 0;
+int TYPE_IR_RECORD_CONSTRUCTOR_ARG_TYPES_SCAN_TOTAL = 0;
+int TYPE_IR_LOOKUP_TEMP_TYPE_CALLS = 0;
+int TYPE_IR_LOOKUP_TEMP_TYPE_SCAN_TOTAL = 0;
+int TYPE_IR_LOOKUP_INSTRUCTION_CALLS = 0;
+int TYPE_IR_LOOKUP_INSTRUCTION_SCAN_TOTAL = 0;
+int TYPE_IR_LOOKUP_INSTRUCTION_PAIR_CALLS = 0;
+int TYPE_IR_CLONE_INSTRUCTION_ARGS_CALLS = 0;
+int TYPE_IR_CLONE_INSTRUCTION_ARGS_ITEMS = 0;
+int TYPE_IR_CLONE_LINEAR_INSTRUCTION_CALLS = 0;
+int TYPE_IR_CLONE_LINEAR_INSTRUCTIONS_ITEMS = 0;
+string[] TYPE_IR_FUNCTION_TYPE_CACHE_NAMES = [];
+string[] TYPE_IR_FUNCTION_TYPE_CACHE_VALUES = [];
+string[] TYPE_IR_BINDING_TYPE_CACHE_NAMES = [];
+string[] TYPE_IR_BINDING_TYPE_CACHE_VALUES = [];
+string[] TYPE_IR_FIELD_TYPE_CACHE_KEYS = [];
+string[] TYPE_IR_FIELD_TYPE_CACHE_VALUES = [];
+
+void reset_type_ir_profile_stats():
+    TYPE_IR_PROFILE_ACTIVE = 1
+    TYPE_IR_LOOKUP_BINDING_CALLS = 0
+    TYPE_IR_LOOKUP_BINDING_SCAN_TOTAL = 0
+    TYPE_IR_LOOKUP_FUNCTION_CALLS = 0
+    TYPE_IR_LOOKUP_FUNCTION_SCAN_TOTAL = 0
+    TYPE_IR_LOOKUP_RECORD_FIELD_CALLS = 0
+    TYPE_IR_LOOKUP_RECORD_FIELD_SCAN_TOTAL = 0
+    TYPE_IR_RECORD_TYPE_EXISTS_CALLS = 0
+    TYPE_IR_RECORD_TYPE_EXISTS_SCAN_TOTAL = 0
+    TYPE_IR_RECORD_CONSTRUCTOR_ARG_TYPES_CALLS = 0
+    TYPE_IR_RECORD_CONSTRUCTOR_ARG_TYPES_SCAN_TOTAL = 0
+    TYPE_IR_LOOKUP_TEMP_TYPE_CALLS = 0
+    TYPE_IR_LOOKUP_TEMP_TYPE_SCAN_TOTAL = 0
+    TYPE_IR_LOOKUP_INSTRUCTION_CALLS = 0
+    TYPE_IR_LOOKUP_INSTRUCTION_SCAN_TOTAL = 0
+    TYPE_IR_LOOKUP_INSTRUCTION_PAIR_CALLS = 0
+    TYPE_IR_CLONE_INSTRUCTION_ARGS_CALLS = 0
+    TYPE_IR_CLONE_INSTRUCTION_ARGS_ITEMS = 0
+    TYPE_IR_CLONE_LINEAR_INSTRUCTION_CALLS = 0
+    TYPE_IR_CLONE_LINEAR_INSTRUCTIONS_ITEMS = 0
+
+string type_ir_profile_report():
+    string lines = 'lookup_binding_calls=' + TYPE_IR_LOOKUP_BINDING_CALLS.to_string()
+    lines += '\nlookup_binding_scan_total=' + TYPE_IR_LOOKUP_BINDING_SCAN_TOTAL.to_string()
+    lines += '\nlookup_function_calls=' + TYPE_IR_LOOKUP_FUNCTION_CALLS.to_string()
+    lines += '\nlookup_function_scan_total=' + TYPE_IR_LOOKUP_FUNCTION_SCAN_TOTAL.to_string()
+    lines += '\nlookup_record_field_calls=' + TYPE_IR_LOOKUP_RECORD_FIELD_CALLS.to_string()
+    lines += '\nlookup_record_field_scan_total=' + TYPE_IR_LOOKUP_RECORD_FIELD_SCAN_TOTAL.to_string()
+    lines += '\nrecord_type_exists_calls=' + TYPE_IR_RECORD_TYPE_EXISTS_CALLS.to_string()
+    lines += '\nrecord_type_exists_scan_total=' + TYPE_IR_RECORD_TYPE_EXISTS_SCAN_TOTAL.to_string()
+    lines += '\nrecord_constructor_arg_types_calls=' + TYPE_IR_RECORD_CONSTRUCTOR_ARG_TYPES_CALLS.to_string()
+    lines += '\nrecord_constructor_arg_types_scan_total=' + TYPE_IR_RECORD_CONSTRUCTOR_ARG_TYPES_SCAN_TOTAL.to_string()
+    lines += '\nlookup_temp_type_calls=' + TYPE_IR_LOOKUP_TEMP_TYPE_CALLS.to_string()
+    lines += '\nlookup_temp_type_scan_total=' + TYPE_IR_LOOKUP_TEMP_TYPE_SCAN_TOTAL.to_string()
+    lines += '\nlookup_instruction_calls=' + TYPE_IR_LOOKUP_INSTRUCTION_CALLS.to_string()
+    lines += '\nlookup_instruction_scan_total=' + TYPE_IR_LOOKUP_INSTRUCTION_SCAN_TOTAL.to_string()
+    lines += '\nlookup_instruction_pair_calls=' + TYPE_IR_LOOKUP_INSTRUCTION_PAIR_CALLS.to_string()
+    lines += '\nclone_instruction_args_calls=' + TYPE_IR_CLONE_INSTRUCTION_ARGS_CALLS.to_string()
+    lines += '\nclone_instruction_args_items=' + TYPE_IR_CLONE_INSTRUCTION_ARGS_ITEMS.to_string()
+    lines += '\nclone_linear_instruction_calls=' + TYPE_IR_CLONE_LINEAR_INSTRUCTION_CALLS.to_string()
+    lines += '\nclone_linear_instructions_items=' + TYPE_IR_CLONE_LINEAR_INSTRUCTIONS_ITEMS.to_string()
+    return lines
+
+void reset_type_ir_lookup_caches():
+    TYPE_IR_FUNCTION_TYPE_CACHE_NAMES = []
+    TYPE_IR_FUNCTION_TYPE_CACHE_VALUES = []
+    TYPE_IR_BINDING_TYPE_CACHE_NAMES = []
+    TYPE_IR_BINDING_TYPE_CACHE_VALUES = []
+    TYPE_IR_FIELD_TYPE_CACHE_KEYS = []
+    TYPE_IR_FIELD_TYPE_CACHE_VALUES = []
 
 string strip_prefix(string value, string prefix):
     if (value.starts_with(prefix)):
@@ -124,9 +204,13 @@ bool is_same_known_type(string left, string right):
     return left != '' && left != 'unknown' && left == right
 
 string lookup_binding_type(BindingIR[] bindings, string name):
+    if (TYPE_IR_PROFILE_ACTIVE != 0):
+        TYPE_IR_LOOKUP_BINDING_CALLS += 1
     int name_length = name.length()
     int index = bindings.length() - 1
     while (index >= 0):
+        if (TYPE_IR_PROFILE_ACTIVE != 0):
+            TYPE_IR_LOOKUP_BINDING_SCAN_TOTAL += 1
         BindingIR binding = bindings[index]
         if (binding.name.length() == name_length && binding.name == name):
             return binding.type_name.substring(0)
@@ -134,9 +218,13 @@ string lookup_binding_type(BindingIR[] bindings, string name):
     return 'unknown'
 
 string lookup_function_return_type(FunctionSigIR[] functions, string name):
+    if (TYPE_IR_PROFILE_ACTIVE != 0):
+        TYPE_IR_LOOKUP_FUNCTION_CALLS += 1
     int name_length = name.length()
     int index = functions.length() - 1
     while (index >= 0):
+        if (TYPE_IR_PROFILE_ACTIVE != 0):
+            TYPE_IR_LOOKUP_FUNCTION_SCAN_TOTAL += 1
         FunctionSigIR function_sig = functions[index]
         if (function_sig.name.length() == name_length && function_sig.name == name):
             return function_sig.return_type.substring(0)
@@ -144,10 +232,14 @@ string lookup_function_return_type(FunctionSigIR[] functions, string name):
     return 'unknown'
 
 string lookup_record_field_type(RecordFieldIR[] fields, string record_name, string field_name):
+    if (TYPE_IR_PROFILE_ACTIVE != 0):
+        TYPE_IR_LOOKUP_RECORD_FIELD_CALLS += 1
     int record_name_length = record_name.length()
     int field_name_length = field_name.length()
     int index = fields.length() - 1
     while (index >= 0):
+        if (TYPE_IR_PROFILE_ACTIVE != 0):
+            TYPE_IR_LOOKUP_RECORD_FIELD_SCAN_TOTAL += 1
         RecordFieldIR field = fields[index]
         if (field.record_name.length() == record_name_length && field.field_name.length() == field_name_length && field.record_name == record_name && field.field_name == field_name):
             return field.field_type.substring(0)
@@ -155,17 +247,25 @@ string lookup_record_field_type(RecordFieldIR[] fields, string record_name, stri
     return 'unknown'
 
 bool record_type_exists(RecordFieldIR[] fields, string record_name):
+    if (TYPE_IR_PROFILE_ACTIVE != 0):
+        TYPE_IR_RECORD_TYPE_EXISTS_CALLS += 1
     int record_name_length = record_name.length()
     int index = fields.length() - 1
     while (index >= 0):
+        if (TYPE_IR_PROFILE_ACTIVE != 0):
+            TYPE_IR_RECORD_TYPE_EXISTS_SCAN_TOTAL += 1
         if (fields[index].record_name.length() == record_name_length && fields[index].record_name == record_name):
             return true
         index -= 1
     return false
 
 string[] record_constructor_arg_types(RecordFieldIR[] fields, string record_name):
+    if (TYPE_IR_PROFILE_ACTIVE != 0):
+        TYPE_IR_RECORD_CONSTRUCTOR_ARG_TYPES_CALLS += 1
     string[] result = []
     for (RecordFieldIR field in fields):
+        if (TYPE_IR_PROFILE_ACTIVE != 0):
+            TYPE_IR_RECORD_CONSTRUCTOR_ARG_TYPES_SCAN_TOTAL += 1
         if (field.record_name == record_name):
             result.push(field.field_type.substring(0))
     return result
@@ -313,8 +413,12 @@ string[] instruction_result_types(LinearInstruction[] instructions):
     return result
 
 string lookup_temp_type(LinearInstruction[] instructions, string name):
+    if (TYPE_IR_PROFILE_ACTIVE != 0):
+        TYPE_IR_LOOKUP_TEMP_TYPE_CALLS += 1
     int index = instructions.length() - 1
     while (index >= 0):
+        if (TYPE_IR_PROFILE_ACTIVE != 0):
+            TYPE_IR_LOOKUP_TEMP_TYPE_SCAN_TOTAL += 1
         LinearInstruction op = instructions[index]
         if (op.lhs == name):
             return op.result_type.substring(0)
@@ -414,8 +518,12 @@ string[] collect_temp_type_slots(LinearInstruction[] instructions):
     return slots
 
 LinearInstruction lookup_instruction(LinearInstruction[] instructions, string name):
+    if (TYPE_IR_PROFILE_ACTIVE != 0):
+        TYPE_IR_LOOKUP_INSTRUCTION_CALLS += 1
     int index = instructions.length() - 1
     while (index >= 0):
+        if (TYPE_IR_PROFILE_ACTIVE != 0):
+            TYPE_IR_LOOKUP_INSTRUCTION_SCAN_TOTAL += 1
         LinearInstruction op = clone_linear_instruction(instructions[index])
         if (op.lhs == name):
             return op
@@ -423,6 +531,8 @@ LinearInstruction lookup_instruction(LinearInstruction[] instructions, string na
     return LinearInstruction('', '', '', '', '', [])
 
 LinearInstruction lookup_instruction_pair(LinearInstruction[] first, LinearInstruction[] second, string name):
+    if (TYPE_IR_PROFILE_ACTIVE != 0):
+        TYPE_IR_LOOKUP_INSTRUCTION_PAIR_CALLS += 1
     LinearInstruction found = lookup_instruction(first, name)
     if (found.lhs != ''):
         return found
@@ -504,8 +614,12 @@ string infer_call_type(string name, FunctionSigIR[] functions):
         return 'bool'
     if (name == 'option_value'):
         return 'string'
+    if (name == 'getenv'):
+        return 'string'
     if (name == 'open'):
         return 'file'
+    if (name == 'close'):
+        return 'void'
     if (name == 'to_int'):
         return 'int'
     if (name == 'to_string'):
@@ -671,6 +785,9 @@ string refine_ownership_mode(LinearInstruction op, string result_type):
     return op.ownership_mode
 
 string[] clone_instruction_args(string[] args):
+    if (TYPE_IR_PROFILE_ACTIVE != 0):
+        TYPE_IR_CLONE_INSTRUCTION_ARGS_CALLS += 1
+        TYPE_IR_CLONE_INSTRUCTION_ARGS_ITEMS += args.length()
     string[] cloned = []
     for (string arg in args):
         cloned.push(arg.substring(0))
@@ -680,12 +797,16 @@ LinearInstruction refined_value_op(LinearInstruction op, string result_type, str
     return LinearInstruction(op.kind.substring(0), op.lhs.substring(0), result_type.substring(0), ownership_mode.substring(0), op.detail.substring(0), clone_instruction_args(op.args))
 
 LinearInstruction clone_linear_instruction(LinearInstruction op):
+    if (TYPE_IR_PROFILE_ACTIVE != 0):
+        TYPE_IR_CLONE_LINEAR_INSTRUCTION_CALLS += 1
     return LinearInstruction(op.kind.substring(0), op.lhs.substring(0), op.result_type.substring(0), op.ownership_mode.substring(0), op.detail.substring(0), clone_instruction_args(op.args))
 
 LinearInstruction[] clone_linear_instructions(LinearInstruction[] instructions):
     LinearInstruction[] cloned = []
     int index = 0
     while (index < instructions.length()):
+        if (TYPE_IR_PROFILE_ACTIVE != 0):
+            TYPE_IR_CLONE_LINEAR_INSTRUCTIONS_ITEMS += 1
         cloned.push(clone_linear_instruction(instructions[index]))
         index += 1
     return cloned
@@ -714,17 +835,17 @@ BlockIR clone_block_ir(BlockIR block):
 GlobalDeclIR clone_global_decl_ir(GlobalDeclIR global_decl):
     return GlobalDeclIR(global_decl.header.substring(0), clone_linear_instructions(global_decl.instructions), global_decl.value_name.substring(0))
 
-LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bindings, FunctionSigIR[] functions, RecordFieldIR[] record_fields, EnumTypeIR[] enum_types, string[] temp_types, string[] function_type_cache_names, string[] function_type_cache_values, string[] binding_type_cache_names, string[] binding_type_cache_values, string[] field_type_cache_keys, string[] field_type_cache_values):
+LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bindings, FunctionSigIR[] functions, RecordFieldIR[] record_fields, EnumTypeIR[] enum_types, string[] temp_types):
     if (op.kind != 'value'):
         return op
     if (op.result_type != 'unknown' && op.detail != 'array' && op.detail != 'set' && op.detail != 'map'):
         return refined_value_op(op, op.result_type, refine_ownership_mode(op, op.result_type))
     if (op.detail == 'identifier'):
-        string result_type = lookup_cached_name_type(binding_type_cache_names, binding_type_cache_values, op.args[0])
+        string result_type = lookup_cached_name_type(TYPE_IR_BINDING_TYPE_CACHE_NAMES, TYPE_IR_BINDING_TYPE_CACHE_VALUES, op.args[0])
         if (result_type == 'unknown'):
             result_type = lookup_binding_type(bindings, op.args[0])
-            binding_type_cache_names.push(op.args[0])
-            binding_type_cache_values.push(result_type)
+            TYPE_IR_BINDING_TYPE_CACHE_NAMES.push(op.args[0])
+            TYPE_IR_BINDING_TYPE_CACHE_VALUES.push(result_type)
         if (result_type == 'unknown' && could_be_named_type(op.args[0]) && enum_name_exists(enum_types, op.args[0])):
             result_type = op.args[0]
         return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
@@ -751,7 +872,7 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
         string result_type = infer_unary_type(op.args[0], operand_type)
         return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
     if (op.detail == 'call'):
-        string result_type = infer_call_type_cached(op.args[0], functions, function_type_cache_names, function_type_cache_values)
+        string result_type = infer_call_type_cached(op.args[0], functions, TYPE_IR_FUNCTION_TYPE_CACHE_NAMES, TYPE_IR_FUNCTION_TYPE_CACHE_VALUES)
         if (result_type == 'unknown' && (op.args[0] == 'min' || op.args[0] == 'max') && op.args.length() == 3):
             string left_type = lookup_temp_type_slot(temp_types, op.args[1])
             string right_type = lookup_temp_type_slot(temp_types, op.args[2])
@@ -767,11 +888,11 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
         if (could_be_named_type(base_type) && enum_name_exists(enum_types, base_type) && enum_has_value(enum_types, base_type, op.args[0])):
             return refined_value_op(op, 'string', 'borrowed')
         string record_name = record_name_from_type(base_type)
-        string result_type = lookup_cached_field_type(field_type_cache_keys, field_type_cache_values, record_name, op.args[0])
+        string result_type = lookup_cached_field_type(TYPE_IR_FIELD_TYPE_CACHE_KEYS, TYPE_IR_FIELD_TYPE_CACHE_VALUES, record_name, op.args[0])
         if (result_type == 'unknown'):
             result_type = lookup_record_field_type(record_fields, record_name, op.args[0])
-            field_type_cache_keys.push(record_name + '.' + op.args[0])
-            field_type_cache_values.push(result_type)
+            TYPE_IR_FIELD_TYPE_CACHE_KEYS.push(record_name + '.' + op.args[0])
+            TYPE_IR_FIELD_TYPE_CACHE_VALUES.push(result_type)
         return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
     if (op.detail == 'method-call'):
         string method_name = op.args[0]
@@ -785,7 +906,7 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
         if (method_name == 'split' || method_name == 'split_lines'):
             return refined_value_op(op, 'string[]', 'owned')
         string base_type = lookup_temp_type_slot(temp_types, op.args[1])
-        string result_type = infer_method_call_type_cached(method_name, base_type, functions, function_type_cache_names, function_type_cache_values)
+        string result_type = infer_method_call_type_cached(method_name, base_type, functions, TYPE_IR_FUNCTION_TYPE_CACHE_NAMES, TYPE_IR_FUNCTION_TYPE_CACHE_VALUES)
         return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
     if (op.detail == 'method-call-lambda'):
         string base_type = 'unknown'
@@ -859,7 +980,7 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
         return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
     return op
 
-LinearInstruction[] refine_instructions(LinearInstruction[] instructions, BindingIR[] globals, BindingIR[] params, BindingIR[] locals, FunctionSigIR[] functions, RecordFieldIR[] record_fields, EnumTypeIR[] enum_types, LinearInstruction[] prior_instructions):
+RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, BindingIR[] globals, BindingIR[] params, BindingIR[] locals, FunctionSigIR[] functions, RecordFieldIR[] record_fields, EnumTypeIR[] enum_types, LinearInstruction[] prior_instructions, string[] temp_types):
     BindingIR[] bindings = []
     for (BindingIR binding in globals):
         bindings.push(binding)
@@ -868,18 +989,11 @@ LinearInstruction[] refine_instructions(LinearInstruction[] instructions, Bindin
     for (BindingIR binding in locals):
         bindings.push(binding)
 
-    string[] temp_types = collect_temp_type_slots(prior_instructions)
-    string[] function_type_cache_names = []
-    string[] function_type_cache_values = []
-    string[] binding_type_cache_names = []
-    string[] binding_type_cache_values = []
-    string[] field_type_cache_keys = []
-    string[] field_type_cache_values = []
     LinearInstruction[] block_refined = []
     int op_index = 0
     while (op_index < instructions.length()):
-        LinearInstruction op = clone_linear_instruction(instructions[op_index])
-        LinearInstruction current = clone_linear_instruction(refine_value_instruction(op, bindings, functions, record_fields, enum_types, temp_types, function_type_cache_names, function_type_cache_values, binding_type_cache_names, binding_type_cache_values, field_type_cache_keys, field_type_cache_values))
+        LinearInstruction op = instructions[op_index]
+        LinearInstruction current = refine_value_instruction(op, bindings, functions, record_fields, enum_types, temp_types)
         if (current.kind == 'value'):
             if (current.detail == 'call'):
                 if (!current.args.is_empty()):
@@ -935,15 +1049,21 @@ LinearInstruction[] refine_instructions(LinearInstruction[] instructions, Bindin
             temp_types = set_temp_type_slot(temp_types, current.lhs, current.result_type)
         block_refined.push(current)
         op_index += 1
-    return block_refined
+    return RefineInstructionsResult(block_refined, temp_types)
 
 BlockIR refine_block(BlockIR block, BindingIR[] globals, BindingIR[] params, BindingIR[] locals, FunctionSigIR[] functions, RecordFieldIR[] record_fields, EnumTypeIR[] enum_types, LinearInstruction[] prior_instructions):
-    return BlockIR(block.label.substring(0), refine_instructions(block.instructions, globals, params, locals, functions, record_fields, enum_types, prior_instructions), clone_terminator_ir(block.terminator))
+    string[] temp_types = collect_temp_type_slots(prior_instructions)
+    reset_type_ir_lookup_caches()
+    RefineInstructionsResult refined = refine_instructions(block.instructions, globals, params, locals, functions, record_fields, enum_types, prior_instructions, temp_types)
+    return BlockIR(block.label.substring(0), refined.instructions, clone_terminator_ir(block.terminator))
 
 GlobalDeclIR refine_global(GlobalDeclIR global_decl, BindingIR[] globals, FunctionSigIR[] functions, RecordFieldIR[] record_fields, EnumTypeIR[] enum_types, LinearInstruction[] prior_instructions):
     BindingIR[] empty_params = []
     BindingIR[] empty_locals = []
-    LinearInstruction[] refined = refine_instructions(global_decl.instructions, globals, empty_params, empty_locals, functions, record_fields, enum_types, prior_instructions)
+    reset_type_ir_lookup_caches()
+    string[] temp_types = collect_temp_type_slots(prior_instructions)
+    RefineInstructionsResult refined_result = refine_instructions(global_decl.instructions, globals, empty_params, empty_locals, functions, record_fields, enum_types, prior_instructions, temp_types)
+    LinearInstruction[] refined = refined_result.instructions
     BindingIR binding = ir_parse_binding_decl(strip_prefix(global_decl.header, 'global '))
     string value_type = lookup_temp_type(refined, global_decl.value_name)
     if (value_type == 'unknown' && (binding.type_name.starts_with('set<') || binding.type_name.starts_with('map<'))):
@@ -960,17 +1080,20 @@ ParsedFunction refine_function(ParsedFunction function_ir, BindingIR[] globals, 
     BindingIR[] locals = normalize_enum_bindings(function_ir.locals, enum_types)
     BlockIR[] blocks = []
     LinearInstruction[] prior_instructions = []
+    string[] temp_types = []
+    reset_type_ir_lookup_caches()
     for (BlockIR block in function_ir.blocks):
-        BlockIR refined_block = refine_block(block, globals, params, locals, functions, record_fields, enum_types, prior_instructions)
+        RefineInstructionsResult refined_result = refine_instructions(block.instructions, globals, params, locals, functions, record_fields, enum_types, prior_instructions, temp_types)
+        BlockIR refined_block = BlockIR(block.label.substring(0), refined_result.instructions, clone_terminator_ir(block.terminator))
+        temp_types = refined_result.temp_types
         if ((refined_block.terminator.kind == 'return' || refined_block.terminator.kind == 'return_owned') && refined_block.terminator.args.length() == 1 && function_return_type.ends_with('[]')):
             string return_temp = refined_block.terminator.args[0]
             if (lookup_temp_type(refined_block.instructions, return_temp) == '[]'):
                 refined_block = BlockIR(refined_block.label, set_temp_type(refined_block.instructions, return_temp, function_return_type), refined_block.terminator)
-        BlockIR pushed_block = clone_block_ir(refined_block)
-        blocks.push(pushed_block)
+        blocks.push(refined_block)
         int block_op_index = 0
         while (block_op_index < refined_block.instructions.length()):
-            prior_instructions.push(clone_linear_instruction(refined_block.instructions[block_op_index]))
+            prior_instructions.push(refined_block.instructions[block_op_index])
             block_op_index += 1
     string normalized_header = normalize_enum_function_header(function_ir.header, enum_types).substring(0)
     return ParsedFunction(normalized_header, function_name_from_header(normalized_header).substring(0), function_return_type_from_header(normalized_header).substring(0), clone_binding_irs(params), clone_binding_irs(locals), blocks)
@@ -983,12 +1106,26 @@ ProgramIR refine_program_ir(ProgramIR program):
 
     GlobalDeclIR[] refined_globals = []
     LinearInstruction[] prior_global_instructions = []
+    string[] prior_global_temp_types = []
     for (GlobalDeclIR global_decl in program.globals):
-        GlobalDeclIR refined_global = refine_global(global_decl, globals, functions, record_fields, enum_types, prior_global_instructions)
-        refined_globals.push(clone_global_decl_ir(refined_global))
+        reset_type_ir_lookup_caches()
+        BindingIR[] empty_params = []
+        BindingIR[] empty_locals = []
+        RefineInstructionsResult refined_global_result = refine_instructions(global_decl.instructions, globals, empty_params, empty_locals, functions, record_fields, enum_types, prior_global_instructions, prior_global_temp_types)
+        prior_global_temp_types = refined_global_result.temp_types
+        GlobalDeclIR refined_global = GlobalDeclIR(global_decl.header.substring(0), refined_global_result.instructions, global_decl.value_name.substring(0))
+        BindingIR binding = ir_parse_binding_decl(strip_prefix(global_decl.header, 'global '))
+        string value_type = lookup_temp_type(refined_global.instructions, global_decl.value_name)
+        if (value_type == 'unknown' && (binding.type_name.starts_with('set<') || binding.type_name.starts_with('map<'))):
+            refined_global = GlobalDeclIR(refined_global.header, set_temp_type(refined_global.instructions, global_decl.value_name, binding.type_name), refined_global.value_name)
+        if (value_type == '[]' && binding.type_name.ends_with('[]')):
+            refined_global = GlobalDeclIR(refined_global.header, set_temp_type(refined_global.instructions, global_decl.value_name, binding.type_name), refined_global.value_name)
+        else if (is_untyped_array_shape(value_type) && binding.type_name.ends_with('[]')):
+            refined_global = GlobalDeclIR(refined_global.header, set_temp_type(refined_global.instructions, global_decl.value_name, binding.type_name), refined_global.value_name)
+        refined_globals.push(refined_global)
         int global_op_index = 0
         while (global_op_index < refined_global.instructions.length()):
-            prior_global_instructions.push(clone_linear_instruction(refined_global.instructions[global_op_index]))
+            prior_global_instructions.push(refined_global.instructions[global_op_index])
             global_op_index += 1
 
     ParsedFunction[] refined_functions = []
