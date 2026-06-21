@@ -65,10 +65,13 @@ int LLVM_USER_CALL_ARG_FRAGMENT_BYTES = 0;
 int LLVM_USER_CALL_VOID_LINE_BYTES = 0;
 int LLVM_USER_CALL_NONVOID_LINE_BYTES = 0;
 string[] LLVM_CALL_META_NAMES = [];
+string[] LLVM_CALL_META_RETURN_TYPES = [];
 string[] LLVM_CALL_META_RETURN_LLVM_TYPES = [];
 int[] LLVM_CALL_META_PARAM_COUNTS = [];
 int[] LLVM_CALL_META_PARAM_OFFSETS = [];
 string[] LLVM_CALL_META_PARAM_LLVM_TYPES = [];
+string[] LLVM_CALL_META_INDEX_CACHE_NAMES = [];
+int[] LLVM_CALL_META_INDEX_CACHE_VALUES = [];
 string[] LLVM_FUNCTION_STRING_LITERAL_KEYS = [];
 string[] LLVM_FUNCTION_STRING_LITERAL_SYMBOLS = [];
 int LLVM_JOIN_CALLS = 0;
@@ -133,8 +136,27 @@ int LLVM_METHOD_VALUE_COUNT = 0;
 int LLVM_METHOD_VALUE_BYTES = 0;
 int LLVM_METHOD_STRING_COUNT = 0;
 int LLVM_METHOD_STRING_BYTES = 0;
+int LLVM_EMIT_RECORD_VALUE_MS = 0;
+int LLVM_EMIT_RECORD_VALUE_COUNT = 0;
+int LLVM_EMIT_CALL_VALUE_MS = 0;
+int LLVM_EMIT_CALL_VALUE_COUNT = 0;
+int LLVM_EMIT_METHOD_VALUE_MS = 0;
+int LLVM_EMIT_METHOD_VALUE_COUNT = 0;
+int LLVM_PHASE_GLOBAL_MS = 0;
+int LLVM_PHASE_CACHED_GLOBAL_MS = 0;
+int LLVM_PHASE_GLOBAL_INIT_HELPER_MS = 0;
+int LLVM_PHASE_FUNCTION_MS = 0;
+int LLVM_PHASE_GLOBAL_COUNT = 0;
+int LLVM_PHASE_CACHED_GLOBAL_COUNT = 0;
+int LLVM_PHASE_FUNCTION_COUNT = 0;
 string LLVM_LOOKUP_CACHE_FUNCTION_KEY = '';
 string[] LLVM_LOOKUP_CACHE_TEMP_TYPE_SLOTS = [];
+LinearInstruction[] LLVM_LOOKUP_CACHE_FLAT_INSTRUCTIONS = [];
+int[] LLVM_LOOKUP_CACHE_INSTRUCTION_POSITIONS = [];
+int LLVM_LOOKUP_TEMP_INSTRUCTION_CALLS = 0;
+int LLVM_LOOKUP_TEMP_INSTRUCTION_SLOT_HITS = 0;
+int LLVM_LOOKUP_TEMP_INSTRUCTION_FALLBACK_SCANS = 0;
+int LLVM_LOOKUP_TEMP_INSTRUCTION_MISSES = 0;
 
 string join_llvm_strings(string[] items, string separator):
     if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
@@ -251,6 +273,25 @@ void reset_llvm_backend_helper_stats():
     LLVM_METHOD_VALUE_BYTES = 0
     LLVM_METHOD_STRING_COUNT = 0
     LLVM_METHOD_STRING_BYTES = 0
+    LLVM_EMIT_RECORD_VALUE_MS = 0
+    LLVM_EMIT_RECORD_VALUE_COUNT = 0
+    LLVM_EMIT_CALL_VALUE_MS = 0
+    LLVM_EMIT_CALL_VALUE_COUNT = 0
+    LLVM_EMIT_METHOD_VALUE_MS = 0
+    LLVM_EMIT_METHOD_VALUE_COUNT = 0
+    LLVM_PHASE_GLOBAL_MS = 0
+    LLVM_PHASE_CACHED_GLOBAL_MS = 0
+    LLVM_PHASE_GLOBAL_INIT_HELPER_MS = 0
+    LLVM_PHASE_FUNCTION_MS = 0
+    LLVM_PHASE_GLOBAL_COUNT = 0
+    LLVM_PHASE_CACHED_GLOBAL_COUNT = 0
+    LLVM_PHASE_FUNCTION_COUNT = 0
+    LLVM_LOOKUP_CACHE_FLAT_INSTRUCTIONS = []
+    LLVM_LOOKUP_CACHE_INSTRUCTION_POSITIONS = []
+    LLVM_LOOKUP_TEMP_INSTRUCTION_CALLS = 0
+    LLVM_LOOKUP_TEMP_INSTRUCTION_SLOT_HITS = 0
+    LLVM_LOOKUP_TEMP_INSTRUCTION_FALLBACK_SCANS = 0
+    LLVM_LOOKUP_TEMP_INSTRUCTION_MISSES = 0
 
 string llvm_backend_helper_report():
     string lines = 'join_calls=' + LLVM_JOIN_CALLS.to_string()
@@ -314,6 +355,23 @@ string llvm_backend_helper_report():
     lines += '\nmethod_value_bytes=' + LLVM_METHOD_VALUE_BYTES.to_string()
     lines += '\nmethod_string_count=' + LLVM_METHOD_STRING_COUNT.to_string()
     lines += '\nmethod_string_bytes=' + LLVM_METHOD_STRING_BYTES.to_string()
+    lines += '\nemit_record_value_ms=' + LLVM_EMIT_RECORD_VALUE_MS.to_string()
+    lines += '\nemit_record_value_count=' + LLVM_EMIT_RECORD_VALUE_COUNT.to_string()
+    lines += '\nemit_call_value_ms=' + LLVM_EMIT_CALL_VALUE_MS.to_string()
+    lines += '\nemit_call_value_count=' + LLVM_EMIT_CALL_VALUE_COUNT.to_string()
+    lines += '\nemit_method_value_ms=' + LLVM_EMIT_METHOD_VALUE_MS.to_string()
+    lines += '\nemit_method_value_count=' + LLVM_EMIT_METHOD_VALUE_COUNT.to_string()
+    lines += '\nphase_global_ms=' + LLVM_PHASE_GLOBAL_MS.to_string()
+    lines += '\nphase_cached_global_ms=' + LLVM_PHASE_CACHED_GLOBAL_MS.to_string()
+    lines += '\nphase_global_init_helper_ms=' + LLVM_PHASE_GLOBAL_INIT_HELPER_MS.to_string()
+    lines += '\nphase_function_ms=' + LLVM_PHASE_FUNCTION_MS.to_string()
+    lines += '\nphase_global_count=' + LLVM_PHASE_GLOBAL_COUNT.to_string()
+    lines += '\nphase_cached_global_count=' + LLVM_PHASE_CACHED_GLOBAL_COUNT.to_string()
+    lines += '\nphase_function_count=' + LLVM_PHASE_FUNCTION_COUNT.to_string()
+    lines += '\nlookup_temp_instruction_calls=' + LLVM_LOOKUP_TEMP_INSTRUCTION_CALLS.to_string()
+    lines += '\nlookup_temp_instruction_slot_hits=' + LLVM_LOOKUP_TEMP_INSTRUCTION_SLOT_HITS.to_string()
+    lines += '\nlookup_temp_instruction_fallback_scans=' + LLVM_LOOKUP_TEMP_INSTRUCTION_FALLBACK_SCANS.to_string()
+    lines += '\nlookup_temp_instruction_misses=' + LLVM_LOOKUP_TEMP_INSTRUCTION_MISSES.to_string()
     return lines
 
 void set_llvm_profile_value_family(string family):
@@ -429,13 +487,17 @@ string llvm_user_call_report():
 
 void prepare_call_llvm_metadata(ProgramIR program):
     LLVM_CALL_META_NAMES = []
+    LLVM_CALL_META_RETURN_TYPES = []
     LLVM_CALL_META_RETURN_LLVM_TYPES = []
     LLVM_CALL_META_PARAM_COUNTS = []
     LLVM_CALL_META_PARAM_OFFSETS = []
     LLVM_CALL_META_PARAM_LLVM_TYPES = []
+    LLVM_CALL_META_INDEX_CACHE_NAMES = []
+    LLVM_CALL_META_INDEX_CACHE_VALUES = []
     int offset = 0
     for (ParsedFunction function_ir in program.functions):
         LLVM_CALL_META_NAMES.push(function_ir.name.substring(0))
+        LLVM_CALL_META_RETURN_TYPES.push(function_ir.return_type.substring(0))
         LLVM_CALL_META_RETURN_LLVM_TYPES.push(llvm_type(function_ir.return_type))
         LLVM_CALL_META_PARAM_COUNTS.push(function_ir.params.length())
         LLVM_CALL_META_PARAM_OFFSETS.push(offset)
@@ -448,6 +510,7 @@ void prepare_call_llvm_metadata(ProgramIR program):
             string return_type = foreign_function_return_type(symbol_name)
             string[] param_types = foreign_function_param_types(symbol_name)
             LLVM_CALL_META_NAMES.push(symbol_name)
+            LLVM_CALL_META_RETURN_TYPES.push(return_type)
             LLVM_CALL_META_RETURN_LLVM_TYPES.push(llvm_type(return_type))
             LLVM_CALL_META_PARAM_COUNTS.push(param_types.length())
             LLVM_CALL_META_PARAM_OFFSETS.push(offset)
@@ -456,12 +519,26 @@ void prepare_call_llvm_metadata(ProgramIR program):
                 offset += 1
 
 int lookup_call_meta_index(string name):
+    int cache_index = LLVM_CALL_META_INDEX_CACHE_NAMES.length() - 1
+    while (cache_index >= 0):
+        if (LLVM_CALL_META_INDEX_CACHE_NAMES[cache_index] == name):
+            return LLVM_CALL_META_INDEX_CACHE_VALUES[cache_index]
+        cache_index -= 1
     int index = 0
     while (index < LLVM_CALL_META_NAMES.length()):
         if (LLVM_CALL_META_NAMES[index] == name):
+            LLVM_CALL_META_INDEX_CACHE_NAMES.push(name.substring(0))
+            LLVM_CALL_META_INDEX_CACHE_VALUES.push(index)
             return index
         index += 1
+    LLVM_CALL_META_INDEX_CACHE_NAMES.push(name.substring(0))
+    LLVM_CALL_META_INDEX_CACHE_VALUES.push(-1)
     return -1
+
+string lookup_call_meta_return_type(int index):
+    if (index < 0 || index >= LLVM_CALL_META_RETURN_TYPES.length()):
+        return ''
+    return LLVM_CALL_META_RETURN_TYPES[index]
 
 string lookup_call_meta_return_llvm_type(int index):
     if (index < 0 || index >= LLVM_CALL_META_RETURN_LLVM_TYPES.length()):
@@ -639,8 +716,22 @@ void ensure_function_lookup_cache(ParsedFunction function_ir):
     if (LLVM_LOOKUP_CACHE_FUNCTION_KEY == cache_key):
         return
     LLVM_LOOKUP_CACHE_FUNCTION_KEY = cache_key.substring(0)
-    LinearInstruction[] instructions = flatten_function_instructions(function_ir)
-    LLVM_LOOKUP_CACHE_TEMP_TYPE_SLOTS = collect_temp_type_slots(instructions)
+    LLVM_LOOKUP_CACHE_FLAT_INSTRUCTIONS = []
+    LLVM_LOOKUP_CACHE_TEMP_TYPE_SLOTS = []
+    LLVM_LOOKUP_CACHE_INSTRUCTION_POSITIONS = []
+    int position = 0
+    for (BlockIR block in function_ir.blocks):
+        for (LinearInstruction op in block.instructions):
+            LLVM_LOOKUP_CACHE_FLAT_INSTRUCTIONS.push(op)
+            if (op.lhs != ''):
+                LLVM_LOOKUP_CACHE_TEMP_TYPE_SLOTS = set_temp_type_slot(LLVM_LOOKUP_CACHE_TEMP_TYPE_SLOTS, op.lhs, op.result_type)
+                int slot_index = temp_slot_index(op.lhs)
+                if (slot_index >= 0):
+                    while (LLVM_LOOKUP_CACHE_INSTRUCTION_POSITIONS.length() <= slot_index):
+                        LLVM_LOOKUP_CACHE_INSTRUCTION_POSITIONS.push(-1)
+                    if (LLVM_LOOKUP_CACHE_INSTRUCTION_POSITIONS[slot_index] < 0):
+                        LLVM_LOOKUP_CACHE_INSTRUCTION_POSITIONS[slot_index] = position
+            position += 1
 
 BindingIR lookup_named_binding(ParsedFunction function_ir, string name):
     for (BindingIR param_decl in function_ir.params):
@@ -819,11 +910,24 @@ string lookup_temp_llvm_type(ParsedFunction function_ir, string temp_name):
     return result_type
 
 LinearInstruction lookup_temp_instruction(ParsedFunction function_ir, string temp_name):
+    if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
+        LLVM_LOOKUP_TEMP_INSTRUCTION_CALLS += 1
     string lookup_name = lookup_cache_temp_name(temp_name)
-    for (BlockIR block in function_ir.blocks):
-        for (LinearInstruction op in block.instructions):
-            if (op.lhs == lookup_name):
-                return op
+    ensure_function_lookup_cache(function_ir)
+    int position = lookup_temp_instruction_slot(LLVM_LOOKUP_CACHE_INSTRUCTION_POSITIONS, lookup_name)
+    if (position >= 0 && position < LLVM_LOOKUP_CACHE_FLAT_INSTRUCTIONS.length()):
+        if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
+            LLVM_LOOKUP_TEMP_INSTRUCTION_SLOT_HITS += 1
+        return LLVM_LOOKUP_CACHE_FLAT_INSTRUCTIONS[position]
+    if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
+        LLVM_LOOKUP_TEMP_INSTRUCTION_FALLBACK_SCANS += 1
+    int index = 0
+    while (index < LLVM_LOOKUP_CACHE_FLAT_INSTRUCTIONS.length()):
+        if (LLVM_LOOKUP_CACHE_FLAT_INSTRUCTIONS[index].lhs == lookup_name):
+            return LLVM_LOOKUP_CACHE_FLAT_INSTRUCTIONS[index]
+        index += 1
+    if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
+        LLVM_LOOKUP_TEMP_INSTRUCTION_MISSES += 1
     return LinearInstruction('', '', '', '', '', [])
 
 ParsedFunction lookup_named_function_decl(ProgramIR program, string name):
@@ -2829,7 +2933,7 @@ string emit_map_value_instruction(ProgramIR program, ParsedFunction function_ir,
         item_index += 1
     return join_llvm_strings(lines, '\n')
 
-string emit_record_value_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op):
+string emit_record_value_instruction_core(ProgramIR program, ParsedFunction function_ir, LinearInstruction op):
     string record_name = op.args[0]
     RecordDeclIR record_decl = lookup_record_decl(program, record_name)
     if (record_decl.header == ''):
@@ -2934,7 +3038,17 @@ string emit_record_value_instruction(ProgramIR program, ParsedFunction function_
         index += 1
     return join_llvm_strings(lines, '\n')
 
-string emit_call_value_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op):
+string emit_record_value_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op):
+    int start_ms = 0
+    if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
+        start_ms = time_ms()
+    string line = emit_record_value_instruction_core(program, function_ir, op)
+    if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
+        LLVM_EMIT_RECORD_VALUE_MS += time_ms() - start_ms
+        LLVM_EMIT_RECORD_VALUE_COUNT += 1
+    return line
+
+string emit_call_value_instruction_core(ProgramIR program, ParsedFunction function_ir, LinearInstruction op):
     string lhs = temp_ref(op.lhs)
     string call_name = op.args[0]
     string call_arg1_type = ''
@@ -3096,12 +3210,9 @@ string emit_call_value_instruction(ProgramIR program, ParsedFunction function_ir
         if (op.args.length() != 1):
             throw 'unsupported llvm dump_runtime_activity arity'
         return emit_tracked_builtin_call_line('  call void @tb_bootstrap_dump_runtime_activity()')
-    ParsedFunction callee = lookup_named_function_decl(program, call_name)
     int call_meta_index = lookup_call_meta_index(call_name)
-    string result_type = foreign_function_return_type(call_name)
+    string result_type = lookup_call_meta_return_type(call_meta_index)
     string result_llvm_type = lookup_call_meta_return_llvm_type(call_meta_index)
-    if (callee.header != ''):
-        result_type = callee.return_type.substring(0)
     if (lookup_record_decl(program, call_name).header != ''):
         string record_line = emit_record_value_instruction(program, function_ir, op)
         if (LLVM_USER_CALL_STATS_ACTIVE != 0):
@@ -3163,6 +3274,16 @@ string emit_call_value_instruction(ProgramIR program, ParsedFunction function_ir
     if (LLVM_USER_CALL_STATS_ACTIVE != 0):
         LLVM_USER_CALL_NONVOID_LINE_BYTES += line.length()
     record_llvm_user_call_stats(op.args.length() - 1, param_count, false, false, line.length())
+    return line
+
+string emit_call_value_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op):
+    int start_ms = 0
+    if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
+        start_ms = time_ms()
+    string line = emit_call_value_instruction_core(program, function_ir, op)
+    if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
+        LLVM_EMIT_CALL_VALUE_MS += time_ms() - start_ms
+        LLVM_EMIT_CALL_VALUE_COUNT += 1
     return line
 
 string emit_tracked_builtin_call_line(string line):
@@ -3428,7 +3549,7 @@ string emit_set_method_call_value_instruction(ProgramIR program, ParsedFunction 
         return join_llvm_strings(lines, '\n')
     return ''
 
-string emit_method_call_value_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op):
+string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction function_ir, LinearInstruction op):
     string lhs = temp_ref(op.lhs)
     string method_name = op.args[0]
     string method_base_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[1]))
@@ -3533,6 +3654,16 @@ string emit_method_call_value_instruction(ProgramIR program, ParsedFunction func
     if (normalize_llvm_type_name(result_type) == 'void'):
         return '  call void @' + op.args[0] + '(' + join_llvm_strings(args, ', ') + ')'
     return '  ' + lhs + ' = call ' + llvm_type(result_type) + ' @' + op.args[0] + '(' + join_llvm_strings(args, ', ') + ')'
+
+string emit_method_call_value_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op):
+    int start_ms = 0
+    if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
+        start_ms = time_ms()
+    string line = emit_method_call_value_instruction_core(program, function_ir, op)
+    if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
+        LLVM_EMIT_METHOD_VALUE_MS += time_ms() - start_ms
+        LLVM_EMIT_METHOD_VALUE_COUNT += 1
+    return line
 
 string emit_index_value_instruction(ParsedFunction function_ir, LinearInstruction op):
     string lhs = temp_ref(op.lhs)
@@ -5497,22 +5628,45 @@ string[] llvm_codegen_ir(ProgramIR program):
     if ((!string_constants.is_empty() || needs_maps || !record_decls.is_empty() || needs_strcmp || needs_strlen || needs_runtime_string_copy || needs_string_array || needs_string_array_array || needs_record_array) && (!program.globals.is_empty() || !program.functions.is_empty())):
         lines.push('')
     for (GlobalDeclIR global_decl in program.globals):
+        int global_start_ms = 0
+        if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
+            global_start_ms = time_ms()
         for (string line in emit_global_lines(program, global_decl)):
             lines.push(line)
+        if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
+            LLVM_PHASE_GLOBAL_MS += time_ms() - global_start_ms
+            LLVM_PHASE_GLOBAL_COUNT += 1
     for (ParsedFunction function_ir in program.functions):
         if (is_cached_function_header(function_ir.header) && supports_cached_function_backend(program, function_ir)):
+            int cached_global_start_ms = 0
+            if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
+                cached_global_start_ms = time_ms()
             for (string line in emit_cached_function_globals(program, function_ir)):
                 lines.push(line)
+            if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
+                LLVM_PHASE_CACHED_GLOBAL_MS += time_ms() - cached_global_start_ms
+                LLVM_PHASE_CACHED_GLOBAL_COUNT += 1
     if (needs_runtime_global_init):
+        int global_init_helper_start_ms = 0
+        if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
+            global_init_helper_start_ms = time_ms()
         for (string line in emit_global_init_helper(program)):
             lines.push(line)
+        if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
+            LLVM_PHASE_GLOBAL_INIT_HELPER_MS += time_ms() - global_init_helper_start_ms
     if (!program.globals.is_empty() && !program.functions.is_empty()):
         lines.push('')
     for (ParsedFunction function_ir in program.functions):
+        int function_start_ms = 0
+        if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
+            function_start_ms = time_ms()
         string[] function_lines = emit_function(program, function_ir, needs_runtime_global_init)
         for (string line in function_lines):
             lines.push(line)
         lines.push('')
+        if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
+            LLVM_PHASE_FUNCTION_MS += time_ms() - function_start_ms
+            LLVM_PHASE_FUNCTION_COUNT += 1
     string[] detached = []
     for (string line in lines):
         detached.push(line.substring(0))
