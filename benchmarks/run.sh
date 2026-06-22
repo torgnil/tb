@@ -6,10 +6,10 @@ script_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 repo_root=$(CDPATH= cd -- "$script_dir/.." && pwd)
 program_dir="$script_dir/programs"
 python_dir="$script_dir/python"
+c_dir="$script_dir/c"
 build_dir="$repo_root/.build/benchmarks"
 compiler="$repo_root/bin/tb"
 python3_bin=$(command -v python3 || true)
-pypy3_bin=$(command -v pypy3 || true)
 runs=5
 filter=""
 date_supports_nanoseconds=0
@@ -198,14 +198,10 @@ if [ "$include_python" -eq 1 ]; then
         echo "Missing python3" >&2
         exit 1
     fi
-    if [ -z "$pypy3_bin" ]; then
-        echo "Missing pypy3" >&2
-        exit 1
-    fi
 fi
 
 printf "%-20s %5s %10s %10s %10s %10s %10s %10s %10s %10s %8s\n" \
-    "benchmark" "runs" "tb_best" "tb_avg" "py3_best" "py3_avg" "tb/py3" "pypy_best" "pypy_avg" "tb/pypy" "status"
+    "benchmark" "runs" "tb_best" "tb_avg" "c_best" "c_avg" "tb/c" "py3_best" "py3_avg" "tb/py3" "status"
 echo "Warmup: 1 unreported run before timing" >&2
 
 index=1
@@ -219,10 +215,12 @@ for source in "${benchmarks[@]}"; do
     expected_file="$program_dir/$name.out"
     tb_output_file="$build_dir/$name.tb.out"
     tb_error_file="$build_dir/$name.tb.err"
+    c_output_file="$build_dir/$name.c.out"
+    c_error_file="$build_dir/$name.c.err"
     py_output_file="$build_dir/$name.py.out"
     py_error_file="$build_dir/$name.py.err"
-    pypy_output_file="$build_dir/$name.pypy.out"
-    pypy_error_file="$build_dir/$name.pypy.err"
+    c_source="$c_dir/$name.c"
+    c_executable="$build_dir/$name.c.bin"
     python_source="$python_dir/$name.py"
 
     if [ "$include_python" -eq 1 ] && [ ! -f "$python_source" ]; then
@@ -251,6 +249,24 @@ for source in "${benchmarks[@]}"; do
     tb_avg="$result_avg"
     status="ok"
 
+    if [ -f "$c_source" ]; then
+        if ! clang -O3 -DNDEBUG "$c_source" -o "$c_executable"; then
+            echo "C compile failed for $name" >&2
+            exit 1
+        fi
+        if ! run_target "$c_output_file" "$c_error_file" "$expected_file" "$c_executable"; then
+            echo "C run failed for $name" >&2
+            exit 1
+        fi
+        c_best="$result_best"
+        c_avg="$result_avg"
+        tb_vs_c=$(awk -v tb="$tb_avg" -v c="$c_avg" 'BEGIN { printf "%.2fx", tb / c }')
+    else
+        c_best="-"
+        c_avg="-"
+        tb_vs_c="-"
+    fi
+
     if [ "$include_python" -eq 1 ]; then
         if ! run_target "$py_output_file" "$py_error_file" "$expected_file" "$python3_bin" "$python_source"; then
             echo "python3 run failed for $name" >&2
@@ -258,29 +274,14 @@ for source in "${benchmarks[@]}"; do
         fi
         py3_best="$result_best"
         py3_avg="$result_avg"
-
-        if ! run_target "$pypy_output_file" "$pypy_error_file" "$expected_file" "$pypy3_bin" "$python_source"; then
-            echo "pypy3 run failed for $name" >&2
-            exit 1
-        fi
-        pypy_best="$result_best"
-        pypy_avg="$result_avg"
+        tb_vs_py3=$(awk -v tb="$tb_avg" -v py="$py3_avg" 'BEGIN { printf "%.2fx", tb / py }')
     else
         py3_best="-"
         py3_avg="-"
-        pypy_best="-"
-        pypy_avg="-"
-    fi
-
-    if [ "$include_python" -eq 1 ]; then
-        tb_vs_py3=$(awk -v tb="$tb_avg" -v py="$py3_avg" 'BEGIN { printf "%.2fx", tb / py }')
-        tb_vs_pypy=$(awk -v tb="$tb_avg" -v py="$pypy_avg" 'BEGIN { printf "%.2fx", tb / py }')
-    else
         tb_vs_py3="-"
-        tb_vs_pypy="-"
     fi
 
     printf "%-20s %5s %10s %10s %10s %10s %10s %10s %10s %10s %8s\n" \
-        "$name" "$runs" "$tb_best" "$tb_avg" "$py3_best" "$py3_avg" "$tb_vs_py3" "$pypy_best" "$pypy_avg" "$tb_vs_pypy" "$status"
+        "$name" "$runs" "$tb_best" "$tb_avg" "$c_best" "$c_avg" "$tb_vs_c" "$py3_best" "$py3_avg" "$tb_vs_py3" "$status"
     index=$((index + 1))
 done

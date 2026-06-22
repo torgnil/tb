@@ -136,6 +136,8 @@ int LLVM_METHOD_VALUE_COUNT = 0;
 int LLVM_METHOD_VALUE_BYTES = 0;
 int LLVM_METHOD_STRING_COUNT = 0;
 int LLVM_METHOD_STRING_BYTES = 0;
+string[] LLVM_NAMED_INT_SORT_COMPARATOR_NAMES = [];
+string[] LLVM_NAMED_RECORD_SORT_COMPARATOR_KEYS = [];
 int LLVM_EMIT_RECORD_VALUE_MS = 0;
 int LLVM_EMIT_RECORD_VALUE_COUNT = 0;
 int LLVM_EMIT_CALL_VALUE_MS = 0;
@@ -273,6 +275,8 @@ void reset_llvm_backend_helper_stats():
     LLVM_METHOD_VALUE_BYTES = 0
     LLVM_METHOD_STRING_COUNT = 0
     LLVM_METHOD_STRING_BYTES = 0
+    LLVM_NAMED_INT_SORT_COMPARATOR_NAMES = []
+    LLVM_NAMED_RECORD_SORT_COMPARATOR_KEYS = []
     LLVM_EMIT_RECORD_VALUE_MS = 0
     LLVM_EMIT_RECORD_VALUE_COUNT = 0
     LLVM_EMIT_CALL_VALUE_MS = 0
@@ -1228,6 +1232,24 @@ string llvm_map_clone_name(string type_name):
 
 string llvm_map_free_name(string type_name):
     return '@' + llvm_map_suffix(type_name) + '_free'
+
+string llvm_named_int_sort_comparator_symbol(string comparator_name):
+    return '@__tb_sort_cmp_int_' + comparator_name
+
+void register_named_int_sort_comparator(string comparator_name):
+    if (!(comparator_name in LLVM_NAMED_INT_SORT_COMPARATOR_NAMES)):
+        LLVM_NAMED_INT_SORT_COMPARATOR_NAMES.push(comparator_name)
+
+string llvm_record_array_type_name(string record_name):
+    return '%tb_bootstrap_record_array_' + record_name
+
+string llvm_named_record_sort_comparator_symbol(string record_name, string comparator_name):
+    return '@__tb_sort_cmp_record_' + record_name + '_' + comparator_name
+
+void register_named_record_sort_comparator(string record_name, string comparator_name):
+    string key = record_name + '|' + comparator_name
+    if (!(key in LLVM_NAMED_RECORD_SORT_COMPARATOR_KEYS)):
+        LLVM_NAMED_RECORD_SORT_COMPARATOR_KEYS.push(key)
 
 string llvm_zero_value(string type_name):
     type_name = normalize_llvm_type_name(type_name)
@@ -2678,6 +2700,8 @@ string emit_bootstrap_fixture_lambda_instruction(ProgramIR program, ParsedFuncti
 
 string emit_sort_lambda_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op):
     string lhs = temp_ref(op.lhs)
+    if (op.args[0] == 'sort_int_asc'):
+        return '  ' + lhs + ' = call ptr @tb_bootstrap_int_array_sort_asc(ptr ' + temp_ref(op.args[1]) + ')'
     if (op.args[0] == 'sort_int_desc'):
         return '  ' + lhs + ' = call ptr @tb_bootstrap_int_array_sort_desc(ptr ' + temp_ref(op.args[1]) + ')'
     if (op.args[0] == 'sort_record_field_asc'):
@@ -3586,6 +3610,9 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
         LinearInstruction comparator = lookup_temp_instruction(function_ir, op.args[2])
         if (comparator.kind == 'value' && comparator.detail == 'identifier' && comparator.args[0] == 'compare_desc'):
             return '  ' + lhs + ' = call ptr @tb_bootstrap_int_array_sort_desc(ptr ' + temp_ref(op.args[1]) + ')'
+        if (comparator.kind == 'value' && comparator.detail == 'identifier'):
+            register_named_int_sort_comparator(comparator.args[0])
+            return '  ' + lhs + ' = call ptr @tb_bootstrap_int_array_sort_by(ptr ' + temp_ref(op.args[1]) + ', ptr ' + llvm_named_int_sort_comparator_symbol(comparator.args[0]) + ')'
         throw 'unsupported llvm int[] sort comparator'
     if (method_name == 'sort' && method_base_type.ends_with('[]') && record_name_from_type(array_item_type(method_base_type)) != ''):
         if (op.args.length() != 3):
@@ -3594,6 +3621,9 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
         LinearInstruction comparator = lookup_temp_instruction(function_ir, op.args[2])
         if (comparator.kind == 'value' && comparator.detail == 'identifier' && comparator.args[0] == 'compare_edges' && record_name == 'Edge'):
             return '  ' + lhs + ' = call ptr @tb_bootstrap_record_array_sort_Edge_compare_edges(ptr ' + temp_ref(op.args[1]) + ')'
+        if (comparator.kind == 'value' && comparator.detail == 'identifier'):
+            register_named_record_sort_comparator(record_name, comparator.args[0])
+            return '  ' + lhs + ' = call ptr @tb_bootstrap_record_array_sort_by_' + record_name + '(ptr ' + temp_ref(op.args[1]) + ', ptr ' + llvm_named_record_sort_comparator_symbol(record_name, comparator.args[0]) + ')'
         throw 'unsupported llvm record[] sort comparator'
     if (method_name == 'length' && method_base_type == 'bool[]'):
         return '  ' + lhs + '.len32 = call i32 @tb_bootstrap_bool_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64'
@@ -4032,7 +4062,7 @@ string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, Lin
                 return emit_prio_q_lambda_instruction(function_ir, op)
             if (op.args[0] == 'create_prio_q_record_field_desc'):
                 return emit_prio_q_lambda_instruction(function_ir, op)
-            if (op.args[0] == 'sort_int_desc' || op.args[0] == 'sort_record_field_asc'):
+            if (op.args[0] == 'sort_int_asc' || op.args[0] == 'sort_int_desc' || op.args[0] == 'sort_record_field_asc'):
                 return emit_sort_lambda_instruction(program, function_ir, op)
             if (op.args[0] == 'map_to_parse_point' || op.args[0] == 'map_to_string_length' || op.args[0] == 'map_to_edge_distance' || op.args[0] == 'flat_map_edges_for_point'):
                 return emit_bootstrap_fixture_lambda_instruction(program, function_ir, op)
@@ -5198,6 +5228,40 @@ string[] emit_int_array_helpers():
 string[] emit_int_set_helpers():
     return read_file('compiler/tb/llvm_helpers/int_set.ll').split_lines()
 
+string[] emit_named_int_sort_helper(string comparator_name):
+    string comparator_symbol = llvm_named_int_sort_comparator_symbol(comparator_name)
+    return [
+        'define private i32 ' + comparator_symbol + '(ptr %left.slot, ptr %right.slot) {',
+        'entry:',
+        '  %left = load i64, ptr %left.slot',
+        '  %right = load i64, ptr %right.slot',
+        '  %cmp64 = call i64 @' + comparator_name + '(i64 %left, i64 %right)',
+        '  %is.neg = icmp slt i64 %cmp64, 0',
+        '  %is.pos = icmp sgt i64 %cmp64, 0',
+        '  %signed = select i1 %is.neg, i32 -1, i32 0',
+        '  %result = select i1 %is.pos, i32 1, i32 %signed',
+        '  ret i32 %result',
+        '}'
+    ]
+
+string[] emit_named_record_sort_helper(string record_name, string comparator_name):
+    string comparator_symbol = llvm_named_record_sort_comparator_symbol(record_name, comparator_name)
+    return [
+        'define private i32 ' + comparator_symbol + '(ptr %left.pair.ptr, ptr %right.pair.ptr) {',
+        'entry:',
+        '  %left.item.ptr = getelementptr inbounds { ptr, i8 }, ptr %left.pair.ptr, i32 0, i32 0',
+        '  %left.item = load ptr, ptr %left.item.ptr',
+        '  %right.item.ptr = getelementptr inbounds { ptr, i8 }, ptr %right.pair.ptr, i32 0, i32 0',
+        '  %right.item = load ptr, ptr %right.item.ptr',
+        '  %cmp64 = call i64 @' + comparator_name + '(ptr %left.item, ptr %right.item)',
+        '  %is.neg = icmp slt i64 %cmp64, 0',
+        '  %is.pos = icmp sgt i64 %cmp64, 0',
+        '  %signed = select i1 %is.neg, i32 -1, i32 0',
+        '  %result = select i1 %is.pos, i32 1, i32 %signed',
+        '  ret i32 %result',
+        '}'
+    ]
+
 string[] emit_record_set_helpers(ProgramIR program, string record_name):
     RecordDeclIR record_decl = lookup_record_decl(program, record_name)
     BindingIR[] fields = record_field_bindings(record_decl)
@@ -5268,6 +5332,63 @@ string[] replace_llvm_template_block_lines(string[] template_lines, string marke
 
 string[] emit_record_array_helpers(string record_name):
     string[] lines = replace_llvm_template_lines(read_file('compiler/tb/llvm_helpers/record_array_base.ll').split_lines(), '__RECORD__', record_name)
+    string record_array_type = llvm_record_array_type_name(record_name)
+    lines.push('define private ptr @tb_bootstrap_record_array_sort_by_' + record_name + '(ptr %array, ptr %cmp) {')
+    lines.push('entry:')
+    lines.push('  %len = call i32 @tb_bootstrap_record_array_length_' + record_name + '(ptr %array)')
+    lines.push('  %data.ptr = getelementptr inbounds ' + record_array_type + ', ptr %array, i32 0, i32 2')
+    lines.push('  %data = load ptr, ptr %data.ptr')
+    lines.push('  %owned.ptr = getelementptr inbounds ' + record_array_type + ', ptr %array, i32 0, i32 3')
+    lines.push('  %owned = load ptr, ptr %owned.ptr')
+    lines.push('  %len64 = sext i32 %len to i64')
+    lines.push('  %pair.size.ptr = getelementptr { ptr, i8 }, ptr null, i32 1')
+    lines.push('  %pair.size = ptrtoint ptr %pair.size.ptr to i64')
+    lines.push('  %pairs.bytes = mul i64 %len64, %pair.size')
+    lines.push('  %pairs = call ptr @malloc(i64 %pairs.bytes)')
+    lines.push('  br label %copy.cond')
+    lines.push('copy.cond:')
+    lines.push('  %copy.i = phi i32 [0, %entry], [%copy.next.i, %copy.step]')
+    lines.push('  %copy.keep = icmp slt i32 %copy.i, %len')
+    lines.push('  br i1 %copy.keep, label %copy.body, label %copy.done')
+    lines.push('copy.body:')
+    lines.push('  %pair.slot = getelementptr inbounds { ptr, i8 }, ptr %pairs, i32 %copy.i')
+    lines.push('  %pair.item.ptr = getelementptr inbounds { ptr, i8 }, ptr %pair.slot, i32 0, i32 0')
+    lines.push('  %data.slot = getelementptr inbounds ptr, ptr %data, i32 %copy.i')
+    lines.push('  %item = load ptr, ptr %data.slot')
+    lines.push('  store ptr %item, ptr %pair.item.ptr')
+    lines.push('  %pair.owned.ptr = getelementptr inbounds { ptr, i8 }, ptr %pair.slot, i32 0, i32 1')
+    lines.push('  %owned.slot = getelementptr inbounds i8, ptr %owned, i32 %copy.i')
+    lines.push('  %owned.value = load i8, ptr %owned.slot')
+    lines.push('  store i8 %owned.value, ptr %pair.owned.ptr')
+    lines.push('  br label %copy.step')
+    lines.push('copy.step:')
+    lines.push('  %copy.next.i = add i32 %copy.i, 1')
+    lines.push('  br label %copy.cond')
+    lines.push('copy.done:')
+    lines.push('  call void @qsort(ptr %pairs, i64 %len64, i64 %pair.size, ptr %cmp)')
+    lines.push('  br label %write.cond')
+    lines.push('write.cond:')
+    lines.push('  %write.i = phi i32 [0, %copy.done], [%write.next.i, %write.step]')
+    lines.push('  %write.keep = icmp slt i32 %write.i, %len')
+    lines.push('  br i1 %write.keep, label %write.body, label %done.sort')
+    lines.push('write.body:')
+    lines.push('  %write.pair.slot = getelementptr inbounds { ptr, i8 }, ptr %pairs, i32 %write.i')
+    lines.push('  %write.item.ptr = getelementptr inbounds { ptr, i8 }, ptr %write.pair.slot, i32 0, i32 0')
+    lines.push('  %write.item = load ptr, ptr %write.item.ptr')
+    lines.push('  %write.data.slot = getelementptr inbounds ptr, ptr %data, i32 %write.i')
+    lines.push('  store ptr %write.item, ptr %write.data.slot')
+    lines.push('  %write.owned.ptr = getelementptr inbounds { ptr, i8 }, ptr %write.pair.slot, i32 0, i32 1')
+    lines.push('  %write.owned = load i8, ptr %write.owned.ptr')
+    lines.push('  %write.owned.slot = getelementptr inbounds i8, ptr %owned, i32 %write.i')
+    lines.push('  store i8 %write.owned, ptr %write.owned.slot')
+    lines.push('  br label %write.step')
+    lines.push('write.step:')
+    lines.push('  %write.next.i = add i32 %write.i, 1')
+    lines.push('  br label %write.cond')
+    lines.push('done.sort:')
+    lines.push('  call void @free(ptr %pairs)')
+    lines.push('  ret ptr %array')
+    lines.push('}')
     if (record_name == 'Node'):
         for (string line in read_file('compiler/tb/llvm_helpers/record_array_node.ll').split_lines()):
             lines.push(line)
@@ -5450,6 +5571,8 @@ string[] emit_map_helpers(string type_name):
 string[] llvm_codegen_ir(ProgramIR program):
     if (!program.imports.is_empty()):
         throw 'llvm bootstrap backend only supports modules without imports'
+    LLVM_NAMED_INT_SORT_COMPARATOR_NAMES = []
+    LLVM_NAMED_RECORD_SORT_COMPARATOR_KEYS = []
     string[] lines = []
     RecordDeclIR[] record_decls = effective_record_decls(program)
     bool needs_records = !record_decls.is_empty()
@@ -5697,6 +5820,17 @@ string[] llvm_codegen_ir(ProgramIR program):
         if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
             LLVM_PHASE_FUNCTION_MS += time_ms() - function_start_ms
             LLVM_PHASE_FUNCTION_COUNT += 1
+    for (string comparator_name in LLVM_NAMED_INT_SORT_COMPARATOR_NAMES):
+        for (string helper in emit_named_int_sort_helper(comparator_name)):
+            lines.push(helper)
+        lines.push('')
+    for (string key in LLVM_NAMED_RECORD_SORT_COMPARATOR_KEYS):
+        int split = key.index_of('|')
+        string record_name = key.substring(0, split)
+        string comparator_name = key.substring(split + 1)
+        for (string helper in emit_named_record_sort_helper(record_name, comparator_name)):
+            lines.push(helper)
+        lines.push('')
     string[] detached = []
     for (string line in lines):
         detached.push(line.substring(0))
@@ -5712,6 +5846,8 @@ void print_llvm_lines(string[] lines):
 void llvm_print_ir(ProgramIR program):
     if (!program.imports.is_empty()):
         throw 'llvm bootstrap backend only supports modules without imports'
+    LLVM_NAMED_INT_SORT_COMPARATOR_NAMES = []
+    LLVM_NAMED_RECORD_SORT_COMPARATOR_KEYS = []
     RecordDeclIR[] record_decls = effective_record_decls(program)
     bool needs_records = !record_decls.is_empty()
     string[] map_types = collect_used_map_types(program)
@@ -5993,6 +6129,15 @@ void llvm_print_ir(ProgramIR program):
         string[] function_lines = emit_function(program, function_ir, needs_runtime_global_init)
         for (string line in function_lines):
             print(line)
+        print('')
+    for (string comparator_name in LLVM_NAMED_INT_SORT_COMPARATOR_NAMES):
+        print_llvm_lines(emit_named_int_sort_helper(comparator_name))
+        print('')
+    for (string key in LLVM_NAMED_RECORD_SORT_COMPARATOR_KEYS):
+        int split = key.index_of('|')
+        string record_name = key.substring(0, split)
+        string comparator_name = key.substring(split + 1)
+        print_llvm_lines(emit_named_record_sort_helper(record_name, comparator_name))
         print('')
 
 string[] llvm_codegen_source(string source):

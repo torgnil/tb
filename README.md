@@ -47,7 +47,7 @@ clang output.ll -o program
 
 - Compiling tb programs to LLVM IR with the Python compiler
 - Building and using the self-hosted tb compiler
-- Numbered fixtures through `tests/fixtures/77.tb`
+- Numbered fixtures through `tests/fixtures/80.tb`
 - The current AoC sample set in `examples/aoc`
 - Stage 2 and stage 3 self-hosting on the current verified path
 - The current bundled `raylib` demo path

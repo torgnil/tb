@@ -133,6 +133,40 @@ lt:
 eq:
   ret i32 0
 }
+define private i32 @tb_bootstrap_cmp_int_asc(ptr %left.ptr, ptr %right.ptr) {
+entry:
+  %left = load i64, ptr %left.ptr
+  %right = load i64, ptr %right.ptr
+  %left.lt = icmp slt i64 %left, %right
+  br i1 %left.lt, label %lt, label %check.gt
+lt:
+  ret i32 -1
+check.gt:
+  %left.gt = icmp sgt i64 %left, %right
+  br i1 %left.gt, label %gt, label %eq
+gt:
+  ret i32 1
+eq:
+  ret i32 0
+}
+define private ptr @tb_bootstrap_int_array_sort_asc(ptr %array) {
+entry:
+  %len = call i32 @tb_bootstrap_int_array_length(ptr %array)
+  %len64 = sext i32 %len to i64
+  %data.ptr = getelementptr inbounds %tb_bootstrap_int_array, ptr %array, i32 0, i32 2
+  %data = load ptr, ptr %data.ptr
+  call void @qsort(ptr %data, i64 %len64, i64 8, ptr @tb_bootstrap_cmp_int_asc)
+  ret ptr %array
+}
+define private ptr @tb_bootstrap_int_array_sort_by(ptr %array, ptr %cmp) {
+entry:
+  %len = call i32 @tb_bootstrap_int_array_length(ptr %array)
+  %len64 = sext i32 %len to i64
+  %data.ptr = getelementptr inbounds %tb_bootstrap_int_array, ptr %array, i32 0, i32 2
+  %data = load ptr, ptr %data.ptr
+  call void @qsort(ptr %data, i64 %len64, i64 8, ptr %cmp)
+  ret ptr %array
+}
 define private ptr @tb_bootstrap_int_array_sort_desc(ptr %array) {
 entry:
   %len = call i32 @tb_bootstrap_int_array_length(ptr %array)
