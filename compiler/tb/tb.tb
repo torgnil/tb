@@ -56,12 +56,7 @@ string join_lines(string[] lines):
             merged += '\n' + line
     return merged
 
-string[] load_source_lines_with_imports(string path, string[] seen, string[] foreign_modules):
-    if (string_in_array(seen, path)):
-        return []
-    seen.push(path)
-    string source = read_file(path)
-    string[] lines = source.split_lines()
+string[] expand_source_lines_with_imports(string path, string[] lines, string[] seen, string[] foreign_modules):
     string[] merged = []
     int line_index = 0
     while (line_index < lines.length()):
@@ -82,15 +77,20 @@ string[] load_source_lines_with_imports(string path, string[] seen, string[] for
         line_index += 1
     return merged
 
-LoadedSourceBundle load_source_bundle_with_imports(string path, string[] seen):
+string[] load_source_lines_with_imports(string path, string[] seen, string[] foreign_modules):
+    if (string_in_array(seen, path)):
+        return []
+    seen.push(path)
+    return expand_source_lines_with_imports(path, read_lines(path), seen, foreign_modules)
+
+LoadedSourceBundle load_source_bundle_with_imports(string path, string source, string[] seen):
     string[] foreign_modules = []
-    string source = read_file(path)
     if (!source.contains('import ')):
         if (string_in_array(seen, path)):
             return LoadedSourceBundle('', foreign_modules)
         seen.push(path)
         return LoadedSourceBundle(source, foreign_modules)
-    return LoadedSourceBundle(join_lines(load_source_lines_with_imports(path, seen, foreign_modules)), foreign_modules)
+    return LoadedSourceBundle(join_lines(expand_source_lines_with_imports(path, source.split_lines(), seen, foreign_modules)), foreign_modules)
 
 void write_lines_file(string path, string[] lines):
     file out = open(path)
@@ -112,7 +112,7 @@ int run_compiler(string[] args):
     string[] active_foreign_modules = []
     if (source.contains('import ')):
         string[] seen = []
-        LoadedSourceBundle loaded = load_source_bundle_with_imports(args[1], seen)
+        LoadedSourceBundle loaded = load_source_bundle_with_imports(args[1], source, seen)
         source = loaded.text
         active_foreign_modules = loaded.foreign_modules
     string injected = injected_foreign_module_declarations(active_foreign_modules)

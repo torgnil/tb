@@ -1545,8 +1545,9 @@ StringConstIR[] collect_runtime_global_string_constants(GlobalDeclIR global_decl
     string[] cached_literals = []
     string[] cached_encoded_values = []
     int[] cached_lengths = []
-    for (LinearInstruction op in global_decl.instructions):
-        LinearInstruction renamed = rename_global_instruction_temps(op, temp_names, binding.name)
+    int index = 0
+    while (index < global_decl.instructions.length()):
+        LinearInstruction renamed = rename_global_instruction_temps(global_decl.instructions[index], temp_names, binding.name)
         if (renamed.kind == 'value' && renamed.detail == 'string'):
             LLVM_FUNCTION_STRING_SYMBOL_COLLECT_GLOBAL_CALLS += 1
             int cache_index = 0
@@ -1573,6 +1574,7 @@ StringConstIR[] collect_runtime_global_string_constants(GlobalDeclIR global_decl
                 cached_literals.push(renamed.args[0])
                 cached_encoded_values.push(encoded.encoded_value)
                 cached_lengths.push(encoded.length)
+        index += 1
     return constants
 
 StringConstIR[] collect_string_constants(ProgramIR program):
@@ -2388,12 +2390,12 @@ string emit_string_constant(StringConstIR constant):
 
 string[] emit_read_lines_helper():
     string[] lines = []
-    lines.push('@.mode.read = private unnamed_addr constant [2 x i8] c"r\\00"')
+    lines.push('@.mode.read_lines = private unnamed_addr constant [2 x i8] c"r\\00"')
     lines.push('@.fmt.read_lines.open.error = private unnamed_addr constant [8 x i8] c"%s: %s\\0A\\00"')
     lines.push('@.msg.read_lines = private unnamed_addr constant [11 x i8] c"read_lines\\00"')
     lines.push('define private ptr @tb_bootstrap_read_lines(ptr %path) {')
     lines.push('entry:')
-    lines.push('  %mode = getelementptr inbounds [2 x i8], ptr @.mode.read, i32 0, i32 0')
+    lines.push('  %mode = getelementptr inbounds [2 x i8], ptr @.mode.read_lines, i32 0, i32 0')
     lines.push('  %file = call ptr @fopen(ptr %path, ptr %mode)')
     lines.push('  %file.ok = icmp ne ptr %file, null')
     lines.push('  br i1 %file.ok, label %count.setup, label %open.fail')
@@ -2476,12 +2478,12 @@ string[] emit_read_lines_helper():
 
 string[] emit_read_file_helper():
     string[] lines = []
-    lines.push('@.mode.read = private unnamed_addr constant [2 x i8] c"r\\00"')
+    lines.push('@.mode.read_file = private unnamed_addr constant [2 x i8] c"r\\00"')
     lines.push('@.fmt.read_file.open.error = private unnamed_addr constant [8 x i8] c"%s: %s\\0A\\00"')
     lines.push('@.msg.read_file = private unnamed_addr constant [10 x i8] c"read_file\\00"')
     lines.push('define private ptr @tb_bootstrap_read_file(ptr %path) {')
     lines.push('entry:')
-    lines.push('  %mode = getelementptr inbounds [2 x i8], ptr @.mode.read, i32 0, i32 0')
+    lines.push('  %mode = getelementptr inbounds [2 x i8], ptr @.mode.read_file, i32 0, i32 0')
     lines.push('  %file = call ptr @fopen(ptr %path, ptr %mode)')
     lines.push('  %file.ok = icmp ne ptr %file, null')
     lines.push('  br i1 %file.ok, label %setup, label %open.fail')
@@ -4951,9 +4953,11 @@ string emit_runtime_global_placeholder(BindingIR binding):
 
 string[] collect_global_temp_names(LinearInstruction[] instructions):
     string[] names = []
-    for (LinearInstruction op in instructions):
-        if (op.lhs != ''):
-            names.push(op.lhs)
+    int index = 0
+    while (index < instructions.length()):
+        if (instructions[index].lhs != ''):
+            names.push(instructions[index].lhs)
+        index += 1
     return names
 
 string rename_global_temp_if_needed(string value, string[] temp_names, string prefix):
@@ -4972,15 +4976,19 @@ LinearInstruction rename_global_instruction_temps(LinearInstruction op, string[]
     return LinearInstruction(op.kind, lhs, op.result_type, op.ownership_mode, op.detail, args)
 
 LinearInstruction find_global_array_instruction(GlobalDeclIR global_decl):
-    for (LinearInstruction op in global_decl.instructions):
-        if (op.kind == 'value' && op.detail == 'array'):
-            return op
+    int index = 0
+    while (index < global_decl.instructions.length()):
+        if (global_decl.instructions[index].kind == 'value' && global_decl.instructions[index].detail == 'array'):
+            return global_decl.instructions[index]
+        index += 1
     return LinearInstruction('', '', '', '', '', [])
 
 LinearInstruction lookup_global_instruction(GlobalDeclIR global_decl, string temp_name):
-    for (LinearInstruction op in global_decl.instructions):
-        if (op.lhs == temp_name):
-            return op
+    int index = 0
+    while (index < global_decl.instructions.length()):
+        if (global_decl.instructions[index].lhs == temp_name):
+            return global_decl.instructions[index]
+        index += 1
     return LinearInstruction('', '', '', '', '', [])
 
 string[] emit_global_string_array_storage(GlobalDeclIR global_decl, string global_name, string symbol_prefix, string temp_name):
@@ -5138,13 +5146,15 @@ string[] emit_runtime_global_init_lines(ProgramIR program, GlobalDeclIR global_d
     string prefix = binding.name
     string[] temp_names = collect_global_temp_names(global_decl.instructions)
     LinearInstruction[] renamed = []
-    for (LinearInstruction op in global_decl.instructions):
-        renamed.push(rename_global_instruction_temps(op, temp_names, prefix))
+    int renamed_index = 0
+    while (renamed_index < global_decl.instructions.length()):
+        renamed.push(rename_global_instruction_temps(global_decl.instructions[renamed_index], temp_names, prefix))
+        renamed_index += 1
     ParsedFunction function_ir = ParsedFunction('func void __tb_init_globals', '__tb_init_globals', 'void', [], [], [BlockIR('entry', renamed, TerminatorIR('', []))])
     string[] lines = []
     int instruction_index = 0
-    for (LinearInstruction op in renamed):
-        lines.push(emit_instruction(program, function_ir, 'globals', op, 'globals.' + binding.name + '.' + instruction_index))
+    while (instruction_index < renamed.length()):
+        lines.push(emit_instruction(program, function_ir, 'globals', renamed[instruction_index], 'globals.' + binding.name + '.' + instruction_index))
         instruction_index += 1
     LinearInstruction store_op = LinearInstruction('assign_local', '', '', '', binding.name, [rename_global_temp_if_needed(global_decl.value_name, temp_names, prefix)])
     lines.push(emit_instruction(program, function_ir, 'globals', store_op, 'globals.' + binding.name + '.store'))
