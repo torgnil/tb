@@ -1,4 +1,5 @@
 %tb_bootstrap_int_array = type { i32, i32, ptr }
+%tb_bootstrap_prio_q_int = type { ptr, ptr }
 define private ptr @tb_bootstrap_int_array_new(i32 %len) {
 entry:
   %array = call ptr @malloc(i64 16)
@@ -133,6 +134,40 @@ lt:
 eq:
   ret i32 0
 }
+define private i32 @tb_bootstrap_cmp_int_asc(ptr %left.ptr, ptr %right.ptr) {
+entry:
+  %left = load i64, ptr %left.ptr
+  %right = load i64, ptr %right.ptr
+  %left.lt = icmp slt i64 %left, %right
+  br i1 %left.lt, label %lt, label %check.gt
+lt:
+  ret i32 -1
+check.gt:
+  %left.gt = icmp sgt i64 %left, %right
+  br i1 %left.gt, label %gt, label %eq
+gt:
+  ret i32 1
+eq:
+  ret i32 0
+}
+define private ptr @tb_bootstrap_int_array_sort_asc(ptr %array) {
+entry:
+  %len = call i32 @tb_bootstrap_int_array_length(ptr %array)
+  %len64 = sext i32 %len to i64
+  %data.ptr = getelementptr inbounds %tb_bootstrap_int_array, ptr %array, i32 0, i32 2
+  %data = load ptr, ptr %data.ptr
+  call void @qsort(ptr %data, i64 %len64, i64 8, ptr @tb_bootstrap_cmp_int_asc)
+  ret ptr %array
+}
+define private ptr @tb_bootstrap_int_array_sort_by(ptr %array, ptr %cmp) {
+entry:
+  %len = call i32 @tb_bootstrap_int_array_length(ptr %array)
+  %len64 = sext i32 %len to i64
+  %data.ptr = getelementptr inbounds %tb_bootstrap_int_array, ptr %array, i32 0, i32 2
+  %data = load ptr, ptr %data.ptr
+  call void @qsort(ptr %data, i64 %len64, i64 8, ptr %cmp)
+  ret ptr %array
+}
 define private ptr @tb_bootstrap_int_array_sort_desc(ptr %array) {
 entry:
   %len = call i32 @tb_bootstrap_int_array_length(ptr %array)
@@ -142,27 +177,45 @@ entry:
   call void @qsort(ptr %data, i64 %len64, i64 8, ptr @tb_bootstrap_cmp_int_desc)
   ret ptr %array
 }
-define private ptr @tb_bootstrap_create_prio_q_int_desc(ptr %array) {
+define private ptr @tb_bootstrap_create_prio_q_int_by(ptr %array, ptr %cmp) {
 entry:
   %clone = call ptr @tb_bootstrap_int_array_clone(ptr %array)
-  %sorted = call ptr @tb_bootstrap_int_array_sort_desc(ptr %clone)
-  ret ptr %sorted
+  %sorted = call ptr @tb_bootstrap_int_array_sort_by(ptr %clone, ptr %cmp)
+  %pq = call ptr @malloc(i64 16)
+  %array.ptr = getelementptr inbounds %tb_bootstrap_prio_q_int, ptr %pq, i32 0, i32 0
+  %cmp.ptr = getelementptr inbounds %tb_bootstrap_prio_q_int, ptr %pq, i32 0, i32 1
+  store ptr %sorted, ptr %array.ptr
+  store ptr %cmp, ptr %cmp.ptr
+  ret ptr %pq
+}
+define private ptr @tb_bootstrap_create_prio_q_int_desc(ptr %array) {
+entry:
+  %pq = call ptr @tb_bootstrap_create_prio_q_int_by(ptr %array, ptr @tb_bootstrap_cmp_int_desc)
+  ret ptr %pq
 }
 define private i1 @tb_bootstrap_prio_q_int_is_empty(ptr %pq) {
 entry:
-  %len = call i32 @tb_bootstrap_int_array_length(ptr %pq)
+  %array.ptr = getelementptr inbounds %tb_bootstrap_prio_q_int, ptr %pq, i32 0, i32 0
+  %array = load ptr, ptr %array.ptr
+  %len = call i32 @tb_bootstrap_int_array_length(ptr %array)
   %empty = icmp eq i32 %len, 0
   ret i1 %empty
 }
 define private i32 @tb_bootstrap_prio_q_int_push(ptr %pq, i64 %value) {
 entry:
-  %len = call i32 @tb_bootstrap_int_array_push(ptr %pq, i64 %value)
-  %sorted = call ptr @tb_bootstrap_int_array_sort_desc(ptr %pq)
+  %array.ptr = getelementptr inbounds %tb_bootstrap_prio_q_int, ptr %pq, i32 0, i32 0
+  %array = load ptr, ptr %array.ptr
+  %cmp.ptr = getelementptr inbounds %tb_bootstrap_prio_q_int, ptr %pq, i32 0, i32 1
+  %cmp = load ptr, ptr %cmp.ptr
+  %len = call i32 @tb_bootstrap_int_array_push(ptr %array, i64 %value)
+  %sorted = call ptr @tb_bootstrap_int_array_sort_by(ptr %array, ptr %cmp)
   ret i32 %len
 }
 define private i64 @tb_bootstrap_prio_q_int_pop(ptr %pq) {
 entry:
-  %value = call i64 @tb_bootstrap_int_array_remove_at(ptr %pq, i32 0)
+  %array.ptr = getelementptr inbounds %tb_bootstrap_prio_q_int, ptr %pq, i32 0, i32 0
+  %array = load ptr, ptr %array.ptr
+  %value = call i64 @tb_bootstrap_int_array_remove_at(ptr %array, i32 0)
   ret i64 %value
 }
 define private ptr @tb_bootstrap_int_array_clone(ptr %array) {

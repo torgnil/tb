@@ -24,8 +24,6 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-CURRENT_PHASE = 76
-
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(line_buffering=True, write_through=True)
 if hasattr(sys.stderr, "reconfigure"):
@@ -57,6 +55,13 @@ def discover_fixtures(fixtures_dir: Path, max_phase: int | None = None) -> list[
             )
         fixtures.append((input_path, expected_path))
     return fixtures
+
+
+def latest_fixture_phase(fixtures_dir: Path) -> int | None:
+    phases = [int(path.stem) for path in fixtures_dir.glob("*.tb") if path.stem.isdigit()]
+    if not phases:
+        return None
+    return max(phases)
 
 
 def find_runtime_output_target(source_text: str) -> Path | None:
@@ -133,7 +138,7 @@ def verify_fixtures(
     compiler_bin: Path,
     fixtures_dir: Path,
     build_root: Path,
-    max_phase: int | None = CURRENT_PHASE,
+    max_phase: int | None = None,
 ) -> list[FixtureResult]:
     if shutil.which("clang") is None:
         raise RuntimeError("clang is required to verify fixtures")
@@ -171,8 +176,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--max-phase",
         type=int,
-        default=CURRENT_PHASE,
-        help="Highest numbered fixture to verify",
+        default=None,
+        help="Highest numbered fixture to verify (default: latest discovered fixture)",
     )
     args = parser.parse_args(argv)
 

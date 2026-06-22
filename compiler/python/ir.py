@@ -382,6 +382,12 @@ class IRWriteLine:
 
 
 @dataclass(slots=True)
+class IRWriteLines:
+    file_name: str
+    value: IRExpression
+
+
+@dataclass(slots=True)
 class IRCloseFile:
     file_name: str
 
@@ -482,6 +488,7 @@ IRInstruction = (
     | IRPrintInt
     | IRDeclareFile
     | IRWriteLine
+    | IRWriteLines
     | IRForLoop
     | IRWhileLoop
     | IRIf

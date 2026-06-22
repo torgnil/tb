@@ -524,9 +524,8 @@ LinearInstruction lookup_instruction(LinearInstruction[] instructions, string na
     while (index >= 0):
         if (TYPE_IR_PROFILE_ACTIVE != 0):
             TYPE_IR_LOOKUP_INSTRUCTION_SCAN_TOTAL += 1
-        LinearInstruction op = clone_linear_instruction(instructions[index])
-        if (op.lhs == name):
-            return op
+        if (instructions[index].lhs == name):
+            return clone_linear_instruction(instructions[index])
         index -= 1
     return LinearInstruction('', '', '', '', '', [])
 
@@ -541,7 +540,7 @@ LinearInstruction lookup_instruction_pair(LinearInstruction[] first, LinearInstr
 LinearInstruction lookup_instruction_at_slot(LinearInstruction[] instructions, int[] instruction_slots, string name):
     int instruction_index = lookup_temp_instruction_slot(instruction_slots, name)
     if (instruction_index >= 0 && instruction_index < instructions.length()):
-        return instructions[instruction_index]
+        return clone_linear_instruction(instructions[instruction_index])
     return LinearInstruction('', '', '', '', '', [])
 
 LinearInstruction lookup_instruction_pair_at_slots(LinearInstruction[] first, int[] first_slots, LinearInstruction[] second, int[] second_slots, string name):
@@ -554,7 +553,7 @@ LinearInstruction[] set_temp_type_at_slot(LinearInstruction[] instructions, int[
     int instruction_index = lookup_temp_instruction_slot(instruction_slots, name)
     if (instruction_index >= 0 && instruction_index < instructions.length()):
         LinearInstruction op = instructions[instruction_index]
-        instructions[instruction_index] = LinearInstruction(op.kind, op.lhs, type_name, refine_ownership_mode(op, type_name), op.detail, op.args)
+        instructions[instruction_index] = LinearInstruction(op.kind.substring(0), op.lhs.substring(0), type_name.substring(0), refine_ownership_mode(op, type_name).substring(0), op.detail.substring(0), clone_instruction_args(op.args))
         return instructions
     return set_temp_type(instructions, name, type_name)
 
@@ -636,6 +635,8 @@ string infer_call_type(string name, FunctionSigIR[] functions):
         return 'unknown'
     if (name == 'write_line'):
         return 'void'
+    if (name == 'write_lines'):
+        return 'void'
     if (name == 'dump_runtime_activity'):
         return 'void'
     if (name == 'codegen_source' || name == 'lower_source'):
@@ -710,6 +711,10 @@ string infer_method_call_type(string method_name, string base_type, FunctionSigI
         return 'string'
     if (method_name == 'sum' && (base_type == 'int[]' || base_type == 'bool[]')):
         return 'int'
+    if (method_name == 'create_prio_q' && base_type == 'int[]'):
+        return 'prio_q<int>'
+    if (method_name == 'create_prio_q' && base_type.ends_with('[]') && record_name_from_type(array_item_type(base_type)) != ''):
+        return 'prio_q<' + array_item_type(base_type) + '>'
     if (method_name == 'pop' && base_type.starts_with('prio_q<')):
         return prio_q_item_type(base_type)
     if (method_name == 'pop' && base_type == 'int[]'):
@@ -896,7 +901,7 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
         return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
     if (op.detail == 'method-call'):
         string method_name = op.args[0]
-        if (method_name == 'length' || method_name == 'push' || method_name == 'index_of' || method_name == 'hash'):
+        if (method_name == 'length' || method_name == 'index_of' || method_name == 'hash'):
             string result_type = infer_method_call_type(method_name, 'unknown', functions)
             return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
         if (method_name == 'is_empty' || method_name == 'contains' || method_name == 'starts_with' || method_name == 'ends_with' || method_name == 'starts_with_at' || method_name == 'is_alpha' || method_name == 'is_digit' || method_name == 'is_alnum' || method_name == 'is_space' || method_name == 'is_whitespace'):
@@ -921,6 +926,8 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             if (op.args[0] == 'create_prio_q_record_field_desc' && base_type.ends_with('[]') && record_name_from_type(array_item_type(base_type)) != ''):
                 return refined_value_op(op, 'prio_q<' + array_item_type(base_type) + '>', 'owned')
             if (op.args[0] == 'sort_int_desc' && base_type == 'int[]'):
+                return refined_value_op(op, 'int[]', 'borrowed')
+            if (op.args[0] == 'sort_int_asc' && base_type == 'int[]'):
                 return refined_value_op(op, 'int[]', 'borrowed')
             if (op.args[0] == 'sort_record_field_asc' && base_type.ends_with('[]') && record_name_from_type(array_item_type(base_type)) != ''):
                 return refined_value_op(op, base_type, 'borrowed')

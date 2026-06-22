@@ -176,6 +176,16 @@ bool is_identifier_subtraction_lambda(Node lambda_node):
     BindingIR right_binding = ir_parse_binding_decl(lambda2_right_binding(lambda_node.value))
     return identifier_node_is(body.children[0], right_binding.name) && identifier_node_is(body.children[1], left_binding.name)
 
+bool is_identifier_subtraction_lambda_asc(Node lambda_node):
+    if (lambda_node.kind != 'Lambda2'):
+        return false
+    Node body = lambda_node.children[0]
+    if (!(body.kind == 'Binary' && body.value == '-')):
+        return false
+    BindingIR left_binding = ir_parse_binding_decl(lambda2_left_binding(lambda_node.value))
+    BindingIR right_binding = ir_parse_binding_decl(lambda2_right_binding(lambda_node.value))
+    return identifier_node_is(body.children[0], left_binding.name) && identifier_node_is(body.children[1], right_binding.name)
+
 bool is_record_field_subtraction_lambda(Node lambda_node):
     if (lambda_node.kind != 'Lambda2'):
         return false
@@ -477,6 +487,9 @@ TempResult lower_linear_value(Node node, int next_temp):
                 if (is_identifier_subtraction_lambda(node.children[1])):
                     lines.push(name + ' = method-call-lambda sort_int_desc ' + base.name + ' ' + lambda2_left_binding(node.children[1].value) + ' ' + lambda2_right_binding(node.children[1].value))
                     return TempResult(name, lines, base.next_temp + 1)
+                if (is_identifier_subtraction_lambda_asc(node.children[1])):
+                    lines.push(name + ' = method-call-lambda sort_int_asc ' + base.name + ' ' + lambda2_left_binding(node.children[1].value) + ' ' + lambda2_right_binding(node.children[1].value))
+                    return TempResult(name, lines, base.next_temp + 1)
                 if (is_record_field_subtraction_lambda(node.children[1])):
                     string field_name = node.children[1].children[0].children[0].value
                     lines.push(name + ' = method-call-lambda sort_record_field_asc ' + base.name + ' ' + lambda2_left_binding(node.children[1].value) + ' ' + lambda2_right_binding(node.children[1].value) + ' ' + field_name)
@@ -687,6 +700,9 @@ TempIRResult lower_linear_value_ir(Node node, int next_temp):
                 string name = temp_name(base.next_temp)
                 if (is_identifier_subtraction_lambda(node.children[1])):
                     LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', name, 'unknown', 'borrowed', 'method-call-lambda', ['sort_int_desc', base.name, lambda2_left_binding(node.children[1].value), lambda2_right_binding(node.children[1].value)])])
+                    return TempIRResult(name, instructions, base.next_temp + 1)
+                if (is_identifier_subtraction_lambda_asc(node.children[1])):
+                    LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', name, 'unknown', 'borrowed', 'method-call-lambda', ['sort_int_asc', base.name, lambda2_left_binding(node.children[1].value), lambda2_right_binding(node.children[1].value)])])
                     return TempIRResult(name, instructions, base.next_temp + 1)
                 if (is_record_field_subtraction_lambda(node.children[1])):
                     string field_name = node.children[1].children[0].children[0].value

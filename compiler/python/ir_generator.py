@@ -121,6 +121,7 @@ from .ir import (
     IRTryCatch,
     IRWhileLoop,
     IRWriteLine,
+    IRWriteLines,
     IRVariable,
     IRAssignMap,
     IRAssignPriorityQueue,
@@ -372,6 +373,10 @@ class IRGenerator:
             if not isinstance(statement.arguments[0], Identifier) or self.variable_types.get(statement.arguments[0].name) != "file":
                 raise TypeError("write_line requires a file variable")
             return IRWriteLine(statement.arguments[0].name, self._lower_string_expression(statement.arguments[1]))
+        if statement.name == "write_lines" and overload.lowering == "write_lines":
+            if not isinstance(statement.arguments[0], Identifier) or self.variable_types.get(statement.arguments[0].name) != "file":
+                raise TypeError("write_lines requires a file variable")
+            return IRWriteLines(statement.arguments[0].name, self._lower_array_expression(statement.arguments[1], "string[]"))
         if statement.name == "close" and overload.lowering == "close_file":
             if not isinstance(statement.arguments[0], Identifier) or self.variable_types.get(statement.arguments[0].name) != "file":
                 raise TypeError("close requires a file variable")
@@ -4217,7 +4222,7 @@ class IRGenerator:
     @staticmethod
     def _contains_file_instruction(instructions: list) -> bool:
         for instruction in instructions:
-            if isinstance(instruction, (IRDeclareFile, IRWriteLine)):
+            if isinstance(instruction, (IRDeclareFile, IRWriteLine, IRWriteLines)):
                 return True
             if isinstance(instruction, IRForLoop) and IRGenerator._contains_file_instruction(instruction.body):
                 return True
