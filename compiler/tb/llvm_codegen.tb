@@ -2567,6 +2567,29 @@ string[] emit_file_output_helpers():
     lines.push('  %nl = call i32 @fputc(i32 10, ptr %file)')
     lines.push('  ret void')
     lines.push('}')
+    lines.push('define private void @tb_bootstrap_write_lines(ptr %file, ptr %lines) {')
+    lines.push('entry:')
+    lines.push('  %len.ptr = getelementptr inbounds { i32, i32, ptr, ptr }, ptr %lines, i32 0, i32 0')
+    lines.push('  %len = load i32, ptr %len.ptr')
+    lines.push('  %data.ptr.ptr = getelementptr inbounds { i32, i32, ptr, ptr }, ptr %lines, i32 0, i32 2')
+    lines.push('  %data.ptr = load ptr, ptr %data.ptr.ptr')
+    lines.push('  br label %loop.cond')
+    lines.push('loop.cond:')
+    lines.push('  %index = phi i32 [0, %entry], [%next.index, %loop.step]')
+    lines.push('  %keep.loop = icmp slt i32 %index, %len')
+    lines.push('  br i1 %keep.loop, label %loop.body, label %done')
+    lines.push('loop.body:')
+    lines.push('  %line.slot = getelementptr inbounds ptr, ptr %data.ptr, i32 %index')
+    lines.push('  %line = load ptr, ptr %line.slot')
+    lines.push('  %write = call i32 @fputs(ptr %line, ptr %file)')
+    lines.push('  %nl = call i32 @fputc(i32 10, ptr %file)')
+    lines.push('  br label %loop.step')
+    lines.push('loop.step:')
+    lines.push('  %next.index = add i32 %index, 1')
+    lines.push('  br label %loop.cond')
+    lines.push('done:')
+    lines.push('  ret void')
+    lines.push('}')
     lines.push('define private void @tb_bootstrap_close_write(ptr %file) {')
     lines.push('entry:')
     lines.push('  %close = call i32 @fclose(ptr %file)')
@@ -3230,6 +3253,10 @@ string emit_call_value_instruction_core(ProgramIR program, ParsedFunction functi
         if (op.args.length() != 3):
             throw 'unsupported llvm write_line arity'
         return emit_tracked_builtin_call_line('  call void @tb_bootstrap_write_line(ptr ' + temp_ref(op.args[1]) + ', ptr ' + temp_ref(op.args[2]) + ')')
+    if (call_name == 'write_lines'):
+        if (op.args.length() != 3):
+            throw 'unsupported llvm write_lines arity'
+        return emit_tracked_builtin_call_line('  call void @tb_bootstrap_write_lines(ptr ' + temp_ref(op.args[1]) + ', ptr ' + temp_ref(op.args[2]) + ')')
     if (call_name == 'dump_runtime_activity'):
         if (op.args.length() != 1):
             throw 'unsupported llvm dump_runtime_activity arity'

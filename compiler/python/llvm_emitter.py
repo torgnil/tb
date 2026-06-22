@@ -80,6 +80,7 @@ from .ir import (
     IRVariable,
     IRWhileLoop,
     IRWriteLine,
+    IRWriteLines,
 )
 from .foreign_modules import foreign_module_functions
 
@@ -5797,6 +5798,49 @@ class LLVMEmitter:
                 f"  {format_pointer} = getelementptr inbounds [{len(self.FILE_LINE_FORMAT_BYTES)} x i8], ptr @{self.FILE_LINE_FORMAT_LABEL}, i32 0, i32 0"
             )
             lines.append(f"  call i32 (ptr, ptr, ...) @fprintf(ptr {file_handle}, ptr {format_pointer}, ptr {string_pointer})")
+            return False
+        if isinstance(instruction, IRWriteLines):
+            slot_name = self.file_slots.get(instruction.file_name)
+            if slot_name is None:
+                global_slot = self.global_file_symbols.get(instruction.file_name)
+                if global_slot is None:
+                    raise TypeError(f"Unknown file variable: {instruction.file_name}")
+                slot_name = f"@{global_slot}"
+            file_handle = self._next_temp("file")
+            array_pointer = self._emit_array_expression(instruction.value, lines, string_lengths)
+            len_pointer = self._next_temp("write_lines.len.ptr")
+            array_length = self._next_temp("write_lines.len")
+            loop_label = self._next_label("write_lines.loop")
+            body_label = self._next_label("write_lines.body")
+            done_label = self._next_label("write_lines.done")
+            index_slot = self._next_temp("write_lines.index.slot")
+            index_name = self._next_temp("write_lines.index")
+            next_index = self._next_temp("write_lines.next")
+            item_slot = self._next_temp("write_lines.item.slot")
+            item_pointer = self._next_temp("write_lines.item")
+            format_pointer = self._next_temp("write_lines.fmt")
+            lines.append(f"  {file_handle} = load ptr, ptr {slot_name}")
+            lines.append(f"  {len_pointer} = getelementptr inbounds {self.ARRAY_TYPE_NAME}, ptr {array_pointer}, i32 0, i32 0")
+            lines.append(f"  {array_length} = load i64, ptr {len_pointer}")
+            lines.append(f"  {index_slot} = alloca i64")
+            lines.append(f"  store i64 0, ptr {index_slot}")
+            lines.append(f"  br label %{loop_label}")
+            lines.append(f"{loop_label}:")
+            lines.append(f"  {index_name} = load i64, ptr {index_slot}")
+            keep_loop = self._next_temp("write_lines.keep")
+            lines.append(f"  {keep_loop} = icmp slt i64 {index_name}, {array_length}")
+            lines.append(f"  br i1 {keep_loop}, label %{body_label}, label %{done_label}")
+            lines.append(f"{body_label}:")
+            lines.append(f"  {item_slot} = call ptr @tb_array_element_ptr(ptr {array_pointer}, i64 {index_name}, i64 8)")
+            lines.append(f"  {item_pointer} = load ptr, ptr {item_slot}")
+            lines.append(
+                f"  {format_pointer} = getelementptr inbounds [{len(self.FILE_LINE_FORMAT_BYTES)} x i8], ptr @{self.FILE_LINE_FORMAT_LABEL}, i32 0, i32 0"
+            )
+            lines.append(f"  call i32 (ptr, ptr, ...) @fprintf(ptr {file_handle}, ptr {format_pointer}, ptr {item_pointer})")
+            lines.append(f"  {next_index} = add i64 {index_name}, 1")
+            lines.append(f"  store i64 {next_index}, ptr {index_slot}")
+            lines.append(f"  br label %{loop_label}")
+            lines.append(f"{done_label}:")
             return False
         if isinstance(instruction, IRCloseFile):
             slot_name = self.file_slots.get(instruction.file_name)
