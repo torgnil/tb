@@ -2713,11 +2713,11 @@ string emit_sort_lambda_instruction(ProgramIR program, ParsedFunction function_i
 string emit_prio_q_lambda_instruction(ParsedFunction function_ir, LinearInstruction op):
     string lhs = temp_ref(op.lhs)
     if (op.args[0] == 'create_prio_q_int_desc'):
-        return '  ' + lhs + ' = call ptr @tb_bootstrap_create_prio_q_int_desc(ptr ' + temp_ref(op.args[1]) + ')'
+        return '  ' + lhs + ' = call ptr @tb_bootstrap_create_prio_q_int_by(ptr ' + temp_ref(op.args[1]) + ', ptr @tb_bootstrap_cmp_int_desc)'
     if (op.args[0] == 'create_prio_q_record_field_desc'):
         string base_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[1]))
         string record_name = record_name_from_type(array_item_type(base_type))
-        return '  ' + lhs + ' = call ptr @tb_bootstrap_create_prio_q_' + record_name + '_desc_by_' + op.args[4] + '(ptr ' + temp_ref(op.args[1]) + ')'
+        return '  ' + lhs + ' = call ptr @tb_bootstrap_create_prio_q_generic_' + record_name + '_by(ptr ' + temp_ref(op.args[1]) + ', ptr @tb_bootstrap_cmp_record_pair_' + record_name + '_by_' + op.args[4] + ')'
     throw 'unsupported llvm prio_q lambda op: ' + join_llvm_strings(op.args, ' ')
 
 string[] emit_string_length_map_helper():
@@ -3507,11 +3507,8 @@ string emit_prio_q_method_call_value_instruction(ProgramIR program, ParsedFuncti
     string record_name = record_name_from_type(prio_q_item_type(method_base_type))
     if (record_name == ''):
         return ''
-    BindingIR value_field = record_field_binding(lookup_record_decl(program, record_name), 'value')
-    if (value_field.name == ''):
-        return ''
     if (method_name == 'is_empty'):
-        return '  ' + lhs + ' = call i1 @tb_bootstrap_prio_q_' + record_name + '_is_empty(ptr ' + temp_ref(op.args[1]) + ')'
+        return '  ' + lhs + ' = call i1 @tb_bootstrap_prio_q_generic_' + record_name + '_is_empty(ptr ' + temp_ref(op.args[1]) + ')'
     if (method_name == 'push'):
         if (op.args.length() != 3):
             throw 'unsupported llvm prio_q<' + record_name + '> push arity'
@@ -3524,13 +3521,13 @@ string emit_prio_q_method_call_value_instruction(ProgramIR program, ParsedFuncti
             else:
                 stored_value = emit_record_owned_value(function_ir, op.args[2], record_name + '.push.' + op.lhs)
                 owned_flag = 'true'
-        lines.push('  ' + lhs + '.len32 = call i32 @tb_bootstrap_prio_q_' + record_name + '_push_by_value(ptr ' + temp_ref(op.args[1]) + ', ptr ' + stored_value + ', i1 ' + owned_flag + ')')
+        lines.push('  ' + lhs + '.len32 = call i32 @tb_bootstrap_prio_q_generic_' + record_name + '_push(ptr ' + temp_ref(op.args[1]) + ', ptr ' + stored_value + ', i1 ' + owned_flag + ')')
         lines.push('  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64')
         return join_llvm_strings(lines, '\n')
     if (method_name == 'pop'):
         if (op.args.length() != 2):
             throw 'unsupported llvm prio_q<' + record_name + '> pop arity'
-        return '  ' + lhs + ' = call ptr @tb_bootstrap_prio_q_' + record_name + '_pop(ptr ' + temp_ref(op.args[1]) + ')'
+        return '  ' + lhs + ' = call ptr @tb_bootstrap_prio_q_generic_' + record_name + '_pop(ptr ' + temp_ref(op.args[1]) + ')'
     return ''
 
 string emit_set_method_call_value_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op, string method_name, string method_base_type):
@@ -3614,6 +3611,16 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
             register_named_int_sort_comparator(comparator.args[0])
             return '  ' + lhs + ' = call ptr @tb_bootstrap_int_array_sort_by(ptr ' + temp_ref(op.args[1]) + ', ptr ' + llvm_named_int_sort_comparator_symbol(comparator.args[0]) + ')'
         throw 'unsupported llvm int[] sort comparator'
+    if (method_name == 'create_prio_q' && method_base_type == 'int[]'):
+        if (op.args.length() != 3):
+            throw 'unsupported llvm int[] create_prio_q arity'
+        LinearInstruction comparator = lookup_temp_instruction(function_ir, op.args[2])
+        if (comparator.kind == 'value' && comparator.detail == 'identifier' && comparator.args[0] == 'compare_desc'):
+            return '  ' + lhs + ' = call ptr @tb_bootstrap_create_prio_q_int_by(ptr ' + temp_ref(op.args[1]) + ', ptr @tb_bootstrap_cmp_int_desc)'
+        if (comparator.kind == 'value' && comparator.detail == 'identifier'):
+            register_named_int_sort_comparator(comparator.args[0])
+            return '  ' + lhs + ' = call ptr @tb_bootstrap_create_prio_q_int_by(ptr ' + temp_ref(op.args[1]) + ', ptr ' + llvm_named_int_sort_comparator_symbol(comparator.args[0]) + ')'
+        throw 'unsupported llvm int[] create_prio_q comparator'
     if (method_name == 'sort' && method_base_type.ends_with('[]') && record_name_from_type(array_item_type(method_base_type)) != ''):
         if (op.args.length() != 3):
             throw 'unsupported llvm record[] sort arity'
@@ -3625,6 +3632,17 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
             register_named_record_sort_comparator(record_name, comparator.args[0])
             return '  ' + lhs + ' = call ptr @tb_bootstrap_record_array_sort_by_' + record_name + '(ptr ' + temp_ref(op.args[1]) + ', ptr ' + llvm_named_record_sort_comparator_symbol(record_name, comparator.args[0]) + ')'
         throw 'unsupported llvm record[] sort comparator'
+    if (method_name == 'create_prio_q' && method_base_type.ends_with('[]') && record_name_from_type(array_item_type(method_base_type)) != ''):
+        if (op.args.length() != 3):
+            throw 'unsupported llvm record[] create_prio_q arity'
+        string record_name = record_name_from_type(array_item_type(method_base_type))
+        LinearInstruction comparator = lookup_temp_instruction(function_ir, op.args[2])
+        if (comparator.kind == 'value' && comparator.detail == 'identifier' && comparator.args[0] == 'compare_edges' && record_name == 'Edge'):
+            return '  ' + lhs + ' = call ptr @tb_bootstrap_create_prio_q_generic_' + record_name + '_by(ptr ' + temp_ref(op.args[1]) + ', ptr @tb_bootstrap_cmp_record_pair_' + record_name + '_compare_edges)'
+        if (comparator.kind == 'value' && comparator.detail == 'identifier'):
+            register_named_record_sort_comparator(record_name, comparator.args[0])
+            return '  ' + lhs + ' = call ptr @tb_bootstrap_create_prio_q_generic_' + record_name + '_by(ptr ' + temp_ref(op.args[1]) + ', ptr ' + llvm_named_record_sort_comparator_symbol(record_name, comparator.args[0]) + ')'
+        throw 'unsupported llvm record[] create_prio_q comparator'
     if (method_name == 'length' && method_base_type == 'bool[]'):
         return '  ' + lhs + '.len32 = call i32 @tb_bootstrap_bool_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64'
     if (method_name == 'is_empty' && method_base_type == 'bool[]'):
@@ -5333,6 +5351,7 @@ string[] replace_llvm_template_block_lines(string[] template_lines, string marke
 string[] emit_record_array_helpers(string record_name):
     string[] lines = replace_llvm_template_lines(read_file('compiler/tb/llvm_helpers/record_array_base.ll').split_lines(), '__RECORD__', record_name)
     string record_array_type = llvm_record_array_type_name(record_name)
+    lines.push('%tb_bootstrap_prio_q_' + record_name + ' = type { ptr, ptr }')
     lines.push('define private ptr @tb_bootstrap_record_array_sort_by_' + record_name + '(ptr %array, ptr %cmp) {')
     lines.push('entry:')
     lines.push('  %len = call i32 @tb_bootstrap_record_array_length_' + record_name + '(ptr %array)')
@@ -5388,6 +5407,79 @@ string[] emit_record_array_helpers(string record_name):
     lines.push('done.sort:')
     lines.push('  call void @free(ptr %pairs)')
     lines.push('  ret ptr %array')
+    lines.push('}')
+    lines.push('define private ptr @tb_bootstrap_create_prio_q_generic_' + record_name + '_by(ptr %array, ptr %cmp) {')
+    lines.push('entry:')
+    lines.push('  %clone = call ptr @tb_bootstrap_record_array_clone_' + record_name + '(ptr %array)')
+    lines.push('  %sorted = call ptr @tb_bootstrap_record_array_sort_by_' + record_name + '(ptr %clone, ptr %cmp)')
+    lines.push('  %pq = call ptr @malloc(i64 16)')
+    lines.push('  %array.ptr = getelementptr inbounds %tb_bootstrap_prio_q_' + record_name + ', ptr %pq, i32 0, i32 0')
+    lines.push('  %cmp.ptr = getelementptr inbounds %tb_bootstrap_prio_q_' + record_name + ', ptr %pq, i32 0, i32 1')
+    lines.push('  store ptr %sorted, ptr %array.ptr')
+    lines.push('  store ptr %cmp, ptr %cmp.ptr')
+    lines.push('  ret ptr %pq')
+    lines.push('}')
+    lines.push('define private i1 @tb_bootstrap_prio_q_generic_' + record_name + '_is_empty(ptr %pq) {')
+    lines.push('entry:')
+    lines.push('  %array.ptr = getelementptr inbounds %tb_bootstrap_prio_q_' + record_name + ', ptr %pq, i32 0, i32 0')
+    lines.push('  %array = load ptr, ptr %array.ptr')
+    lines.push('  %len = call i32 @tb_bootstrap_record_array_length_' + record_name + '(ptr %array)')
+    lines.push('  %empty = icmp eq i32 %len, 0')
+    lines.push('  ret i1 %empty')
+    lines.push('}')
+    lines.push('define private i32 @tb_bootstrap_prio_q_generic_' + record_name + '_push(ptr %pq, ptr %value, i1 %is_owned) {')
+    lines.push('entry:')
+    lines.push('  %array.ptr = getelementptr inbounds %tb_bootstrap_prio_q_' + record_name + ', ptr %pq, i32 0, i32 0')
+    lines.push('  %array = load ptr, ptr %array.ptr')
+    lines.push('  %cmp.ptr = getelementptr inbounds %tb_bootstrap_prio_q_' + record_name + ', ptr %pq, i32 0, i32 1')
+    lines.push('  %cmp = load ptr, ptr %cmp.ptr')
+    lines.push('  %len = call i32 @tb_bootstrap_record_array_push_' + record_name + '(ptr %array, ptr %value, i1 %is_owned)')
+    lines.push('  %sorted = call ptr @tb_bootstrap_record_array_sort_by_' + record_name + '(ptr %array, ptr %cmp)')
+    lines.push('  ret i32 %len')
+    lines.push('}')
+    lines.push('define private ptr @tb_bootstrap_prio_q_generic_' + record_name + '_pop(ptr %pq) {')
+    lines.push('entry:')
+    lines.push('  %array.ptr = getelementptr inbounds %tb_bootstrap_prio_q_' + record_name + ', ptr %pq, i32 0, i32 0')
+    lines.push('  %array = load ptr, ptr %array.ptr')
+    lines.push('  %len.ptr = getelementptr inbounds ' + record_array_type + ', ptr %array, i32 0, i32 0')
+    lines.push('  %len = load i32, ptr %len.ptr')
+    lines.push('  %is.empty = icmp eq i32 %len, 0')
+    lines.push('  br i1 %is.empty, label %empty, label %pop')
+    lines.push('empty:')
+    lines.push('  ret ptr null')
+    lines.push('pop:')
+    lines.push('  %data.ptr = getelementptr inbounds ' + record_array_type + ', ptr %array, i32 0, i32 2')
+    lines.push('  %data = load ptr, ptr %data.ptr')
+    lines.push('  %owned.ptr = getelementptr inbounds ' + record_array_type + ', ptr %array, i32 0, i32 3')
+    lines.push('  %owned = load ptr, ptr %owned.ptr')
+    lines.push('  %first.slot = getelementptr inbounds ptr, ptr %data, i32 0')
+    lines.push('  %value = load ptr, ptr %first.slot')
+    lines.push('  %last.index = sub i32 %len, 1')
+    lines.push('  %has.tail = icmp sgt i32 %last.index, 0')
+    lines.push('  br i1 %has.tail, label %loop.cond, label %shrink')
+    lines.push('loop.cond:')
+    lines.push('  %current = phi i32 [0, %pop], [%next.current, %loop.body]')
+    lines.push('  %keep.loop = icmp slt i32 %current, %last.index')
+    lines.push('  br i1 %keep.loop, label %loop.body, label %shrink')
+    lines.push('loop.body:')
+    lines.push('  %src = add i32 %current, 1')
+    lines.push('  %src.slot = getelementptr inbounds ptr, ptr %data, i32 %src')
+    lines.push('  %src.value = load ptr, ptr %src.slot')
+    lines.push('  %dst.slot = getelementptr inbounds ptr, ptr %data, i32 %current')
+    lines.push('  store ptr %src.value, ptr %dst.slot')
+    lines.push('  %src.owned.slot = getelementptr inbounds i8, ptr %owned, i32 %src')
+    lines.push('  %src.owned = load i8, ptr %src.owned.slot')
+    lines.push('  %dst.owned.slot = getelementptr inbounds i8, ptr %owned, i32 %current')
+    lines.push('  store i8 %src.owned, ptr %dst.owned.slot')
+    lines.push('  %next.current = add i32 %current, 1')
+    lines.push('  br label %loop.cond')
+    lines.push('shrink:')
+    lines.push('  store i32 %last.index, ptr %len.ptr')
+    lines.push('  %last.slot = getelementptr inbounds ptr, ptr %data, i32 %last.index')
+    lines.push('  store ptr null, ptr %last.slot')
+    lines.push('  %last.owned.slot = getelementptr inbounds i8, ptr %owned, i32 %last.index')
+    lines.push('  store i8 0, ptr %last.owned.slot')
+    lines.push('  ret ptr %value')
     lines.push('}')
     if (record_name == 'Node'):
         for (string line in read_file('compiler/tb/llvm_helpers/record_array_node.ll').split_lines()):

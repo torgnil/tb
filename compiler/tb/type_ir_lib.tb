@@ -710,6 +710,10 @@ string infer_method_call_type(string method_name, string base_type, FunctionSigI
         return 'string'
     if (method_name == 'sum' && (base_type == 'int[]' || base_type == 'bool[]')):
         return 'int'
+    if (method_name == 'create_prio_q' && base_type == 'int[]'):
+        return 'prio_q<int>'
+    if (method_name == 'create_prio_q' && base_type.ends_with('[]') && record_name_from_type(array_item_type(base_type)) != ''):
+        return 'prio_q<' + array_item_type(base_type) + '>'
     if (method_name == 'pop' && base_type.starts_with('prio_q<')):
         return prio_q_item_type(base_type)
     if (method_name == 'pop' && base_type == 'int[]'):
