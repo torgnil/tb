@@ -147,7 +147,7 @@ LinearInstruction[] move_temp_if_owned(ParsedFunction function_ir, string temp_n
     LinearInstruction[] result = []
     string value_type = lookup_temp_result_type(function_ir, temp_name)
     string ownership_mode = lookup_temp_ownership_mode(function_ir, temp_name)
-    if (ownership_mode == 'owned' && is_managed_type(value_type, record_names, enum_names)):
+    if (ownership_is_owned_mode(ownership_mode) && is_managed_type(value_type, record_names, enum_names)):
         result.push(LinearInstruction('move_temp', '', '', '', value_type, [temp_name]))
     return result
 
@@ -189,7 +189,7 @@ LinearInstruction[] apply_ownership_to_instructions(ParsedFunction function_ir, 
         else if (op.kind == 'drop'):
             string value_type = lookup_temp_result_type(function_ir, op.args[0])
             string ownership_mode = lookup_temp_ownership_mode(function_ir, op.args[0])
-            if (ownership_mode == 'owned' && is_managed_type(value_type, record_names, enum_names)):
+            if (ownership_is_owned_mode(ownership_mode) && is_managed_type(value_type, record_names, enum_names)):
                 result.push(LinearInstruction('release_temp', '', '', '', value_type, [op.args[0]]))
         result.push(copy_instruction(op))
     return result

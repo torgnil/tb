@@ -197,7 +197,7 @@ loop.body:
   %row.line = call ptr @tb_bootstrap_string_array_get(ptr %grid, i32 %row.i32)
   %char = call ptr @tb_bootstrap_string_char_at(ptr %row.line, i64 %col)
   %cmp = call i32 @strcmp(ptr %char, ptr %needle)
-  call void @free(ptr %char)
+  call void @tb_release(ptr %char)
   %match = icmp eq i32 %cmp, 0
   %match.i64 = zext i1 %match to i64
   %next.sum = add i64 %sum, %match.i64

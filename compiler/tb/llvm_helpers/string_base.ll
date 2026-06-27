@@ -1,3 +1,4 @@
+%tb_bootstrap_rc_header = type { i64, i64 }
 @tb_rt_sc = internal global i64 0
 @tb_rt_sb = internal global i64 0
 @tb_rt_xc = internal global i64 0
@@ -5,6 +6,75 @@
 @tb_rt_ic = internal global i64 0
 @tb_rt_ib = internal global i64 0
 
+define private ptr @tb_retain(ptr %value) {
+entry:
+  %is.null = icmp eq ptr %value, null
+  br i1 %is.null, label %done, label %retain
+retain:
+  %header = getelementptr inbounds i8, ptr %value, i64 -16
+  %magic.ptr = getelementptr inbounds %tb_bootstrap_rc_header, ptr %header, i32 0, i32 0
+  %magic = load i64, ptr %magic.ptr
+  %is.managed = icmp eq i64 %magic, 6071506869271343153
+  br i1 %is.managed, label %retain.managed, label %done
+retain.managed:
+  %refcount.ptr = getelementptr inbounds %tb_bootstrap_rc_header, ptr %header, i32 0, i32 1
+  %refcount = load i64, ptr %refcount.ptr
+  %next.refcount = add i64 %refcount, 1
+  store i64 %next.refcount, ptr %refcount.ptr
+  br label %done
+done:
+  ret ptr %value
+}
+define private void @tb_release(ptr %value) {
+entry:
+  %is.null = icmp eq ptr %value, null
+  br i1 %is.null, label %done, label %release
+release:
+  %header = getelementptr inbounds i8, ptr %value, i64 -16
+  %magic.ptr = getelementptr inbounds %tb_bootstrap_rc_header, ptr %header, i32 0, i32 0
+  %magic = load i64, ptr %magic.ptr
+  %is.managed = icmp eq i64 %magic, 6071506869271343153
+  br i1 %is.managed, label %release.managed, label %done
+release.managed:
+  %refcount.ptr = getelementptr inbounds %tb_bootstrap_rc_header, ptr %header, i32 0, i32 1
+  %refcount = load i64, ptr %refcount.ptr
+  %next.refcount = sub i64 %refcount, 1
+  store i64 %next.refcount, ptr %refcount.ptr
+  %is.zero = icmp eq i64 %next.refcount, 0
+  br i1 %is.zero, label %destroy, label %done
+destroy:
+  call void @free(ptr %header)
+  br label %done
+done:
+  ret void
+}
+define private ptr @tb_string_new(i64 %length) {
+entry:
+  %total.size = add i64 %length, 17
+  %allocation = call ptr @malloc(i64 %total.size)
+  %magic.ptr = getelementptr inbounds %tb_bootstrap_rc_header, ptr %allocation, i32 0, i32 0
+  %refcount.ptr = getelementptr inbounds %tb_bootstrap_rc_header, ptr %allocation, i32 0, i32 1
+  store i64 6071506869271343153, ptr %magic.ptr
+  store i64 1, ptr %refcount.ptr
+  %payload = getelementptr inbounds i8, ptr %allocation, i64 16
+  %terminator = getelementptr inbounds i8, ptr %payload, i64 %length
+  store i8 0, ptr %terminator
+  ret ptr %payload
+}
+define private ptr @tb_string_clone(ptr %source) {
+entry:
+  %is.null = icmp eq ptr %source, null
+  br i1 %is.null, label %null, label %copy
+null:
+  ret ptr null
+copy:
+  %length = call i64 @strlen(ptr %source)
+  %buffer = call ptr @tb_string_new(i64 %length)
+  call void @llvm.memcpy.p0.p0.i64(ptr %buffer, ptr %source, i64 %length, i1 false)
+  %terminator = getelementptr inbounds i8, ptr %buffer, i64 %length
+  store i8 0, ptr %terminator
+  ret ptr %buffer
+}
 define private i1 @tb_bootstrap_is_space(i8 %ch) {
 entry:
   %is.space = icmp eq i8 %ch, 32
@@ -26,8 +96,7 @@ entry:
   %sb.old = load i64, ptr @tb_rt_sb
   %sb.new = add i64 %sb.old, %bytes
   store i64 %sb.new, ptr @tb_rt_sb
-  %data = call ptr @malloc(i64 %bytes)
-  call void @llvm.memcpy.p0.p0.i64(ptr %data, ptr %src, i64 %bytes, i1 false)
+  %data = call ptr @tb_string_clone(ptr %src)
   ret ptr %data
 }
 define private ptr @tb_bootstrap_string_char_at(ptr %src, i64 %index) {
@@ -41,13 +110,12 @@ entry:
   %in.bounds = and i1 %in.bounds.low, %in.bounds.high
   br i1 %in.bounds, label %copy, label %empty
 empty:
-  %empty.data = call ptr @malloc(i64 1)
-  store i8 0, ptr %empty.data
+  %empty.data = call ptr @tb_string_new(i64 0)
   ret ptr %empty.data
 copy:
   %ch.ptr = getelementptr inbounds i8, ptr %src, i64 %index.effective
   %ch = load i8, ptr %ch.ptr
-  %data = call ptr @malloc(i64 2)
+  %data = call ptr @tb_string_new(i64 1)
   store i8 %ch, ptr %data
   %term = getelementptr inbounds i8, ptr %data, i64 1
   store i8 0, ptr %term
@@ -179,7 +247,7 @@ entry:
   %end.clamped = select i1 %end.before.start, i64 %start.clamped, i64 %end.clamped.high
   %slice.len = sub i64 %end.clamped, %start.clamped
   %slice.bytes = add i64 %slice.len, 1
-  %data = call ptr @malloc(i64 %slice.bytes)
+  %data = call ptr @tb_string_new(i64 %slice.len)
   %src.ptr = getelementptr inbounds i8, ptr %src, i64 %start.clamped
   call void @llvm.memcpy.p0.p0.i64(ptr %data, ptr %src.ptr, i64 %slice.len, i1 false)
   %term = getelementptr inbounds i8, ptr %data, i64 %slice.len
@@ -294,13 +362,12 @@ loop.step:
   %next.index = sub i64 %index, 1
   br label %loop.cond
 all.space:
-  %data.empty = call ptr @malloc(i64 1)
-  store i8 0, ptr %data.empty
+  %data.empty = call ptr @tb_string_new(i64 0)
   ret ptr %data.empty
 copy:
   %copy.len = add i64 %index, 1
   %copy.bytes = add i64 %copy.len, 1
-  %data = call ptr @malloc(i64 %copy.bytes)
+  %data = call ptr @tb_string_new(i64 %copy.len)
   call void @llvm.memcpy.p0.p0.i64(ptr %data, ptr %src, i64 %copy.len, i1 false)
   %term = getelementptr inbounds i8, ptr %data, i64 %copy.len
   store i8 0, ptr %term
@@ -310,7 +377,7 @@ define private ptr @tb_bootstrap_trim(ptr %src) {
 entry:
   %left = call ptr @tb_bootstrap_trim_left(ptr %src)
   %right = call ptr @tb_bootstrap_trim_right(ptr %left)
-  call void @free(ptr %left)
+  call void @tb_release(ptr %left)
   ret ptr %right
 }
 define private ptr @tb_bootstrap_string_replace(ptr %src, ptr %old, ptr %new) {
@@ -341,7 +408,7 @@ count.body:
   br label %count.cond
 alloc:
   %bytes = add i64 %count.out, 1
-  %data = call ptr @malloc(i64 %bytes)
+  %data = call ptr @tb_string_new(i64 %count.out)
   br label %write.cond
 write.cond:
   %write.src.index = phi i64 [0, %alloc], [%write.next.src.index, %write.step]
@@ -386,7 +453,7 @@ entry:
   %xb.old = load i64, ptr @tb_rt_xb
   %xb.new = add i64 %xb.old, %total.bytes
   store i64 %xb.new, ptr @tb_rt_xb
-  %data = call ptr @malloc(i64 %total.bytes)
+  %data = call ptr @tb_string_new(i64 %total.len)
   call void @llvm.memcpy.p0.p0.i64(ptr %data, ptr %left, i64 %left.len, i1 false)
   %right.dst = getelementptr inbounds i8, ptr %data, i64 %left.len
   call void @llvm.memcpy.p0.p0.i64(ptr %right.dst, ptr %right, i64 %right.len, i1 false)
@@ -410,7 +477,7 @@ entry:
   %ib.old = load i64, ptr @tb_rt_ib
   %ib.new = add i64 %ib.old, %bytes
   store i64 %ib.new, ptr @tb_rt_ib
-  %data = call ptr @malloc(i64 %bytes)
+  %data = call ptr @tb_string_new(i64 %len)
   %written = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %data, i64 %bytes, ptr @.fmt.int.text, i64 %value)
   ret ptr %data
 }
@@ -475,8 +542,7 @@ loop.step:
   %next.index = add i32 %index, 1
   br label %loop.cond
 missing:
-  %empty = call ptr @malloc(i64 1)
-  store i8 0, ptr %empty
+  %empty = call ptr @tb_string_new(i64 0)
   ret ptr %empty
 }
 define private i64 @tb_bootstrap_hash_string(ptr %value) {

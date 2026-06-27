@@ -69,7 +69,7 @@ free.item:
   %data = load ptr, ptr %data.ptr
   %item.slot = getelementptr inbounds ptr, ptr %data, i32 %index
   %item.value = load ptr, ptr %item.slot
-  call void @free(ptr %item.value)
+  call void @tb_release(ptr %item.value)
   store ptr null, ptr %item.slot
   store i8 0, ptr %owned.slot
   br label %done
@@ -122,8 +122,18 @@ loop.body:
   %source.index64 = add i64 %start.clamped, %index64
   %source.index32 = trunc i64 %source.index64 to i32
   %value = call ptr @tb_bootstrap_string_array_get(ptr %array, i32 %source.index32)
-  %value.copy = call ptr @tb_bootstrap_string_copy(ptr %value)
+  %owned.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 3
+  %owned = load ptr, ptr %owned.ptr
+  %owned.slot = getelementptr inbounds i8, ptr %owned, i32 %source.index32
+  %owned.byte = load i8, ptr %owned.slot
+  %value.owned = icmp ne i8 %owned.byte, 0
+  br i1 %value.owned, label %copy.owned, label %copy.borrowed
+copy.owned:
+  %value.copy = call ptr @tb_retain(ptr %value)
   call void @tb_bootstrap_string_array_set_owned(ptr %result, i32 %index, ptr %value.copy, i1 true)
+  br label %loop.step
+copy.borrowed:
+  call void @tb_bootstrap_string_array_set_owned(ptr %result, i32 %index, ptr %value, i1 false)
   br label %loop.step
 loop.step:
   %next.index = add i32 %index, 1
@@ -309,8 +319,18 @@ loop.body:
   %is.item.null = icmp eq ptr %item, null
   br i1 %is.item.null, label %store.null, label %copy.item
 copy.item:
-  %item.copy = call ptr @tb_bootstrap_string_copy(ptr %item)
+  %owned.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 3
+  %owned = load ptr, ptr %owned.ptr
+  %owned.slot = getelementptr inbounds i8, ptr %owned, i32 %index
+  %owned.byte = load i8, ptr %owned.slot
+  %item.owned = icmp ne i8 %owned.byte, 0
+  br i1 %item.owned, label %copy.owned, label %copy.borrowed
+copy.owned:
+  %item.copy = call ptr @tb_retain(ptr %item)
   call void @tb_bootstrap_string_array_set_owned(ptr %clone, i32 %index, ptr %item.copy, i1 true)
+  br label %loop.step
+copy.borrowed:
+  call void @tb_bootstrap_string_array_set_owned(ptr %clone, i32 %index, ptr %item, i1 false)
   br label %loop.step
 store.null:
   call void @tb_bootstrap_string_array_set_owned(ptr %clone, i32 %index, ptr null, i1 false)
@@ -345,7 +365,7 @@ loop.body:
 loop.free.item:
   %item.slot = getelementptr inbounds ptr, ptr %data, i32 %index
   %item.value = load ptr, ptr %item.slot
-  call void @free(ptr %item.value)
+  call void @tb_release(ptr %item.value)
   br label %loop.step
 loop.step:
   %next.index = add i32 %index, 1
@@ -382,8 +402,7 @@ done:
 define private ptr @tb_bootstrap_join_strings(ptr %array, ptr %delimiter) {
 entry:
   %result.slot = alloca ptr
-  %empty = call ptr @malloc(i64 1)
-  store i8 0, ptr %empty
+  %empty = call ptr @tb_string_new(i64 0)
   store ptr %empty, ptr %result.slot
   %len = call i32 @tb_bootstrap_string_array_length(ptr %array)
   br label %loop.cond
@@ -398,13 +417,13 @@ loop.body:
   br i1 %has.delim, label %loop.delim, label %loop.item
 loop.delim:
   %with.delim = call ptr @tb_bootstrap_string_concat(ptr %current, ptr %delimiter)
-  call void @free(ptr %current)
+  call void @tb_release(ptr %current)
   store ptr %with.delim, ptr %result.slot
   br label %loop.item
 loop.item:
   %current.item = load ptr, ptr %result.slot
   %next.value = call ptr @tb_bootstrap_string_concat(ptr %current.item, ptr %item)
-  call void @free(ptr %current.item)
+  call void @tb_release(ptr %current.item)
   store ptr %next.value, ptr %result.slot
   br label %loop.step.item
 loop.step.item:

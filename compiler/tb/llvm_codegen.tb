@@ -764,7 +764,7 @@ string emit_string_array_release_ptr(string ptr_name):
     return '  call void @tb_bootstrap_string_array_free(ptr ' + ptr_name + ')'
 
 string emit_string_release_ptr(string ptr_name):
-    return '  call void @free(ptr ' + ptr_name + ')'
+    return '  call void @tb_release(ptr ' + ptr_name + ')'
 
 BindingIR lookup_named_global(ProgramIR program, string name):
     for (GlobalDeclIR global_decl in program.globals):
@@ -973,10 +973,15 @@ bool is_backend_managed_type(string type_name):
 
 bool temp_has_owned_semantics(ParsedFunction function_ir, string temp_name):
     LinearInstruction op = lookup_temp_instruction(function_ir, temp_name)
-    return op.ownership_mode == 'owned' && is_backend_managed_type(op.result_type)
+    return ownership_is_owned_mode(op.ownership_mode) && is_backend_managed_type(op.result_type)
 
 bool temp_is_string(ParsedFunction function_ir, string temp_name):
     return normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, temp_name)) == 'string'
+
+bool temp_is_managed_string(ParsedFunction function_ir, string temp_name):
+    if (!temp_is_string(function_ir, temp_name)):
+        return false
+    return lookup_temp_instruction(function_ir, temp_name).ownership_mode == 'managed'
 
 bool temp_is_string_like_value(ParsedFunction function_ir, string temp_name):
     if (temp_is_string(function_ir, temp_name)):
@@ -1031,10 +1036,20 @@ bool temp_is_moved(ParsedFunction function_ir, string temp_name):
 
 bool temp_needs_backend_free(ParsedFunction function_ir, string temp_name):
     LinearInstruction op = lookup_temp_instruction(function_ir, temp_name)
-    if (op.kind != 'value'):
-        return false
     string result_type = normalize_llvm_type_name(op.result_type)
-    if (op.ownership_mode != 'owned'):
+    if (!ownership_is_owned_mode(op.ownership_mode)):
+        return false
+    if (result_type == 'string'):
+        if (op.kind == 'binary'):
+            return true
+        if (op.kind != 'value'):
+            return false
+        if (op.detail == 'call' || op.detail == 'method-call' || op.detail == 'slice'):
+            return true
+        if (op.detail == 'index' && op.args.length() >= 1):
+            return normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0])) == 'string'
+        return false
+    if (op.kind != 'value'):
         return false
     if (result_type == 'string[]'):
         return op.detail == 'array' || op.detail == 'call'
@@ -1103,6 +1118,8 @@ string[] emit_string_materialize_if_needed(ParsedFunction function_ir, string te
         return []
     if (!temp_is_string(function_ir, temp_name)):
         return []
+    if (temp_is_managed_string(function_ir, temp_name)):
+        return ['  ' + emit_string_owned_value(function_ir, temp_name, temp_suffix) + ' = call ptr @tb_retain(ptr ' + temp_ref(temp_name) + ')']
     return ['  ' + emit_string_owned_value(function_ir, temp_name, temp_suffix) + ' = call ptr @tb_bootstrap_string_copy(ptr ' + temp_ref(temp_name) + ')']
 
 string emit_string_array_owned_value(ParsedFunction function_ir, string temp_name, string temp_suffix):
@@ -2508,8 +2525,7 @@ string[] emit_read_file_helper():
     lines.push('  %result.slot = alloca ptr')
     lines.push('  store ptr null, ptr %line.slot')
     lines.push('  store i64 0, ptr %cap.slot')
-    lines.push('  %result.init = call ptr @malloc(i64 1)')
-    lines.push('  store i8 0, ptr %result.init')
+    lines.push('  %result.init = call ptr @tb_string_new(i64 0)')
     lines.push('  store ptr %result.init, ptr %result.slot')
     lines.push('  br label %loop.cond')
     lines.push('loop.cond:')
@@ -2520,7 +2536,7 @@ string[] emit_read_file_helper():
     lines.push('  %result.old = load ptr, ptr %result.slot')
     lines.push('  %line = load ptr, ptr %line.slot')
     lines.push('  %result.new = call ptr @tb_bootstrap_string_concat(ptr %result.old, ptr %line)')
-    lines.push('  call void @free(ptr %result.old)')
+    lines.push('  call void @tb_release(ptr %result.old)')
     lines.push('  store ptr %result.new, ptr %result.slot')
     lines.push('  br label %loop.cond')
     lines.push('done:')
@@ -2545,8 +2561,7 @@ string[] emit_getenv_helper():
     lines.push('  %missing = icmp eq ptr %value, null')
     lines.push('  br i1 %missing, label %empty, label %copy')
     lines.push('empty:')
-    lines.push('  %empty.data = call ptr @malloc(i64 1)')
-    lines.push('  store i8 0, ptr %empty.data')
+    lines.push('  %empty.data = call ptr @tb_string_new(i64 0)')
     lines.push('  ret ptr %empty.data')
     lines.push('copy:')
     lines.push('  %value.copy = call ptr @tb_bootstrap_string_copy(ptr %value)')
@@ -3427,11 +3442,11 @@ string emit_string_method_call_value_instruction(ProgramIR program, ParsedFuncti
         return '  ' + lhs + ' = call ptr @tb_bootstrap_int_to_string(i64 ' + temp_ref(op.args[1]) + ')'
     if (method_name == 'hash'):
         if (method_base_type == 'int'):
-            return '  ' + lhs + '.text = call ptr @tb_bootstrap_int_to_string(i64 ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = call i64 @tb_bootstrap_hash_string(ptr ' + temp_ref(op.lhs + '.text') + ')\n  call void @free(ptr ' + temp_ref(op.lhs + '.text') + ')'
+            return '  ' + lhs + '.text = call ptr @tb_bootstrap_int_to_string(i64 ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = call i64 @tb_bootstrap_hash_string(ptr ' + temp_ref(op.lhs + '.text') + ')\n  call void @tb_release(ptr ' + temp_ref(op.lhs + '.text') + ')'
         if (method_base_type == 'string'):
             return '  ' + lhs + ' = call i64 @tb_bootstrap_hash_string(ptr ' + temp_ref(op.args[1]) + ')'
         if (method_base_type == 'num'):
-            return '  ' + lhs + '.text = call ptr @tb_bootstrap_num_to_string(%tb_bootstrap_num ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = call i64 @tb_bootstrap_hash_string(ptr ' + temp_ref(op.lhs + '.text') + ')\n  call void @free(ptr ' + temp_ref(op.lhs + '.text') + ')'
+            return '  ' + lhs + '.text = call ptr @tb_bootstrap_num_to_string(%tb_bootstrap_num ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = call i64 @tb_bootstrap_hash_string(ptr ' + temp_ref(op.lhs + '.text') + ')\n  call void @tb_release(ptr ' + temp_ref(op.lhs + '.text') + ')'
     if (method_name == 'to_int'):
         return '  ' + lhs + ' = call i64 @tb_bootstrap_to_int(ptr ' + temp_ref(op.args[1]) + ')'
     if (method_name == 'index_of' && method_base_type == 'string'):
@@ -3481,7 +3496,7 @@ string emit_builtin_query_call_value_instruction(ParsedFunction function_ir, Lin
         if (op.args.length() != 2):
             throw 'unsupported llvm hash arity'
         if (call_arg1_type == 'int'):
-            return '  ' + lhs + '.text = call ptr @tb_bootstrap_int_to_string(i64 ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = call i64 @tb_bootstrap_hash_string(ptr ' + temp_ref(op.lhs + '.text') + ')\n  call void @free(ptr ' + temp_ref(op.lhs + '.text') + ')'
+            return '  ' + lhs + '.text = call ptr @tb_bootstrap_int_to_string(i64 ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = call i64 @tb_bootstrap_hash_string(ptr ' + temp_ref(op.lhs + '.text') + ')\n  call void @tb_release(ptr ' + temp_ref(op.lhs + '.text') + ')'
         if (call_arg1_type == 'string'):
             return '  ' + lhs + ' = call i64 @tb_bootstrap_hash_string(ptr ' + temp_ref(op.args[1]) + ')'
         throw 'unsupported llvm hash arg type: ' + call_arg1_type
@@ -3925,9 +3940,9 @@ string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, Lin
                     emitted += '\n'
                 emitted += '  ' + lhs + ' = call ptr @tb_bootstrap_string_concat(ptr ' + left_value + ', ptr ' + right_value + ')'
                 if (free_left):
-                    emitted += '\n  call void @free(ptr ' + left_value + ')'
+                    emitted += '\n  call void @tb_release(ptr ' + left_value + ')'
                 if (free_right):
-                    emitted += '\n  call void @free(ptr ' + right_value + ')'
+                    emitted += '\n  call void @tb_release(ptr ' + right_value + ')'
                 return emitted
             if (left_type_normalized == 'num' || right_type_normalized == 'num'):
                 string[] lines = emit_num_materialize_if_needed(function_ir, op.args[1], op.lhs + '.left')
@@ -5203,27 +5218,74 @@ string[] emit_record_helpers(RecordDeclIR record_decl):
         clone_field_lines.push('  %field.src.' + field.name + ' = getelementptr inbounds ' + record_type + ', ptr %record, i32 0, i32 ' + index)
         clone_field_lines.push('  %field.value.' + field.name + ' = load ' + llvm_type(field.type_name) + ', ptr %field.src.' + field.name)
         string stored_value = '%field.value.' + field.name
+        string stored_owned = 'false'
+        if (is_backend_managed_type(field.type_name)):
+            int owned_index = llvm_record_owned_field_index(record_decl, field.name)
+            clone_field_lines.push('  %field.owned.src.' + field.name + ' = getelementptr inbounds ' + record_type + ', ptr %record, i32 0, i32 ' + owned_index)
+            clone_field_lines.push('  %field.owned.byte.' + field.name + ' = load i8, ptr %field.owned.src.' + field.name)
+            clone_field_lines.push('  %field.owned.' + field.name + ' = icmp ne i8 %field.owned.byte.' + field.name + ', 0')
         if (normalize_llvm_type_name(field.type_name) == 'string'):
-            clone_field_lines.push('  %field.copy.' + field.name + ' = call ptr @tb_bootstrap_string_copy(ptr %field.value.' + field.name + ')')
-            stored_value = '%field.copy.' + field.name
+            clone_field_lines.push('  br i1 %field.owned.' + field.name + ', label %field.clone.owned.' + field.name + ', label %field.clone.borrowed.' + field.name)
+            clone_field_lines.push('field.clone.owned.' + field.name + ':')
+            clone_field_lines.push('  %field.copy.' + field.name + ' = call ptr @tb_retain(ptr %field.value.' + field.name + ')')
+            clone_field_lines.push('  br label %field.clone.done.' + field.name)
+            clone_field_lines.push('field.clone.borrowed.' + field.name + ':')
+            clone_field_lines.push('  br label %field.clone.done.' + field.name)
+            clone_field_lines.push('field.clone.done.' + field.name + ':')
+            clone_field_lines.push('  %field.clone.value.' + field.name + ' = phi ptr [%field.copy.' + field.name + ', %field.clone.owned.' + field.name + '], [%field.value.' + field.name + ', %field.clone.borrowed.' + field.name + ']')
+            stored_value = '%field.clone.value.' + field.name
+            stored_owned = '%field.owned.' + field.name
         else if (normalize_llvm_type_name(field.type_name) == 'string[]'):
+            clone_field_lines.push('  br i1 %field.owned.' + field.name + ', label %field.clone.owned.' + field.name + ', label %field.clone.borrowed.' + field.name)
+            clone_field_lines.push('field.clone.owned.' + field.name + ':')
             clone_field_lines.push('  %field.copy.' + field.name + ' = call ptr @tb_bootstrap_string_array_clone(ptr %field.value.' + field.name + ')')
-            stored_value = '%field.copy.' + field.name
+            clone_field_lines.push('  br label %field.clone.done.' + field.name)
+            clone_field_lines.push('field.clone.borrowed.' + field.name + ':')
+            clone_field_lines.push('  br label %field.clone.done.' + field.name)
+            clone_field_lines.push('field.clone.done.' + field.name + ':')
+            clone_field_lines.push('  %field.clone.value.' + field.name + ' = phi ptr [%field.copy.' + field.name + ', %field.clone.owned.' + field.name + '], [%field.value.' + field.name + ', %field.clone.borrowed.' + field.name + ']')
+            stored_value = '%field.clone.value.' + field.name
+            stored_owned = '%field.owned.' + field.name
         else if (normalize_llvm_type_name(field.type_name).starts_with('map<')):
+            clone_field_lines.push('  br i1 %field.owned.' + field.name + ', label %field.clone.owned.' + field.name + ', label %field.clone.borrowed.' + field.name)
+            clone_field_lines.push('field.clone.owned.' + field.name + ':')
             clone_field_lines.push('  %field.copy.' + field.name + ' = call ptr ' + llvm_map_clone_name(field.type_name) + '(ptr %field.value.' + field.name + ')')
-            stored_value = '%field.copy.' + field.name
+            clone_field_lines.push('  br label %field.clone.done.' + field.name)
+            clone_field_lines.push('field.clone.borrowed.' + field.name + ':')
+            clone_field_lines.push('  br label %field.clone.done.' + field.name)
+            clone_field_lines.push('field.clone.done.' + field.name + ':')
+            clone_field_lines.push('  %field.clone.value.' + field.name + ' = phi ptr [%field.copy.' + field.name + ', %field.clone.owned.' + field.name + '], [%field.value.' + field.name + ', %field.clone.borrowed.' + field.name + ']')
+            stored_value = '%field.clone.value.' + field.name
+            stored_owned = '%field.owned.' + field.name
         else if (record_name_from_type(field.type_name) != ''):
+            clone_field_lines.push('  br i1 %field.owned.' + field.name + ', label %field.clone.owned.' + field.name + ', label %field.clone.borrowed.' + field.name)
+            clone_field_lines.push('field.clone.owned.' + field.name + ':')
             clone_field_lines.push('  %field.copy.' + field.name + ' = call ptr @tb_bootstrap_record_clone_' + record_name_from_type(field.type_name) + '(ptr %field.value.' + field.name + ')')
-            stored_value = '%field.copy.' + field.name
+            clone_field_lines.push('  br label %field.clone.done.' + field.name)
+            clone_field_lines.push('field.clone.borrowed.' + field.name + ':')
+            clone_field_lines.push('  br label %field.clone.done.' + field.name)
+            clone_field_lines.push('field.clone.done.' + field.name + ':')
+            clone_field_lines.push('  %field.clone.value.' + field.name + ' = phi ptr [%field.copy.' + field.name + ', %field.clone.owned.' + field.name + '], [%field.value.' + field.name + ', %field.clone.borrowed.' + field.name + ']')
+            stored_value = '%field.clone.value.' + field.name
+            stored_owned = '%field.owned.' + field.name
         else if (normalize_llvm_type_name(field.type_name).ends_with('[]') && record_name_from_type(array_item_type(normalize_llvm_type_name(field.type_name))) != ''):
+            clone_field_lines.push('  br i1 %field.owned.' + field.name + ', label %field.clone.owned.' + field.name + ', label %field.clone.borrowed.' + field.name)
+            clone_field_lines.push('field.clone.owned.' + field.name + ':')
             clone_field_lines.push('  %field.copy.' + field.name + ' = call ptr @tb_bootstrap_record_array_clone_' + record_name_from_type(array_item_type(normalize_llvm_type_name(field.type_name))) + '(ptr %field.value.' + field.name + ')')
-            stored_value = '%field.copy.' + field.name
+            clone_field_lines.push('  br label %field.clone.done.' + field.name)
+            clone_field_lines.push('field.clone.borrowed.' + field.name + ':')
+            clone_field_lines.push('  br label %field.clone.done.' + field.name)
+            clone_field_lines.push('field.clone.done.' + field.name + ':')
+            clone_field_lines.push('  %field.clone.value.' + field.name + ' = phi ptr [%field.copy.' + field.name + ', %field.clone.owned.' + field.name + '], [%field.value.' + field.name + ', %field.clone.borrowed.' + field.name + ']')
+            stored_value = '%field.clone.value.' + field.name
+            stored_owned = '%field.owned.' + field.name
         clone_field_lines.push('  %field.dst.' + field.name + ' = getelementptr inbounds ' + record_type + ', ptr %clone, i32 0, i32 ' + index)
         clone_field_lines.push('  store ' + llvm_type(field.type_name) + ' ' + stored_value + ', ptr %field.dst.' + field.name)
         if (is_backend_managed_type(field.type_name)):
             int owned_index = llvm_record_owned_field_index(record_decl, field.name)
             clone_field_lines.push('  %field.owned.dst.' + field.name + ' = getelementptr inbounds ' + record_type + ', ptr %clone, i32 0, i32 ' + owned_index)
-            clone_field_lines.push('  store i8 1, ptr %field.owned.dst.' + field.name)
+            clone_field_lines.push('  %field.owned.store.' + field.name + ' = zext i1 ' + stored_owned + ' to i8')
+            clone_field_lines.push('  store i8 %field.owned.store.' + field.name + ', ptr %field.owned.dst.' + field.name)
         index += 1
     string[] free_field_lines = []
     index = 0
@@ -5577,13 +5639,13 @@ string[] emit_map_helpers(string type_name):
             '  store ptr %insert.key, ptr %new.key.slot'
         ]
         keys_result_lines = [
-            '  %key.copy = call ptr @tb_bootstrap_string_copy(ptr %key.value)',
+            '  %key.copy = call ptr @tb_retain(ptr %key.value)',
             '  call void @tb_bootstrap_string_array_set_owned(ptr %result, i32 %index, ptr %key.copy, i1 true)'
         ]
-        clone_key_copy_lines = ['  %key.copy = call ptr @tb_bootstrap_string_copy(ptr %key.value)']
+        clone_key_copy_lines = ['  %key.copy = call ptr @tb_retain(ptr %key.value)']
         free_key_lines = [
             '  %key.value = load ptr, ptr %key.slot',
-            '  call void @free(ptr %key.value)'
+            '  call void @tb_release(ptr %key.value)'
         ]
     lines = replace_llvm_template_block_lines(lines, '__KEY_COMPARE_GET__', key_compare_lines)
     lines = replace_llvm_template_block_lines(lines, '__KEY_COMPARE_SET_BY_KEY__', key_compare_lines)
@@ -5633,6 +5695,8 @@ string[] emit_map_helpers(string type_name):
             '  %result = call ptr @tb_bootstrap_string_array_new(i32 %len)',
             '  %values.ptr = getelementptr inbounds ' + map_struct + ', ptr %map, i32 0, i32 2',
             '  %values = load ptr, ptr %values.ptr',
+            '  %owned.ptr = getelementptr inbounds ' + map_struct + ', ptr %map, i32 0, i32 3',
+            '  %owned = load ptr, ptr %owned.ptr',
             '  br label %loop.cond',
             'loop.cond:',
             '  %index = phi i32 [0, %entry], [%next.index, %loop.step]',
@@ -5641,8 +5705,16 @@ string[] emit_map_helpers(string type_name):
             'loop.body:',
             '  %value.slot = getelementptr inbounds ' + value_llvm_type + ', ptr %values, i32 %index',
             '  %value.raw = load ' + value_llvm_type + ', ptr %value.slot',
-            '  %value.copy = call ptr @tb_bootstrap_string_copy(ptr %value.raw)',
+            '  %owned.slot = getelementptr inbounds i8, ptr %owned, i32 %index',
+            '  %owned.byte = load i8, ptr %owned.slot',
+            '  %value.owned = icmp ne i8 %owned.byte, 0',
+            '  br i1 %value.owned, label %loop.owned, label %loop.borrowed',
+            'loop.owned:',
+            '  %value.copy = call ptr @tb_retain(ptr %value.raw)',
             '  call void @tb_bootstrap_string_array_set_owned(ptr %result, i32 %index, ptr %value.copy, i1 true)',
+            '  br label %loop.step',
+            'loop.borrowed:',
+            '  call void @tb_bootstrap_string_array_set_owned(ptr %result, i32 %index, ptr %value.raw, i1 false)',
             '  br label %loop.step',
             'loop.step:',
             '  %next.index = add i32 %index, 1',
@@ -5657,9 +5729,21 @@ string[] emit_map_helpers(string type_name):
     string clone_stored_value = '%value.raw'
     string clone_stored_owned = 'false'
     if (value_type == 'string'):
-        clone_value_copy_lines = ['  %value.copy = call ptr @tb_bootstrap_string_copy(ptr %value.raw)']
-        clone_stored_value = '%value.copy'
-        clone_stored_owned = 'true'
+        clone_value_copy_lines = [
+            '  %owned.slot = getelementptr inbounds i8, ptr %owned, i32 %index',
+            '  %owned.byte = load i8, ptr %owned.slot',
+            '  %value.owned = icmp ne i8 %owned.byte, 0',
+            '  br i1 %value.owned, label %clone.value.owned, label %clone.value.borrowed',
+            'clone.value.owned:',
+            '  %value.copy = call ptr @tb_retain(ptr %value.raw)',
+            '  br label %clone.value.done',
+            'clone.value.borrowed:',
+            '  br label %clone.value.done',
+            'clone.value.done:',
+            '  %value.clone = phi ptr [%value.copy, %clone.value.owned], [%value.raw, %clone.value.borrowed]'
+        ]
+        clone_stored_value = '%value.clone'
+        clone_stored_owned = '%value.owned'
     else if (value_type == 'string[]'):
         clone_value_copy_lines = ['  %value.copy = call ptr @tb_bootstrap_string_array_clone(ptr %value.raw)']
         clone_stored_value = '%value.copy'
