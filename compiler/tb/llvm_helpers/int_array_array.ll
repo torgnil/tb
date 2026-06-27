@@ -133,8 +133,18 @@ loop.body:
   %is.item.null = icmp eq ptr %item, null
   br i1 %is.item.null, label %store.null, label %copy.item
 copy.item:
+  %owned.ptr = getelementptr inbounds %tb_bootstrap_int_array_array, ptr %array, i32 0, i32 2
+  %owned = load ptr, ptr %owned.ptr
+  %owned.slot = getelementptr inbounds i8, ptr %owned, i32 %index
+  %owned.byte = load i8, ptr %owned.slot
+  %item.owned = icmp ne i8 %owned.byte, 0
+  br i1 %item.owned, label %copy.owned, label %copy.borrowed
+copy.owned:
   %item.copy = call ptr @tb_bootstrap_int_array_clone(ptr %item)
   call void @tb_bootstrap_int_array_array_set_owned(ptr %clone, i32 %index, ptr %item.copy, i1 true)
+  br label %loop.step
+copy.borrowed:
+  call void @tb_bootstrap_int_array_array_set_owned(ptr %clone, i32 %index, ptr %item, i1 false)
   br label %loop.step
 store.null:
   call void @tb_bootstrap_int_array_array_set_owned(ptr %clone, i32 %index, ptr null, i1 false)
