@@ -14,6 +14,78 @@
 
 import type_ir_lib;
 
+record OwnershipTempMetaCache(string[] names, string[] result_types, string[] ownership_modes);
+record OwnershipBindingCache(string[] names, string[] binding_decls);
+record OwnershipIdentifierTargetCache(string[] temp_names, string[] binding_decls);
+
+int OWNERSHIP_PROFILE_ACTIVE = 0;
+int OWNERSHIP_LOOKUP_TEMP_RESULT_TYPE_CALLS = 0;
+int OWNERSHIP_LOOKUP_TEMP_RESULT_TYPE_SCAN_TOTAL = 0;
+int OWNERSHIP_LOOKUP_TEMP_OWNERSHIP_MODE_CALLS = 0;
+int OWNERSHIP_LOOKUP_TEMP_OWNERSHIP_MODE_SCAN_TOTAL = 0;
+int OWNERSHIP_BINDING_IS_MANAGED_CALLS = 0;
+int OWNERSHIP_BINDING_IS_MANAGED_SCAN_TOTAL = 0;
+int OWNERSHIP_IDENTIFIER_TARGET_BINDING_CALLS = 0;
+int OWNERSHIP_IDENTIFIER_TARGET_BINDING_INSTRUCTION_SCANS = 0;
+int OWNERSHIP_IDENTIFIER_TARGET_BINDING_LOCAL_SCANS = 0;
+int OWNERSHIP_IDENTIFIER_TARGET_BINDING_PARAM_SCANS = 0;
+int OWNERSHIP_NAMED_BINDING_DECL_CALLS = 0;
+int OWNERSHIP_NAMED_BINDING_DECL_LOCAL_SCANS = 0;
+int OWNERSHIP_NAMED_BINDING_DECL_PARAM_SCANS = 0;
+int OWNERSHIP_COPY_INSTRUCTION_CALLS = 0;
+int OWNERSHIP_COPY_INSTRUCTION_ARG_ITEMS = 0;
+int OWNERSHIP_MOVE_TEMP_IF_OWNED_CALLS = 0;
+int OWNERSHIP_MOVE_TEMP_IF_OWNED_EMIT_COUNT = 0;
+int OWNERSHIP_APPLY_BLOCK_COUNT = 0;
+int OWNERSHIP_APPLY_BLOCK_INSTRUCTION_ITEMS = 0;
+int OWNERSHIP_APPLY_FUNCTION_COUNT = 0;
+
+void reset_ownership_profile_stats():
+    OWNERSHIP_PROFILE_ACTIVE = 1
+    OWNERSHIP_LOOKUP_TEMP_RESULT_TYPE_CALLS = 0
+    OWNERSHIP_LOOKUP_TEMP_RESULT_TYPE_SCAN_TOTAL = 0
+    OWNERSHIP_LOOKUP_TEMP_OWNERSHIP_MODE_CALLS = 0
+    OWNERSHIP_LOOKUP_TEMP_OWNERSHIP_MODE_SCAN_TOTAL = 0
+    OWNERSHIP_BINDING_IS_MANAGED_CALLS = 0
+    OWNERSHIP_BINDING_IS_MANAGED_SCAN_TOTAL = 0
+    OWNERSHIP_IDENTIFIER_TARGET_BINDING_CALLS = 0
+    OWNERSHIP_IDENTIFIER_TARGET_BINDING_INSTRUCTION_SCANS = 0
+    OWNERSHIP_IDENTIFIER_TARGET_BINDING_LOCAL_SCANS = 0
+    OWNERSHIP_IDENTIFIER_TARGET_BINDING_PARAM_SCANS = 0
+    OWNERSHIP_NAMED_BINDING_DECL_CALLS = 0
+    OWNERSHIP_NAMED_BINDING_DECL_LOCAL_SCANS = 0
+    OWNERSHIP_NAMED_BINDING_DECL_PARAM_SCANS = 0
+    OWNERSHIP_COPY_INSTRUCTION_CALLS = 0
+    OWNERSHIP_COPY_INSTRUCTION_ARG_ITEMS = 0
+    OWNERSHIP_MOVE_TEMP_IF_OWNED_CALLS = 0
+    OWNERSHIP_MOVE_TEMP_IF_OWNED_EMIT_COUNT = 0
+    OWNERSHIP_APPLY_BLOCK_COUNT = 0
+    OWNERSHIP_APPLY_BLOCK_INSTRUCTION_ITEMS = 0
+    OWNERSHIP_APPLY_FUNCTION_COUNT = 0
+
+string ownership_profile_report():
+    string lines = 'lookup_temp_result_type_calls=' + OWNERSHIP_LOOKUP_TEMP_RESULT_TYPE_CALLS.to_string()
+    lines += '\nlookup_temp_result_type_scan_total=' + OWNERSHIP_LOOKUP_TEMP_RESULT_TYPE_SCAN_TOTAL.to_string()
+    lines += '\nlookup_temp_ownership_mode_calls=' + OWNERSHIP_LOOKUP_TEMP_OWNERSHIP_MODE_CALLS.to_string()
+    lines += '\nlookup_temp_ownership_mode_scan_total=' + OWNERSHIP_LOOKUP_TEMP_OWNERSHIP_MODE_SCAN_TOTAL.to_string()
+    lines += '\nbinding_is_managed_calls=' + OWNERSHIP_BINDING_IS_MANAGED_CALLS.to_string()
+    lines += '\nbinding_is_managed_scan_total=' + OWNERSHIP_BINDING_IS_MANAGED_SCAN_TOTAL.to_string()
+    lines += '\nidentifier_target_binding_calls=' + OWNERSHIP_IDENTIFIER_TARGET_BINDING_CALLS.to_string()
+    lines += '\nidentifier_target_binding_instruction_scans=' + OWNERSHIP_IDENTIFIER_TARGET_BINDING_INSTRUCTION_SCANS.to_string()
+    lines += '\nidentifier_target_binding_local_scans=' + OWNERSHIP_IDENTIFIER_TARGET_BINDING_LOCAL_SCANS.to_string()
+    lines += '\nidentifier_target_binding_param_scans=' + OWNERSHIP_IDENTIFIER_TARGET_BINDING_PARAM_SCANS.to_string()
+    lines += '\nnamed_binding_decl_calls=' + OWNERSHIP_NAMED_BINDING_DECL_CALLS.to_string()
+    lines += '\nnamed_binding_decl_local_scans=' + OWNERSHIP_NAMED_BINDING_DECL_LOCAL_SCANS.to_string()
+    lines += '\nnamed_binding_decl_param_scans=' + OWNERSHIP_NAMED_BINDING_DECL_PARAM_SCANS.to_string()
+    lines += '\ncopy_instruction_calls=' + OWNERSHIP_COPY_INSTRUCTION_CALLS.to_string()
+    lines += '\ncopy_instruction_arg_items=' + OWNERSHIP_COPY_INSTRUCTION_ARG_ITEMS.to_string()
+    lines += '\nmove_temp_if_owned_calls=' + OWNERSHIP_MOVE_TEMP_IF_OWNED_CALLS.to_string()
+    lines += '\nmove_temp_if_owned_emit_count=' + OWNERSHIP_MOVE_TEMP_IF_OWNED_EMIT_COUNT.to_string()
+    lines += '\napply_block_count=' + OWNERSHIP_APPLY_BLOCK_COUNT.to_string()
+    lines += '\napply_block_instruction_items=' + OWNERSHIP_APPLY_BLOCK_INSTRUCTION_ITEMS.to_string()
+    lines += '\napply_function_count=' + OWNERSHIP_APPLY_FUNCTION_COUNT.to_string()
+    return lines
+
 string enum_name_from_header(string header):
     return strip_prefix(header, 'enum ')
 
@@ -51,89 +123,204 @@ LinearInstruction[] collect_function_instructions(ParsedFunction function_ir):
             instructions.push(op)
     return instructions
 
+OwnershipTempMetaCache build_ownership_temp_meta_cache(ParsedFunction function_ir):
+    string[] names = []
+    string[] result_types = []
+    string[] ownership_modes = []
+    for (BlockIR block in function_ir.blocks):
+        for (LinearInstruction op in block.instructions):
+            if (op.lhs != ''):
+                names.push(op.lhs.substring(0))
+                result_types.push(op.result_type.substring(0))
+                ownership_modes.push(op.ownership_mode.substring(0))
+    return OwnershipTempMetaCache(names, result_types, ownership_modes)
+
+OwnershipBindingCache build_ownership_binding_cache(ParsedFunction function_ir, string[] record_names, string[] enum_names):
+    string[] names = []
+    string[] binding_decls = []
+    for (BindingIR param_decl in function_ir.params):
+        names.push(param_decl.name.substring(0))
+        string current = binding_decl(param_decl)
+        binding_decls.push(current)
+    for (BindingIR local_decl in function_ir.locals):
+        names.push(local_decl.name.substring(0))
+        string current = binding_decl(local_decl)
+        binding_decls.push(current)
+    return OwnershipBindingCache(names, binding_decls)
+
+OwnershipIdentifierTargetCache build_ownership_identifier_target_cache(ParsedFunction function_ir, OwnershipBindingCache binding_cache):
+    string[] temp_names = []
+    string[] binding_decls = []
+    for (BlockIR block in function_ir.blocks):
+        for (LinearInstruction op in block.instructions):
+            if (op.kind == 'value' && op.detail == 'identifier' && op.args.length() == 1):
+                string current = named_binding_decl_cached(binding_cache, op.args[0])
+                if (current != ''):
+                    temp_names.push(op.lhs.substring(0))
+                    binding_decls.push(current)
+    return OwnershipIdentifierTargetCache(temp_names, binding_decls)
+
+int ownership_temp_meta_cache_index(OwnershipTempMetaCache cache, string name, bool track_result_type):
+    int name_length = name.length()
+    int index = cache.names.length() - 1
+    while (index >= 0):
+        if (OWNERSHIP_PROFILE_ACTIVE != 0):
+            if (track_result_type):
+                OWNERSHIP_LOOKUP_TEMP_RESULT_TYPE_SCAN_TOTAL += 1
+            else:
+                OWNERSHIP_LOOKUP_TEMP_OWNERSHIP_MODE_SCAN_TOTAL += 1
+        if (cache.names[index].length() == name_length && cache.names[index] == name):
+            return index
+        index -= 1
+    return -1
+
 string lookup_temp_result_type(ParsedFunction function_ir, string name):
+    if (OWNERSHIP_PROFILE_ACTIVE != 0):
+        OWNERSHIP_LOOKUP_TEMP_RESULT_TYPE_CALLS += 1
     string result_type = 'unknown'
     for (BlockIR block in function_ir.blocks):
         for (LinearInstruction op in block.instructions):
+            if (OWNERSHIP_PROFILE_ACTIVE != 0):
+                OWNERSHIP_LOOKUP_TEMP_RESULT_TYPE_SCAN_TOTAL += 1
             if (result_type == 'unknown' && op.lhs == name):
                 result_type = op.result_type.substring(0)
     return result_type
 
+string lookup_temp_result_type_cached(OwnershipTempMetaCache cache, string name):
+    if (OWNERSHIP_PROFILE_ACTIVE != 0):
+        OWNERSHIP_LOOKUP_TEMP_RESULT_TYPE_CALLS += 1
+    int index = ownership_temp_meta_cache_index(cache, name, true)
+    if (index < 0):
+        return 'unknown'
+    return cache.result_types[index]
+
 string lookup_temp_ownership_mode(ParsedFunction function_ir, string name):
+    if (OWNERSHIP_PROFILE_ACTIVE != 0):
+        OWNERSHIP_LOOKUP_TEMP_OWNERSHIP_MODE_CALLS += 1
     string ownership_mode = 'unknown'
     for (BlockIR block in function_ir.blocks):
         for (LinearInstruction op in block.instructions):
+            if (OWNERSHIP_PROFILE_ACTIVE != 0):
+                OWNERSHIP_LOOKUP_TEMP_OWNERSHIP_MODE_SCAN_TOTAL += 1
             if (ownership_mode == 'unknown' && op.lhs == name):
                 ownership_mode = op.ownership_mode.substring(0)
     return ownership_mode
 
-BindingIR[] managed_bindings(ParsedFunction function_ir, string[] record_names, string[] enum_names):
-    BindingIR[] result = []
-    for (BindingIR param_decl in function_ir.params):
-        if (is_managed_type(param_decl.type_name, record_names, enum_names)):
-            result.push(param_decl)
-    for (BindingIR local_decl in function_ir.locals):
-        if (is_managed_type(local_decl.type_name, record_names, enum_names)):
-            result.push(local_decl)
-    return result
+string lookup_temp_ownership_mode_cached(OwnershipTempMetaCache cache, string name):
+    if (OWNERSHIP_PROFILE_ACTIVE != 0):
+        OWNERSHIP_LOOKUP_TEMP_OWNERSHIP_MODE_CALLS += 1
+    int index = ownership_temp_meta_cache_index(cache, name, false)
+    if (index < 0):
+        return 'unknown'
+    return cache.ownership_modes[index]
+
+string named_binding_decl_cached(OwnershipBindingCache cache, string name):
+    if (OWNERSHIP_PROFILE_ACTIVE != 0):
+        OWNERSHIP_NAMED_BINDING_DECL_CALLS += 1
+    int name_length = name.length()
+    int index = cache.names.length() - 1
+    while (index >= 0):
+        if (OWNERSHIP_PROFILE_ACTIVE != 0):
+            OWNERSHIP_NAMED_BINDING_DECL_LOCAL_SCANS += 1
+        if (cache.names[index].length() == name_length && cache.names[index] == name):
+            return cache.binding_decls[index]
+        index -= 1
+    return ''
 
 bool binding_is_managed(string binding_decl, BindingIR[] managed):
+    if (OWNERSHIP_PROFILE_ACTIVE != 0):
+        OWNERSHIP_BINDING_IS_MANAGED_CALLS += 1
     BindingIR binding = ir_parse_binding_decl(binding_decl)
     for (BindingIR local_decl in managed):
+        if (OWNERSHIP_PROFILE_ACTIVE != 0):
+            OWNERSHIP_BINDING_IS_MANAGED_SCAN_TOTAL += 1
         if (local_decl.type_name == binding.type_name && local_decl.name == binding.name):
             return true
     return false
+
+bool binding_is_managed_cached(string binding_decl, string[] record_names, string[] enum_names):
+    if (OWNERSHIP_PROFILE_ACTIVE != 0):
+        OWNERSHIP_BINDING_IS_MANAGED_CALLS += 1
+    BindingIR binding = ir_parse_binding_decl(binding_decl)
+    return is_managed_type(binding.type_name, record_names, enum_names)
 
 string binding_decl(BindingIR binding):
     return binding.type_name + ' ' + binding.name
 
 string identifier_target_binding(ParsedFunction function_ir, string temp_name):
+    if (OWNERSHIP_PROFILE_ACTIVE != 0):
+        OWNERSHIP_IDENTIFIER_TARGET_BINDING_CALLS += 1
     string result = ''
     for (BlockIR block in function_ir.blocks):
         for (LinearInstruction op in block.instructions):
+            if (OWNERSHIP_PROFILE_ACTIVE != 0):
+                OWNERSHIP_IDENTIFIER_TARGET_BINDING_INSTRUCTION_SCANS += 1
             if (op.lhs == temp_name && op.kind == 'value' && op.detail == 'identifier'):
                 string name = op.args[0]
                 for (BindingIR local_decl in function_ir.locals):
+                    if (OWNERSHIP_PROFILE_ACTIVE != 0):
+                        OWNERSHIP_IDENTIFIER_TARGET_BINDING_LOCAL_SCANS += 1
                     if (result == '' && local_decl.name == name):
                         result = local_decl.type_name.substring(0) + ' ' + local_decl.name.substring(0)
                 for (BindingIR param_decl in function_ir.params):
+                    if (OWNERSHIP_PROFILE_ACTIVE != 0):
+                        OWNERSHIP_IDENTIFIER_TARGET_BINDING_PARAM_SCANS += 1
                     if (result == '' && param_decl.name == name):
                         result = param_decl.type_name.substring(0) + ' ' + param_decl.name.substring(0)
     return result
 
+string identifier_target_binding_cached(OwnershipIdentifierTargetCache cache, string temp_name):
+    if (OWNERSHIP_PROFILE_ACTIVE != 0):
+        OWNERSHIP_IDENTIFIER_TARGET_BINDING_CALLS += 1
+    int name_length = temp_name.length()
+    int index = cache.temp_names.length() - 1
+    while (index >= 0):
+        if (OWNERSHIP_PROFILE_ACTIVE != 0):
+            OWNERSHIP_IDENTIFIER_TARGET_BINDING_INSTRUCTION_SCANS += 1
+        if (cache.temp_names[index].length() == name_length && cache.temp_names[index] == temp_name):
+            return cache.binding_decls[index]
+        index -= 1
+    return ''
+
 string named_binding_decl(ParsedFunction function_ir, string name):
+    if (OWNERSHIP_PROFILE_ACTIVE != 0):
+        OWNERSHIP_NAMED_BINDING_DECL_CALLS += 1
     string result = ''
     for (BindingIR local_decl in function_ir.locals):
+        if (OWNERSHIP_PROFILE_ACTIVE != 0):
+            OWNERSHIP_NAMED_BINDING_DECL_LOCAL_SCANS += 1
         if (result == '' && local_decl.name == name):
             result = local_decl.type_name.substring(0) + ' ' + local_decl.name.substring(0)
     for (BindingIR param_decl in function_ir.params):
+        if (OWNERSHIP_PROFILE_ACTIVE != 0):
+            OWNERSHIP_NAMED_BINDING_DECL_PARAM_SCANS += 1
         if (result == '' && param_decl.name == name):
             result = param_decl.type_name.substring(0) + ' ' + param_decl.name.substring(0)
     return result
 
-string field_target_type(ParsedFunction function_ir, LinearInstruction op, RecordFieldIR[] record_fields):
-    string base_type = lookup_temp_result_type(function_ir, op.args[0])
+string field_target_type(OwnershipTempMetaCache cache, LinearInstruction op, RecordFieldIR[] record_fields):
+    string base_type = lookup_temp_result_type_cached(cache, op.args[0])
     string record_name = record_name_from_type(base_type)
     if (record_name == ''):
         return 'unknown'
     return lookup_record_field_type(record_fields, record_name, op.detail)
 
-string index_target_type(ParsedFunction function_ir, LinearInstruction op):
-    string base_type = lookup_temp_result_type(function_ir, op.args[0])
+string index_target_type(OwnershipTempMetaCache cache, LinearInstruction op):
+    string base_type = lookup_temp_result_type_cached(cache, op.args[0])
     if (base_type.ends_with('[]')):
         return array_item_type(base_type)
     if (base_type.starts_with('map<')):
         return map_value_type(base_type)
     return 'unknown'
 
-BindingIR[] initialized_managed_locals(ParsedFunction function_ir, BindingIR[] managed):
+BindingIR[] initialized_managed_locals(ParsedFunction function_ir, string[] record_names, string[] enum_names):
     BindingIR[] result = []
     for (BlockIR block in function_ir.blocks):
         for (LinearInstruction op in block.instructions):
             string binding_name = ''
             if (op.kind == 'set' || op.kind == 'catch'):
                 binding_name = op.detail.substring(0)
-            if (binding_name != '' && binding_is_managed(binding_name, managed)):
+            if (binding_name != '' && binding_is_managed_cached(binding_name, record_names, enum_names)):
                 BindingIR binding = ir_parse_binding_decl(binding_name)
                 bool exists = false
                 for (BindingIR existing in result):
@@ -143,101 +330,125 @@ BindingIR[] initialized_managed_locals(ParsedFunction function_ir, BindingIR[] m
                     result.push(binding)
     return result
 
-LinearInstruction[] move_temp_if_owned(ParsedFunction function_ir, string temp_name, string[] record_names, string[] enum_names):
+LinearInstruction[] move_temp_if_owned(OwnershipTempMetaCache cache, string temp_name, string[] record_names, string[] enum_names):
+    if (OWNERSHIP_PROFILE_ACTIVE != 0):
+        OWNERSHIP_MOVE_TEMP_IF_OWNED_CALLS += 1
     LinearInstruction[] result = []
-    string value_type = lookup_temp_result_type(function_ir, temp_name)
-    string ownership_mode = lookup_temp_ownership_mode(function_ir, temp_name)
-    if (ownership_mode == 'owned' && is_managed_type(value_type, record_names, enum_names)):
+    string value_type = lookup_temp_result_type_cached(cache, temp_name)
+    string ownership_mode = lookup_temp_ownership_mode_cached(cache, temp_name)
+    if (ownership_is_owned_mode(ownership_mode) && is_managed_type(value_type, record_names, enum_names)):
+        if (OWNERSHIP_PROFILE_ACTIVE != 0):
+            OWNERSHIP_MOVE_TEMP_IF_OWNED_EMIT_COUNT += 1
         result.push(LinearInstruction('move_temp', '', '', '', value_type, [temp_name]))
     return result
 
 LinearInstruction copy_instruction(LinearInstruction op):
+    if (OWNERSHIP_PROFILE_ACTIVE != 0):
+        OWNERSHIP_COPY_INSTRUCTION_CALLS += 1
     string[] copied_args = []
     for (string arg in op.args):
+        if (OWNERSHIP_PROFILE_ACTIVE != 0):
+            OWNERSHIP_COPY_INSTRUCTION_ARG_ITEMS += 1
         copied_args.push(arg.substring(0))
     return LinearInstruction(op.kind.substring(0), op.lhs.substring(0), op.result_type.substring(0), op.ownership_mode.substring(0), op.detail.substring(0), copied_args)
 
-LinearInstruction[] apply_ownership_to_instructions(ParsedFunction function_ir, string block_label, LinearInstruction[] instructions, BindingIR[] managed, RecordFieldIR[] record_fields, string[] record_names, string[] enum_names, string[] seen_sets):
+LinearInstruction[] apply_ownership_to_instructions(ParsedFunction function_ir, OwnershipTempMetaCache cache, OwnershipBindingCache binding_cache, OwnershipIdentifierTargetCache identifier_target_cache, string block_label, LinearInstruction[] instructions, RecordFieldIR[] record_fields, string[] record_names, string[] enum_names, string[] seen_sets):
     LinearInstruction[] result = []
     for (LinearInstruction op in instructions):
-        if (op.kind == 'set' && binding_is_managed(op.detail, managed)):
+        if (op.kind == 'set' && binding_is_managed_cached(op.detail, record_names, enum_names)):
             if (op.detail in seen_sets || block_label != 'entry'):
                 result.push(LinearInstruction('release_local', '', '', '', op.detail, []))
             if (!(op.detail in seen_sets)):
                 seen_sets.push(op.detail)
-            result = append_instructions(result, move_temp_if_owned(function_ir, op.args[0], record_names, enum_names))
+            result = append_instructions(result, move_temp_if_owned(cache, op.args[0], record_names, enum_names))
         if (op.kind == 'assign_local'):
-            string binding_decl = named_binding_decl(function_ir, op.detail)
-            if (binding_decl != '' && binding_is_managed(binding_decl, managed)):
+            string binding_decl = named_binding_decl_cached(binding_cache, op.detail)
+            if (binding_decl != '' && binding_is_managed_cached(binding_decl, record_names, enum_names)):
                 result.push(LinearInstruction('release_local', '', '', '', binding_decl, []))
-            result = append_instructions(result, move_temp_if_owned(function_ir, op.args[0], record_names, enum_names))
+            result = append_instructions(result, move_temp_if_owned(cache, op.args[0], record_names, enum_names))
+        else if (op.kind == 'assign_local_add'):
+            string binding_decl = named_binding_decl_cached(binding_cache, op.detail)
+            if (binding_decl != '' && binding_is_managed_cached(binding_decl, record_names, enum_names)):
+                BindingIR binding = ir_parse_binding_decl(binding_decl)
+                if (binding.type_name != 'string'):
+                    result.push(LinearInstruction('release_local', '', '', '', binding_decl, []))
+            result = append_instructions(result, move_temp_if_owned(cache, op.args[0], record_names, enum_names))
         else if (op.kind == 'assign_field'):
-            string target_type = field_target_type(function_ir, op, record_fields)
+            string target_type = field_target_type(cache, op, record_fields)
             if (is_managed_type(target_type, record_names, enum_names)):
                 result.push(LinearInstruction('release_field', '', '', '', op.detail, [op.args[0]]))
-            result = append_instructions(result, move_temp_if_owned(function_ir, op.args[1], record_names, enum_names))
+            result = append_instructions(result, move_temp_if_owned(cache, op.args[1], record_names, enum_names))
         else if (op.kind == 'assign_index'):
-            string target_type = index_target_type(function_ir, op)
+            string target_type = index_target_type(cache, op)
             if (is_managed_type(target_type, record_names, enum_names)):
                 result.push(LinearInstruction('release_index', '', '', '', '', [op.args[0], op.args[1]]))
-            result = append_instructions(result, move_temp_if_owned(function_ir, op.args[2], record_names, enum_names))
+            result = append_instructions(result, move_temp_if_owned(cache, op.args[2], record_names, enum_names))
+        else if (op.kind == 'assign_index_add'):
+            result = append_instructions(result, move_temp_if_owned(cache, op.args[2], record_names, enum_names))
         else if (op.kind == 'assign'):
-            string binding_decl = identifier_target_binding(function_ir, op.args[0])
-            if (binding_decl != '' && binding_is_managed(binding_decl, managed)):
+            string binding_decl = identifier_target_binding_cached(identifier_target_cache, op.args[0])
+            if (binding_decl != '' && binding_is_managed_cached(binding_decl, record_names, enum_names)):
                 result.push(LinearInstruction('release_local', '', '', '', binding_decl, []))
-            result = append_instructions(result, move_temp_if_owned(function_ir, op.args[1], record_names, enum_names))
+            result = append_instructions(result, move_temp_if_owned(cache, op.args[1], record_names, enum_names))
         else if (op.kind == 'drop'):
-            string value_type = lookup_temp_result_type(function_ir, op.args[0])
-            string ownership_mode = lookup_temp_ownership_mode(function_ir, op.args[0])
-            if (ownership_mode == 'owned' && is_managed_type(value_type, record_names, enum_names)):
+            string value_type = lookup_temp_result_type_cached(cache, op.args[0])
+            string ownership_mode = lookup_temp_ownership_mode_cached(cache, op.args[0])
+            if (ownership_is_owned_mode(ownership_mode) && is_managed_type(value_type, record_names, enum_names)):
                 result.push(LinearInstruction('release_temp', '', '', '', value_type, [op.args[0]]))
         result.push(copy_instruction(op))
     return result
 
-TerminatorIR apply_ownership_to_terminator(ParsedFunction function_ir, TerminatorIR terminator, BindingIR[] managed, string[] record_names, string[] enum_names):
+TerminatorIR apply_ownership_to_terminator(OwnershipTempMetaCache cache, TerminatorIR terminator, string[] record_names, string[] enum_names):
     if (terminator.kind == 'return' || terminator.kind == 'throw'):
         if (terminator.args.is_empty()):
             return terminator
-        string value_type = lookup_temp_result_type(function_ir, terminator.args[0])
+        string value_type = lookup_temp_result_type_cached(cache, terminator.args[0])
         if (is_managed_type(value_type, record_names, enum_names)):
             if (terminator.kind == 'return'):
                 return TerminatorIR('return_owned', terminator.args)
             return TerminatorIR('throw_owned', terminator.args)
     return terminator
 
-LinearInstruction[] exit_cleanup_instructions(ParsedFunction function_ir, TerminatorIR terminator, BindingIR[] initialized_managed):
+LinearInstruction[] exit_cleanup_instructions(OwnershipIdentifierTargetCache identifier_target_cache, TerminatorIR terminator, BindingIR[] initialized_managed):
     LinearInstruction[] result = []
     if (!(terminator.kind == 'return' || terminator.kind == 'throw' || terminator.kind == 'return_owned' || terminator.kind == 'throw_owned')):
         return result
     string transferred_binding = ''
     if ((terminator.kind == 'return_owned' || terminator.kind == 'throw_owned') && !terminator.args.is_empty()):
-        transferred_binding = identifier_target_binding(function_ir, terminator.args[0])
+        transferred_binding = identifier_target_binding_cached(identifier_target_cache, terminator.args[0])
     for (BindingIR binding in initialized_managed):
         string current = binding_decl(binding)
         if (current != transferred_binding):
             result.push(LinearInstruction('release_local', '', '', '', current, []))
     return result
 
-LinearInstruction[] transfer_terminator_instructions(ParsedFunction function_ir, TerminatorIR terminator, string[] record_names, string[] enum_names):
+LinearInstruction[] transfer_terminator_instructions(OwnershipTempMetaCache cache, TerminatorIR terminator, string[] record_names, string[] enum_names):
     LinearInstruction[] result = []
     if ((terminator.kind == 'return_owned' || terminator.kind == 'throw_owned') && !terminator.args.is_empty()):
-        result = append_instructions(result, move_temp_if_owned(function_ir, terminator.args[0], record_names, enum_names))
+        result = append_instructions(result, move_temp_if_owned(cache, terminator.args[0], record_names, enum_names))
     return result
 
-BlockIR apply_ownership_to_block(ParsedFunction function_ir, BlockIR block, BindingIR[] managed, BindingIR[] initialized_managed, RecordFieldIR[] record_fields, string[] record_names, string[] enum_names, string[] seen_sets):
-    LinearInstruction[] instructions = apply_ownership_to_instructions(function_ir, block.label, block.instructions, managed, record_fields, record_names, enum_names, seen_sets)
-    TerminatorIR terminator = apply_ownership_to_terminator(function_ir, block.terminator, managed, record_names, enum_names)
-    instructions = append_instructions(instructions, transfer_terminator_instructions(function_ir, terminator, record_names, enum_names))
-    instructions = append_instructions(instructions, exit_cleanup_instructions(function_ir, terminator, initialized_managed))
+BlockIR apply_ownership_to_block(ParsedFunction function_ir, OwnershipTempMetaCache cache, OwnershipBindingCache binding_cache, OwnershipIdentifierTargetCache identifier_target_cache, BlockIR block, BindingIR[] initialized_managed, RecordFieldIR[] record_fields, string[] record_names, string[] enum_names, string[] seen_sets):
+    if (OWNERSHIP_PROFILE_ACTIVE != 0):
+        OWNERSHIP_APPLY_BLOCK_COUNT += 1
+        OWNERSHIP_APPLY_BLOCK_INSTRUCTION_ITEMS += block.instructions.length()
+    LinearInstruction[] instructions = apply_ownership_to_instructions(function_ir, cache, binding_cache, identifier_target_cache, block.label, block.instructions, record_fields, record_names, enum_names, seen_sets)
+    TerminatorIR terminator = apply_ownership_to_terminator(cache, block.terminator, record_names, enum_names)
+    instructions = append_instructions(instructions, transfer_terminator_instructions(cache, terminator, record_names, enum_names))
+    instructions = append_instructions(instructions, exit_cleanup_instructions(identifier_target_cache, terminator, initialized_managed))
     return BlockIR(block.label, instructions, terminator)
 
 ParsedFunction apply_ownership_to_function(ParsedFunction function_ir, RecordFieldIR[] record_fields, string[] record_names, string[] enum_names):
-    BindingIR[] managed = managed_bindings(function_ir, record_names, enum_names)
-    BindingIR[] initialized_managed = initialized_managed_locals(function_ir, managed)
+    if (OWNERSHIP_PROFILE_ACTIVE != 0):
+        OWNERSHIP_APPLY_FUNCTION_COUNT += 1
+    OwnershipTempMetaCache cache = build_ownership_temp_meta_cache(function_ir)
+    OwnershipBindingCache binding_cache = build_ownership_binding_cache(function_ir, record_names, enum_names)
+    OwnershipIdentifierTargetCache identifier_target_cache = build_ownership_identifier_target_cache(function_ir, binding_cache)
+    BindingIR[] initialized_managed = initialized_managed_locals(function_ir, record_names, enum_names)
     BlockIR[] blocks = []
     string[] seen_sets = []
     for (BlockIR block in function_ir.blocks):
-        blocks.push(apply_ownership_to_block(function_ir, block, managed, initialized_managed, record_fields, record_names, enum_names, seen_sets))
+        blocks.push(apply_ownership_to_block(function_ir, cache, binding_cache, identifier_target_cache, block, initialized_managed, record_fields, record_names, enum_names, seen_sets))
     return ParsedFunction(function_ir.header, function_ir.name, function_ir.return_type, function_ir.params, function_ir.locals, blocks)
 
 ProgramIR owned_program_ir(ProgramIR program):

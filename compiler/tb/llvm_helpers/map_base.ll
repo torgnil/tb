@@ -225,6 +225,8 @@ copy:
   %keys = load ptr, ptr %keys.ptr
   %values.ptr = getelementptr inbounds __MAP_STRUCT__, ptr %map, i32 0, i32 2
   %values = load ptr, ptr %values.ptr
+  %owned.ptr = getelementptr inbounds __MAP_STRUCT__, ptr %map, i32 0, i32 3
+  %owned = load ptr, ptr %owned.ptr
   br label %loop.cond
 loop.cond:
   %index = phi i32 [0, %copy], [%next.index, %loop.step]

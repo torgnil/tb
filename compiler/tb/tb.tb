@@ -12,10 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import lexer;
+import parser;
+import lowerer;
+import type_ir_lib;
+import ownership_ir_lib;
 import llvm_codegen;
 import foreign_modules;
 
 record LoadedSourceBundle(string text, string[] foreign_modules);
+record CompileOptions(string source_path, string output_path, bool profile_phases);
 
 string path_dirname(string path):
     int index = path.length() - 1
@@ -107,12 +113,40 @@ void write_foreign_build_metadata(string output_path, string[] active_modules):
     write_lines_file(output_path + '.cflags', foreign_module_cflags(active_modules))
     write_lines_file(output_path + '.csources', foreign_module_c_sources(active_modules))
 
-int run_compiler(string[] args):
-    string source = read_file(args[1])
+void print_ms(string label, int start_ms, int end_ms):
+    print(label + '_ms=' + (end_ms - start_ms))
+
+CompileOptions parse_compile_options(string[] args):
+    string source_path = ''
+    string output_path = ''
+    bool profile_phases = false
+    int index = 1
+    while (index < args.length()):
+        string arg = args[index]
+        if (arg == '--profile-phases'):
+            profile_phases = true
+        else if (source_path == ''):
+            source_path = arg
+        else if (output_path == ''):
+            output_path = arg
+        else:
+            throw 'usage: tb.tb [--profile-phases] <file> [output.ll]'
+        index += 1
+    if (source_path == ''):
+        throw 'usage: tb.tb [--profile-phases] <file> [output.ll]'
+    if (profile_phases && output_path == ''):
+        throw '--profile-phases requires an output.ll path'
+    return CompileOptions(source_path, output_path, profile_phases)
+
+int run_compiler(CompileOptions options):
+    int t0 = 0
+    if (options.profile_phases):
+        t0 = time_ms()
+    string source = read_file(options.source_path)
     string[] active_foreign_modules = []
     if (source.contains('import ')):
         string[] seen = []
-        LoadedSourceBundle loaded = load_source_bundle_with_imports(args[1], source, seen)
+        LoadedSourceBundle loaded = load_source_bundle_with_imports(options.source_path, source, seen)
         source = loaded.text
         active_foreign_modules = loaded.foreign_modules
     string injected = injected_foreign_module_declarations(active_foreign_modules)
@@ -120,23 +154,77 @@ int run_compiler(string[] args):
         source = injected + '\n' + source
     if (!active_foreign_modules.is_empty()):
         source = rewrite_foreign_module_uses(source, active_foreign_modules)
-    string[] lines = llvm_codegen_source(source)
-    if (args.length() >= 3):
-        write_lines_file(args[2], lines)
-        write_foreign_build_metadata(args[2], active_foreign_modules)
-    else:
-        for (string line in lines):
-            print(line)
+    if (!options.profile_phases):
+        string[] lines = llvm_codegen_source(source)
+        if (options.output_path != ''):
+            write_lines_file(options.output_path, lines)
+            write_foreign_build_metadata(options.output_path, active_foreign_modules)
+        else:
+            for (string line in lines):
+                print(line)
+        return 0
+    int t1 = time_ms()
+
+    Token[] tokens = lex_source(source)
+    int t2 = time_ms()
+
+    Node parsed = parse_program(tokens)
+    int t3 = time_ms()
+
+    ProgramIR lowered = lower_tokens_ir(tokens)
+    int t4 = time_ms()
+
+    reset_type_ir_profile_stats()
+    ProgramIR typed = refine_program_ir(lowered)
+    int t5 = time_ms()
+
+    reset_ownership_profile_stats()
+    ProgramIR owned = owned_program_ir(typed)
+    int t6 = time_ms()
+
+    reset_llvm_backend_helper_stats()
+    reset_llvm_user_call_stats()
+    string[] lines = llvm_codegen_ir(owned)
+    int t7 = time_ms()
+
+    write_lines_file(options.output_path, lines)
+    write_foreign_build_metadata(options.output_path, active_foreign_modules)
+
+    print_ms('load_import', t0, t1)
+    print_ms('lex', t1, t2)
+    print_ms('parse_only', t2, t3)
+    print_ms('lower', t3, t4)
+    print_ms('type_refine', t4, t5)
+    print_ms('ownership', t5, t6)
+    print_ms('llvm_emit', t6, t7)
+    print('tokens=' + tokens.length())
+    print('parsed_top_level=' + parsed.children.length())
+    print('functions=' + owned.functions.length())
+    print('globals=' + owned.globals.length())
+    print('llvm_lines=' + lines.length())
+    print('--- type_ir_profile_report ---')
+    for (string line in type_ir_profile_report().split_lines()):
+        print(line)
+    print('--- llvm_backend_helper_report ---')
+    for (string line in llvm_backend_helper_report().split_lines()):
+        print(line)
+    print('--- ownership_profile_report ---')
+    for (string line in ownership_profile_report().split_lines()):
+        print(line)
+    print('--- llvm_user_call_report ---')
+    for (string line in llvm_user_call_report().split_lines()):
+        print(line)
     return 0
 
 int main(string[] args):
     if (args.length() < 2):
-        print('usage: tb.tb <file> [output.ll]')
+        print('usage: tb.tb [--profile-phases] <file> [output.ll]')
         return 1
 
     int exit_code = 0
     try:
-        exit_code = run_compiler(args)
+        CompileOptions options = parse_compile_options(args)
+        exit_code = run_compiler(options)
     catch (exception err):
         print(err)
         exit_code = 1

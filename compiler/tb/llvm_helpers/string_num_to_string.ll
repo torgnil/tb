@@ -24,7 +24,7 @@ fractional:
   %body.frac = add i64 %body.len, %scale
   %text.len = add i64 %body.frac, %sign.len
   %text.bytes = add i64 %text.len, 1
-  %data = call ptr @malloc(i64 %text.bytes)
+  %data = call ptr @tb_string_new(i64 %text.len)
   %start = select i1 %is.neg, i64 1, i64 0
   br i1 %is.neg, label %write.minus, label %copy.whole
 write.minus:
@@ -55,7 +55,7 @@ copy.fraction:
   call void @llvm.memcpy.p0.p0.i64(ptr %fraction.dst, ptr %fraction.text, i64 %fraction.len, i1 false)
   %term.ptr = getelementptr inbounds i8, ptr %data, i64 %text.len
   store i8 0, ptr %term.ptr
-  call void @free(ptr %whole.text)
-  call void @free(ptr %fraction.text)
+  call void @tb_release(ptr %whole.text)
+  call void @tb_release(ptr %fraction.text)
   ret ptr %data
 }

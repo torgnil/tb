@@ -136,13 +136,25 @@ entry:
   %clone = call ptr @tb_bootstrap_record_array_new___RECORD__(i32 %len)
   br label %loop.cond
 loop.cond:
-  %index = phi i32 [0, %entry], [%next.index, %loop.body]
+  %index = phi i32 [0, %entry], [%next.index, %loop.step]
   %keep.loop = icmp slt i32 %index, %len
   br i1 %keep.loop, label %loop.body, label %loop.done
 loop.body:
   %item = call ptr @tb_bootstrap_record_array_get___RECORD__(ptr %array, i32 %index)
+  %owned.ptr = getelementptr inbounds %tb_bootstrap_record_array___RECORD__, ptr %array, i32 0, i32 3
+  %owned = load ptr, ptr %owned.ptr
+  %owned.slot = getelementptr inbounds i8, ptr %owned, i32 %index
+  %owned.byte = load i8, ptr %owned.slot
+  %item.owned = icmp ne i8 %owned.byte, 0
+  br i1 %item.owned, label %clone.owned, label %clone.borrowed
+clone.owned:
   %item.copy = call ptr @tb_bootstrap_record_clone___RECORD__(ptr %item)
   call void @tb_bootstrap_record_array_set_owned___RECORD__(ptr %clone, i32 %index, ptr %item.copy, i1 true)
+  br label %loop.step
+clone.borrowed:
+  call void @tb_bootstrap_record_array_set_owned___RECORD__(ptr %clone, i32 %index, ptr %item, i1 false)
+  br label %loop.step
+loop.step:
   %next.index = add i32 %index, 1
   br label %loop.cond
 loop.done:

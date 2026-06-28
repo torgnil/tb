@@ -28,21 +28,7 @@ int main(string[] args):
         print('first user arg: ' + args[1])
 ```
 
-Compile and run with the self-hosted compiler:
-
-```bash
-./build_tb.sh
-./tb.sh input.tb
-./input
-```
-
-Bootstrap path using the Python compiler:
-
-```bash
-python3 compiler/python/tb.py input.tb output.ll
-clang output.ll -o program
-./program
-```
+Build and invocation details are documented in the repository or release `README.md`. This document focuses on language and standard library behavior.
 
 2. Lexical rules
 

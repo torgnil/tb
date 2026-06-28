@@ -66,6 +66,11 @@ string[] indent_lines(string[] lines, string indent):
         result.push(indent + line)
     return result
 
+string[] append_indented_lines(string[] left, string[] right, string indent):
+    for (string line in right):
+        left.push(indent + line)
+    return left
+
 Node[] tail_nodes(Node[] nodes, int start):
     Node[] tail = []
     int index = start
@@ -85,6 +90,40 @@ bool int_node_is(Node node, string value):
 
 bool identifier_node_is(Node node, string value):
     return node.kind == 'Identifier' && node.value == value
+
+bool nodes_match_for_assign_add(Node left, Node right):
+    if (left.kind != right.kind):
+        return false
+    if (left.value != right.value):
+        return false
+    if (left.kind == 'Identifier' || left.kind == 'Int' || left.kind == 'String'):
+        return true
+    if (left.children.length() != right.children.length()):
+        return false
+    int index = 0
+    while (index < left.children.length()):
+        if (!nodes_match_for_assign_add(left.children[index], right.children[index])):
+            return false
+        index += 1
+    return true
+
+bool is_local_self_add_assignment(Node target, Node value):
+    if (target.kind != 'Identifier'):
+        return false
+    if (value.kind != 'Binary' || value.value != '+'):
+        return false
+    if (value.children.length() != 2):
+        return false
+    return identifier_node_is(value.children[0], target.value)
+
+bool is_index_self_add_assignment(Node target, Node value):
+    if (target.kind != 'Index'):
+        return false
+    if (value.kind != 'Binary' || value.value != '+'):
+        return false
+    if (value.children.length() != 2):
+        return false
+    return nodes_match_for_assign_add(target, value.children[0])
 
 bool binding_index_node_is(Node node, string binding_name, string index_value):
     if (node.kind != 'Index'):
@@ -522,7 +561,7 @@ TempIRResult lower_linear_value_ir(Node node, int next_temp):
         return TempIRResult(name, [LinearInstruction('value', name, 'num', 'plain', 'num', [node.value])], next_temp + 1)
     if (node.kind == 'String'):
         string name = temp_name(next_temp)
-        return TempIRResult(name, [LinearInstruction('value', name, 'string', 'owned', 'string', [quote_string(node.value)])], next_temp + 1)
+        return TempIRResult(name, [LinearInstruction('value', name, 'string', 'borrowed', 'string', [quote_string(node.value)])], next_temp + 1)
     if (node.kind == 'Bool'):
         string name = temp_name(next_temp)
         return TempIRResult(name, [LinearInstruction('value', name, 'bool', 'plain', 'bool', [node.value])], next_temp + 1)
@@ -779,7 +818,7 @@ bool is_linear_statement(Node node):
             return false
         return is_linear_body(if_else_nodes(node))
     if (node.kind == 'While'):
-        return is_linear_body(tail_nodes(node.children, 1))
+        return is_linear_body_from(node.children, 1)
     if (node.kind == 'For'):
         if (!is_straight_line_statement(node.children[0])):
             return false
@@ -787,26 +826,34 @@ bool is_linear_statement(Node node):
             return false
         return is_linear_body(lowerer_for_body_nodes(node))
     if (node.kind == 'ForEach'):
-        return is_linear_body(tail_nodes(node.children, 1))
+        return is_linear_body_from(node.children, 1)
     if (node.kind == 'Try'):
         if (!is_linear_body(try_body_nodes(node))):
             return false
         Node catch_body = catch_node(node)
         return is_linear_body(catch_body.children)
     if (node.kind == 'Switch'):
-        for (Node child : tail_nodes(node.children, 1)):
+        int index = 1
+        while (index < node.children.length()):
+            Node child = node.children[index]
             if (child.kind == 'Case' && !is_linear_body(switch_case_body(child))):
                 return false
             if (child.kind == 'Default' && !is_linear_body(child.children)):
                 return false
+            index += 1
         return true
     return false
 
-bool is_linear_body(Node[] nodes):
-    for (Node node in nodes):
-        if (!is_linear_statement(node)):
+bool is_linear_body_from(Node[] nodes, int start):
+    int index = start
+    while (index < nodes.length()):
+        if (!is_linear_statement(nodes[index])):
             return false
+        index += 1
     return true
+
+bool is_linear_body(Node[] nodes):
+    return is_linear_body_from(nodes, 0)
 
 LinearBlockResult lower_linear_statement(Node node, int next_temp, string indent):
     if (node.kind == 'VarDecl'):
@@ -817,6 +864,13 @@ LinearBlockResult lower_linear_statement(Node node, int next_temp, string indent
         lines.push(indent + 'set ' + node.value + ' ' + value.name)
         return LinearBlockResult(lines, value.next_temp)
     if (node.kind == 'Assign'):
+        if (is_local_self_add_assignment(node.children[0], node.children[1])):
+            TempResult value = lower_linear_value(node.children[1].children[1], next_temp)
+            string[] lines = []
+            for (string line in value.lines):
+                lines.push(indent + line)
+            lines.push(indent + 'assign_local_add ' + node.children[0].value + ' ' + value.name)
+            return LinearBlockResult(lines, value.next_temp)
         TempResult target = lower_linear_value(node.children[0], next_temp)
         TempResult value = lower_linear_value(node.children[1], target.next_temp)
         string[] lines = []
@@ -859,6 +913,10 @@ LinearIRBlockResult lower_linear_statement_ir(Node node, int next_temp):
     if (node.kind == 'Assign'):
         Node target = node.children[0]
         if (target.kind == 'Identifier'):
+            if (is_local_self_add_assignment(target, node.children[1])):
+                TempIRResult value = lower_linear_value_ir(node.children[1].children[1], next_temp)
+                LinearInstruction[] instructions = append_instructions(value.instructions, [LinearInstruction('assign_local_add', '', '', '', target.value, [value.name])])
+                return LinearIRBlockResult(instructions, value.next_temp)
             TempIRResult value = lower_linear_value_ir(node.children[1], next_temp)
             LinearInstruction[] instructions = append_instructions(value.instructions, [LinearInstruction('assign_local', '', '', '', target.value, [value.name])])
             return LinearIRBlockResult(instructions, value.next_temp)
@@ -869,6 +927,14 @@ LinearIRBlockResult lower_linear_statement_ir(Node node, int next_temp):
             instructions.push(LinearInstruction('assign_field', '', '', '', target.value, [base.name, value.name]))
             return LinearIRBlockResult(instructions, value.next_temp)
         if (target.kind == 'Index'):
+            if (is_index_self_add_assignment(target, node.children[1])):
+                TempIRResult base = lower_linear_value_ir(target.children[0], next_temp)
+                TempIRResult item = lower_linear_value_ir(target.children[1], base.next_temp)
+                TempIRResult value = lower_linear_value_ir(node.children[1].children[1], item.next_temp)
+                LinearInstruction[] instructions = append_instructions(base.instructions, item.instructions)
+                instructions = append_instructions(instructions, value.instructions)
+                instructions.push(LinearInstruction('assign_index_add', '', '', '', '', [base.name, item.name, value.name]))
+                return LinearIRBlockResult(instructions, value.next_temp)
             TempIRResult base = lower_linear_value_ir(target.children[0], next_temp)
             TempIRResult item = lower_linear_value_ir(target.children[1], base.next_temp)
             TempIRResult value = lower_linear_value_ir(node.children[1], item.next_temp)
@@ -906,13 +972,12 @@ LinearBlockResult lower_linear_block(Node[] nodes, int next_temp, string indent)
         current_temp = lowered.next_temp
     return LinearBlockResult(lines, current_temp)
 
-LinearListResult lower_linear_statement_list(Node[] nodes, int next_temp, int next_label, string indent, string break_label, string continue_label):
-    if (nodes.is_empty()):
+LinearListResult lower_linear_statement_list_from(Node[] nodes, int start, int next_temp, int next_label, string indent, string break_label, string continue_label):
+    if (start >= nodes.length()):
         string[] empty_lines = []
         return LinearListResult(empty_lines, next_temp, next_label)
 
-    Node node = nodes[0]
-    Node[] rest_nodes = tail_nodes(nodes, 1)
+    Node node = nodes[start]
 
     if (node.kind == 'Break'):
         if (break_label == ''):
@@ -926,7 +991,7 @@ LinearListResult lower_linear_statement_list(Node[] nodes, int next_temp, int ne
 
     if (is_straight_line_statement(node)):
         LinearBlockResult statement = lower_linear_statement(node, next_temp, indent)
-        LinearListResult rest = lower_linear_statement_list(rest_nodes, statement.next_temp, next_label, indent, break_label, continue_label)
+        LinearListResult rest = lower_linear_statement_list_from(nodes, start + 1, statement.next_temp, next_label, indent, break_label, continue_label)
         return LinearListResult(append_lines(statement.lines, rest.lines), rest.next_temp, rest.next_label)
 
     if (node.kind == 'If'):
@@ -936,10 +1001,10 @@ LinearListResult lower_linear_statement_list(Node[] nodes, int next_temp, int ne
         string after_label = label_name(next_label + 2)
         LinearListResult then_part = lower_linear_statement_list(if_then_nodes(node), condition.next_temp, next_label + 3, indent, break_label, continue_label)
         LinearListResult else_part = lower_linear_statement_list(if_else_nodes(node), then_part.next_temp, then_part.next_label, indent, break_label, continue_label)
-        LinearListResult rest = lower_linear_statement_list(rest_nodes, else_part.next_temp, else_part.next_label, indent, break_label, continue_label)
+        LinearListResult rest = lower_linear_statement_list_from(nodes, start + 1, else_part.next_temp, else_part.next_label, indent, break_label, continue_label)
 
         string[] lines = []
-        lines = append_lines(lines, indent_lines(condition.lines, indent))
+        lines = append_indented_lines(lines, condition.lines, indent)
         lines.push(indent + 'branch_if ' + condition.name + ' ' + then_label + ' ' + else_label)
         lines.push(indent + 'label ' + then_label)
         lines = append_lines(lines, then_part.lines)
@@ -956,11 +1021,11 @@ LinearListResult lower_linear_statement_list(Node[] nodes, int next_temp, int ne
         string body_label = label_name(next_label + 1)
         string end_label = label_name(next_label + 2)
         TempResult condition = lower_linear_value(node.children[0], next_temp)
-        LinearListResult body = lower_linear_statement_list(tail_nodes(node.children, 1), condition.next_temp, next_label + 3, indent, end_label, cond_label)
-        LinearListResult rest = lower_linear_statement_list(rest_nodes, body.next_temp, body.next_label, indent, break_label, continue_label)
+        LinearListResult body = lower_linear_statement_list_from(node.children, 1, condition.next_temp, next_label + 3, indent, end_label, cond_label)
+        LinearListResult rest = lower_linear_statement_list_from(nodes, start + 1, body.next_temp, body.next_label, indent, break_label, continue_label)
 
         string[] lines = [indent + 'jump ' + cond_label, indent + 'label ' + cond_label]
-        lines = append_lines(lines, indent_lines(condition.lines, indent))
+        lines = append_indented_lines(lines, condition.lines, indent)
         lines.push(indent + 'branch_if ' + condition.name + ' ' + body_label + ' ' + end_label)
         lines.push(indent + 'label ' + body_label)
         lines = append_lines(lines, body.lines)
@@ -978,13 +1043,13 @@ LinearListResult lower_linear_statement_list(Node[] nodes, int next_temp, int ne
         TempResult condition = lower_linear_value(node.children[1], init_statement.next_temp)
         LinearListResult body = lower_linear_statement_list(lowerer_for_body_nodes(node), condition.next_temp, next_label + 4, indent, end_label, update_label)
         LinearBlockResult update_statement = lower_linear_statement(node.children[2], body.next_temp, indent)
-        LinearListResult rest = lower_linear_statement_list(rest_nodes, update_statement.next_temp, body.next_label, indent, break_label, continue_label)
+        LinearListResult rest = lower_linear_statement_list_from(nodes, start + 1, update_statement.next_temp, body.next_label, indent, break_label, continue_label)
 
         string[] lines = []
         lines = append_lines(lines, init_statement.lines)
         lines.push(indent + 'jump ' + cond_label)
         lines.push(indent + 'label ' + cond_label)
-        lines = append_lines(lines, indent_lines(condition.lines, indent))
+        lines = append_indented_lines(lines, condition.lines, indent)
         lines.push(indent + 'branch_if ' + condition.name + ' ' + body_label + ' ' + end_label)
         lines.push(indent + 'label ' + body_label)
         lines = append_lines(lines, body.lines)
@@ -1009,11 +1074,12 @@ LinearListResult lower_linear_statement_list(Node[] nodes, int next_temp, int ne
         string cond_value = temp_name(iterable.next_temp + 3)
         string index_item = temp_name(iterable.next_temp + 4)
         string item_value = temp_name(iterable.next_temp + 5)
-        LinearListResult body = lower_linear_statement_list(tail_nodes(node.children, 1), iterable.next_temp + 6, next_label + 4, indent, end_label, continue_loop_label)
+        LinearListResult body = lower_linear_statement_list_from(node.children, 1, iterable.next_temp + 6, next_label + 4, indent, end_label, continue_loop_label)
         int post_body_temp = body.next_temp + 4
-        LinearListResult rest = lower_linear_statement_list(rest_nodes, post_body_temp, body.next_label, indent, break_label, continue_label)
+        LinearListResult rest = lower_linear_statement_list_from(nodes, start + 1, post_body_temp, body.next_label, indent, break_label, continue_label)
 
-        string[] lines = indent_lines(iterable.lines, indent)
+        string[] lines = []
+        lines = append_indented_lines(lines, iterable.lines, indent)
         lines.push(indent + index_init + ' = int 0')
         lines.push(indent + 'set int ' + index_name + ' ' + index_init)
         lines.push(indent + 'jump ' + cond_label)
@@ -1048,7 +1114,7 @@ LinearListResult lower_linear_statement_list(Node[] nodes, int next_temp, int ne
         Node catch_part = catch_node(node)
         LinearListResult try_part = lower_linear_statement_list(try_body_nodes(node), next_temp, next_label + 2, indent, break_label, continue_label)
         LinearListResult catch_part_lines = lower_linear_statement_list(catch_part.children, try_part.next_temp, try_part.next_label, indent, break_label, continue_label)
-        LinearListResult rest = lower_linear_statement_list(rest_nodes, catch_part_lines.next_temp, catch_part_lines.next_label, indent, break_label, continue_label)
+        LinearListResult rest = lower_linear_statement_list_from(nodes, start + 1, catch_part_lines.next_temp, catch_part_lines.next_label, indent, break_label, continue_label)
 
         string[] lines = [indent + 'try ' + catch_label]
         lines = append_lines(lines, try_part.lines)
@@ -1078,7 +1144,8 @@ LinearListResult lower_linear_statement_list(Node[] nodes, int next_temp, int ne
         if (!default_nodes.is_empty()):
             default_label = label_name(next_label + 1 + cases.length() * 2)
 
-        string[] lines = indent_lines(subject.lines, indent)
+        string[] lines = []
+        lines = append_indented_lines(lines, subject.lines, indent)
         int current_temp = subject.next_temp
         int current_next_label = next_label + reserved_labels
 
@@ -1100,7 +1167,7 @@ LinearListResult lower_linear_statement_list(Node[] nodes, int next_temp, int ne
 
             lines.push(indent + 'label ' + check_label)
             TempResult case_value = lower_linear_value(case_node.children[0], current_temp)
-            lines = append_lines(lines, indent_lines(case_value.lines, indent))
+            lines = append_indented_lines(lines, case_value.lines, indent)
             string compare_name = temp_name(case_value.next_temp)
             lines.push(indent + compare_name + ' = binary == ' + subject.name + ' ' + case_value.name)
             lines.push(indent + 'branch_if ' + compare_name + ' ' + body_label + ' ' + next_check_label)
@@ -1119,19 +1186,21 @@ LinearListResult lower_linear_statement_list(Node[] nodes, int next_temp, int ne
             current_temp = default_body.next_temp
             current_next_label = default_body.next_label
         lines.push(indent + 'label ' + after_label)
-        LinearListResult rest = lower_linear_statement_list(rest_nodes, current_temp, current_next_label, indent, break_label, continue_label)
+        LinearListResult rest = lower_linear_statement_list_from(nodes, start + 1, current_temp, current_next_label, indent, break_label, continue_label)
         lines = append_lines(lines, rest.lines)
         return LinearListResult(lines, rest.next_temp, rest.next_label)
 
     return LinearListResult([indent + 'unsupported-linear ' + node.kind], next_temp, next_label)
 
-LinearIRListResult lower_linear_statement_list_ir(Node[] nodes, int next_temp, int next_label, string break_label, string continue_label):
-    if (nodes.is_empty()):
+LinearListResult lower_linear_statement_list(Node[] nodes, int next_temp, int next_label, string indent, string break_label, string continue_label):
+    return lower_linear_statement_list_from(nodes, 0, next_temp, next_label, indent, break_label, continue_label)
+
+LinearIRListResult lower_linear_statement_list_ir_from(Node[] nodes, int start, int next_temp, int next_label, string break_label, string continue_label):
+    if (start >= nodes.length()):
         LinearInstruction[] empty_instructions = []
         return LinearIRListResult(empty_instructions, next_temp, next_label)
 
-    Node node = nodes[0]
-    Node[] rest_nodes = tail_nodes(nodes, 1)
+    Node node = nodes[start]
 
     if (node.kind == 'Break'):
         if (break_label == ''):
@@ -1145,7 +1214,7 @@ LinearIRListResult lower_linear_statement_list_ir(Node[] nodes, int next_temp, i
 
     if (is_straight_line_statement(node)):
         LinearIRBlockResult statement = lower_linear_statement_ir(node, next_temp)
-        LinearIRListResult rest = lower_linear_statement_list_ir(rest_nodes, statement.next_temp, next_label, break_label, continue_label)
+        LinearIRListResult rest = lower_linear_statement_list_ir_from(nodes, start + 1, statement.next_temp, next_label, break_label, continue_label)
         return LinearIRListResult(append_instructions(statement.instructions, rest.instructions), rest.next_temp, rest.next_label)
 
     if (node.kind == 'If'):
@@ -1155,7 +1224,7 @@ LinearIRListResult lower_linear_statement_list_ir(Node[] nodes, int next_temp, i
         string after_label = label_name(next_label + 2)
         LinearIRListResult then_part = lower_linear_statement_list_ir(if_then_nodes(node), condition.next_temp, next_label + 3, break_label, continue_label)
         LinearIRListResult else_part = lower_linear_statement_list_ir(if_else_nodes(node), then_part.next_temp, then_part.next_label, break_label, continue_label)
-        LinearIRListResult rest = lower_linear_statement_list_ir(rest_nodes, else_part.next_temp, else_part.next_label, break_label, continue_label)
+        LinearIRListResult rest = lower_linear_statement_list_ir_from(nodes, start + 1, else_part.next_temp, else_part.next_label, break_label, continue_label)
 
         LinearInstruction[] instructions = []
         instructions = append_instructions(instructions, condition.instructions)
@@ -1175,8 +1244,8 @@ LinearIRListResult lower_linear_statement_list_ir(Node[] nodes, int next_temp, i
         string body_label = label_name(next_label + 1)
         string end_label = label_name(next_label + 2)
         TempIRResult condition = lower_linear_value_ir(node.children[0], next_temp)
-        LinearIRListResult body = lower_linear_statement_list_ir(tail_nodes(node.children, 1), condition.next_temp, next_label + 3, end_label, cond_label)
-        LinearIRListResult rest = lower_linear_statement_list_ir(rest_nodes, body.next_temp, body.next_label, break_label, continue_label)
+        LinearIRListResult body = lower_linear_statement_list_ir_from(node.children, 1, condition.next_temp, next_label + 3, end_label, cond_label)
+        LinearIRListResult rest = lower_linear_statement_list_ir_from(nodes, start + 1, body.next_temp, body.next_label, break_label, continue_label)
 
         LinearInstruction[] instructions = [LinearInstruction('jump', '', '', '', cond_label, []), LinearInstruction('label', '', '', '', cond_label, [])]
         instructions = append_instructions(instructions, condition.instructions)
@@ -1197,7 +1266,7 @@ LinearIRListResult lower_linear_statement_list_ir(Node[] nodes, int next_temp, i
         TempIRResult condition = lower_linear_value_ir(node.children[1], init_statement.next_temp)
         LinearIRListResult body = lower_linear_statement_list_ir(lowerer_for_body_nodes(node), condition.next_temp, next_label + 4, end_label, update_label)
         LinearIRBlockResult update_statement = lower_linear_statement_ir(node.children[2], body.next_temp)
-        LinearIRListResult rest = lower_linear_statement_list_ir(rest_nodes, update_statement.next_temp, body.next_label, break_label, continue_label)
+        LinearIRListResult rest = lower_linear_statement_list_ir_from(nodes, start + 1, update_statement.next_temp, body.next_label, break_label, continue_label)
 
         LinearInstruction[] instructions = []
         instructions = append_instructions(instructions, init_statement.instructions)
@@ -1228,9 +1297,9 @@ LinearIRListResult lower_linear_statement_list_ir(Node[] nodes, int next_temp, i
         string cond_value = temp_name(iterable.next_temp + 3)
         string index_item = temp_name(iterable.next_temp + 4)
         string item_value = temp_name(iterable.next_temp + 5)
-        LinearIRListResult body = lower_linear_statement_list_ir(tail_nodes(node.children, 1), iterable.next_temp + 6, next_label + 4, end_label, continue_loop_label)
+        LinearIRListResult body = lower_linear_statement_list_ir_from(node.children, 1, iterable.next_temp + 6, next_label + 4, end_label, continue_loop_label)
         int post_body_temp = body.next_temp + 4
-        LinearIRListResult rest = lower_linear_statement_list_ir(rest_nodes, post_body_temp, body.next_label, break_label, continue_label)
+        LinearIRListResult rest = lower_linear_statement_list_ir_from(nodes, start + 1, post_body_temp, body.next_label, break_label, continue_label)
 
         LinearInstruction[] instructions = []
         instructions = append_instructions(instructions, iterable.instructions)
@@ -1266,7 +1335,7 @@ LinearIRListResult lower_linear_statement_list_ir(Node[] nodes, int next_temp, i
         Node catch_part = catch_node(node)
         LinearIRListResult try_part = lower_linear_statement_list_ir(try_body_nodes(node), next_temp, next_label + 2, break_label, continue_label)
         LinearIRListResult catch_part_instructions = lower_linear_statement_list_ir(catch_part.children, try_part.next_temp, try_part.next_label, break_label, continue_label)
-        LinearIRListResult rest = lower_linear_statement_list_ir(rest_nodes, catch_part_instructions.next_temp, catch_part_instructions.next_label, break_label, continue_label)
+        LinearIRListResult rest = lower_linear_statement_list_ir_from(nodes, start + 1, catch_part_instructions.next_temp, catch_part_instructions.next_label, break_label, continue_label)
 
         LinearInstruction[] instructions = [LinearInstruction('try', '', '', '', catch_label, [])]
         instructions = append_instructions(instructions, try_part.instructions)
@@ -1338,11 +1407,14 @@ LinearIRListResult lower_linear_statement_list_ir(Node[] nodes, int next_temp, i
             current_temp = default_body.next_temp
             current_next_label = default_body.next_label
         instructions.push(LinearInstruction('label', '', '', '', after_label, []))
-        LinearIRListResult rest = lower_linear_statement_list_ir(rest_nodes, current_temp, current_next_label, break_label, continue_label)
+        LinearIRListResult rest = lower_linear_statement_list_ir_from(nodes, start + 1, current_temp, current_next_label, break_label, continue_label)
         instructions = append_instructions(instructions, rest.instructions)
         return LinearIRListResult(instructions, rest.next_temp, rest.next_label)
 
     return LinearIRListResult([LinearInstruction('unsupported', '', '', '', node.kind, [])], next_temp, next_label)
+
+LinearIRListResult lower_linear_statement_list_ir(Node[] nodes, int next_temp, int next_label, string break_label, string continue_label):
+    return lower_linear_statement_list_ir_from(nodes, 0, next_temp, next_label, break_label, continue_label)
 
 string[] lower_block_lines(Node[] statements, string indent):
     string[] lines = [indent + 'block']
