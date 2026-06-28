@@ -6579,8 +6579,11 @@ string[] emit_record_array_helpers(string record_name):
 
 string emit_map_type(string type_name):
     string key_type = normalize_llvm_type_name(map_key_type(type_name))
+    string value_type = normalize_llvm_type_name(map_value_type(type_name))
     if (key_type != 'string' && key_type != 'int'):
         throw 'unsupported llvm map key type: ' + key_type
+    if (key_type == 'int' && value_type == 'int'):
+        return llvm_map_type_name(type_name) + ' = type { i32, i32, ptr, ptr, ptr }'
     return llvm_map_type_name(type_name) + ' = type { i32, ptr, ptr, ptr }'
 
 string[] emit_map_helpers(string type_name):
@@ -6594,6 +6597,21 @@ string[] emit_map_helpers(string type_name):
     string key_llvm_type = 'ptr'
     if (key_type == 'int'):
         key_llvm_type = 'i64'
+    if (key_type == 'int' && value_type == 'int'):
+        string[] lines = read_file('compiler/tb/llvm_helpers/map_int_int.ll').split_lines()
+        lines = replace_llvm_template_lines(lines, '__MAP_NEW_NAME__', llvm_map_new_name(type_name))
+        lines = replace_llvm_template_lines(lines, '__MAP_SET_NAME__', llvm_map_set_name(type_name))
+        lines = replace_llvm_template_lines(lines, '__MAP_LENGTH_NAME__', llvm_map_length_name(type_name))
+        lines = replace_llvm_template_lines(lines, '__MAP_GET_NAME__', llvm_map_get_name(type_name))
+        lines = replace_llvm_template_lines(lines, '__MAP_SET_BY_KEY_NAME__', llvm_map_set_by_key_name(type_name))
+        lines = replace_llvm_template_lines(lines, '__MAP_INCREMENT_BY_KEY_NAME__', llvm_map_increment_by_key_name(type_name))
+        lines = replace_llvm_template_lines(lines, '__MAP_RELEASE_BY_KEY_NAME__', llvm_map_release_by_key_name(type_name))
+        lines = replace_llvm_template_lines(lines, '__MAP_KEYS_NAME__', llvm_map_keys_name(type_name))
+        lines = replace_llvm_template_lines(lines, '__MAP_VALUES_NAME__', llvm_map_values_name(type_name))
+        lines = replace_llvm_template_lines(lines, '__MAP_CLONE_NAME__', llvm_map_clone_name(type_name))
+        lines = replace_llvm_template_lines(lines, '__MAP_FREE_NAME__', llvm_map_free_name(type_name))
+        lines = replace_llvm_template_lines(lines, '__MAP_STRUCT__', map_struct)
+        return lines
     string[] lines = read_file('compiler/tb/llvm_helpers/map_base.ll').split_lines()
     lines = replace_llvm_template_lines(lines, '__MAP_NEW_NAME__', llvm_map_new_name(type_name))
     lines = replace_llvm_template_lines(lines, '__MAP_SET_NAME__', llvm_map_set_name(type_name))
