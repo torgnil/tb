@@ -91,6 +91,15 @@ bool int_node_is(Node node, string value):
 bool identifier_node_is(Node node, string value):
     return node.kind == 'Identifier' && node.value == value
 
+bool is_local_self_add_assignment(Node target, Node value):
+    if (target.kind != 'Identifier'):
+        return false
+    if (value.kind != 'Binary' || value.value != '+'):
+        return false
+    if (value.children.length() != 2):
+        return false
+    return identifier_node_is(value.children[0], target.value)
+
 bool binding_index_node_is(Node node, string binding_name, string index_value):
     if (node.kind != 'Index'):
         return false
@@ -830,6 +839,13 @@ LinearBlockResult lower_linear_statement(Node node, int next_temp, string indent
         lines.push(indent + 'set ' + node.value + ' ' + value.name)
         return LinearBlockResult(lines, value.next_temp)
     if (node.kind == 'Assign'):
+        if (is_local_self_add_assignment(node.children[0], node.children[1])):
+            TempResult value = lower_linear_value(node.children[1].children[1], next_temp)
+            string[] lines = []
+            for (string line in value.lines):
+                lines.push(indent + line)
+            lines.push(indent + 'assign_local_add ' + node.children[0].value + ' ' + value.name)
+            return LinearBlockResult(lines, value.next_temp)
         TempResult target = lower_linear_value(node.children[0], next_temp)
         TempResult value = lower_linear_value(node.children[1], target.next_temp)
         string[] lines = []
@@ -872,6 +888,10 @@ LinearIRBlockResult lower_linear_statement_ir(Node node, int next_temp):
     if (node.kind == 'Assign'):
         Node target = node.children[0]
         if (target.kind == 'Identifier'):
+            if (is_local_self_add_assignment(target, node.children[1])):
+                TempIRResult value = lower_linear_value_ir(node.children[1].children[1], next_temp)
+                LinearInstruction[] instructions = append_instructions(value.instructions, [LinearInstruction('assign_local_add', '', '', '', target.value, [value.name])])
+                return LinearIRBlockResult(instructions, value.next_temp)
             TempIRResult value = lower_linear_value_ir(node.children[1], next_temp)
             LinearInstruction[] instructions = append_instructions(value.instructions, [LinearInstruction('assign_local', '', '', '', target.value, [value.name])])
             return LinearIRBlockResult(instructions, value.next_temp)

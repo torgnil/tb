@@ -461,6 +461,42 @@ entry:
   store i8 0, ptr %term
   ret ptr %data
 }
+define private ptr @tb_bootstrap_string_append_consume(ptr %left, ptr %right) {
+entry:
+  %left.len = call i64 @strlen(ptr %left)
+  %right.len = call i64 @strlen(ptr %right)
+  %total.len = add i64 %left.len, %right.len
+  %total.bytes = add i64 %total.len, 1
+  %xc.old = load i64, ptr @tb_rt_xc
+  %xc.new = add i64 %xc.old, 1
+  store i64 %xc.new, ptr @tb_rt_xc
+  %xb.old = load i64, ptr @tb_rt_xb
+  %xb.new = add i64 %xb.old, %total.bytes
+  store i64 %xb.new, ptr @tb_rt_xb
+  %header = getelementptr inbounds i8, ptr %left, i64 -16
+  %refcount.ptr = getelementptr inbounds %tb_bootstrap_rc_header, ptr %header, i32 0, i32 1
+  %refcount = load i64, ptr %refcount.ptr
+  %is.unique = icmp eq i64 %refcount, 1
+  br i1 %is.unique, label %reuse, label %copy
+reuse:
+  %total.size = add i64 %total.len, 17
+  %realloced = call ptr @realloc(ptr %header, i64 %total.size)
+  %data.reuse = getelementptr inbounds i8, ptr %realloced, i64 16
+  %right.dst.reuse = getelementptr inbounds i8, ptr %data.reuse, i64 %left.len
+  call void @llvm.memcpy.p0.p0.i64(ptr %right.dst.reuse, ptr %right, i64 %right.len, i1 false)
+  %term.reuse = getelementptr inbounds i8, ptr %data.reuse, i64 %total.len
+  store i8 0, ptr %term.reuse
+  ret ptr %data.reuse
+copy:
+  %data = call ptr @tb_string_new(i64 %total.len)
+  call void @llvm.memcpy.p0.p0.i64(ptr %data, ptr %left, i64 %left.len, i1 false)
+  %right.dst = getelementptr inbounds i8, ptr %data, i64 %left.len
+  call void @llvm.memcpy.p0.p0.i64(ptr %right.dst, ptr %right, i64 %right.len, i1 false)
+  %term = getelementptr inbounds i8, ptr %data, i64 %total.len
+  store i8 0, ptr %term
+  call void @tb_release(ptr %left)
+  ret ptr %data
+}
 define private i64 @tb_bootstrap_to_int(ptr %src) {
 entry:
   %value = call i64 @strtoll(ptr %src, ptr null, i32 10)

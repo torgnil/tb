@@ -5073,6 +5073,67 @@ string emit_assign_local_instruction(ProgramIR program, ParsedFunction function_
     string line = ('  store ' + llvm_type(binding.type_name) + ' ' + temp_ref(op.args[0]) + ', ptr ' + slot_ref(binding.name)).substring(0)
     return line
 
+string emit_assign_local_add_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op, string temp_suffix):
+    BindingIR binding = lookup_named_binding(function_ir, op.detail)
+    bool is_global = false
+    if (binding.name == ''):
+        binding = lookup_named_global(program, op.detail)
+        if (binding.name == ''):
+            throw 'missing binding for assign_local_add: ' + op.detail
+        is_global = true
+    require_backend_value_type(binding.type_name, 'assign_local_add')
+    string binding_type = normalize_llvm_type_name(binding.type_name)
+    string store_ptr = slot_ref(binding.name)
+    if (is_global):
+        store_ptr = global_ref(binding.name)
+    if (binding_type == 'int'):
+        return '  %local.add.old.' + temp_suffix + ' = load i64, ptr ' + store_ptr + '\n  %local.add.new.' + temp_suffix + ' = add i64 %local.add.old.' + temp_suffix + ', ' + temp_ref(op.args[0]) + '\n  store i64 %local.add.new.' + temp_suffix + ', ptr ' + store_ptr
+    if (binding_type == 'num'):
+        string[] lines = emit_num_materialize_if_needed(function_ir, op.args[0], binding.name + '.' + temp_suffix)
+        lines.push('  %local.add.old.' + temp_suffix + ' = load %tb_bootstrap_num, ptr ' + store_ptr)
+        lines.push('  %local.add.new.' + temp_suffix + ' = call %tb_bootstrap_num @tb_bootstrap_num_add(%tb_bootstrap_num %local.add.old.' + temp_suffix + ', %tb_bootstrap_num ' + emit_num_store_value(function_ir, op.args[0], binding.name + '.' + temp_suffix) + ')')
+        lines.push('  store %tb_bootstrap_num %local.add.new.' + temp_suffix + ', ptr ' + store_ptr)
+        return join_llvm_strings(lines, '\n')
+    if (binding_type == 'string'):
+        if (is_global):
+            throw 'unsupported llvm assign_local_add global string: ' + binding.name
+        string right_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0]))
+        string right_value = temp_ref(op.args[0])
+        bool free_right_text = false
+        bool release_right = false
+        string[] lines = []
+        if (right_type == 'int'):
+            right_value = '%local.add.right.' + temp_suffix
+            lines.push('  ' + right_value + ' = call ptr @tb_bootstrap_int_to_string(i64 ' + temp_ref(op.args[0]) + ')')
+            free_right_text = true
+        else if (right_type == 'string'):
+            if (temp_needs_backend_free(function_ir, op.args[0])):
+                release_right = true
+        else:
+            throw 'unsupported llvm assign_local_add right type: ' + right_type
+        string left_value = '%local.add.left.' + temp_suffix
+        string owned_value = '%local.add.owned.' + temp_suffix
+        string consume_label = 'local_add.consume.' + temp_suffix
+        string copy_label = 'local_add.copy.' + temp_suffix
+        string done_label = 'local_add.done.' + temp_suffix
+        lines.push('  ' + left_value + ' = load ptr, ptr ' + slot_ref(binding.name))
+        lines.push('  ' + owned_value + ' = load i1, ptr ' + owned_slot_ref(binding.name))
+        lines.push('  br i1 ' + owned_value + ', label %' + consume_label + ', label %' + copy_label)
+        lines.push(consume_label + ':')
+        lines.push('  %local.add.consume.' + temp_suffix + ' = call ptr @tb_bootstrap_string_append_consume(ptr ' + left_value + ', ptr ' + right_value + ')')
+        lines.push('  br label %' + done_label)
+        lines.push(copy_label + ':')
+        lines.push('  %local.add.copy.' + temp_suffix + ' = call ptr @tb_bootstrap_string_concat(ptr ' + left_value + ', ptr ' + right_value + ')')
+        lines.push('  br label %' + done_label)
+        lines.push(done_label + ':')
+        lines.push('  %local.add.result.' + temp_suffix + ' = phi ptr [%local.add.consume.' + temp_suffix + ', %' + consume_label + '], [%local.add.copy.' + temp_suffix + ', %' + copy_label + ']')
+        lines.push('  store ptr %local.add.result.' + temp_suffix + ', ptr ' + slot_ref(binding.name))
+        lines.push('  store i1 true, ptr ' + owned_slot_ref(binding.name))
+        if (free_right_text || release_right):
+            lines.push('  call void @tb_release(ptr ' + right_value + ')')
+        return join_llvm_strings(lines, '\n')
+    throw 'unsupported llvm assign_local_add binding type: ' + binding.type_name
+
 string emit_assign_field_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op, string temp_suffix):
     BindingIR field = record_field_binding_from_temp(program, function_ir, op.args[0], op.detail)
     require_backend_value_type(field.type_name, 'assign_field')
@@ -5355,6 +5416,14 @@ string emit_instruction(ProgramIR program, ParsedFunction function_ir, string bl
             LLVM_EMIT_ASSIGN_LOCAL_COUNT += 1
             return line
         return emit_assign_local_instruction(program, function_ir, op, temp_suffix)
+    if (op.kind == 'assign_local_add'):
+        if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
+            int start_ms = time_ms()
+            string line = emit_assign_local_add_instruction(program, function_ir, op, temp_suffix)
+            LLVM_EMIT_ASSIGN_LOCAL_MS += time_ms() - start_ms
+            LLVM_EMIT_ASSIGN_LOCAL_COUNT += 1
+            return line
+        return emit_assign_local_add_instruction(program, function_ir, op, temp_suffix)
     if (op.kind == 'assign_field'):
         if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
             int start_ms = time_ms()
@@ -6671,6 +6740,7 @@ string[] llvm_codegen_ir(ProgramIR program):
         lines.push(emit_record_type(record_decl))
     if (needs_string_array_helpers || needs_string_array_array || needs_bool_array || needs_int_array || needs_int_array_array || needs_record_array || needs_runtime_string_copy || needs_records || needs_maps || needs_read_lines || needs_read_file):
         lines.push('declare ptr @malloc(i64)')
+        lines.push('declare ptr @realloc(ptr, i64)')
         lines.push('declare void @qsort(ptr, i64, i64, ptr)')
     if (needs_try_catch):
         lines.push('declare i32 @setjmp(ptr) returns_twice')
@@ -6962,6 +7032,7 @@ void llvm_print_ir(ProgramIR program):
         emitted_any_header = true
     if (needs_string_array_helpers || needs_string_array_array || needs_bool_array || needs_int_array || needs_int_array_array || needs_record_array || needs_runtime_string_copy || needs_records || needs_maps || needs_read_lines || needs_read_file):
         print('declare ptr @malloc(i64)')
+        print('declare ptr @realloc(ptr, i64)')
         print('declare void @qsort(ptr, i64, i64, ptr)')
         emitted_any_header = true
     if (needs_try_catch):

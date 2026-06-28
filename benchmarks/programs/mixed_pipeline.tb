@@ -1,0 +1,29 @@
+record Stat(int count, int total)
+
+string[] make_rows(int repeats):
+    string[] rows = []
+    for (int i = 0; i < repeats; i++):
+        rows.push('cat' + (i % 9) + ',' + (10 + (i % 23)))
+    return rows
+
+int main(string[] args):
+    string[] rows = make_rows(5000 + args.length())
+    map<string, Stat> stats = {'cat0': Stat(0, 0)}
+
+    for (int i = 1; i < 9; i++):
+        stats['cat' + i] = Stat(0, 0)
+
+    for (string row : rows):
+        int split = row.index_of(',')
+        string key = row.substring(0, split)
+        int value = row.substring(split + 1).to_int()
+        Stat current = stats[key]
+        stats[key] = Stat(current.count + 1, current.total + value)
+
+    int total = 0
+    for (int i = 0; i < 9; i++):
+        Stat current = stats['cat' + i]
+        total += current.count * current.total
+
+    print(total)
+    return 0
