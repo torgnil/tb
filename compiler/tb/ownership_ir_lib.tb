@@ -383,6 +383,8 @@ LinearInstruction[] apply_ownership_to_instructions(ParsedFunction function_ir, 
             if (is_managed_type(target_type, record_names, enum_names)):
                 result.push(LinearInstruction('release_index', '', '', '', '', [op.args[0], op.args[1]]))
             result = append_instructions(result, move_temp_if_owned(cache, op.args[2], record_names, enum_names))
+        else if (op.kind == 'assign_index_add'):
+            result = append_instructions(result, move_temp_if_owned(cache, op.args[2], record_names, enum_names))
         else if (op.kind == 'assign'):
             string binding_decl = identifier_target_binding_cached(identifier_target_cache, op.args[0])
             if (binding_decl != '' && binding_is_managed_cached(binding_decl, record_names, enum_names)):

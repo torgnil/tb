@@ -91,6 +91,22 @@ bool int_node_is(Node node, string value):
 bool identifier_node_is(Node node, string value):
     return node.kind == 'Identifier' && node.value == value
 
+bool nodes_match_for_assign_add(Node left, Node right):
+    if (left.kind != right.kind):
+        return false
+    if (left.value != right.value):
+        return false
+    if (left.kind == 'Identifier' || left.kind == 'Int' || left.kind == 'String'):
+        return true
+    if (left.children.length() != right.children.length()):
+        return false
+    int index = 0
+    while (index < left.children.length()):
+        if (!nodes_match_for_assign_add(left.children[index], right.children[index])):
+            return false
+        index += 1
+    return true
+
 bool is_local_self_add_assignment(Node target, Node value):
     if (target.kind != 'Identifier'):
         return false
@@ -99,6 +115,15 @@ bool is_local_self_add_assignment(Node target, Node value):
     if (value.children.length() != 2):
         return false
     return identifier_node_is(value.children[0], target.value)
+
+bool is_index_self_add_assignment(Node target, Node value):
+    if (target.kind != 'Index'):
+        return false
+    if (value.kind != 'Binary' || value.value != '+'):
+        return false
+    if (value.children.length() != 2):
+        return false
+    return nodes_match_for_assign_add(target, value.children[0])
 
 bool binding_index_node_is(Node node, string binding_name, string index_value):
     if (node.kind != 'Index'):
@@ -902,6 +927,14 @@ LinearIRBlockResult lower_linear_statement_ir(Node node, int next_temp):
             instructions.push(LinearInstruction('assign_field', '', '', '', target.value, [base.name, value.name]))
             return LinearIRBlockResult(instructions, value.next_temp)
         if (target.kind == 'Index'):
+            if (is_index_self_add_assignment(target, node.children[1])):
+                TempIRResult base = lower_linear_value_ir(target.children[0], next_temp)
+                TempIRResult item = lower_linear_value_ir(target.children[1], base.next_temp)
+                TempIRResult value = lower_linear_value_ir(node.children[1].children[1], item.next_temp)
+                LinearInstruction[] instructions = append_instructions(base.instructions, item.instructions)
+                instructions = append_instructions(instructions, value.instructions)
+                instructions.push(LinearInstruction('assign_index_add', '', '', '', '', [base.name, item.name, value.name]))
+                return LinearIRBlockResult(instructions, value.next_temp)
             TempIRResult base = lower_linear_value_ir(target.children[0], next_temp)
             TempIRResult item = lower_linear_value_ir(target.children[1], base.next_temp)
             TempIRResult value = lower_linear_value_ir(node.children[1], item.next_temp)

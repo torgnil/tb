@@ -898,6 +898,9 @@ string slot_ref(string name):
 string owned_slot_ref(string name):
     return '%' + name + '.owned.slot'
 
+string managed_slot_ref(string name):
+    return '%' + name + '.managed.slot'
+
 string param_ref(string name):
     return '%' + name + '.param'
 
@@ -1312,6 +1315,23 @@ bool temp_is_string_like_value(ParsedFunction function_ir, string temp_name):
         return normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[1])) == 'string'
     return false
 
+bool is_string_char_predicate_method_name(string method_name):
+    return method_name == 'is_alpha' || method_name == 'is_digit' || method_name == 'is_alnum' || method_name == 'is_space' || method_name == 'is_whitespace'
+
+bool temp_is_string_index_value(ParsedFunction function_ir, string temp_name):
+    LinearInstruction op = lookup_temp_instruction(function_ir, temp_name)
+    if (op.kind != 'value' || op.detail != 'index' || op.args.length() < 2):
+        return false
+    return normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0])) == 'string'
+
+BindingIR string_identifier_local_binding(ParsedFunction function_ir, string temp_name):
+    LinearInstruction op = lookup_temp_instruction(function_ir, temp_name)
+    if (op.kind == 'value' && op.detail == 'identifier' && op.args.length() == 1):
+        BindingIR local_decl = lookup_named_local_binding(function_ir, op.args[0])
+        if (local_decl.name != '' && normalize_llvm_type_name(local_decl.type_name) == 'string'):
+            return local_decl
+    return BindingIR('', '')
+
 bool temp_is_string_array(ParsedFunction function_ir, string temp_name):
     return normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, temp_name)) == 'string[]'
 
@@ -1550,6 +1570,9 @@ string llvm_map_get_name(string type_name):
 string llvm_map_set_by_key_name(string type_name):
     return '@' + llvm_map_suffix(type_name) + '_set_by_key'
 
+string llvm_map_increment_by_key_name(string type_name):
+    return '@' + llvm_map_suffix(type_name) + '_increment_by_key'
+
 string llvm_map_release_by_key_name(string type_name):
     return '@' + llvm_map_suffix(type_name) + '_release_by_key'
 
@@ -1740,6 +1763,8 @@ string emit_backend_release_binding(BindingIR binding, string temp_suffix):
     line += '\n  ' + value_name + ' = select i1 ' + owned_name + ', ptr ' + release_name + ', ptr null'
     line += '\n' + emit_backend_release_ptr(type_name, value_name)
     line += '\n  store i1 false, ptr ' + owned_slot_ref(binding.name)
+    if (type_name == 'string'):
+        line += '\n  store i1 false, ptr ' + managed_slot_ref(binding.name)
     line += '\n  store ptr null, ptr ' + slot_ref(binding.name)
     return line
 
@@ -4096,9 +4121,9 @@ string emit_tracked_builtin_call_line(string line):
 string emit_string_method_call_value_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op, string method_name, string method_base_type):
     string lhs = temp_ref(op.lhs)
     if (method_name == 'length' && method_base_type == 'string'):
-        return '  ' + lhs + ' = call i64 @strlen(ptr ' + temp_ref(op.args[1]) + ')'
+        return emit_string_length_value(function_ir, op.args[1], lhs, op.lhs + '.string.length')
     if (method_name == 'is_empty' && method_base_type == 'string'):
-        return '  ' + lhs + '.len = call i64 @strlen(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = icmp eq i64 ' + temp_ref(op.lhs + '.len') + ', 0'
+        return emit_string_length_value(function_ir, op.args[1], temp_ref(op.lhs + '.len'), op.lhs + '.string.empty') + '\n  ' + lhs + ' = icmp eq i64 ' + temp_ref(op.lhs + '.len') + ', 0'
     if (method_name == 'length' && method_base_type == 'string[]'):
         return '  ' + lhs + '.len32 = call i32 @tb_bootstrap_string_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64'
     if (method_name == 'is_empty' && method_base_type == 'string[]'):
@@ -4237,7 +4262,7 @@ string emit_builtin_query_call_value_instruction(ParsedFunction function_ir, Lin
         if (op.args.length() != 2):
             throw 'unsupported llvm is_empty arity'
         if (call_arg1_type == 'string'):
-            return '  ' + lhs + '.len = call i64 @strlen(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = icmp eq i64 ' + temp_ref(op.lhs + '.len') + ', 0'
+            return emit_string_length_value(function_ir, op.args[1], temp_ref(op.lhs + '.len'), op.lhs + '.builtin.empty') + '\n  ' + lhs + ' = icmp eq i64 ' + temp_ref(op.lhs + '.len') + ', 0'
         if (call_arg1_type == 'string[]'):
             return '  ' + lhs + '.len32 = call i32 @tb_bootstrap_string_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = icmp eq i32 ' + temp_ref(op.lhs + '.len32') + ', 0'
         if (call_arg1_type == 'int[]'):
@@ -4251,6 +4276,57 @@ string emit_builtin_query_call_value_instruction(ParsedFunction function_ir, Lin
             return '  ' + lhs + '.len32 = call i32 ' + llvm_map_length_name(call_arg1_type) + '(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = icmp eq i32 ' + temp_ref(op.lhs + '.len32') + ', 0'
         return ''
     return ''
+
+string emit_string_char_predicate_fast_path(ParsedFunction function_ir, string lhs, string method_name, string source_name, string index_name, string temp_name):
+    string byte_name = temp_ref(temp_name + '.byte')
+    if (method_name == 'is_digit'):
+        return emit_string_byte_at_or_zero_value(function_ir, source_name, index_name, byte_name, temp_name + '.bytepath') + '\n  ' + lhs + '.digit.lo = icmp sge i8 ' + byte_name + ', 48\n  ' + lhs + '.digit.hi = icmp sle i8 ' + byte_name + ', 57\n  ' + lhs + ' = and i1 ' + temp_ref(temp_name + '.digit.lo') + ', ' + temp_ref(temp_name + '.digit.hi')
+    if (method_name == 'is_alpha'):
+        return emit_string_byte_at_or_zero_value(function_ir, source_name, index_name, byte_name, temp_name + '.bytepath') + '\n  ' + lhs + '.lower.lo = icmp sge i8 ' + byte_name + ', 97\n  ' + lhs + '.lower.hi = icmp sle i8 ' + byte_name + ', 122\n  ' + lhs + '.is.lower = and i1 ' + temp_ref(temp_name + '.lower.lo') + ', ' + temp_ref(temp_name + '.lower.hi') + '\n  ' + lhs + '.upper.lo = icmp sge i8 ' + byte_name + ', 65\n  ' + lhs + '.upper.hi = icmp sle i8 ' + byte_name + ', 90\n  ' + lhs + '.is.upper = and i1 ' + temp_ref(temp_name + '.upper.lo') + ', ' + temp_ref(temp_name + '.upper.hi') + '\n  ' + lhs + ' = or i1 ' + temp_ref(temp_name + '.is.lower') + ', ' + temp_ref(temp_name + '.is.upper')
+    if (method_name == 'is_alnum'):
+        return emit_string_byte_at_or_zero_value(function_ir, source_name, index_name, byte_name, temp_name + '.bytepath') + '\n  ' + lhs + '.digit.lo = icmp sge i8 ' + byte_name + ', 48\n  ' + lhs + '.digit.hi = icmp sle i8 ' + byte_name + ', 57\n  ' + lhs + '.is.digit = and i1 ' + temp_ref(temp_name + '.digit.lo') + ', ' + temp_ref(temp_name + '.digit.hi') + '\n  ' + lhs + '.lower.lo = icmp sge i8 ' + byte_name + ', 97\n  ' + lhs + '.lower.hi = icmp sle i8 ' + byte_name + ', 122\n  ' + lhs + '.is.lower = and i1 ' + temp_ref(temp_name + '.lower.lo') + ', ' + temp_ref(temp_name + '.lower.hi') + '\n  ' + lhs + '.upper.lo = icmp sge i8 ' + byte_name + ', 65\n  ' + lhs + '.upper.hi = icmp sle i8 ' + byte_name + ', 90\n  ' + lhs + '.is.upper = and i1 ' + temp_ref(temp_name + '.upper.lo') + ', ' + temp_ref(temp_name + '.upper.hi') + '\n  ' + lhs + '.is.alpha = or i1 ' + temp_ref(temp_name + '.is.lower') + ', ' + temp_ref(temp_name + '.is.upper') + '\n  ' + lhs + ' = or i1 ' + temp_ref(temp_name + '.is.alpha') + ', ' + temp_ref(temp_name + '.is.digit')
+    if (method_name == 'is_space' || method_name == 'is_whitespace'):
+        return emit_string_byte_at_or_zero_value(function_ir, source_name, index_name, byte_name, temp_name + '.bytepath') + '\n  ' + lhs + ' = call i1 @tb_bootstrap_is_space(i8 ' + byte_name + ')'
+    return ''
+
+string emit_string_length_value(ParsedFunction function_ir, string temp_name, string result_name, string temp_suffix):
+    LinearInstruction source_op = lookup_temp_instruction(function_ir, temp_name)
+    if (source_op.kind == 'value' && source_op.detail == 'string' && source_op.args.length() == 1):
+        return '  ' + result_name + ' = add i64 0, ' + (tb_string_literal_data_length(source_op.args[0]) - 1).to_string()
+    BindingIR local_binding = string_identifier_local_binding(function_ir, temp_name)
+    if (local_binding.name != ''):
+        string managed_name = temp_ref(temp_suffix + '.managed')
+        string managed_value = temp_ref(temp_suffix + '.managed.value')
+        string fallback_value = temp_ref(temp_suffix + '.fallback.value')
+        string managed_label = temp_suffix + '.managed.label'
+        string fallback_label = temp_suffix + '.fallback.label'
+        string done_label = temp_suffix + '.done.label'
+        return '  ' + managed_name + ' = load i1, ptr ' + managed_slot_ref(local_binding.name) + '\n  br i1 ' + managed_name + ', label %' + managed_label + ', label %' + fallback_label + '\n' + managed_label + ':\n  ' + managed_value + ' = call i64 @tb_managed_string_length(ptr ' + temp_ref(temp_name) + ')\n  br label %' + done_label + '\n' + fallback_label + ':\n  ' + fallback_value + ' = call i64 @strlen(ptr ' + temp_ref(temp_name) + ')\n  br label %' + done_label + '\n' + done_label + ':\n  ' + result_name + ' = phi i64 [' + managed_value + ', %' + managed_label + '], [' + fallback_value + ', %' + fallback_label + ']'
+    return '  ' + result_name + ' = call i64 @strlen(ptr ' + temp_ref(temp_name) + ')'
+
+string emit_string_char_at_value(ParsedFunction function_ir, string source_name, string index_name, string result_name, string temp_suffix):
+    BindingIR local_binding = string_identifier_local_binding(function_ir, source_name)
+    if (local_binding.name != ''):
+        string managed_name = temp_ref(temp_suffix + '.managed')
+        string managed_value = temp_ref(temp_suffix + '.managed.value')
+        string fallback_value = temp_ref(temp_suffix + '.fallback.value')
+        string managed_label = temp_suffix + '.managed.label'
+        string fallback_label = temp_suffix + '.fallback.label'
+        string done_label = temp_suffix + '.done.label'
+        return '  ' + managed_name + ' = load i1, ptr ' + managed_slot_ref(local_binding.name) + '\n  br i1 ' + managed_name + ', label %' + managed_label + ', label %' + fallback_label + '\n' + managed_label + ':\n  ' + managed_value + ' = call ptr @tb_managed_string_char_at(ptr ' + temp_ref(source_name) + ', i64 ' + temp_ref(index_name) + ')\n  br label %' + done_label + '\n' + fallback_label + ':\n  ' + fallback_value + ' = call ptr @tb_bootstrap_string_char_at(ptr ' + temp_ref(source_name) + ', i64 ' + temp_ref(index_name) + ')\n  br label %' + done_label + '\n' + done_label + ':\n  ' + result_name + ' = phi ptr [' + managed_value + ', %' + managed_label + '], [' + fallback_value + ', %' + fallback_label + ']'
+    return '  ' + result_name + ' = call ptr @tb_bootstrap_string_char_at(ptr ' + temp_ref(source_name) + ', i64 ' + temp_ref(index_name) + ')'
+
+string emit_string_byte_at_or_zero_value(ParsedFunction function_ir, string source_name, string index_name, string result_name, string temp_suffix):
+    BindingIR local_binding = string_identifier_local_binding(function_ir, source_name)
+    if (local_binding.name != ''):
+        string managed_name = temp_ref(temp_suffix + '.managed')
+        string managed_value = temp_ref(temp_suffix + '.managed.value')
+        string fallback_value = temp_ref(temp_suffix + '.fallback.value')
+        string managed_label = temp_suffix + '.managed.label'
+        string fallback_label = temp_suffix + '.fallback.label'
+        string done_label = temp_suffix + '.done.label'
+        return '  ' + managed_name + ' = load i1, ptr ' + managed_slot_ref(local_binding.name) + '\n  br i1 ' + managed_name + ', label %' + managed_label + ', label %' + fallback_label + '\n' + managed_label + ':\n  ' + managed_value + ' = call i8 @tb_managed_string_byte_at_or_zero(ptr ' + temp_ref(source_name) + ', i64 ' + temp_ref(index_name) + ')\n  br label %' + done_label + '\n' + fallback_label + ':\n  ' + fallback_value + ' = call i8 @tb_bootstrap_string_byte_at_or_zero(ptr ' + temp_ref(source_name) + ', i64 ' + temp_ref(index_name) + ')\n  br label %' + done_label + '\n' + done_label + ':\n  ' + result_name + ' = phi i8 [' + managed_value + ', %' + managed_label + '], [' + fallback_value + ', %' + fallback_label + ']'
+    return '  ' + result_name + ' = call i8 @tb_bootstrap_string_byte_at_or_zero(ptr ' + temp_ref(source_name) + ', i64 ' + temp_ref(index_name) + ')'
 
 string emit_map_method_call_value_instruction(LinearInstruction op, string method_name, string method_base_type):
     if (!method_base_type.starts_with('map<')):
@@ -4366,6 +4442,9 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
     string lhs = temp_ref(op.lhs)
     string method_name = op.args[0]
     string method_base_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[1]))
+    if (op.args.length() >= 2 && is_string_char_predicate_method_name(method_name) && temp_is_string_index_value(function_ir, op.args[1])):
+        LinearInstruction index_op = lookup_temp_instruction(function_ir, op.args[1])
+        return emit_string_char_predicate_fast_path(function_ir, lhs, method_name, index_op.args[0], index_op.args[1], op.lhs)
     string string_result = emit_string_method_call_value_instruction(program, function_ir, op, method_name, method_base_type)
     if (string_result != ''):
         return string_result
@@ -4524,7 +4603,7 @@ string emit_index_value_instruction(ParsedFunction function_ir, LinearInstructio
     string lhs = temp_ref(op.lhs)
     string base_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0]))
     if (base_type == 'string'):
-        return '  ' + lhs + ' = call ptr @tb_bootstrap_string_char_at(ptr ' + temp_ref(op.args[0]) + ', i64 ' + temp_ref(op.args[1]) + ')'
+        return emit_string_char_at_value(function_ir, op.args[0], op.args[1], lhs, op.lhs + '.string.index')
     if (base_type == 'string[]'):
         return '  ' + llvm_i32_index_temp(op.lhs) + ' = trunc i64 ' + temp_ref(op.args[1]) + ' to i32\n  ' + lhs + ' = call ptr @tb_bootstrap_string_array_get(ptr ' + temp_ref(op.args[0]) + ', i32 ' + llvm_i32_index_temp(op.lhs) + ')'
     if (base_type == 'string[][]'):
@@ -4894,14 +4973,27 @@ string emit_set_instruction(ProgramIR program, ParsedFunction function_ir, Linea
         string[] lines = emit_string_materialize_if_needed(function_ir, op.args[0], binding.name + '.' + temp_suffix)
         string stored_value = temp_ref(op.args[0]).substring(0)
         string owned_flag = 'false'.substring(0)
+        string managed_flag = 'false'.substring(0)
         if (temp_is_string(function_ir, op.args[0])):
             if (temp_can_transfer_to_local(function_ir, op.args[0])):
                 owned_flag = 'true'.substring(0)
+                string source_binding = transferable_local_binding_name(function_ir, op.args[0])
+                if (source_binding != ''):
+                    string source_managed = ('%move.managed.' + binding.name + '.' + temp_suffix).substring(0)
+                    lines.push('  ' + source_managed + ' = load i1, ptr ' + managed_slot_ref(source_binding))
+                    managed_flag = source_managed.substring(0)
+                else if (temp_is_managed_string(function_ir, op.args[0])):
+                    managed_flag = 'true'.substring(0)
             else:
                 stored_value = emit_string_owned_value(function_ir, op.args[0], binding.name + '.' + temp_suffix)
                 owned_flag = 'true'.substring(0)
+                managed_flag = 'true'.substring(0)
         lines.push('  store ptr ' + stored_value + ', ptr ' + slot_ref(binding.name))
         lines.push('  store i1 ' + owned_flag + ', ptr ' + owned_slot_ref(binding.name))
+        lines.push('  store i1 ' + managed_flag + ', ptr ' + managed_slot_ref(binding.name))
+        string source_binding = transferable_local_binding_name(function_ir, op.args[0])
+        if (source_binding != '' && source_binding != binding.name):
+            lines.push('  store i1 false, ptr ' + managed_slot_ref(source_binding))
         return join_llvm_strings(lines, '\n')
     if (normalize_llvm_type_name(binding.type_name) == 'string[]'):
         string[] lines = emit_string_array_materialize_if_needed(function_ir, op.args[0], binding.name + '.' + temp_suffix)
@@ -4993,14 +5085,27 @@ string emit_assign_local_instruction(ProgramIR program, ParsedFunction function_
         string[] lines = emit_string_materialize_if_needed(function_ir, op.args[0], binding.name + '.' + temp_suffix)
         string stored_value = temp_ref(op.args[0]).substring(0)
         string owned_flag = 'false'.substring(0)
+        string managed_flag = 'false'.substring(0)
         if (temp_is_string(function_ir, op.args[0])):
             if (temp_can_transfer_to_local(function_ir, op.args[0])):
                 owned_flag = 'true'.substring(0)
+                string source_binding = transferable_local_binding_name(function_ir, op.args[0])
+                if (source_binding != ''):
+                    string source_managed = ('%move.managed.' + binding.name + '.' + temp_suffix).substring(0)
+                    lines.push('  ' + source_managed + ' = load i1, ptr ' + managed_slot_ref(source_binding))
+                    managed_flag = source_managed.substring(0)
+                else if (temp_is_managed_string(function_ir, op.args[0])):
+                    managed_flag = 'true'.substring(0)
             else:
                 stored_value = emit_string_owned_value(function_ir, op.args[0], binding.name + '.' + temp_suffix)
                 owned_flag = 'true'.substring(0)
+                managed_flag = 'true'.substring(0)
         lines.push('  store ptr ' + stored_value + ', ptr ' + slot_ref(binding.name))
         lines.push('  store i1 ' + owned_flag + ', ptr ' + owned_slot_ref(binding.name))
+        lines.push('  store i1 ' + managed_flag + ', ptr ' + managed_slot_ref(binding.name))
+        string source_binding = transferable_local_binding_name(function_ir, op.args[0])
+        if (source_binding != '' && source_binding != binding.name):
+            lines.push('  store i1 false, ptr ' + managed_slot_ref(source_binding))
         return join_llvm_strings(lines, '\n')
     if (normalize_llvm_type_name(binding.type_name) == 'string[]'):
         string[] lines = emit_string_array_materialize_if_needed(function_ir, op.args[0], binding.name + '.' + temp_suffix)
@@ -5129,6 +5234,7 @@ string emit_assign_local_add_instruction(ProgramIR program, ParsedFunction funct
         lines.push('  %local.add.result.' + temp_suffix + ' = phi ptr [%local.add.consume.' + temp_suffix + ', %' + consume_label + '], [%local.add.copy.' + temp_suffix + ', %' + copy_label + ']')
         lines.push('  store ptr %local.add.result.' + temp_suffix + ', ptr ' + slot_ref(binding.name))
         lines.push('  store i1 true, ptr ' + owned_slot_ref(binding.name))
+        lines.push('  store i1 true, ptr ' + managed_slot_ref(binding.name))
         if (free_right_text || release_right):
             lines.push('  call void @tb_release(ptr ' + right_value + ')')
         return join_llvm_strings(lines, '\n')
@@ -5221,6 +5327,15 @@ string emit_release_index_instruction(ProgramIR program, ParsedFunction function
             return '  call void ' + llvm_map_release_by_key_name(base_type) + '(ptr ' + temp_ref(op.args[0]) + ', i64 ' + temp_ref(op.args[1]) + ')'
         return '  call void ' + llvm_map_release_by_key_name(base_type) + '(ptr ' + temp_ref(op.args[0]) + ', ptr ' + temp_ref(op.args[1]) + ')'
     return '  ; release_index ' + temp_ref(op.args[0]) + ' ' + temp_ref(op.args[1])
+
+string emit_assign_index_add_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op, string temp_suffix):
+    string base_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0]))
+    if (base_type == 'int[]'):
+        string index_name = llvm_i32_index_temp('assign.add.' + temp_suffix)
+        return '  ' + index_name + ' = trunc i64 ' + temp_ref(op.args[1]) + ' to i32\n  %assign.add.old.' + temp_suffix + ' = call i64 @tb_bootstrap_int_array_get(ptr ' + temp_ref(op.args[0]) + ', i32 ' + index_name + ')\n  %assign.add.new.' + temp_suffix + ' = add i64 %assign.add.old.' + temp_suffix + ', ' + temp_ref(op.args[2]) + '\n  call void @tb_bootstrap_int_array_set(ptr ' + temp_ref(op.args[0]) + ', i32 ' + index_name + ', i64 %assign.add.new.' + temp_suffix + ')'
+    if (base_type == 'map<int, int>'):
+        return '  call void ' + llvm_map_increment_by_key_name(base_type) + '(ptr ' + temp_ref(op.args[0]) + ', i64 ' + temp_ref(op.args[1]) + ', i64 ' + temp_ref(op.args[2]) + ')'
+    return emit_assign_index_instruction(program, function_ir, LinearInstruction('assign_index', '', '', '', '', op.args), temp_suffix)
 
 string emit_assign_index_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op, string temp_suffix):
     string base_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0]))
@@ -5388,6 +5503,8 @@ string emit_instruction(ProgramIR program, ParsedFunction function_ir, string bl
         lines.push('  store ptr null, ptr ' + exception_message_symbol())
         if (is_backend_managed_type(ir_parse_binding_decl(op.detail).type_name)):
             lines.push('  store i1 false, ptr ' + owned_slot_ref(ir_parse_binding_decl(op.detail).name))
+        if (normalize_llvm_type_name(ir_parse_binding_decl(op.detail).type_name) == 'string'):
+            lines.push('  store i1 false, ptr ' + managed_slot_ref(ir_parse_binding_decl(op.detail).name))
         return join_llvm_strings(lines, '\n')
     if (op.kind == 'release_field'):
         BindingIR field = record_field_binding_from_temp(program, function_ir, op.args[0], op.detail)
@@ -5442,6 +5559,14 @@ string emit_instruction(ProgramIR program, ParsedFunction function_ir, string bl
             LLVM_EMIT_ASSIGN_INDEX_COUNT += 1
             return line
         return emit_assign_index_instruction(program, function_ir, op, temp_suffix)
+    if (op.kind == 'assign_index_add'):
+        if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
+            int start_ms = time_ms()
+            string line = emit_assign_index_add_instruction(program, function_ir, op, temp_suffix)
+            LLVM_EMIT_ASSIGN_INDEX_MS += time_ms() - start_ms
+            LLVM_EMIT_ASSIGN_INDEX_COUNT += 1
+            return line
+        return emit_assign_index_add_instruction(program, function_ir, op, temp_suffix)
     if (op.kind == 'drop'):
         if (normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0])) == 'void'):
             return '  ; drop void ' + temp_ref(op.args[0])
@@ -5566,12 +5691,18 @@ string[] emit_allocas(ParsedFunction function_ir, bool bootstrap_main_args):
         if (is_backend_managed_type(param_decl.type_name)):
             lines.push('  ' + owned_slot_ref(param_decl.name) + ' = alloca i1')
             lines.push('  store i1 false, ptr ' + owned_slot_ref(param_decl.name))
+        if (normalize_llvm_type_name(param_decl.type_name) == 'string'):
+            lines.push('  ' + managed_slot_ref(param_decl.name) + ' = alloca i1')
+            lines.push('  store i1 false, ptr ' + managed_slot_ref(param_decl.name))
     for (BindingIR local_decl in function_ir.locals):
         require_backend_value_type(local_decl.type_name, 'local')
         lines.push('  ' + slot_ref(local_decl.name) + ' = alloca ' + llvm_type(local_decl.type_name))
         if (is_backend_managed_type(local_decl.type_name)):
             lines.push('  ' + owned_slot_ref(local_decl.name) + ' = alloca i1')
             lines.push('  store i1 false, ptr ' + owned_slot_ref(local_decl.name))
+        if (normalize_llvm_type_name(local_decl.type_name) == 'string'):
+            lines.push('  ' + managed_slot_ref(local_decl.name) + ' = alloca i1')
+            lines.push('  store i1 false, ptr ' + managed_slot_ref(local_decl.name))
         if (llvm_type(local_decl.type_name) == 'ptr'):
             lines.push('  store ptr null, ptr ' + slot_ref(local_decl.name))
     return lines
@@ -6622,6 +6753,38 @@ string[] emit_map_helpers(string type_name):
     if (is_backend_managed_type(value_type)):
         value_release_lines = ['  ' + emit_backend_release_ptr(value_type, '%value.raw').trim_left()]
     lines = replace_llvm_template_block_lines(lines, '__VALUE_RELEASE_BLOCK__', value_release_lines)
+
+    if (key_type == 'int' && value_type == 'int'):
+        lines.push('define private void ' + llvm_map_increment_by_key_name(type_name) + '(ptr %map, i64 %key, i64 %delta) {')
+        lines.push('entry:')
+        lines.push('  %len = call i32 ' + llvm_map_length_name(type_name) + '(ptr %map)')
+        lines.push('  %keys.ptr = getelementptr inbounds ' + map_struct + ', ptr %map, i32 0, i32 1')
+        lines.push('  %keys = load ptr, ptr %keys.ptr')
+        lines.push('  %values.ptr = getelementptr inbounds ' + map_struct + ', ptr %map, i32 0, i32 2')
+        lines.push('  %values = load ptr, ptr %values.ptr')
+        lines.push('  br label %loop.cond')
+        lines.push('loop.cond:')
+        lines.push('  %index = phi i32 [0, %entry], [%next.index, %loop.step]')
+        lines.push('  %keep.loop = icmp slt i32 %index, %len')
+        lines.push('  br i1 %keep.loop, label %loop.body, label %insert')
+        lines.push('loop.body:')
+        lines.push('  %key.slot = getelementptr inbounds i64, ptr %keys, i32 %index')
+        lines.push('  %key.value = load i64, ptr %key.slot')
+        lines.push('  %key.match = icmp eq i64 %key.value, %key')
+        lines.push('  br i1 %key.match, label %found, label %loop.step')
+        lines.push('found:')
+        lines.push('  %value.slot = getelementptr inbounds i64, ptr %values, i32 %index')
+        lines.push('  %value.old = load i64, ptr %value.slot')
+        lines.push('  %value.new = add i64 %value.old, %delta')
+        lines.push('  store i64 %value.new, ptr %value.slot')
+        lines.push('  ret void')
+        lines.push('loop.step:')
+        lines.push('  %next.index = add i32 %index, 1')
+        lines.push('  br label %loop.cond')
+        lines.push('insert:')
+        lines.push('  call void ' + llvm_map_set_by_key_name(type_name) + '(ptr %map, i64 %key, i64 %delta, i1 false)')
+        lines.push('  ret void')
+        lines.push('}')
 
     string[] free_value_lines = ['  br label %loop.step']
     if (is_backend_managed_type(value_type)):
