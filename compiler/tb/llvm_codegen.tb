@@ -159,14 +159,13 @@ int LLVM_PHASE_CACHED_GLOBAL_COUNT = 0;
 int LLVM_PHASE_FUNCTION_COUNT = 0;
 string LLVM_LOOKUP_CACHE_FUNCTION_KEY = '';
 string[] LLVM_LOOKUP_CACHE_TEMP_TYPE_SLOTS = [];
-LinearInstruction[] LLVM_LOOKUP_CACHE_FLAT_INSTRUCTIONS = [];
-int[] LLVM_LOOKUP_CACHE_INSTRUCTION_POSITIONS = [];
+int[] LLVM_LOOKUP_CACHE_INSTRUCTION_BLOCKS = [];
+int[] LLVM_LOOKUP_CACHE_INSTRUCTION_OFFSETS = [];
 string[] LLVM_LOOKUP_CACHE_BINDING_NAMES = [];
 string[] LLVM_LOOKUP_CACHE_BINDING_TYPES = [];
 string[] LLVM_LOOKUP_CACHE_LOCAL_BINDING_NAMES = [];
 string[] LLVM_LOOKUP_CACHE_LOCAL_BINDING_TYPES = [];
-string[] LLVM_PROGRAM_CACHE_GLOBAL_NAMES = [];
-string[] LLVM_PROGRAM_CACHE_GLOBAL_TYPES = [];
+BindingIR[] LLVM_PROGRAM_CACHE_GLOBAL_BINDINGS = [];
 string[] LLVM_PROGRAM_CACHE_FUNCTION_NAMES = [];
 string[] LLVM_PROGRAM_CACHE_RECORD_NAMES = [];
 RecordDeclIR[] LLVM_PROGRAM_CACHE_RECORD_DECLS = [];
@@ -383,14 +382,13 @@ void reset_llvm_backend_helper_stats():
     LLVM_PHASE_FUNCTION_COUNT = 0
     LLVM_LOOKUP_CACHE_FUNCTION_KEY = ''
     LLVM_LOOKUP_CACHE_TEMP_TYPE_SLOTS = []
-    LLVM_LOOKUP_CACHE_FLAT_INSTRUCTIONS = []
-    LLVM_LOOKUP_CACHE_INSTRUCTION_POSITIONS = []
+    LLVM_LOOKUP_CACHE_INSTRUCTION_BLOCKS = []
+    LLVM_LOOKUP_CACHE_INSTRUCTION_OFFSETS = []
     LLVM_LOOKUP_CACHE_BINDING_NAMES = []
     LLVM_LOOKUP_CACHE_BINDING_TYPES = []
     LLVM_LOOKUP_CACHE_LOCAL_BINDING_NAMES = []
     LLVM_LOOKUP_CACHE_LOCAL_BINDING_TYPES = []
-    LLVM_PROGRAM_CACHE_GLOBAL_NAMES = []
-    LLVM_PROGRAM_CACHE_GLOBAL_TYPES = []
+    LLVM_PROGRAM_CACHE_GLOBAL_BINDINGS = []
     LLVM_PROGRAM_CACHE_FUNCTION_NAMES = []
     LLVM_PROGRAM_CACHE_RECORD_NAMES = []
     LLVM_PROGRAM_CACHE_RECORD_DECLS = []
@@ -468,6 +466,16 @@ void reset_llvm_backend_helper_stats():
     LLVM_EMIT_VALUE_SLICE_COUNT = 0
     LLVM_EMIT_VALUE_CONTAINER_MS = 0
     LLVM_EMIT_VALUE_CONTAINER_COUNT = 0
+
+void reset_function_lookup_cache():
+    LLVM_LOOKUP_CACHE_FUNCTION_KEY = ''
+    LLVM_LOOKUP_CACHE_TEMP_TYPE_SLOTS = []
+    LLVM_LOOKUP_CACHE_INSTRUCTION_BLOCKS = []
+    LLVM_LOOKUP_CACHE_INSTRUCTION_OFFSETS = []
+    LLVM_LOOKUP_CACHE_BINDING_NAMES = []
+    LLVM_LOOKUP_CACHE_BINDING_TYPES = []
+    LLVM_LOOKUP_CACHE_LOCAL_BINDING_NAMES = []
+    LLVM_LOOKUP_CACHE_LOCAL_BINDING_TYPES = []
 
 string llvm_backend_helper_report():
     string lines = 'join_calls=' + LLVM_JOIN_CALLS.to_string()
@@ -924,14 +932,20 @@ LinearInstruction[] flatten_function_instructions(ParsedFunction function_ir):
             instructions.push(op)
     return instructions
 
+RecordDeclIR clone_record_decl_ir(RecordDeclIR record_decl):
+    string[] fields = []
+    for (string field in record_decl.fields):
+        fields.push(field.substring(0))
+    return RecordDeclIR(record_decl.header.substring(0), fields)
+
 void ensure_function_lookup_cache(ParsedFunction function_ir):
     string cache_key = function_ir.header
     if (LLVM_LOOKUP_CACHE_FUNCTION_KEY == cache_key):
         return
     LLVM_LOOKUP_CACHE_FUNCTION_KEY = cache_key.substring(0)
-    LLVM_LOOKUP_CACHE_FLAT_INSTRUCTIONS = []
     LLVM_LOOKUP_CACHE_TEMP_TYPE_SLOTS = []
-    LLVM_LOOKUP_CACHE_INSTRUCTION_POSITIONS = []
+    LLVM_LOOKUP_CACHE_INSTRUCTION_BLOCKS = []
+    LLVM_LOOKUP_CACHE_INSTRUCTION_OFFSETS = []
     LLVM_LOOKUP_CACHE_BINDING_NAMES = []
     LLVM_LOOKUP_CACHE_BINDING_TYPES = []
     LLVM_LOOKUP_CACHE_LOCAL_BINDING_NAMES = []
@@ -944,31 +958,49 @@ void ensure_function_lookup_cache(ParsedFunction function_ir):
         LLVM_LOOKUP_CACHE_BINDING_TYPES.push(local_decl.type_name.substring(0))
         LLVM_LOOKUP_CACHE_LOCAL_BINDING_NAMES.push(local_decl.name.substring(0))
         LLVM_LOOKUP_CACHE_LOCAL_BINDING_TYPES.push(local_decl.type_name.substring(0))
-    int position = 0
+    int block_index = 0
     for (BlockIR block in function_ir.blocks):
+        int instruction_index = 0
         for (LinearInstruction op in block.instructions):
-            LLVM_LOOKUP_CACHE_FLAT_INSTRUCTIONS.push(op)
             if (op.lhs != ''):
                 LLVM_LOOKUP_CACHE_TEMP_TYPE_SLOTS = set_temp_type_slot(LLVM_LOOKUP_CACHE_TEMP_TYPE_SLOTS, op.lhs, op.result_type)
                 int slot_index = temp_slot_index(op.lhs)
                 if (slot_index >= 0):
-                    while (LLVM_LOOKUP_CACHE_INSTRUCTION_POSITIONS.length() <= slot_index):
-                        LLVM_LOOKUP_CACHE_INSTRUCTION_POSITIONS.push(-1)
-                    if (LLVM_LOOKUP_CACHE_INSTRUCTION_POSITIONS[slot_index] < 0):
-                        LLVM_LOOKUP_CACHE_INSTRUCTION_POSITIONS[slot_index] = position
-            position += 1
+                    while (LLVM_LOOKUP_CACHE_INSTRUCTION_BLOCKS.length() <= slot_index):
+                        LLVM_LOOKUP_CACHE_INSTRUCTION_BLOCKS.push(-1)
+                        LLVM_LOOKUP_CACHE_INSTRUCTION_OFFSETS.push(-1)
+                    if (LLVM_LOOKUP_CACHE_INSTRUCTION_BLOCKS[slot_index] < 0):
+                        LLVM_LOOKUP_CACHE_INSTRUCTION_BLOCKS[slot_index] = block_index
+                        LLVM_LOOKUP_CACHE_INSTRUCTION_OFFSETS[slot_index] = instruction_index
+            instruction_index += 1
+        block_index += 1
 
 BindingIR lookup_named_binding(ParsedFunction function_ir, string name):
     if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
         LLVM_LOOKUP_NAMED_BINDING_CALLS += 1
     ensure_function_lookup_cache(function_ir)
-    int name_length = name.length()
     int index = LLVM_LOOKUP_CACHE_BINDING_NAMES.length() - 1
     while (index >= 0):
         if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
             LLVM_LOOKUP_NAMED_BINDING_SCAN_TOTAL += 1
-        if (LLVM_LOOKUP_CACHE_BINDING_NAMES[index].length() == name_length && LLVM_LOOKUP_CACHE_BINDING_NAMES[index] == name):
-            return BindingIR(LLVM_LOOKUP_CACHE_BINDING_TYPES[index], LLVM_LOOKUP_CACHE_BINDING_NAMES[index])
+        if (LLVM_LOOKUP_CACHE_BINDING_NAMES[index] == name):
+            return BindingIR(LLVM_LOOKUP_CACHE_BINDING_TYPES[index].substring(0), LLVM_LOOKUP_CACHE_BINDING_NAMES[index].substring(0))
+        index -= 1
+    index = function_ir.locals.length() - 1
+    while (index >= 0):
+        if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
+            LLVM_LOOKUP_NAMED_BINDING_SCAN_TOTAL += 1
+        BindingIR local_decl = function_ir.locals[index]
+        if (local_decl.name == name):
+            return BindingIR(local_decl.type_name.substring(0), local_decl.name.substring(0))
+        index -= 1
+    index = function_ir.params.length() - 1
+    while (index >= 0):
+        if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
+            LLVM_LOOKUP_NAMED_BINDING_SCAN_TOTAL += 1
+        BindingIR param_decl = function_ir.params[index]
+        if (param_decl.name == name):
+            return BindingIR(param_decl.type_name.substring(0), param_decl.name.substring(0))
         index -= 1
     return BindingIR('', '')
 
@@ -976,13 +1008,20 @@ BindingIR lookup_named_local_binding(ParsedFunction function_ir, string name):
     if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
         LLVM_LOOKUP_NAMED_LOCAL_BINDING_CALLS += 1
     ensure_function_lookup_cache(function_ir)
-    int name_length = name.length()
     int index = LLVM_LOOKUP_CACHE_LOCAL_BINDING_NAMES.length() - 1
     while (index >= 0):
         if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
             LLVM_LOOKUP_NAMED_LOCAL_BINDING_SCAN_TOTAL += 1
-        if (LLVM_LOOKUP_CACHE_LOCAL_BINDING_NAMES[index].length() == name_length && LLVM_LOOKUP_CACHE_LOCAL_BINDING_NAMES[index] == name):
-            return BindingIR(LLVM_LOOKUP_CACHE_LOCAL_BINDING_TYPES[index], LLVM_LOOKUP_CACHE_LOCAL_BINDING_NAMES[index])
+        if (LLVM_LOOKUP_CACHE_LOCAL_BINDING_NAMES[index] == name):
+            return BindingIR(LLVM_LOOKUP_CACHE_LOCAL_BINDING_TYPES[index].substring(0), LLVM_LOOKUP_CACHE_LOCAL_BINDING_NAMES[index].substring(0))
+        index -= 1
+    index = function_ir.locals.length() - 1
+    while (index >= 0):
+        if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
+            LLVM_LOOKUP_NAMED_LOCAL_BINDING_SCAN_TOTAL += 1
+        BindingIR local_decl = function_ir.locals[index]
+        if (local_decl.name == name):
+            return BindingIR(local_decl.type_name.substring(0), local_decl.name.substring(0))
         index -= 1
     return BindingIR('', '')
 
@@ -1001,28 +1040,27 @@ string emit_string_release_ptr(string ptr_name):
     return '  call void @tb_release(ptr ' + ptr_name + ')'
 
 void load_program_lookup_cache(ProgramIR program, RecordDeclIR[] record_decls):
-    LLVM_PROGRAM_CACHE_GLOBAL_NAMES = []
-    LLVM_PROGRAM_CACHE_GLOBAL_TYPES = []
+    LLVM_PROGRAM_CACHE_GLOBAL_BINDINGS = []
     LLVM_PROGRAM_CACHE_FUNCTION_NAMES = []
     LLVM_PROGRAM_CACHE_RECORD_NAMES = []
     LLVM_PROGRAM_CACHE_RECORD_DECLS = []
     for (GlobalDeclIR global_decl in program.globals):
         BindingIR binding = ir_parse_binding_decl(strip_prefix(global_decl.header, 'global '))
-        LLVM_PROGRAM_CACHE_GLOBAL_NAMES.push(binding.name.substring(0))
-        LLVM_PROGRAM_CACHE_GLOBAL_TYPES.push(binding.type_name.substring(0))
+        LLVM_PROGRAM_CACHE_GLOBAL_BINDINGS.push(BindingIR(binding.type_name.substring(0), binding.name.substring(0)))
     for (ParsedFunction function_ir in program.functions):
         LLVM_PROGRAM_CACHE_FUNCTION_NAMES.push(function_ir.name.substring(0))
     for (RecordDeclIR record_decl in record_decls):
         string record_name = strip_prefix(record_decl.header, 'record ')
         LLVM_PROGRAM_CACHE_RECORD_NAMES.push(record_name.substring(0))
-        LLVM_PROGRAM_CACHE_RECORD_DECLS.push(record_decl)
+        LLVM_PROGRAM_CACHE_RECORD_DECLS.push(clone_record_decl_ir(record_decl))
 
 BindingIR lookup_named_global(ProgramIR program, string name):
     int name_length = name.length()
-    int index = LLVM_PROGRAM_CACHE_GLOBAL_NAMES.length() - 1
+    int index = LLVM_PROGRAM_CACHE_GLOBAL_BINDINGS.length() - 1
     while (index >= 0):
-        if (LLVM_PROGRAM_CACHE_GLOBAL_NAMES[index].length() == name_length && LLVM_PROGRAM_CACHE_GLOBAL_NAMES[index] == name):
-            return BindingIR(LLVM_PROGRAM_CACHE_GLOBAL_TYPES[index], LLVM_PROGRAM_CACHE_GLOBAL_NAMES[index])
+        BindingIR binding = LLVM_PROGRAM_CACHE_GLOBAL_BINDINGS[index]
+        if (binding.name.length() == name_length && binding.name == name):
+            return BindingIR(binding.type_name.substring(0), binding.name.substring(0))
         index -= 1
     return BindingIR('', '')
 
@@ -1171,28 +1209,33 @@ string lookup_temp_llvm_type(ParsedFunction function_ir, string temp_name):
     string cached_type = lookup_temp_type_slot(LLVM_LOOKUP_CACHE_TEMP_TYPE_SLOTS, lookup_name)
     if (cached_type != 'unknown' && cached_type != '[]'):
         return cached_type
-    string result_type = lookup_temp_llvm_type_uncached(function_ir, lookup_name)
-    if (result_type != 'unknown'):
-        LLVM_LOOKUP_CACHE_TEMP_TYPE_SLOTS = set_temp_type_slot(LLVM_LOOKUP_CACHE_TEMP_TYPE_SLOTS, lookup_name, result_type)
-    return result_type
+    if (temp_slot_index(lookup_name) < 0):
+        BindingIR binding = lookup_named_binding(function_ir, lookup_name)
+        if (binding.name != ''):
+            return binding.type_name.substring(0)
+    return lookup_temp_llvm_type_uncached(function_ir, lookup_name)
 
 LinearInstruction lookup_temp_instruction(ParsedFunction function_ir, string temp_name):
     if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
         LLVM_LOOKUP_TEMP_INSTRUCTION_CALLS += 1
     string lookup_name = lookup_cache_temp_name(temp_name)
     ensure_function_lookup_cache(function_ir)
-    int position = lookup_temp_instruction_slot(LLVM_LOOKUP_CACHE_INSTRUCTION_POSITIONS, lookup_name)
-    if (position >= 0 && position < LLVM_LOOKUP_CACHE_FLAT_INSTRUCTIONS.length()):
-        if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
-            LLVM_LOOKUP_TEMP_INSTRUCTION_SLOT_HITS += 1
-        return LLVM_LOOKUP_CACHE_FLAT_INSTRUCTIONS[position]
+    int slot_index = temp_slot_index(lookup_name)
+    if (slot_index >= 0 && slot_index < LLVM_LOOKUP_CACHE_INSTRUCTION_BLOCKS.length()):
+        int block_index = LLVM_LOOKUP_CACHE_INSTRUCTION_BLOCKS[slot_index]
+        int instruction_index = LLVM_LOOKUP_CACHE_INSTRUCTION_OFFSETS[slot_index]
+        if (block_index >= 0 && block_index < function_ir.blocks.length()):
+            BlockIR block = function_ir.blocks[block_index]
+            if (instruction_index >= 0 && instruction_index < block.instructions.length()):
+                if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
+                    LLVM_LOOKUP_TEMP_INSTRUCTION_SLOT_HITS += 1
+                return copy_instruction(block.instructions[instruction_index])
     if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
         LLVM_LOOKUP_TEMP_INSTRUCTION_FALLBACK_SCANS += 1
-    int index = 0
-    while (index < LLVM_LOOKUP_CACHE_FLAT_INSTRUCTIONS.length()):
-        if (LLVM_LOOKUP_CACHE_FLAT_INSTRUCTIONS[index].lhs == lookup_name):
-            return LLVM_LOOKUP_CACHE_FLAT_INSTRUCTIONS[index]
-        index += 1
+    for (BlockIR block in function_ir.blocks):
+        for (LinearInstruction op in block.instructions):
+            if (op.lhs == lookup_name):
+                return copy_instruction(op)
     if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
         LLVM_LOOKUP_TEMP_INSTRUCTION_MISSES += 1
     return LinearInstruction('', '', '', '', '', [])
@@ -2935,7 +2978,7 @@ RecordDeclIR lookup_record_decl(ProgramIR program, string name):
     int index = LLVM_PROGRAM_CACHE_RECORD_NAMES.length() - 1
     while (index >= 0):
         if (LLVM_PROGRAM_CACHE_RECORD_NAMES[index].length() == name_length && LLVM_PROGRAM_CACHE_RECORD_NAMES[index] == name):
-            return LLVM_PROGRAM_CACHE_RECORD_DECLS[index]
+            return clone_record_decl_ir(LLVM_PROGRAM_CACHE_RECORD_DECLS[index])
         index -= 1
     return RecordDeclIR('', [])
 
@@ -3792,14 +3835,14 @@ string emit_record_value_instruction_core(ProgramIR program, ParsedFunction func
     return join_llvm_strings(lines, '\n')
 
 string emit_record_value_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op):
-    int start_ms = 0
     if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
-        start_ms = time_ms()
-    string line = emit_record_value_instruction_core(program, function_ir, op)
-    if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
-        LLVM_EMIT_RECORD_VALUE_MS += time_ms() - start_ms
+        int start_ms = time_ms()
+        string line = emit_record_value_instruction_core(program, function_ir, op)
+        int elapsed_ms = time_ms() - start_ms
+        LLVM_EMIT_RECORD_VALUE_MS += elapsed_ms
         LLVM_EMIT_RECORD_VALUE_COUNT += 1
-    return line
+        return line
+    return emit_record_value_instruction_core(program, function_ir, op)
 
 string emit_call_value_instruction_core(ProgramIR program, ParsedFunction function_ir, LinearInstruction op):
     string lhs = temp_ref(op.lhs)
@@ -4035,14 +4078,14 @@ string emit_call_value_instruction_core(ProgramIR program, ParsedFunction functi
     return line
 
 string emit_call_value_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op):
-    int start_ms = 0
     if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
-        start_ms = time_ms()
-    string line = emit_call_value_instruction_core(program, function_ir, op)
-    if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
-        LLVM_EMIT_CALL_VALUE_MS += time_ms() - start_ms
+        int start_ms = time_ms()
+        string line = emit_call_value_instruction_core(program, function_ir, op)
+        int elapsed_ms = time_ms() - start_ms
+        LLVM_EMIT_CALL_VALUE_MS += elapsed_ms
         LLVM_EMIT_CALL_VALUE_COUNT += 1
-    return line
+        return line
+    return emit_call_value_instruction_core(program, function_ir, op)
 
 string emit_tracked_builtin_call_line(string line):
     if (LLVM_USER_CALL_STATS_ACTIVE != 0):
@@ -4468,14 +4511,14 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
     return '  ' + lhs + ' = call ' + llvm_type(result_type) + ' @' + op.args[0] + '(' + join_llvm_strings(args, ', ') + ')'
 
 string emit_method_call_value_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op):
-    int start_ms = 0
     if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
-        start_ms = time_ms()
-    string line = emit_method_call_value_instruction_core(program, function_ir, op)
-    if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
-        LLVM_EMIT_METHOD_VALUE_MS += time_ms() - start_ms
+        int start_ms = time_ms()
+        string line = emit_method_call_value_instruction_core(program, function_ir, op)
+        int elapsed_ms = time_ms() - start_ms
+        LLVM_EMIT_METHOD_VALUE_MS += elapsed_ms
         LLVM_EMIT_METHOD_VALUE_COUNT += 1
-    return line
+        return line
+    return emit_method_call_value_instruction_core(program, function_ir, op)
 
 string emit_index_value_instruction(ParsedFunction function_ir, LinearInstruction op):
     string lhs = temp_ref(op.lhs)
@@ -6539,21 +6582,6 @@ string[] llvm_codegen_ir(ProgramIR program):
     bool needs_maps = !map_types.is_empty()
     int feature_scan_start_ms = time_ms()
     analyze_program_features(program, map_types)
-    LLVM_PHASE_FEATURE_SCAN_MS += time_ms() - feature_scan_start_ms
-    bool needs_map_to_parse_point = LLVM_SCAN_NEEDS_MAP_TO_PARSE_POINT != 0
-    bool needs_map_to_string_length = LLVM_SCAN_NEEDS_MAP_TO_STRING_LENGTH != 0
-    bool needs_map_to_edge_distance = LLVM_SCAN_NEEDS_MAP_TO_EDGE_DISTANCE != 0
-    bool needs_flat_map_edges_for_point = LLVM_SCAN_NEEDS_FLAT_MAP_EDGES_FOR_POINT != 0
-    int record_decls_start_ms = time_ms()
-    RecordDeclIR[] record_decls = effective_record_decls_for_scan(program, needs_map_to_parse_point, needs_map_to_edge_distance, needs_flat_map_edges_for_point)
-    LLVM_PHASE_RECORD_DECLS_MS += time_ms() - record_decls_start_ms
-    int program_cache_start_ms = time_ms()
-    load_program_lookup_cache(program, record_decls)
-    LLVM_PHASE_PROGRAM_CACHE_MS += time_ms() - program_cache_start_ms
-    bool needs_records = !record_decls.is_empty()
-    int string_constants_start_ms = time_ms()
-    StringConstIR[] string_constants = collect_string_constants(program)
-    LLVM_PHASE_STRING_CONSTANTS_MS += time_ms() - string_constants_start_ms
     bool needs_strcmp = LLVM_SCAN_NEEDS_STRCMP != 0
     bool needs_string_search = LLVM_SCAN_NEEDS_STRING_SEARCH != 0
     bool needs_strlen = LLVM_SCAN_NEEDS_STRLEN != 0
@@ -6566,6 +6594,10 @@ string[] llvm_codegen_ir(ProgramIR program):
     bool needs_int_array = LLVM_SCAN_NEEDS_INT_ARRAY != 0
     bool needs_int_array_array = LLVM_SCAN_NEEDS_INT_ARRAY_ARRAY != 0
     bool needs_record_array = LLVM_SCAN_NEEDS_RECORD_ARRAY != 0
+    bool needs_map_to_parse_point = LLVM_SCAN_NEEDS_MAP_TO_PARSE_POINT != 0
+    bool needs_map_to_string_length = LLVM_SCAN_NEEDS_MAP_TO_STRING_LENGTH != 0
+    bool needs_map_to_edge_distance = LLVM_SCAN_NEEDS_MAP_TO_EDGE_DISTANCE != 0
+    bool needs_flat_map_edges_for_point = LLVM_SCAN_NEEDS_FLAT_MAP_EDGES_FOR_POINT != 0
     bool needs_runtime_string_copy = LLVM_SCAN_NEEDS_RUNTIME_STRING_COPY != 0
     bool needs_backend_free = LLVM_SCAN_NEEDS_BACKEND_FREE != 0
     bool needs_main_args = LLVM_SCAN_NEEDS_MAIN_ARGS != 0
@@ -6588,6 +6620,18 @@ string[] llvm_codegen_ir(ProgramIR program):
     bool needs_popcount = LLVM_SCAN_NEEDS_POPCOUNT != 0
     bool needs_hash = LLVM_SCAN_NEEDS_HASH != 0
     bool needs_num_hash = LLVM_SCAN_NEEDS_NUM_HASH != 0
+    LLVM_PHASE_FEATURE_SCAN_MS += time_ms() - feature_scan_start_ms
+    reset_function_lookup_cache()
+    int record_decls_start_ms = time_ms()
+    RecordDeclIR[] record_decls = effective_record_decls_for_scan(program, needs_map_to_parse_point, needs_map_to_edge_distance, needs_flat_map_edges_for_point)
+    LLVM_PHASE_RECORD_DECLS_MS += time_ms() - record_decls_start_ms
+    int program_cache_start_ms = time_ms()
+    load_program_lookup_cache(program, record_decls)
+    LLVM_PHASE_PROGRAM_CACHE_MS += time_ms() - program_cache_start_ms
+    bool needs_records = !record_decls.is_empty()
+    int string_constants_start_ms = time_ms()
+    StringConstIR[] string_constants = collect_string_constants(program)
+    LLVM_PHASE_STRING_CONSTANTS_MS += time_ms() - string_constants_start_ms
     string[] foreign_modules = active_foreign_modules(program)
     bool needs_string_helpers = needs_runtime_string_copy || needs_to_int || needs_int_to_string || needs_hash || LLVM_SCAN_NEEDS_STRING_HELPERS_OPS != 0 || needs_read_lines || needs_read_file || needs_getenv
     bool needs_string_array_helpers = needs_string_array || needs_string_helpers
@@ -6825,13 +6869,6 @@ void llvm_print_ir(ProgramIR program):
     string[] map_types = collect_used_map_types(program)
     bool needs_maps = !map_types.is_empty()
     analyze_program_features(program, map_types)
-    bool needs_map_to_parse_point = LLVM_SCAN_NEEDS_MAP_TO_PARSE_POINT != 0
-    bool needs_map_to_string_length = LLVM_SCAN_NEEDS_MAP_TO_STRING_LENGTH != 0
-    bool needs_map_to_edge_distance = LLVM_SCAN_NEEDS_MAP_TO_EDGE_DISTANCE != 0
-    bool needs_flat_map_edges_for_point = LLVM_SCAN_NEEDS_FLAT_MAP_EDGES_FOR_POINT != 0
-    RecordDeclIR[] record_decls = effective_record_decls_for_scan(program, needs_map_to_parse_point, needs_map_to_edge_distance, needs_flat_map_edges_for_point)
-    bool needs_records = !record_decls.is_empty()
-    StringConstIR[] string_constants = collect_string_constants(program)
     bool needs_strcmp = LLVM_SCAN_NEEDS_STRCMP != 0
     bool needs_string_search = LLVM_SCAN_NEEDS_STRING_SEARCH != 0
     bool needs_strlen = LLVM_SCAN_NEEDS_STRLEN != 0
@@ -6844,6 +6881,13 @@ void llvm_print_ir(ProgramIR program):
     bool needs_int_array = LLVM_SCAN_NEEDS_INT_ARRAY != 0
     bool needs_int_array_array = LLVM_SCAN_NEEDS_INT_ARRAY_ARRAY != 0
     bool needs_record_array = LLVM_SCAN_NEEDS_RECORD_ARRAY != 0
+    bool needs_map_to_parse_point = LLVM_SCAN_NEEDS_MAP_TO_PARSE_POINT != 0
+    bool needs_map_to_string_length = LLVM_SCAN_NEEDS_MAP_TO_STRING_LENGTH != 0
+    bool needs_map_to_edge_distance = LLVM_SCAN_NEEDS_MAP_TO_EDGE_DISTANCE != 0
+    bool needs_flat_map_edges_for_point = LLVM_SCAN_NEEDS_FLAT_MAP_EDGES_FOR_POINT != 0
+    RecordDeclIR[] record_decls = effective_record_decls_for_scan(program, needs_map_to_parse_point, needs_map_to_edge_distance, needs_flat_map_edges_for_point)
+    bool needs_records = !record_decls.is_empty()
+    StringConstIR[] string_constants = collect_string_constants(program)
     bool needs_runtime_string_copy = LLVM_SCAN_NEEDS_RUNTIME_STRING_COPY != 0
     bool needs_backend_free = LLVM_SCAN_NEEDS_BACKEND_FREE != 0
     bool needs_main_args = LLVM_SCAN_NEEDS_MAIN_ARGS != 0
@@ -6866,6 +6910,7 @@ void llvm_print_ir(ProgramIR program):
     bool needs_popcount = LLVM_SCAN_NEEDS_POPCOUNT != 0
     bool needs_hash = LLVM_SCAN_NEEDS_HASH != 0
     bool needs_num_hash = LLVM_SCAN_NEEDS_NUM_HASH != 0
+    reset_function_lookup_cache()
     string[] foreign_modules = active_foreign_modules(program)
     bool needs_string_helpers = needs_runtime_string_copy || needs_to_int || needs_int_to_string || needs_hash || LLVM_SCAN_NEEDS_STRING_HELPERS_OPS != 0 || needs_read_lines || needs_read_file || needs_getenv
     bool needs_string_array_helpers = needs_string_array || needs_string_helpers
