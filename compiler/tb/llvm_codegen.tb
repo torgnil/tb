@@ -1249,6 +1249,42 @@ ParsedFunction lookup_named_function_decl(ProgramIR program, string name):
             return function_ir
     return ParsedFunction('', '', '', [], [], [])
 
+LinearInstruction lookup_block_instruction(BlockIR block, string temp_name):
+    for (LinearInstruction op in block.instructions):
+        if (op.lhs == temp_name):
+            return op
+    return LinearInstruction('', '', '', '', '', [])
+
+string resolve_block_identifier_alias_name(BlockIR block, string temp_name):
+    if (temp_name == ''):
+        return ''
+    LinearInstruction op = lookup_block_instruction(block, temp_name)
+    if (op.kind == 'value' && op.detail == 'identifier' && op.args.length() == 1):
+        return op.args[0]
+    return temp_name
+
+bool is_named_int_order_comparator(ProgramIR program, string comparator_name, bool ascending):
+    ParsedFunction function_ir = lookup_named_function_decl(program, comparator_name)
+    if (function_ir.header == '' || function_ir.return_type != 'int' || function_ir.params.length() != 2):
+        return false
+    if (function_ir.params[0].type_name != 'int' || function_ir.params[1].type_name != 'int'):
+        return false
+    if (function_ir.blocks.length() != 1):
+        return false
+    BlockIR block = function_ir.blocks[0]
+    if (block.terminator.kind != 'return' || block.terminator.args.length() != 1):
+        return false
+    LinearInstruction return_op = lookup_block_instruction(block, block.terminator.args[0])
+    if (return_op.kind != 'value' || return_op.detail != 'binary' || return_op.args.length() != 3 || return_op.args[0] != '-'):
+        return false
+    string left_name = function_ir.params[0].name
+    string right_name = function_ir.params[1].name
+    string return_left = resolve_block_identifier_alias_name(block, return_op.args[1])
+    string return_right = resolve_block_identifier_alias_name(block, return_op.args[2])
+    if (ascending):
+        return return_left == left_name && return_right == right_name
+    return return_left == right_name && return_right == left_name
+
 bool function_name_exists(ProgramIR program, string name):
     int name_length = name.length()
     int index = LLVM_PROGRAM_CACHE_FUNCTION_NAMES.length() - 1
@@ -1810,6 +1846,13 @@ int tb_string_literal_data_length(string literal):
     LLVM_STRING_LITERAL_INPUT_BYTES += literal.length()
     string inner = literal.substring(1, literal.length() - 1)
     return inner.length() + 1
+
+bool is_supported_single_char_string_literal(string literal):
+    string inner = literal.substring(1, literal.length() - 1)
+    if (inner.length() != 1):
+        return false
+    string ch = inner[0]
+    return ch == ',' || ch == '-' || ch == ' ' || ch == ':' || ch == ';' || ch == '\t' || ch == '\n' || ch == '\r'
 
 string single_char_string_literal_i8(string literal):
     string inner = literal.substring(1, literal.length() - 1)
@@ -4210,10 +4253,16 @@ string emit_string_method_call_value_instruction(ProgramIR program, ParsedFuncti
     if (method_name == 'index_of' && method_base_type == 'string'):
         if (op.args.length() != 3):
             throw 'bootstrap index_of currently requires one needle argument'
+        LinearInstruction needle_op = lookup_temp_instruction(function_ir, op.args[2])
+        if (needle_op.kind == 'value' && needle_op.detail == 'string' && is_supported_single_char_string_literal(needle_op.args[0])):
+            return '  ' + lhs + ' = call i64 @tb_bootstrap_string_index_of_char(ptr ' + temp_ref(op.args[1]) + ', i8 ' + single_char_string_literal_i8(needle_op.args[0]) + ')'
         return '  ' + lhs + ' = call i64 @tb_bootstrap_string_index_of(ptr ' + temp_ref(op.args[1]) + ', ptr ' + temp_ref(op.args[2]) + ')'
     if (method_name == 'contains' && method_base_type == 'string'):
         if (op.args.length() != 3):
             throw 'bootstrap contains currently requires one needle argument'
+        LinearInstruction needle_op = lookup_temp_instruction(function_ir, op.args[2])
+        if (needle_op.kind == 'value' && needle_op.detail == 'string' && is_supported_single_char_string_literal(needle_op.args[0])):
+            return '  ' + lhs + '.index = call i64 @tb_bootstrap_string_index_of_char(ptr ' + temp_ref(op.args[1]) + ', i8 ' + single_char_string_literal_i8(needle_op.args[0]) + ')\n  ' + lhs + ' = icmp ne i64 ' + temp_ref(op.lhs + '.index') + ', -1'
         return '  ' + lhs + '.index = call i64 @tb_bootstrap_string_index_of(ptr ' + temp_ref(op.args[1]) + ', ptr ' + temp_ref(op.args[2]) + ')\n  ' + lhs + ' = icmp ne i64 ' + temp_ref(op.lhs + '.index') + ', -1'
     if (method_name == 'char_at' && method_base_type == 'string'):
         if (op.args.length() != 3):
@@ -4461,8 +4510,11 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
         if (op.args.length() != 3):
             throw 'unsupported llvm int[] sort arity'
         LinearInstruction comparator = lookup_temp_instruction(function_ir, op.args[2])
-        if (comparator.kind == 'value' && comparator.detail == 'identifier' && comparator.args[0] == 'compare_desc'):
-            return '  ' + lhs + ' = call ptr @tb_bootstrap_int_array_sort_desc(ptr ' + temp_ref(op.args[1]) + ')'
+        if (comparator.kind == 'value' && comparator.detail == 'identifier'):
+            if (is_named_int_order_comparator(program, comparator.args[0], true)):
+                return '  ' + lhs + ' = call ptr @tb_bootstrap_int_array_sort_asc(ptr ' + temp_ref(op.args[1]) + ')'
+            if (is_named_int_order_comparator(program, comparator.args[0], false)):
+                return '  ' + lhs + ' = call ptr @tb_bootstrap_int_array_sort_desc(ptr ' + temp_ref(op.args[1]) + ')'
         if (comparator.kind == 'value' && comparator.detail == 'identifier'):
             register_named_int_sort_comparator(comparator.args[0])
             return '  ' + lhs + ' = call ptr @tb_bootstrap_int_array_sort_by(ptr ' + temp_ref(op.args[1]) + ', ptr ' + llvm_named_int_sort_comparator_symbol(comparator.args[0]) + ')'
@@ -4471,7 +4523,7 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
         if (op.args.length() != 3):
             throw 'unsupported llvm int[] create_prio_q arity'
         LinearInstruction comparator = lookup_temp_instruction(function_ir, op.args[2])
-        if (comparator.kind == 'value' && comparator.detail == 'identifier' && comparator.args[0] == 'compare_desc'):
+        if (comparator.kind == 'value' && comparator.detail == 'identifier' && is_named_int_order_comparator(program, comparator.args[0], false)):
             return '  ' + lhs + ' = call ptr @tb_bootstrap_create_prio_q_int_by(ptr ' + temp_ref(op.args[1]) + ', ptr @tb_bootstrap_cmp_int_desc)'
         if (comparator.kind == 'value' && comparator.detail == 'identifier'):
             register_named_int_sort_comparator(comparator.args[0])
@@ -4996,13 +5048,14 @@ string emit_set_instruction(ProgramIR program, ParsedFunction function_ir, Linea
             lines.push('  store i1 false, ptr ' + managed_slot_ref(source_binding))
         return join_llvm_strings(lines, '\n')
     if (normalize_llvm_type_name(binding.type_name) == 'string[]'):
-        string[] lines = emit_string_array_materialize_if_needed(function_ir, op.args[0], binding.name + '.' + temp_suffix)
+        string[] lines = []
         string stored_value = temp_ref(op.args[0]).substring(0)
         string owned_flag = 'false'.substring(0)
         if (temp_is_string_array(function_ir, op.args[0])):
             if (temp_can_transfer_to_local(function_ir, op.args[0])):
                 owned_flag = 'true'.substring(0)
             else:
+                lines = emit_string_array_materialize_if_needed(function_ir, op.args[0], binding.name + '.' + temp_suffix)
                 stored_value = emit_string_array_owned_value(function_ir, op.args[0], binding.name + '.' + temp_suffix)
                 owned_flag = 'true'.substring(0)
         lines.push('  store ptr ' + stored_value + ', ptr ' + slot_ref(binding.name))

@@ -404,6 +404,31 @@ count.done:
 notfound:
   ret i64 -1
 }
+define private i64 @tb_bootstrap_string_index_of_char(ptr %haystack, i8 %needle) {
+entry:
+  br label %loop.cond
+loop.cond:
+  %char.index = phi i64 [0, %entry], [%next.char.index, %loop.step]
+  %byte.index = phi i64 [0, %entry], [%next.byte.index, %loop.step]
+  %byte.ptr = getelementptr inbounds i8, ptr %haystack, i64 %byte.index
+  %byte.value = load i8, ptr %byte.ptr
+  %is.end = icmp eq i8 %byte.value, 0
+  br i1 %is.end, label %notfound, label %loop.body
+loop.body:
+  %is.match = icmp eq i8 %byte.value, %needle
+  br i1 %is.match, label %found, label %loop.step
+loop.step:
+  %is.cont.mask = and i8 %byte.value, -64
+  %is.cont = icmp eq i8 %is.cont.mask, -128
+  %next.char.bump = add i64 %char.index, 1
+  %next.char.index = select i1 %is.cont, i64 %char.index, i64 %next.char.bump
+  %next.byte.index = add i64 %byte.index, 1
+  br label %loop.cond
+found:
+  ret i64 %char.index
+notfound:
+  ret i64 -1
+}
 define private ptr @tb_bootstrap_trim_left(ptr %src) {
 entry:
   %len = call i64 @strlen(ptr %src)
