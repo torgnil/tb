@@ -1493,6 +1493,52 @@ string[] emit_string_materialize_if_needed(ParsedFunction function_ir, string te
         return ['  ' + emit_string_owned_value(function_ir, temp_name, temp_suffix) + ' = call ptr @tb_retain(ptr ' + temp_ref(temp_name) + ')']
     return ['  ' + emit_string_owned_value(function_ir, temp_name, temp_suffix) + ' = call ptr @tb_bootstrap_string_copy(ptr ' + temp_ref(temp_name) + ')']
 
+string emit_managed_string_value(ParsedFunction function_ir, string temp_name, string temp_suffix):
+    if (temp_needs_backend_free(function_ir, temp_name)):
+        return temp_ref(temp_name)
+    return emit_string_owned_value(function_ir, temp_name, temp_suffix)
+
+bool temp_needs_managed_string_materialize(ParsedFunction function_ir, string temp_name):
+    return temp_is_string(function_ir, temp_name) && !temp_needs_backend_free(function_ir, temp_name)
+
+string emit_map_key_string_value(ParsedFunction function_ir, string temp_name, string temp_suffix):
+    if (temp_needs_backend_free(function_ir, temp_name)):
+        return temp_ref(temp_name)
+    return '%map.key.' + temp_suffix
+
+bool temp_needs_map_key_string_materialize(ParsedFunction function_ir, string temp_name):
+    return temp_is_string(function_ir, temp_name) && !temp_needs_backend_free(function_ir, temp_name)
+
+string[] emit_map_key_string_materialize_if_needed(ParsedFunction function_ir, string temp_name, string temp_suffix):
+    if (temp_needs_backend_free(function_ir, temp_name)):
+        return []
+    if (!temp_is_string(function_ir, temp_name)):
+        return []
+    string key_value = emit_map_key_string_value(function_ir, temp_name, temp_suffix)
+    BindingIR local_binding = string_identifier_local_binding(function_ir, temp_name)
+    if (local_binding.name != ''):
+        string managed_flag = '%map.key.managed.flag.' + temp_suffix
+        string managed_label = 'map.key.managed.' + temp_suffix
+        string copied_label = 'map.key.copied.' + temp_suffix
+        string done_label = 'map.key.done.' + temp_suffix
+        string retained_value = '%map.key.retained.' + temp_suffix
+        string copied_value = '%map.key.copied.value.' + temp_suffix
+        return [
+            '  ' + managed_flag + ' = load i1, ptr ' + managed_slot_ref(local_binding.name),
+            '  br i1 ' + managed_flag + ', label %' + managed_label + ', label %' + copied_label,
+            managed_label + ':',
+            '  ' + retained_value + ' = call ptr @tb_retain(ptr ' + temp_ref(temp_name) + ')',
+            '  br label %' + done_label,
+            copied_label + ':',
+            '  ' + copied_value + ' = call ptr @tb_bootstrap_string_copy(ptr ' + temp_ref(temp_name) + ')',
+            '  br label %' + done_label,
+            done_label + ':',
+            '  ' + key_value + ' = phi ptr [' + retained_value + ', %' + managed_label + '], [' + copied_value + ', %' + copied_label + ']'
+        ]
+    if (temp_is_managed_string(function_ir, temp_name)):
+        return ['  ' + key_value + ' = call ptr @tb_retain(ptr ' + temp_ref(temp_name) + ')']
+    return ['  ' + key_value + ' = call ptr @tb_bootstrap_string_copy(ptr ' + temp_ref(temp_name) + ')']
+
 string emit_string_array_owned_value(ParsedFunction function_ir, string temp_name, string temp_suffix):
     if (temp_needs_backend_free(function_ir, temp_name)):
         return temp_ref(temp_name)
@@ -1603,14 +1649,23 @@ string llvm_map_length_name(string type_name):
 string llvm_map_get_name(string type_name):
     return '@' + llvm_map_suffix(type_name) + '_get'
 
+string llvm_map_get_slice_name(string type_name):
+    return '@' + llvm_map_suffix(type_name) + '_get_slice'
+
 string llvm_map_set_by_key_name(string type_name):
     return '@' + llvm_map_suffix(type_name) + '_set_by_key'
+
+string llvm_map_set_by_slice_name(string type_name):
+    return '@' + llvm_map_suffix(type_name) + '_set_by_slice'
 
 string llvm_map_increment_by_key_name(string type_name):
     return '@' + llvm_map_suffix(type_name) + '_increment_by_key'
 
 string llvm_map_release_by_key_name(string type_name):
     return '@' + llvm_map_suffix(type_name) + '_release_by_key'
+
+string llvm_map_release_by_slice_name(string type_name):
+    return '@' + llvm_map_suffix(type_name) + '_release_by_slice'
 
 string llvm_map_keys_name(string type_name):
     return '@' + llvm_map_suffix(type_name) + '_keys'
@@ -4249,6 +4304,17 @@ string emit_string_method_call_value_instruction(ProgramIR program, ParsedFuncti
         if (method_base_type == 'num'):
             return '  ' + lhs + '.text = call ptr @tb_bootstrap_num_to_string(%tb_bootstrap_num ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = call i64 @tb_bootstrap_hash_string(ptr ' + temp_ref(op.lhs + '.text') + ')\n  call void @tb_release(ptr ' + temp_ref(op.lhs + '.text') + ')'
     if (method_name == 'to_int'):
+        LinearInstruction source_op = lookup_temp_instruction(function_ir, op.args[1])
+        if (source_op.kind == 'value' && source_op.detail == 'method-call' && source_op.args.length() >= 2 && source_op.args[0] == 'substring'):
+            if (source_op.args.length() == 3):
+                return '  ' + lhs + ' = call i64 @tb_bootstrap_to_int_start(ptr ' + temp_ref(source_op.args[1]) + ', i64 ' + temp_ref(source_op.args[2]) + ')'
+            if (source_op.args.length() == 4):
+                return '  ' + lhs + ' = call i64 @tb_bootstrap_to_int_range(ptr ' + temp_ref(source_op.args[1]) + ', i64 ' + temp_ref(source_op.args[2]) + ', i64 ' + temp_ref(source_op.args[3]) + ')'
+        if (source_op.kind == 'value' && source_op.detail == 'call' && !source_op.args.is_empty() && source_op.args[0] == 'substring'):
+            if (source_op.args.length() == 3):
+                return '  ' + lhs + ' = call i64 @tb_bootstrap_to_int_start(ptr ' + temp_ref(source_op.args[1]) + ', i64 ' + temp_ref(source_op.args[2]) + ')'
+            if (source_op.args.length() == 4):
+                return '  ' + lhs + ' = call i64 @tb_bootstrap_to_int_range(ptr ' + temp_ref(source_op.args[1]) + ', i64 ' + temp_ref(source_op.args[2]) + ', i64 ' + temp_ref(source_op.args[3]) + ')'
         return '  ' + lhs + ' = call i64 @tb_bootstrap_to_int(ptr ' + temp_ref(op.args[1]) + ')'
     if (method_name == 'index_of' && method_base_type == 'string'):
         if (op.args.length() != 3):
@@ -4677,7 +4743,12 @@ string emit_index_value_instruction(ParsedFunction function_ir, LinearInstructio
     if (base_type.starts_with('map<')):
         if (normalize_llvm_type_name(map_key_type(base_type)) == 'int'):
             return '  ' + lhs + ' = call ' + llvm_type(map_value_type(base_type)) + ' ' + llvm_map_get_name(base_type) + '(ptr ' + temp_ref(op.args[0]) + ', i64 ' + temp_ref(op.args[1]) + ')'
-        return '  ' + lhs + ' = call ' + llvm_type(map_value_type(base_type)) + ' ' + llvm_map_get_name(base_type) + '(ptr ' + temp_ref(op.args[0]) + ', ptr ' + temp_ref(op.args[1]) + ')'
+        string[] lines = emit_map_key_string_materialize_if_needed(function_ir, op.args[1], 'get.' + op.lhs)
+        string key_value = emit_map_key_string_value(function_ir, op.args[1], 'get.' + op.lhs)
+        lines.push('  ' + lhs + ' = call ' + llvm_type(map_value_type(base_type)) + ' ' + llvm_map_get_name(base_type) + '(ptr ' + temp_ref(op.args[0]) + ', ptr ' + key_value + ')')
+        if (temp_needs_map_key_string_materialize(function_ir, op.args[1])):
+            lines.push('  call void @tb_release(ptr ' + key_value + ')')
+        return join_llvm_strings(lines, '\n')
     throw 'unsupported llvm index base type: ' + lookup_temp_llvm_type(function_ir, op.args[0])
 
 string emit_slice_value_instruction(ParsedFunction function_ir, LinearInstruction op):
@@ -5257,17 +5328,13 @@ string emit_assign_local_add_instruction(ProgramIR program, ParsedFunction funct
             throw 'unsupported llvm assign_local_add global string: ' + binding.name
         string right_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0]))
         string right_value = temp_ref(op.args[0])
-        bool free_right_text = false
         bool release_right = false
         string[] lines = []
-        if (right_type == 'int'):
-            right_value = '%local.add.right.' + temp_suffix
-            lines.push('  ' + right_value + ' = call ptr @tb_bootstrap_int_to_string(i64 ' + temp_ref(op.args[0]) + ')')
-            free_right_text = true
-        else if (right_type == 'string'):
+        bool right_is_int = right_type == 'int'
+        if (right_type == 'string'):
             if (temp_needs_backend_free(function_ir, op.args[0])):
                 release_right = true
-        else:
+        else if (!right_is_int):
             throw 'unsupported llvm assign_local_add right type: ' + right_type
         string left_value = '%local.add.left.' + temp_suffix
         string owned_value = '%local.add.owned.' + temp_suffix
@@ -5278,17 +5345,23 @@ string emit_assign_local_add_instruction(ProgramIR program, ParsedFunction funct
         lines.push('  ' + owned_value + ' = load i1, ptr ' + owned_slot_ref(binding.name))
         lines.push('  br i1 ' + owned_value + ', label %' + consume_label + ', label %' + copy_label)
         lines.push(consume_label + ':')
-        lines.push('  %local.add.consume.' + temp_suffix + ' = call ptr @tb_bootstrap_string_append_consume(ptr ' + left_value + ', ptr ' + right_value + ')')
+        if (right_is_int):
+            lines.push('  %local.add.consume.' + temp_suffix + ' = call ptr @tb_bootstrap_string_append_int_consume(ptr ' + left_value + ', i64 ' + temp_ref(op.args[0]) + ')')
+        else:
+            lines.push('  %local.add.consume.' + temp_suffix + ' = call ptr @tb_bootstrap_string_append_consume(ptr ' + left_value + ', ptr ' + right_value + ')')
         lines.push('  br label %' + done_label)
         lines.push(copy_label + ':')
-        lines.push('  %local.add.copy.' + temp_suffix + ' = call ptr @tb_bootstrap_string_concat(ptr ' + left_value + ', ptr ' + right_value + ')')
+        if (right_is_int):
+            lines.push('  %local.add.copy.' + temp_suffix + ' = call ptr @tb_bootstrap_string_append_int(ptr ' + left_value + ', i64 ' + temp_ref(op.args[0]) + ')')
+        else:
+            lines.push('  %local.add.copy.' + temp_suffix + ' = call ptr @tb_bootstrap_string_concat(ptr ' + left_value + ', ptr ' + right_value + ')')
         lines.push('  br label %' + done_label)
         lines.push(done_label + ':')
         lines.push('  %local.add.result.' + temp_suffix + ' = phi ptr [%local.add.consume.' + temp_suffix + ', %' + consume_label + '], [%local.add.copy.' + temp_suffix + ', %' + copy_label + ']')
         lines.push('  store ptr %local.add.result.' + temp_suffix + ', ptr ' + slot_ref(binding.name))
         lines.push('  store i1 true, ptr ' + owned_slot_ref(binding.name))
         lines.push('  store i1 true, ptr ' + managed_slot_ref(binding.name))
-        if (free_right_text || release_right):
+        if (release_right):
             lines.push('  call void @tb_release(ptr ' + right_value + ')')
         return join_llvm_strings(lines, '\n')
     throw 'unsupported llvm assign_local_add binding type: ' + binding.type_name
@@ -5378,7 +5451,12 @@ string emit_release_index_instruction(ProgramIR program, ParsedFunction function
             return '  ; release_index ' + temp_ref(op.args[0]) + ' ' + temp_ref(op.args[1])
         if (normalize_llvm_type_name(map_key_type(base_type)) == 'int'):
             return '  call void ' + llvm_map_release_by_key_name(base_type) + '(ptr ' + temp_ref(op.args[0]) + ', i64 ' + temp_ref(op.args[1]) + ')'
-        return '  call void ' + llvm_map_release_by_key_name(base_type) + '(ptr ' + temp_ref(op.args[0]) + ', ptr ' + temp_ref(op.args[1]) + ')'
+        string[] lines = emit_map_key_string_materialize_if_needed(function_ir, op.args[1], 'release.' + temp_suffix)
+        string key_value = emit_map_key_string_value(function_ir, op.args[1], 'release.' + temp_suffix)
+        lines.push('  call void ' + llvm_map_release_by_key_name(base_type) + '(ptr ' + temp_ref(op.args[0]) + ', ptr ' + key_value + ')')
+        if (temp_needs_map_key_string_materialize(function_ir, op.args[1])):
+            lines.push('  call void @tb_release(ptr ' + key_value + ')')
+        return join_llvm_strings(lines, '\n')
     return '  ; release_index ' + temp_ref(op.args[0]) + ' ' + temp_ref(op.args[1])
 
 string emit_assign_index_add_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op, string temp_suffix):
@@ -5483,7 +5561,12 @@ string emit_assign_index_instruction(ProgramIR program, ParsedFunction function_
         if (normalize_llvm_type_name(map_key_type(base_type)) == 'int'):
             lines.push('  call void ' + llvm_map_set_by_key_name(base_type) + '(ptr ' + temp_ref(op.args[0]) + ', i64 ' + temp_ref(op.args[1]) + ', ' + llvm_type(value_type) + ' ' + stored_value + ', i1 ' + stored_owned + ')')
         else:
-            lines.push('  call void ' + llvm_map_set_by_key_name(base_type) + '(ptr ' + temp_ref(op.args[0]) + ', ptr ' + temp_ref(op.args[1]) + ', ' + llvm_type(value_type) + ' ' + stored_value + ', i1 ' + stored_owned + ')')
+            for (string line in emit_map_key_string_materialize_if_needed(function_ir, op.args[1], 'assign.' + temp_suffix)):
+                lines.push(line)
+            string key_value = emit_map_key_string_value(function_ir, op.args[1], 'assign.' + temp_suffix)
+            lines.push('  call void ' + llvm_map_set_by_key_name(base_type) + '(ptr ' + temp_ref(op.args[0]) + ', ptr ' + key_value + ', ' + llvm_type(value_type) + ' ' + stored_value + ', i1 ' + stored_owned + ')')
+            if (temp_needs_map_key_string_materialize(function_ir, op.args[1])):
+                lines.push('  call void @tb_release(ptr ' + key_value + ')')
         return join_llvm_strings(lines, '\n')
     return '  ; assign_index ' + temp_ref(op.args[0]) + ' ' + temp_ref(op.args[1]) + ' ' + temp_ref(op.args[2])
 
@@ -5835,6 +5918,19 @@ string globals_init_flag_symbol():
 string globals_init_function_symbol():
     return '@__tb_init_globals'
 
+bool record_global_needs_runtime_init(ProgramIR program, string record_name):
+    RecordDeclIR record_decl = lookup_record_decl(program, record_name)
+    if (record_decl.header == ''):
+        return false
+    for (BindingIR field in record_field_bindings(record_decl)):
+        string field_type = normalize_llvm_type_name(field.type_name)
+        if (field_type == 'string[]' || field_type.starts_with('map<')):
+            return true
+        string nested_record = record_name_from_type(field_type)
+        if (nested_record != '' && record_global_needs_runtime_init(program, nested_record)):
+            return true
+    return false
+
 bool global_has_static_initializer(ProgramIR program, GlobalDeclIR global_decl):
     BindingIR binding = ir_parse_binding_decl(strip_prefix(global_decl.header, 'global '))
     string type_name = normalize_llvm_type_name(binding.type_name)
@@ -5843,6 +5939,8 @@ bool global_has_static_initializer(ProgramIR program, GlobalDeclIR global_decl):
     if (type_name == 'map<string, string[]>'):
         return false
     if (record_name_from_type(type_name) != ''):
+        if (record_global_needs_runtime_init(program, record_name_from_type(type_name))):
+            return false
         LinearInstruction record_op = lookup_global_instruction(global_decl, global_decl.value_name)
         return record_op.kind == 'value' && record_op.detail == 'call' && record_op.args[0] == record_name_from_type(type_name)
     return global_decl.instructions.length() == 1 && global_decl.instructions[0].kind == 'value' && (global_decl.instructions[0].detail == 'int' || global_decl.instructions[0].detail == 'bool' || global_decl.instructions[0].detail == 'num' || global_decl.instructions[0].detail == 'string')
@@ -6635,6 +6733,8 @@ string emit_map_type(string type_name):
     string value_type = normalize_llvm_type_name(map_value_type(type_name))
     if (key_type != 'string' && key_type != 'int'):
         throw 'unsupported llvm map key type: ' + key_type
+    if (key_type == 'string'):
+        return llvm_map_type_name(type_name) + ' = type { i32, i32, ptr, ptr, ptr, ptr, ptr }'
     if (key_type == 'int' && value_type == 'int'):
         return llvm_map_type_name(type_name) + ' = type { i32, i32, ptr, ptr, ptr }'
     return llvm_map_type_name(type_name) + ' = type { i32, ptr, ptr, ptr }'
@@ -6665,13 +6765,20 @@ string[] emit_map_helpers(string type_name):
         lines = replace_llvm_template_lines(lines, '__MAP_FREE_NAME__', llvm_map_free_name(type_name))
         lines = replace_llvm_template_lines(lines, '__MAP_STRUCT__', map_struct)
         return lines
-    string[] lines = read_file('compiler/tb/llvm_helpers/map_base.ll').split_lines()
+    string[] lines = []
+    if (key_type == 'string'):
+        lines = read_file('compiler/tb/llvm_helpers/map_string_key.ll').split_lines()
+    else:
+        lines = read_file('compiler/tb/llvm_helpers/map_base.ll').split_lines()
     lines = replace_llvm_template_lines(lines, '__MAP_NEW_NAME__', llvm_map_new_name(type_name))
     lines = replace_llvm_template_lines(lines, '__MAP_SET_NAME__', llvm_map_set_name(type_name))
     lines = replace_llvm_template_lines(lines, '__MAP_LENGTH_NAME__', llvm_map_length_name(type_name))
     lines = replace_llvm_template_lines(lines, '__MAP_GET_NAME__', llvm_map_get_name(type_name))
+    lines = replace_llvm_template_lines(lines, '__MAP_GET_SLICE_NAME__', llvm_map_get_slice_name(type_name))
     lines = replace_llvm_template_lines(lines, '__MAP_SET_BY_KEY_NAME__', llvm_map_set_by_key_name(type_name))
+    lines = replace_llvm_template_lines(lines, '__MAP_SET_BY_SLICE_NAME__', llvm_map_set_by_slice_name(type_name))
     lines = replace_llvm_template_lines(lines, '__MAP_RELEASE_BY_KEY_NAME__', llvm_map_release_by_key_name(type_name))
+    lines = replace_llvm_template_lines(lines, '__MAP_RELEASE_BY_SLICE_NAME__', llvm_map_release_by_slice_name(type_name))
     lines = replace_llvm_template_lines(lines, '__MAP_KEYS_NAME__', llvm_map_keys_name(type_name))
     lines = replace_llvm_template_lines(lines, '__MAP_VALUES_NAME__', llvm_map_values_name(type_name))
     lines = replace_llvm_template_lines(lines, '__MAP_CLONE_NAME__', llvm_map_clone_name(type_name))
@@ -6680,6 +6787,9 @@ string[] emit_map_helpers(string type_name):
     lines = replace_llvm_template_lines(lines, '__VALUE_LLVM_TYPE__', value_llvm_type)
     lines = replace_llvm_template_lines(lines, '__KEY_LLVM_TYPE__', key_llvm_type)
     lines = replace_llvm_template_lines(lines, '__ZERO_VALUE__', llvm_zero_value(value_type))
+    if (key_type == 'string'):
+        lines = replace_llvm_template_lines(lines, '__MAP_REHASH_INSERT_NAME__', '@' + llvm_map_suffix(type_name) + '_rehash_insert')
+        lines = replace_llvm_template_lines(lines, '__MAP_GROW_NAME__', '@' + llvm_map_suffix(type_name) + '_grow')
 
     string[] key_compare_lines = ['  %key.match = icmp eq i64 %key.value, %key']
     string[] insert_key_lines = ['  store i64 %key, ptr %new.key.slot']
@@ -6690,10 +6800,7 @@ string[] emit_map_helpers(string type_name):
     string[] clone_key_copy_lines = ['  %key.copy = add i64 %key.value, 0']
     string[] free_key_lines = []
     if (key_type == 'string'):
-        key_compare_lines = [
-            '  %cmp = call i32 @strcmp(ptr %key.value, ptr %key)',
-            '  %key.match = icmp eq i32 %cmp, 0'
-        ]
+        key_compare_lines = ['  %key.match = call i1 @tb_bootstrap_managed_string_equals(ptr %key.value, ptr %key)']
         insert_key_lines = [
             '  %insert.key = call ptr @tb_bootstrap_string_copy(ptr %key)',
             '  store ptr %insert.key, ptr %new.key.slot'
@@ -6721,7 +6828,79 @@ string[] emit_map_helpers(string type_name):
         '  ret ptr null',
         '}'
     ]
-    if (value_type == 'int'):
+    if (key_type == 'string' && value_type == 'int'):
+        values_block_lines = [
+            'define private ptr ' + llvm_map_values_name(type_name) + '(ptr %map) {',
+            'entry:',
+            '  %len = call i32 ' + llvm_map_length_name(type_name) + '(ptr %map)',
+            '  %result = call ptr @tb_bootstrap_string_array_new(i32 %len)',
+            '  %order.ptr = getelementptr inbounds ' + map_struct + ', ptr %map, i32 0, i32 6',
+            '  %order = load ptr, ptr %order.ptr',
+            '  %values.ptr = getelementptr inbounds ' + map_struct + ', ptr %map, i32 0, i32 3',
+            '  %values = load ptr, ptr %values.ptr',
+            '  br label %loop.cond',
+            'loop.cond:',
+            '  %index = phi i32 [0, %entry], [%next.index, %loop.step]',
+            '  %keep.loop = icmp slt i32 %index, %len',
+            '  br i1 %keep.loop, label %loop.body, label %done',
+            'loop.body:',
+            '  %order.slot = getelementptr inbounds i32, ptr %order, i32 %index',
+            '  %slot = load i32, ptr %order.slot',
+            '  %value.slot = getelementptr inbounds ' + value_llvm_type + ', ptr %values, i32 %slot',
+            '  %value.raw = load ' + value_llvm_type + ', ptr %value.slot',
+            '  %value.text = call ptr @tb_bootstrap_int_to_string(i64 %value.raw)',
+            '  call void @tb_bootstrap_string_array_set_owned(ptr %result, i32 %index, ptr %value.text, i1 true)',
+            '  br label %loop.step',
+            'loop.step:',
+            '  %next.index = add i32 %index, 1',
+            '  br label %loop.cond',
+            'done:',
+            '  ret ptr %result',
+            '}'
+        ]
+    else if (key_type == 'string' && value_type == 'string'):
+        values_block_lines = [
+            'define private ptr ' + llvm_map_values_name(type_name) + '(ptr %map) {',
+            'entry:',
+            '  %len = call i32 ' + llvm_map_length_name(type_name) + '(ptr %map)',
+            '  %result = call ptr @tb_bootstrap_string_array_new(i32 %len)',
+            '  %order.ptr = getelementptr inbounds ' + map_struct + ', ptr %map, i32 0, i32 6',
+            '  %order = load ptr, ptr %order.ptr',
+            '  %values.ptr = getelementptr inbounds ' + map_struct + ', ptr %map, i32 0, i32 3',
+            '  %values = load ptr, ptr %values.ptr',
+            '  %owned.ptr = getelementptr inbounds ' + map_struct + ', ptr %map, i32 0, i32 4',
+            '  %owned = load ptr, ptr %owned.ptr',
+            '  br label %loop.cond',
+            'loop.cond:',
+            '  %index = phi i32 [0, %entry], [%next.index, %loop.step]',
+            '  %keep.loop = icmp slt i32 %index, %len',
+            '  br i1 %keep.loop, label %loop.body, label %done',
+            'loop.body:',
+            '  %order.slot = getelementptr inbounds i32, ptr %order, i32 %index',
+            '  %slot = load i32, ptr %order.slot',
+            '  %value.slot = getelementptr inbounds ' + value_llvm_type + ', ptr %values, i32 %slot',
+            '  %value.raw = load ' + value_llvm_type + ', ptr %value.slot',
+            '  %owned.slot = getelementptr inbounds i8, ptr %owned, i32 %slot',
+            '  %owned.byte = load i8, ptr %owned.slot',
+            '  %value.owned = icmp ne i8 %owned.byte, 0',
+            '  br i1 %value.owned, label %loop.owned, label %loop.borrowed',
+            'loop.owned:',
+            '  %value.copy = call ptr @tb_retain(ptr %value.raw)',
+            '  call void @tb_bootstrap_string_array_set_owned(ptr %result, i32 %index, ptr %value.copy, i1 true)',
+            '  br label %loop.step.occupied',
+            'loop.borrowed:',
+            '  call void @tb_bootstrap_string_array_set_owned(ptr %result, i32 %index, ptr %value.raw, i1 false)',
+            '  br label %loop.step.occupied',
+            'loop.step.occupied:',
+            '  br label %loop.step',
+            'loop.step:',
+            '  %next.index = add i32 %index, 1',
+            '  br label %loop.cond',
+            'done:',
+            '  ret ptr %result',
+            '}'
+        ]
+    else if (value_type == 'int'):
         values_block_lines = [
             'define private ptr ' + llvm_map_values_name(type_name) + '(ptr %map) {',
             'entry:',
@@ -6789,19 +6968,34 @@ string[] emit_map_helpers(string type_name):
     string clone_stored_value = '%value.raw'
     string clone_stored_owned = 'false'
     if (value_type == 'string'):
-        clone_value_copy_lines = [
-            '  %owned.slot = getelementptr inbounds i8, ptr %owned, i32 %index',
-            '  %owned.byte = load i8, ptr %owned.slot',
-            '  %value.owned = icmp ne i8 %owned.byte, 0',
-            '  br i1 %value.owned, label %clone.value.owned, label %clone.value.borrowed',
-            'clone.value.owned:',
-            '  %value.copy = call ptr @tb_retain(ptr %value.raw)',
-            '  br label %clone.value.done',
-            'clone.value.borrowed:',
-            '  br label %clone.value.done',
-            'clone.value.done:',
-            '  %value.clone = phi ptr [%value.copy, %clone.value.owned], [%value.raw, %clone.value.borrowed]'
-        ]
+        if (key_type == 'string'):
+            clone_value_copy_lines = [
+                '  %owned.slot = getelementptr inbounds i8, ptr %owned, i32 %slot',
+                '  %owned.byte = load i8, ptr %owned.slot',
+                '  %value.owned = icmp ne i8 %owned.byte, 0',
+                '  br i1 %value.owned, label %clone.value.owned, label %clone.value.borrowed',
+                'clone.value.owned:',
+                '  %value.copy = call ptr @tb_retain(ptr %value.raw)',
+                '  br label %clone.value.done',
+                'clone.value.borrowed:',
+                '  br label %clone.value.done',
+                'clone.value.done:',
+                '  %value.clone = phi ptr [%value.copy, %clone.value.owned], [%value.raw, %clone.value.borrowed]'
+            ]
+        else:
+            clone_value_copy_lines = [
+                '  %owned.slot = getelementptr inbounds i8, ptr %owned, i32 %index',
+                '  %owned.byte = load i8, ptr %owned.slot',
+                '  %value.owned = icmp ne i8 %owned.byte, 0',
+                '  br i1 %value.owned, label %clone.value.owned, label %clone.value.borrowed',
+                'clone.value.owned:',
+                '  %value.copy = call ptr @tb_retain(ptr %value.raw)',
+                '  br label %clone.value.done',
+                'clone.value.borrowed:',
+                '  br label %clone.value.done',
+                'clone.value.done:',
+                '  %value.clone = phi ptr [%value.copy, %clone.value.owned], [%value.raw, %clone.value.borrowed]'
+            ]
         clone_stored_value = '%value.clone'
         clone_stored_owned = '%value.owned'
     else if (value_type == 'string[]'):
@@ -6859,17 +7053,30 @@ string[] emit_map_helpers(string type_name):
 
     string[] free_value_lines = ['  br label %loop.step']
     if (is_backend_managed_type(value_type)):
-        free_value_lines = [
-            '  %owned.slot = getelementptr inbounds i8, ptr %owned, i32 %index',
-            '  %owned.byte = load i8, ptr %owned.slot',
-            '  %value.owned = icmp ne i8 %owned.byte, 0',
-            '  br i1 %value.owned, label %loop.free.value, label %loop.step',
-            'loop.free.value:',
-            '  %value.slot = getelementptr inbounds ' + value_llvm_type + ', ptr %values, i32 %index',
-            '  %value.raw = load ' + value_llvm_type + ', ptr %value.slot',
-            '  ' + emit_backend_release_ptr(value_type, '%value.raw').trim_left(),
-            '  br label %loop.step'
-        ]
+        if (key_type == 'string'):
+            free_value_lines = [
+                '  %owned.slot = getelementptr inbounds i8, ptr %owned, i32 %slot',
+                '  %owned.byte = load i8, ptr %owned.slot',
+                '  %value.owned = icmp ne i8 %owned.byte, 0',
+                '  br i1 %value.owned, label %loop.free.value, label %loop.step',
+                'loop.free.value:',
+                '  %value.slot = getelementptr inbounds ' + value_llvm_type + ', ptr %values, i32 %slot',
+                '  %value.raw = load ' + value_llvm_type + ', ptr %value.slot',
+                '  ' + emit_backend_release_ptr(value_type, '%value.raw').trim_left(),
+                '  br label %loop.step'
+            ]
+        else:
+            free_value_lines = [
+                '  %owned.slot = getelementptr inbounds i8, ptr %owned, i32 %index',
+                '  %owned.byte = load i8, ptr %owned.slot',
+                '  %value.owned = icmp ne i8 %owned.byte, 0',
+                '  br i1 %value.owned, label %loop.free.value, label %loop.step',
+                'loop.free.value:',
+                '  %value.slot = getelementptr inbounds ' + value_llvm_type + ', ptr %values, i32 %index',
+                '  %value.raw = load ' + value_llvm_type + ', ptr %value.slot',
+                '  ' + emit_backend_release_ptr(value_type, '%value.raw').trim_left(),
+                '  br label %loop.step'
+            ]
     lines = replace_llvm_template_block_lines(lines, '__FREE_VALUE_BLOCK__', free_value_lines)
     return lines
 

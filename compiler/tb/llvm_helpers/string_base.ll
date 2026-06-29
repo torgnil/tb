@@ -151,6 +151,41 @@ entry:
   %data = call ptr @tb_string_clone(ptr %src)
   ret ptr %data
 }
+define private i1 @tb_bootstrap_managed_string_equals(ptr %left, ptr %right) {
+entry:
+  %same.ptr = icmp eq ptr %left, %right
+  br i1 %same.ptr, label %true, label %check.null
+check.null:
+  %left.null = icmp eq ptr %left, null
+  %right.null = icmp eq ptr %right, null
+  %has.null = or i1 %left.null, %right.null
+  br i1 %has.null, label %false, label %lengths
+lengths:
+  %left.fast.len = call i64 @tb_managed_string_length(ptr %left)
+  %right.fast.len = call i64 @tb_managed_string_length(ptr %right)
+  br label %length.compare
+length.compare:
+  %len.match = icmp eq i64 %left.fast.len, %right.fast.len
+  br i1 %len.match, label %loop.cond, label %false
+loop.cond:
+  %index = phi i64 [0, %length.compare], [%next.index, %loop.step]
+  %keep.loop = icmp slt i64 %index, %left.fast.len
+  br i1 %keep.loop, label %loop.body, label %true
+loop.body:
+  %left.ptr = getelementptr inbounds i8, ptr %left, i64 %index
+  %left.ch = load i8, ptr %left.ptr
+  %right.ptr = getelementptr inbounds i8, ptr %right, i64 %index
+  %right.ch = load i8, ptr %right.ptr
+  %match = icmp eq i8 %left.ch, %right.ch
+  br i1 %match, label %loop.step, label %false
+loop.step:
+  %next.index = add i64 %index, 1
+  br label %loop.cond
+true:
+  ret i1 true
+false:
+  ret i1 false
+}
 define private ptr @tb_bootstrap_cached_char(i8 %ch) {
 entry:
   %index = zext i8 %ch to i64
@@ -617,10 +652,222 @@ copy:
   call void @tb_release(ptr %left)
   ret ptr %data
 }
+define private ptr @tb_bootstrap_string_append_int(ptr %left, i64 %value) {
+entry:
+  %left.len = call i64 @strlen(ptr %left)
+  %right.len32 = call i32 (ptr, i64, ptr, ...) @snprintf(ptr null, i64 0, ptr @.fmt.int.text, i64 %value)
+  %right.len = sext i32 %right.len32 to i64
+  %right.bytes = add i64 %right.len, 1
+  %total.len = add i64 %left.len, %right.len
+  %total.bytes = add i64 %total.len, 1
+  %xc.old = load i64, ptr @tb_rt_xc
+  %xc.new = add i64 %xc.old, 1
+  store i64 %xc.new, ptr @tb_rt_xc
+  %xb.old = load i64, ptr @tb_rt_xb
+  %xb.new = add i64 %xb.old, %total.bytes
+  store i64 %xb.new, ptr @tb_rt_xb
+  %data = call ptr @tb_string_new(i64 %total.len)
+  call void @llvm.memcpy.p0.p0.i64(ptr %data, ptr %left, i64 %left.len, i1 false)
+  %right.dst = getelementptr inbounds i8, ptr %data, i64 %left.len
+  %written = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %right.dst, i64 %right.bytes, ptr @.fmt.int.text, i64 %value)
+  %term = getelementptr inbounds i8, ptr %data, i64 %total.len
+  store i8 0, ptr %term
+  ret ptr %data
+}
+define private ptr @tb_bootstrap_string_append_int_consume(ptr %left, i64 %value) {
+entry:
+  %left.len = call i64 @tb_managed_string_length(ptr %left)
+  %right.len32 = call i32 (ptr, i64, ptr, ...) @snprintf(ptr null, i64 0, ptr @.fmt.int.text, i64 %value)
+  %right.len = sext i32 %right.len32 to i64
+  %right.bytes = add i64 %right.len, 1
+  %total.len = add i64 %left.len, %right.len
+  %total.bytes = add i64 %total.len, 1
+  %xc.old = load i64, ptr @tb_rt_xc
+  %xc.new = add i64 %xc.old, 1
+  store i64 %xc.new, ptr @tb_rt_xc
+  %xb.old = load i64, ptr @tb_rt_xb
+  %xb.new = add i64 %xb.old, %total.bytes
+  store i64 %xb.new, ptr @tb_rt_xb
+  %header = getelementptr inbounds i8, ptr %left, i64 -24
+  %refcount.ptr = getelementptr inbounds %tb_bootstrap_rc_header, ptr %header, i32 0, i32 1
+  %refcount = load i64, ptr %refcount.ptr
+  %is.unique = icmp eq i64 %refcount, 1
+  br i1 %is.unique, label %reuse, label %copy
+reuse:
+  %total.size = add i64 %total.len, 25
+  %realloced = call ptr @realloc(ptr %header, i64 %total.size)
+  %data.reuse = getelementptr inbounds i8, ptr %realloced, i64 24
+  %length.ptr.reuse = getelementptr inbounds %tb_bootstrap_rc_header, ptr %realloced, i32 0, i32 2
+  store i64 %total.len, ptr %length.ptr.reuse
+  %right.dst.reuse = getelementptr inbounds i8, ptr %data.reuse, i64 %left.len
+  %written.reuse = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %right.dst.reuse, i64 %right.bytes, ptr @.fmt.int.text, i64 %value)
+  %term.reuse = getelementptr inbounds i8, ptr %data.reuse, i64 %total.len
+  store i8 0, ptr %term.reuse
+  ret ptr %data.reuse
+copy:
+  %data = call ptr @tb_string_new(i64 %total.len)
+  call void @llvm.memcpy.p0.p0.i64(ptr %data, ptr %left, i64 %left.len, i1 false)
+  %right.dst = getelementptr inbounds i8, ptr %data, i64 %left.len
+  %written = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %right.dst, i64 %right.bytes, ptr @.fmt.int.text, i64 %value)
+  %term = getelementptr inbounds i8, ptr %data, i64 %total.len
+  store i8 0, ptr %term
+  call void @tb_release(ptr %left)
+  ret ptr %data
+}
 define private i64 @tb_bootstrap_to_int(ptr %src) {
 entry:
   %value = call i64 @strtoll(ptr %src, ptr null, i32 10)
   ret i64 %value
+}
+define private i64 @tb_bootstrap_to_int_start(ptr %src, i64 %start) {
+entry:
+  %len = call i64 @strlen(ptr %src)
+  %start.negative = icmp slt i64 %start, 0
+  %start.from.end = add i64 %len, %start
+  %start.adjusted = select i1 %start.negative, i64 %start.from.end, i64 %start
+  %start.before.zero = icmp slt i64 %start.adjusted, 0
+  %start.clamped.low = select i1 %start.before.zero, i64 0, i64 %start.adjusted
+  %start.past.end = icmp sgt i64 %start.clamped.low, %len
+  %index.start = select i1 %start.past.end, i64 %len, i64 %start.clamped.low
+  br label %skip.cond
+skip.cond:
+  %skip.index = phi i64 [%index.start, %entry], [%skip.next, %skip.step]
+  %skip.more = icmp slt i64 %skip.index, %len
+  br i1 %skip.more, label %skip.body, label %sign.check
+skip.body:
+  %skip.ptr = getelementptr inbounds i8, ptr %src, i64 %skip.index
+  %skip.ch = load i8, ptr %skip.ptr
+  %is.space = icmp eq i8 %skip.ch, 32
+  %is.tab = icmp eq i8 %skip.ch, 9
+  %is.nl = icmp eq i8 %skip.ch, 10
+  %is.cr = icmp eq i8 %skip.ch, 13
+  %is.ws.a = or i1 %is.space, %is.tab
+  %is.ws.b = or i1 %is.nl, %is.cr
+  %is.ws = or i1 %is.ws.a, %is.ws.b
+  br i1 %is.ws, label %skip.step, label %sign.check
+skip.step:
+  %skip.next = add i64 %skip.index, 1
+  br label %skip.cond
+sign.check:
+  %parse.start = phi i64 [%skip.index, %skip.body], [%skip.index, %skip.cond]
+  %has.sign.char = icmp slt i64 %parse.start, %len
+  br i1 %has.sign.char, label %sign.body, label %parse.init
+sign.body:
+  %sign.ptr = getelementptr inbounds i8, ptr %src, i64 %parse.start
+  %sign.ch = load i8, ptr %sign.ptr
+  %is.minus = icmp eq i8 %sign.ch, 45
+  %is.plus = icmp eq i8 %sign.ch, 43
+  %is.signed = or i1 %is.minus, %is.plus
+  %parse.index.start = select i1 %is.signed, i64 %parse.start, i64 %parse.start
+  %parse.index.next = add i64 %parse.start, 1
+  %parse.index = select i1 %is.signed, i64 %parse.index.next, i64 %parse.index.start
+  br label %parse.init
+parse.init:
+  %negative = phi i1 [false, %sign.check], [%is.minus, %sign.body]
+  %index0 = phi i64 [%parse.start, %sign.check], [%parse.index, %sign.body]
+  br label %parse.cond
+parse.cond:
+  %index = phi i64 [%index0, %parse.init], [%next.index, %parse.step]
+  %value = phi i64 [0, %parse.init], [%next.value, %parse.step]
+  %keep.loop = icmp slt i64 %index, %len
+  br i1 %keep.loop, label %parse.body, label %parse.done
+parse.body:
+  %digit.ptr = getelementptr inbounds i8, ptr %src, i64 %index
+  %digit.ch = load i8, ptr %digit.ptr
+  %digit.low = icmp sge i8 %digit.ch, 48
+  %digit.high = icmp sle i8 %digit.ch, 57
+  %is.digit = and i1 %digit.low, %digit.high
+  br i1 %is.digit, label %parse.step, label %parse.done
+parse.step:
+  %digit.value = sub i8 %digit.ch, 48
+  %digit.i64 = sext i8 %digit.value to i64
+  %value.times10 = mul i64 %value, 10
+  %next.value = add i64 %value.times10, %digit.i64
+  %next.index = add i64 %index, 1
+  br label %parse.cond
+parse.done:
+  %signed.value = sub i64 0, %value
+  %result = select i1 %negative, i64 %signed.value, i64 %value
+  ret i64 %result
+}
+define private i64 @tb_bootstrap_to_int_range(ptr %src, i64 %start, i64 %end) {
+entry:
+  %len = call i64 @strlen(ptr %src)
+  %start.negative = icmp slt i64 %start, 0
+  %start.from.end = add i64 %len, %start
+  %start.adjusted = select i1 %start.negative, i64 %start.from.end, i64 %start
+  %start.before.zero = icmp slt i64 %start.adjusted, 0
+  %start.clamped.low = select i1 %start.before.zero, i64 0, i64 %start.adjusted
+  %start.past.end = icmp sgt i64 %start.clamped.low, %len
+  %start.clamped = select i1 %start.past.end, i64 %len, i64 %start.clamped.low
+  %end.negative = icmp slt i64 %end, 0
+  %end.from.end = add i64 %len, %end
+  %end.adjusted = select i1 %end.negative, i64 %end.from.end, i64 %end
+  %end.before.zero = icmp slt i64 %end.adjusted, 0
+  %end.clamped.low = select i1 %end.before.zero, i64 0, i64 %end.adjusted
+  %end.past.end = icmp sgt i64 %end.clamped.low, %len
+  %end.clamped.high = select i1 %end.past.end, i64 %len, i64 %end.clamped.low
+  %end.before.start = icmp slt i64 %end.clamped.high, %start.clamped
+  %limit = select i1 %end.before.start, i64 %start.clamped, i64 %end.clamped.high
+  br label %skip.cond
+skip.cond:
+  %skip.index = phi i64 [%start.clamped, %entry], [%skip.next, %skip.step]
+  %skip.more = icmp slt i64 %skip.index, %limit
+  br i1 %skip.more, label %skip.body, label %sign.check
+skip.body:
+  %skip.ptr = getelementptr inbounds i8, ptr %src, i64 %skip.index
+  %skip.ch = load i8, ptr %skip.ptr
+  %is.space = icmp eq i8 %skip.ch, 32
+  %is.tab = icmp eq i8 %skip.ch, 9
+  %is.nl = icmp eq i8 %skip.ch, 10
+  %is.cr = icmp eq i8 %skip.ch, 13
+  %is.ws.a = or i1 %is.space, %is.tab
+  %is.ws.b = or i1 %is.nl, %is.cr
+  %is.ws = or i1 %is.ws.a, %is.ws.b
+  br i1 %is.ws, label %skip.step, label %sign.check
+skip.step:
+  %skip.next = add i64 %skip.index, 1
+  br label %skip.cond
+sign.check:
+  %parse.start = phi i64 [%skip.index, %skip.body], [%skip.index, %skip.cond]
+  %has.sign.char = icmp slt i64 %parse.start, %limit
+  br i1 %has.sign.char, label %sign.body, label %parse.init
+sign.body:
+  %sign.ptr = getelementptr inbounds i8, ptr %src, i64 %parse.start
+  %sign.ch = load i8, ptr %sign.ptr
+  %is.minus = icmp eq i8 %sign.ch, 45
+  %is.plus = icmp eq i8 %sign.ch, 43
+  %is.signed = or i1 %is.minus, %is.plus
+  %parse.index.next = add i64 %parse.start, 1
+  %parse.index = select i1 %is.signed, i64 %parse.index.next, i64 %parse.start
+  br label %parse.init
+parse.init:
+  %negative = phi i1 [false, %sign.check], [%is.minus, %sign.body]
+  %index0 = phi i64 [%parse.start, %sign.check], [%parse.index, %sign.body]
+  br label %parse.cond
+parse.cond:
+  %index = phi i64 [%index0, %parse.init], [%next.index, %parse.step]
+  %value = phi i64 [0, %parse.init], [%next.value, %parse.step]
+  %keep.loop = icmp slt i64 %index, %limit
+  br i1 %keep.loop, label %parse.body, label %parse.done
+parse.body:
+  %digit.ptr = getelementptr inbounds i8, ptr %src, i64 %index
+  %digit.ch = load i8, ptr %digit.ptr
+  %digit.low = icmp sge i8 %digit.ch, 48
+  %digit.high = icmp sle i8 %digit.ch, 57
+  %is.digit = and i1 %digit.low, %digit.high
+  br i1 %is.digit, label %parse.step, label %parse.done
+parse.step:
+  %digit.value = sub i8 %digit.ch, 48
+  %digit.i64 = sext i8 %digit.value to i64
+  %value.times10 = mul i64 %value, 10
+  %next.value = add i64 %value.times10, %digit.i64
+  %next.index = add i64 %index, 1
+  br label %parse.cond
+parse.done:
+  %signed.value = sub i64 0, %value
+  %result = select i1 %negative, i64 %signed.value, i64 %value
+  ret i64 %result
 }
 define private ptr @tb_bootstrap_int_to_string(i64 %value) {
 entry:
@@ -719,6 +966,51 @@ body:
   br label %loop
 exit:
   ret i64 %hash
+}
+define private i64 @tb_bootstrap_hash_string_range(ptr %value, i64 %start, i64 %end) {
+entry:
+  br label %loop
+loop:
+  %index = phi i64 [%start, %entry], [%next.index, %body]
+  %hash = phi i64 [5381, %entry], [%next.hash, %body]
+  %done = icmp sge i64 %index, %end
+  br i1 %done, label %exit, label %body
+body:
+  %char.ptr = getelementptr inbounds i8, ptr %value, i64 %index
+  %char = load i8, ptr %char.ptr
+  %char.ext = zext i8 %char to i64
+  %hash.mul = mul i64 %hash, 33
+  %next.hash = add i64 %hash.mul, %char.ext
+  %next.index = add i64 %index, 1
+  br label %loop
+exit:
+  ret i64 %hash
+}
+define private i1 @tb_bootstrap_managed_string_equals_range(ptr %managed, ptr %src, i64 %start, i64 %end) {
+entry:
+  %len = call i64 @tb_managed_string_length(ptr %managed)
+  %range.len = sub i64 %end, %start
+  %len.match = icmp eq i64 %len, %range.len
+  br i1 %len.match, label %loop.cond, label %false
+loop.cond:
+  %index = phi i64 [0, %entry], [%next.index, %loop.step]
+  %keep.loop = icmp slt i64 %index, %len
+  br i1 %keep.loop, label %loop.body, label %true
+loop.body:
+  %managed.ptr = getelementptr inbounds i8, ptr %managed, i64 %index
+  %managed.ch = load i8, ptr %managed.ptr
+  %src.index = add i64 %start, %index
+  %src.ptr = getelementptr inbounds i8, ptr %src, i64 %src.index
+  %src.ch = load i8, ptr %src.ptr
+  %match = icmp eq i8 %managed.ch, %src.ch
+  br i1 %match, label %loop.step, label %false
+loop.step:
+  %next.index = add i64 %index, 1
+  br label %loop.cond
+true:
+  ret i1 true
+false:
+  ret i1 false
 }
 define private i64 @tb_bootstrap_hash_int(i64 %value) {
 entry:
