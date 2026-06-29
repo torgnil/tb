@@ -256,20 +256,45 @@ done:
 }
 define private ptr @tb_bootstrap_split_lines(ptr %src) {
 entry:
-  %array = call ptr @tb_bootstrap_split_char(ptr %src, i8 10)
-  %len = call i32 @tb_bootstrap_string_array_length(ptr %array)
-  %has.items = icmp sgt i32 %len, 0
-  br i1 %has.items, label %check.last, label %done
-check.last:
-  %last.index = sub i32 %len, 1
-  %last.item = call ptr @tb_bootstrap_string_array_get(ptr %array, i32 %last.index)
-  %last.len = call i64 @strlen(ptr %last.item)
-  %drop.last = icmp eq i64 %last.len, 0
-  br i1 %drop.last, label %trim, label %done
-trim:
-  call void @tb_bootstrap_string_array_release_slot(ptr %array, i32 %last.index)
-  %len.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 0
-  store i32 %last.index, ptr %len.ptr
+  %array = call ptr @tb_bootstrap_string_array_new(i32 0)
+  br label %loop.cond
+loop.cond:
+  %start = phi ptr [%src, %entry], [%next.start.sep, %emit.sep], [%start.keep.char, %step.char]
+  %cursor = phi ptr [%src, %entry], [%next.cursor.sep, %emit.sep], [%next.cursor.char, %step.char]
+  %ch = load i8, ptr %cursor
+  %is.end = icmp eq i8 %ch, 0
+  br i1 %is.end, label %finish, label %loop.body
+loop.body:
+  %is.sep = icmp eq i8 %ch, 10
+  br i1 %is.sep, label %emit.sep, label %step.char
+emit.sep:
+  %start.int.sep = ptrtoint ptr %start to i64
+  %cursor.int.sep = ptrtoint ptr %cursor to i64
+  %segment.len.sep = sub i64 %cursor.int.sep, %start.int.sep
+  %segment.data.sep = call ptr @tb_string_new(i64 %segment.len.sep)
+  call void @llvm.memcpy.p0.p0.i64(ptr %segment.data.sep, ptr %start, i64 %segment.len.sep, i1 false)
+  %segment.term.sep = getelementptr inbounds i8, ptr %segment.data.sep, i64 %segment.len.sep
+  store i8 0, ptr %segment.term.sep
+  %pushed.sep = call i32 @tb_bootstrap_string_array_push(ptr %array, ptr %segment.data.sep, i1 true)
+  %next.cursor.sep = getelementptr inbounds i8, ptr %cursor, i64 1
+  %next.start.sep = getelementptr inbounds i8, ptr %cursor, i64 1
+  br label %loop.cond
+step.char:
+  %start.keep.char = getelementptr inbounds i8, ptr %start, i64 0
+  %next.cursor.char = getelementptr inbounds i8, ptr %cursor, i64 1
+  br label %loop.cond
+finish:
+  %has.tail = icmp ne ptr %cursor, %start
+  br i1 %has.tail, label %emit.tail, label %done
+emit.tail:
+  %start.int.tail = ptrtoint ptr %start to i64
+  %cursor.int.tail = ptrtoint ptr %cursor to i64
+  %segment.len.tail = sub i64 %cursor.int.tail, %start.int.tail
+  %segment.data.tail = call ptr @tb_string_new(i64 %segment.len.tail)
+  call void @llvm.memcpy.p0.p0.i64(ptr %segment.data.tail, ptr %start, i64 %segment.len.tail, i1 false)
+  %segment.term.tail = getelementptr inbounds i8, ptr %segment.data.tail, i64 %segment.len.tail
+  store i8 0, ptr %segment.term.tail
+  %pushed.tail = call i32 @tb_bootstrap_string_array_push(ptr %array, ptr %segment.data.tail, i1 true)
   br label %done
 done:
   ret ptr %array

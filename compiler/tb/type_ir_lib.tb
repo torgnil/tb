@@ -16,7 +16,7 @@ import ir_lib;
 import lowerer;
 import foreign_modules;
 
-record FunctionSigIR(string name, string return_type);
+record FunctionSigIR(string name, string return_type, string[] param_types);
 record RecordFieldIR(string record_name, string field_name, string field_type);
 record EnumTypeIR(string name, string[] values);
 record RefineInstructionsResult(LinearInstruction[] instructions, string[] temp_types);
@@ -126,8 +126,27 @@ string global_type_from_header(string header):
     string binding = strip_prefix(header, 'global ')
     return ir_parse_binding_decl(binding).type_name
 
+bool is_thread_pool_type(string type_name):
+    return type_name == 'thread_pool'
+
+bool is_future_type(string type_name):
+    return type_name.starts_with('future<') && type_name.ends_with('>')
+
+string future_value_type(string type_name):
+    if (is_future_type(type_name)):
+        return type_name.substring(7, type_name.length() - 1)
+    return 'unknown'
+
+bool is_thread_pool_submit_arg_type(string type_name):
+    type_name = normalize_llvm_type_name(type_name)
+    return type_name == 'int' || type_name == 'bool' || type_name == 'string'
+
+bool is_thread_pool_submit_return_type(string type_name):
+    type_name = normalize_llvm_type_name(type_name)
+    return type_name == 'int' || type_name == 'bool' || type_name == 'string'
+
 string record_name_from_type(string type_name):
-    if (type_name == '' || type_name == 'int' || type_name == 'bool' || type_name == 'num' || type_name == 'string' || type_name == 'file'):
+    if (type_name == '' || type_name == 'int' || type_name == 'bool' || type_name == 'num' || type_name == 'string' || type_name == 'file' || is_thread_pool_type(type_name) || is_future_type(type_name)):
         return ''
     if (type_name.ends_with('[]')):
         return ''
@@ -231,6 +250,16 @@ string lookup_function_return_type(FunctionSigIR[] functions, string name):
         index -= 1
     return 'unknown'
 
+FunctionSigIR lookup_function_sig(FunctionSigIR[] functions, string name):
+    int name_length = name.length()
+    int index = functions.length() - 1
+    while (index >= 0):
+        FunctionSigIR function_sig = functions[index]
+        if (function_sig.name.length() == name_length && function_sig.name == name):
+            return FunctionSigIR(function_sig.name.substring(0), function_sig.return_type.substring(0), clone_string_array(function_sig.param_types))
+        index -= 1
+    return FunctionSigIR('', 'unknown', [])
+
 string lookup_record_field_type(RecordFieldIR[] fields, string record_name, string field_name):
     if (TYPE_IR_PROFILE_ACTIVE != 0):
         TYPE_IR_LOOKUP_RECORD_FIELD_CALLS += 1
@@ -305,8 +334,21 @@ LinearInstruction[] set_temp_type(LinearInstruction[] instructions, string name,
 FunctionSigIR[] collect_function_sigs(ParsedFunction[] functions):
     FunctionSigIR[] result = []
     for (ParsedFunction function_ir in functions):
-        result.push(FunctionSigIR(function_name_from_header(function_ir.header), function_return_type_from_header(function_ir.header)))
+        string[] param_types = []
+        for (BindingIR param in function_ir.params):
+            param_types.push(param.type_name)
+        result.push(FunctionSigIR(function_name_from_header(function_ir.header), function_return_type_from_header(function_ir.header), param_types))
     return result
+
+string thread_pool_submit_result_type(FunctionSigIR[] functions, string function_name):
+    FunctionSigIR function_sig = lookup_function_sig(functions, function_name)
+    if (function_sig.name == ''):
+        throw 'thread_pool.submit currently requires a top-level named function'
+    if (function_sig.param_types.length() != 1 || !is_thread_pool_submit_arg_type(function_sig.param_types[0])):
+        throw 'thread_pool.submit currently requires a function with signature T fn(U) where T is int, bool or string and U is int, bool or string'
+    if (!is_thread_pool_submit_return_type(function_sig.return_type)):
+        throw 'thread_pool.submit currently requires a function with signature T fn(U) where T is int, bool or string and U is int, bool or string'
+    return 'future<' + function_sig.return_type + '>'
 
 RecordFieldIR[] collect_record_fields(RecordDeclIR[] records):
     RecordFieldIR[] result = []
@@ -587,6 +629,8 @@ string infer_call_type(string name, FunctionSigIR[] functions):
     string foreign_return_type = foreign_function_return_type(name)
     if (foreign_return_type != 'unknown'):
         return foreign_return_type
+    if (name == 'thread_pool'):
+        return 'thread_pool'
     if (name == 'length'):
         return 'int'
     if (name == 'range'):
@@ -678,6 +722,8 @@ string infer_call_type_cached(string name, FunctionSigIR[] functions, string[] c
     return result_type
 
 string infer_method_call_type(string method_name, string base_type, FunctionSigIR[] functions):
+    if (method_name == 'await' && is_future_type(base_type)):
+        return future_value_type(base_type)
     if (method_name == 'length'):
         return 'int'
     if (method_name == 'add' && base_type.starts_with('set<')):
@@ -759,6 +805,8 @@ bool is_managed_ir_type(string type_name):
     if (type_name == '' || type_name == 'unknown' || type_name == 'int' || type_name == 'bool' || type_name == 'num'):
         return false
     if (type_name == 'string'):
+        return true
+    if (is_thread_pool_type(type_name) || is_future_type(type_name)):
         return true
     if (type_name.ends_with('[]')):
         return true
@@ -920,6 +968,10 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
         if (op.args.length() < 2):
             return op
         string method_name = op.args[0]
+        string base_type = lookup_temp_type_slot(temp_types, op.args[1])
+        if (method_name == 'submit' && base_type == 'thread_pool' && op.args.length() == 4):
+            string future_type = thread_pool_submit_result_type(functions, op.args[2])
+            return refined_value_op(op, future_type, refine_ownership_mode(op, future_type))
         if (method_name == 'length' || method_name == 'index_of' || method_name == 'hash'):
             string result_type = infer_method_call_type(method_name, 'unknown', functions)
             return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
@@ -929,7 +981,6 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             return refined_value_op(op, 'string', 'managed')
         if (method_name == 'split' || method_name == 'split_lines'):
             return refined_value_op(op, 'string[]', 'owned')
-        string base_type = lookup_temp_type_slot(temp_types, op.args[1])
         string result_type = infer_method_call_type_cached(method_name, base_type, functions, TYPE_IR_FUNCTION_TYPE_CACHE_NAMES, TYPE_IR_FUNCTION_TYPE_CACHE_VALUES)
         return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
     if (op.detail == 'method-call-lambda'):

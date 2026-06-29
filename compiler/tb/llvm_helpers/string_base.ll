@@ -49,6 +49,21 @@ destroy:
 done:
   ret void
 }
+define ptr @tb_runtime_retain(ptr %value) {
+entry:
+  %retained = call ptr @tb_retain(ptr %value)
+  ret ptr %retained
+}
+define void @tb_runtime_release(ptr %value) {
+entry:
+  call void @tb_release(ptr %value)
+  ret void
+}
+define void @tb_runtime_longjmp(ptr %env, i32 %value) noreturn {
+entry:
+  call void @longjmp(ptr %env, i32 %value)
+  unreachable
+}
 define private ptr @tb_string_new(i64 %length) {
 entry:
   %total.size = add i64 %length, 25
@@ -655,8 +670,7 @@ copy:
 define private ptr @tb_bootstrap_string_append_int(ptr %left, i64 %value) {
 entry:
   %left.len = call i64 @strlen(ptr %left)
-  %right.len32 = call i32 (ptr, i64, ptr, ...) @snprintf(ptr null, i64 0, ptr @.fmt.int.text, i64 %value)
-  %right.len = sext i32 %right.len32 to i64
+  %right.len = call i64 @tb_bootstrap_int_decimal_length(i64 %value)
   %right.bytes = add i64 %right.len, 1
   %total.len = add i64 %left.len, %right.len
   %total.bytes = add i64 %total.len, 1
@@ -669,16 +683,13 @@ entry:
   %data = call ptr @tb_string_new(i64 %total.len)
   call void @llvm.memcpy.p0.p0.i64(ptr %data, ptr %left, i64 %left.len, i1 false)
   %right.dst = getelementptr inbounds i8, ptr %data, i64 %left.len
-  %written = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %right.dst, i64 %right.bytes, ptr @.fmt.int.text, i64 %value)
-  %term = getelementptr inbounds i8, ptr %data, i64 %total.len
-  store i8 0, ptr %term
+  call void @tb_bootstrap_write_int_decimal(ptr %right.dst, i64 %value)
   ret ptr %data
 }
 define private ptr @tb_bootstrap_string_append_int_consume(ptr %left, i64 %value) {
 entry:
   %left.len = call i64 @tb_managed_string_length(ptr %left)
-  %right.len32 = call i32 (ptr, i64, ptr, ...) @snprintf(ptr null, i64 0, ptr @.fmt.int.text, i64 %value)
-  %right.len = sext i32 %right.len32 to i64
+  %right.len = call i64 @tb_bootstrap_int_decimal_length(i64 %value)
   %right.bytes = add i64 %right.len, 1
   %total.len = add i64 %left.len, %right.len
   %total.bytes = add i64 %total.len, 1
@@ -700,17 +711,13 @@ reuse:
   %length.ptr.reuse = getelementptr inbounds %tb_bootstrap_rc_header, ptr %realloced, i32 0, i32 2
   store i64 %total.len, ptr %length.ptr.reuse
   %right.dst.reuse = getelementptr inbounds i8, ptr %data.reuse, i64 %left.len
-  %written.reuse = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %right.dst.reuse, i64 %right.bytes, ptr @.fmt.int.text, i64 %value)
-  %term.reuse = getelementptr inbounds i8, ptr %data.reuse, i64 %total.len
-  store i8 0, ptr %term.reuse
+  call void @tb_bootstrap_write_int_decimal(ptr %right.dst.reuse, i64 %value)
   ret ptr %data.reuse
 copy:
   %data = call ptr @tb_string_new(i64 %total.len)
   call void @llvm.memcpy.p0.p0.i64(ptr %data, ptr %left, i64 %left.len, i1 false)
   %right.dst = getelementptr inbounds i8, ptr %data, i64 %left.len
-  %written = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %right.dst, i64 %right.bytes, ptr @.fmt.int.text, i64 %value)
-  %term = getelementptr inbounds i8, ptr %data, i64 %total.len
-  store i8 0, ptr %term
+  call void @tb_bootstrap_write_int_decimal(ptr %right.dst, i64 %value)
   call void @tb_release(ptr %left)
   ret ptr %data
 }
@@ -869,10 +876,66 @@ parse.done:
   %result = select i1 %negative, i64 %signed.value, i64 %value
   ret i64 %result
 }
+define private i64 @tb_bootstrap_uint_decimal_length(i64 %value) {
+entry:
+  br label %digits.cond
+digits.cond:
+  %current = phi i64 [%value, %entry], [%next.current, %digits.step]
+  %digits = phi i64 [1, %entry], [%next.digits, %digits.step]
+  %has.more = icmp ugt i64 %current, 9
+  br i1 %has.more, label %digits.step, label %done
+digits.step:
+  %next.current = udiv i64 %current, 10
+  %next.digits = add i64 %digits, 1
+  br label %digits.cond
+done:
+  ret i64 %digits
+}
+define private i64 @tb_bootstrap_int_decimal_length(i64 %value) {
+entry:
+  %is.negative = icmp slt i64 %value, 0
+  %magnitude.neg = sub i64 0, %value
+  %magnitude = select i1 %is.negative, i64 %magnitude.neg, i64 %value
+  %digits = call i64 @tb_bootstrap_uint_decimal_length(i64 %magnitude)
+  %sign.len = select i1 %is.negative, i64 1, i64 0
+  %total.len = add i64 %digits, %sign.len
+  ret i64 %total.len
+}
+define private void @tb_bootstrap_write_int_decimal(ptr %dst, i64 %value) {
+entry:
+  %is.negative = icmp slt i64 %value, 0
+  %magnitude.neg = sub i64 0, %value
+  %magnitude = select i1 %is.negative, i64 %magnitude.neg, i64 %value
+  %digit.count = call i64 @tb_bootstrap_uint_decimal_length(i64 %magnitude)
+  %sign.len = select i1 %is.negative, i64 1, i64 0
+  %total.len = add i64 %digit.count, %sign.len
+  %term = getelementptr inbounds i8, ptr %dst, i64 %total.len
+  store i8 0, ptr %term
+  br label %digits.cond
+digits.cond:
+  %current = phi i64 [%magnitude, %entry], [%next.current, %digits.step]
+  %write.ptr = phi ptr [%term, %entry], [%prev.ptr, %digits.step]
+  %digit = urem i64 %current, 10
+  %digit.ascii = add i64 %digit, 48
+  %digit.byte = trunc i64 %digit.ascii to i8
+  %prev.ptr = getelementptr inbounds i8, ptr %write.ptr, i64 -1
+  store i8 %digit.byte, ptr %prev.ptr
+  %has.more = icmp ugt i64 %current, 9
+  br i1 %has.more, label %digits.step, label %digits.done
+digits.step:
+  %next.current = udiv i64 %current, 10
+  br label %digits.cond
+digits.done:
+  br i1 %is.negative, label %write.sign, label %done
+write.sign:
+  store i8 45, ptr %dst
+  br label %done
+done:
+  ret void
+}
 define private ptr @tb_bootstrap_int_to_string(i64 %value) {
 entry:
-  %len.i32 = call i32 (ptr, i64, ptr, ...) @snprintf(ptr null, i64 0, ptr @.fmt.int.text, i64 %value)
-  %len = sext i32 %len.i32 to i64
+  %len = call i64 @tb_bootstrap_int_decimal_length(i64 %value)
   %bytes = add i64 %len, 1
   %ic.old = load i64, ptr @tb_rt_ic
   %ic.new = add i64 %ic.old, 1
@@ -881,7 +944,7 @@ entry:
   %ib.new = add i64 %ib.old, %bytes
   store i64 %ib.new, ptr @tb_rt_ib
   %data = call ptr @tb_string_new(i64 %len)
-  %written = call i32 (ptr, i64, ptr, ...) @snprintf(ptr %data, i64 %bytes, ptr @.fmt.int.text, i64 %value)
+  call void @tb_bootstrap_write_int_decimal(ptr %data, i64 %value)
   ret ptr %data
 }
 define private i1 @tb_bootstrap_has_flag(ptr %args, ptr %flag) {

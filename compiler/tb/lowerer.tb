@@ -665,6 +665,16 @@ TempIRResult lower_linear_value_ir(Node node, int next_temp):
                 instructions.push(LinearInstruction('value', name, 'unknown', 'unknown', 'method-call-lambda', ['sum_grid_eq', base.name, mapped.children[1].value, grid.name, row.name, col.name, needle.name]))
                 return TempIRResult(name, instructions, needle.next_temp + 1)
         TempIRResult base = lower_linear_value_ir(node.children[0], next_temp)
+        if (node.value == 'submit'):
+            if (node.children.length() != 3):
+                throw 'thread_pool.submit currently requires exactly a function name and one argument'
+            if (node.children[1].kind != 'Identifier'):
+                throw 'thread_pool.submit currently requires a top-level named function'
+            TempIRResult arg = lower_linear_value_ir(node.children[2], base.next_temp)
+            string name = temp_name(arg.next_temp)
+            LinearInstruction[] instructions = append_instructions(base.instructions, arg.instructions)
+            instructions.push(LinearInstruction('value', name, 'unknown', 'owned', 'method-call', ['submit', base.name, node.children[1].value, arg.name]))
+            return TempIRResult(name, instructions, arg.next_temp + 1)
         if (node.value == 'create_prio_q'):
             if (node.children.length() == 2 && node.children[1].kind == 'Lambda2'):
                 if (is_identifier_subtraction_lambda(node.children[1])):

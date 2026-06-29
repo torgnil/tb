@@ -104,8 +104,38 @@ def run_fixture(
                 f"tb compiler failed for {input_path.name}:\n{compile_result.stdout}{compile_result.stderr}"
             )
 
+        linkflags_path = Path(f"{output_path}.linkflags")
+        cflags_path = Path(f"{output_path}.cflags")
+        csources_path = Path(f"{output_path}.csources")
+        linkflags = linkflags_path.read_text(encoding="utf-8").split() if linkflags_path.exists() else []
+        cflags = cflags_path.read_text(encoding="utf-8").split() if cflags_path.exists() else []
+        objects: list[str] = []
+        if csources_path.exists():
+            platform_os = subprocess.check_output(["uname", "-s"], text=True).strip().lower()
+            platform_arch = subprocess.check_output(["uname", "-m"], text=True).strip()
+            if platform_os == "darwin":
+                platform_os = "macos"
+            platform_suffix = f"{platform_os}_{platform_arch}"
+            for c_source in [line.strip() for line in csources_path.read_text(encoding="utf-8").splitlines() if line.strip()]:
+                resolved_c_source = Path(c_source)
+                if not resolved_c_source.is_absolute():
+                    resolved_c_source = Path.cwd() / resolved_c_source
+                object_dir = resolved_c_source.parent / "lib"
+                object_dir.mkdir(parents=True, exist_ok=True)
+                object_output = object_dir / f"{resolved_c_source.stem}_{platform_suffix}.o"
+                if not object_output.exists():
+                    c_compile_result = subprocess.run(
+                        ["clang", "-c", *cflags, str(resolved_c_source), "-o", str(object_output)],
+                        capture_output=True,
+                        text=True,
+                        check=False,
+                    )
+                    if c_compile_result.returncode != 0:
+                        raise RuntimeError(f"clang C runtime compile failed for {input_path.name}:\n{c_compile_result.stderr}")
+                objects.append(str(object_output))
+
         clang_result = subprocess.run(
-            ["clang", str(output_path), "-o", str(binary_path)],
+            ["clang", str(output_path), *objects, "-o", str(binary_path), *linkflags],
             capture_output=True,
             text=True,
             check=False,

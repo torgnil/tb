@@ -208,6 +208,10 @@ int LLVM_SCAN_NEEDS_HASH = 0;
 int LLVM_SCAN_NEEDS_NUM_HASH = 0;
 int LLVM_SCAN_NEEDS_STRING_HELPERS_OPS = 0;
 int LLVM_SCAN_NEEDS_RUNTIME_GLOBAL_INIT = 0;
+int LLVM_SCAN_NEEDS_THREAD_POOL = 0;
+string[] LLVM_RUNTIME_LINK_FLAGS = [];
+string[] LLVM_RUNTIME_C_FLAGS = [];
+string[] LLVM_RUNTIME_C_SOURCES = [];
 int LLVM_LOOKUP_TEMP_INSTRUCTION_CALLS = 0;
 int LLVM_LOOKUP_TEMP_INSTRUCTION_SLOT_HITS = 0;
 int LLVM_LOOKUP_TEMP_INSTRUCTION_FALLBACK_SCANS = 0;
@@ -292,6 +296,110 @@ string normalize_llvm_type_name(string type_name):
     if (type_name == 'exception'):
         return 'string'
     return type_name
+
+bool is_thread_pool_type_name(string type_name):
+    return normalize_llvm_type_name(type_name) == 'thread_pool'
+
+bool is_future_type_name(string type_name):
+    type_name = normalize_llvm_type_name(type_name)
+    return type_name.starts_with('future<') && type_name.ends_with('>')
+
+string future_value_type_name(string type_name):
+    type_name = normalize_llvm_type_name(type_name)
+    if (is_future_type_name(type_name)):
+        return type_name.substring(7, type_name.length() - 1)
+    return 'unknown'
+
+string[] thread_pool_submit_supported_arg_types():
+    return ['int', 'bool', 'string']
+
+string[] thread_pool_submit_supported_future_types():
+    return ['future<int>', 'future<bool>', 'future<string>']
+
+bool llvm_thread_pool_submit_signature_supported(string future_type, string arg_type):
+    future_type = normalize_llvm_type_name(future_type)
+    arg_type = normalize_llvm_type_name(arg_type)
+    return future_type in thread_pool_submit_supported_future_types() && arg_type in thread_pool_submit_supported_arg_types()
+
+string llvm_thread_pool_submit_name(string future_type, string arg_type):
+    future_type = normalize_llvm_type_name(future_type)
+    arg_type = normalize_llvm_type_name(arg_type)
+    if (!llvm_thread_pool_submit_signature_supported(future_type, arg_type)):
+        return ''
+    if (future_type == 'future<int>' && arg_type == 'int'):
+        return '@tb_thread_pool_submit_i64_i64'
+    if (future_type == 'future<int>' && arg_type == 'bool'):
+        return '@tb_thread_pool_submit_i64_bool'
+    if (future_type == 'future<bool>' && arg_type == 'int'):
+        return '@tb_thread_pool_submit_bool_i64'
+    if (future_type == 'future<bool>' && arg_type == 'bool'):
+        return '@tb_thread_pool_submit_bool_bool'
+    if (future_type == 'future<string>' && arg_type == 'int'):
+        return '@tb_thread_pool_submit_string_i64'
+    if (future_type == 'future<string>' && arg_type == 'bool'):
+        return '@tb_thread_pool_submit_string_bool'
+    if (future_type == 'future<int>' && arg_type == 'string'):
+        return '@tb_thread_pool_submit_i64_string'
+    if (future_type == 'future<bool>' && arg_type == 'string'):
+        return '@tb_thread_pool_submit_bool_string'
+    if (future_type == 'future<string>' && arg_type == 'string'):
+        return '@tb_thread_pool_submit_string_string'
+    return ''
+
+string[] emit_thread_pool_runtime_declarations():
+    return [
+        'declare ptr @tb_thread_pool_new(i64)',
+        'declare ptr @tb_thread_pool_retain(ptr)',
+        'declare void @tb_thread_pool_release(ptr)',
+        'declare ptr @tb_thread_pool_submit_i64_i64(ptr, ptr, i64)',
+        'declare ptr @tb_thread_pool_submit_i64_bool(ptr, ptr, i1)',
+        'declare ptr @tb_thread_pool_submit_i64_string(ptr, ptr, ptr)',
+        'declare ptr @tb_future_i64_retain(ptr)',
+        'declare void @tb_future_i64_release(ptr)',
+        'declare i64 @tb_future_i64_await(ptr)',
+        'declare ptr @tb_thread_pool_submit_bool_i64(ptr, ptr, i64)',
+        'declare ptr @tb_thread_pool_submit_bool_bool(ptr, ptr, i1)',
+        'declare ptr @tb_thread_pool_submit_bool_string(ptr, ptr, ptr)',
+        'declare ptr @tb_future_bool_retain(ptr)',
+        'declare void @tb_future_bool_release(ptr)',
+        'declare i1 @tb_future_bool_await(ptr)',
+        'declare ptr @tb_thread_pool_submit_string_i64(ptr, ptr, i64)',
+        'declare ptr @tb_thread_pool_submit_string_bool(ptr, ptr, i1)',
+        'declare ptr @tb_thread_pool_submit_string_string(ptr, ptr, ptr)',
+        'declare ptr @tb_future_string_retain(ptr)',
+        'declare void @tb_future_string_release(ptr)',
+        'declare ptr @tb_future_string_await(ptr)'
+    ]
+
+void reset_runtime_build_metadata():
+    LLVM_RUNTIME_LINK_FLAGS = []
+    LLVM_RUNTIME_C_FLAGS = []
+    LLVM_RUNTIME_C_SOURCES = []
+
+void configure_runtime_build_metadata(bool needs_thread_pool):
+    reset_runtime_build_metadata()
+    if (needs_thread_pool):
+        LLVM_RUNTIME_LINK_FLAGS.push('-pthread')
+        LLVM_RUNTIME_C_FLAGS.push('-pthread')
+        LLVM_RUNTIME_C_SOURCES.push('compiler/tb/runtime/thread_pool_runtime.c')
+
+string[] llvm_runtime_link_flags():
+    string[] result = []
+    for (string flag in LLVM_RUNTIME_LINK_FLAGS):
+        result.push(flag.substring(0))
+    return result
+
+string[] llvm_runtime_c_flags():
+    string[] result = []
+    for (string flag in LLVM_RUNTIME_C_FLAGS):
+        result.push(flag.substring(0))
+    return result
+
+string[] llvm_runtime_c_sources():
+    string[] result = []
+    for (string source in LLVM_RUNTIME_C_SOURCES):
+        result.push(source.substring(0))
+    return result
 
 void reset_llvm_backend_helper_stats():
     LLVM_BACKEND_PROFILE_ACTIVE = 1
@@ -431,6 +539,7 @@ void reset_llvm_backend_helper_stats():
     LLVM_SCAN_NEEDS_NUM_HASH = 0
     LLVM_SCAN_NEEDS_STRING_HELPERS_OPS = 0
     LLVM_SCAN_NEEDS_RUNTIME_GLOBAL_INIT = 0
+    LLVM_SCAN_NEEDS_THREAD_POOL = 0
     LLVM_LOOKUP_TEMP_INSTRUCTION_CALLS = 0
     LLVM_LOOKUP_TEMP_INSTRUCTION_SLOT_HITS = 0
     LLVM_LOOKUP_TEMP_INSTRUCTION_FALLBACK_SCANS = 0
@@ -829,6 +938,10 @@ string llvm_type(string type_name):
         return 'ptr'
     if (type_name == 'file'):
         return 'ptr'
+    if (is_thread_pool_type_name(type_name)):
+        return 'ptr'
+    if (is_future_type_name(type_name)):
+        return 'ptr'
     if (type_name == 'int[][]'):
         return 'ptr'
     if (type_name == 'string[][]'):
@@ -857,7 +970,7 @@ bool is_scalar_type(string type_name):
 
 bool is_backend_value_type(string type_name):
     type_name = normalize_llvm_type_name(type_name)
-    return type_name == 'void' || type_name == 'int' || type_name == 'bool' || type_name == 'num' || type_name == 'string' || type_name == 'file' || type_name == 'string[]' || type_name == 'string[][]' || type_name == 'bool[]' || type_name == 'int[]' || type_name == 'int[][]' || type_name.starts_with('set<') || type_name.starts_with('prio_q<') || (type_name.ends_with('[]') && record_name_from_type(array_item_type(type_name)) != '') || type_name.starts_with('map<') || record_name_from_type(type_name) != ''
+    return type_name == 'void' || type_name == 'int' || type_name == 'bool' || type_name == 'num' || type_name == 'string' || type_name == 'file' || is_thread_pool_type_name(type_name) || is_future_type_name(type_name) || type_name == 'string[]' || type_name == 'string[][]' || type_name == 'bool[]' || type_name == 'int[]' || type_name == 'int[][]' || type_name.starts_with('set<') || type_name.starts_with('prio_q<') || (type_name.ends_with('[]') && record_name_from_type(array_item_type(type_name)) != '') || type_name.starts_with('map<') || record_name_from_type(type_name) != ''
 
 string function_name_from_header_local(string header):
     string signature = strip_prefix(strip_cached_prefix_local(header), 'func ')
@@ -1323,7 +1436,7 @@ void require_backend_value_type(string type_name, string context):
 
 bool is_backend_managed_type(string type_name):
     type_name = normalize_llvm_type_name(type_name)
-    return type_name == 'string' || type_name == 'string[]' || type_name == 'bool[]' || type_name == 'int[]' || type_name == 'int[][]' || type_name.starts_with('set<') || (type_name.ends_with('[]') && record_name_from_type(array_item_type(type_name)) != '') || type_name.starts_with('map<') || record_name_from_type(type_name) != ''
+    return type_name == 'string' || is_thread_pool_type_name(type_name) || is_future_type_name(type_name) || type_name == 'string[]' || type_name == 'bool[]' || type_name == 'int[]' || type_name == 'int[][]' || type_name.starts_with('set<') || (type_name.ends_with('[]') && record_name_from_type(array_item_type(type_name)) != '') || type_name.starts_with('map<') || record_name_from_type(type_name) != ''
 
 bool temp_has_owned_semantics(ParsedFunction function_ir, string temp_name):
     LinearInstruction op = lookup_temp_instruction(function_ir, temp_name)
@@ -1422,6 +1535,10 @@ bool temp_needs_backend_free(ParsedFunction function_ir, string temp_name):
         return false
     if (op.kind != 'value'):
         return false
+    if (result_type == 'thread_pool'):
+        return op.detail == 'call'
+    if (result_type == 'future<int>' || result_type == 'future<bool>' || result_type == 'future<string>'):
+        return op.detail == 'method-call'
     if (result_type == 'string[]'):
         return op.detail == 'array' || op.detail == 'call'
     if (result_type == 'string[][]'):
@@ -1454,6 +1571,14 @@ bool temp_can_transfer_to_local(ParsedFunction function_ir, string temp_name):
 
 string emit_backend_release_ptr(string type_name, string ptr_name):
     type_name = normalize_llvm_type_name(type_name)
+    if (is_thread_pool_type_name(type_name)):
+        return '  call void @tb_thread_pool_release(ptr ' + ptr_name + ')'
+    if (type_name == 'future<int>'):
+        return '  call void @tb_future_i64_release(ptr ' + ptr_name + ')'
+    if (type_name == 'future<bool>'):
+        return '  call void @tb_future_bool_release(ptr ' + ptr_name + ')'
+    if (type_name == 'future<string>'):
+        return '  call void @tb_future_string_release(ptr ' + ptr_name + ')'
     if (type_name == 'string[]'):
         return emit_string_array_release_ptr(ptr_name)
     if (type_name == 'string[][]'):
@@ -1477,6 +1602,66 @@ string emit_backend_release_ptr(string type_name, string ptr_name):
     if (record_name_from_type(type_name) != ''):
         return emit_record_release_ptr(record_name_from_type(type_name), ptr_name)
     return '  ; release_ptr ' + type_name + ' ' + ptr_name
+
+bool temp_is_thread_pool(ParsedFunction function_ir, string temp_name):
+    return is_thread_pool_type_name(lookup_temp_llvm_type(function_ir, temp_name))
+
+bool temp_is_future_i64(ParsedFunction function_ir, string temp_name):
+    return normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, temp_name)) == 'future<int>'
+
+bool temp_is_future_bool(ParsedFunction function_ir, string temp_name):
+    return normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, temp_name)) == 'future<bool>'
+
+bool temp_is_future_string(ParsedFunction function_ir, string temp_name):
+    return normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, temp_name)) == 'future<string>'
+
+string emit_thread_pool_owned_value(ParsedFunction function_ir, string temp_name, string temp_suffix):
+    if (temp_needs_backend_free(function_ir, temp_name)):
+        return temp_ref(temp_name)
+    return '%thread_pool.copy.' + temp_suffix
+
+string[] emit_thread_pool_materialize_if_needed(ParsedFunction function_ir, string temp_name, string temp_suffix):
+    if (temp_needs_backend_free(function_ir, temp_name)):
+        return []
+    if (!temp_is_thread_pool(function_ir, temp_name)):
+        return []
+    return ['  ' + emit_thread_pool_owned_value(function_ir, temp_name, temp_suffix) + ' = call ptr @tb_thread_pool_retain(ptr ' + temp_ref(temp_name) + ')']
+
+string emit_future_i64_owned_value(ParsedFunction function_ir, string temp_name, string temp_suffix):
+    if (temp_needs_backend_free(function_ir, temp_name)):
+        return temp_ref(temp_name)
+    return '%future.copy.' + temp_suffix
+
+string[] emit_future_i64_materialize_if_needed(ParsedFunction function_ir, string temp_name, string temp_suffix):
+    if (temp_needs_backend_free(function_ir, temp_name)):
+        return []
+    if (!temp_is_future_i64(function_ir, temp_name)):
+        return []
+    return ['  ' + emit_future_i64_owned_value(function_ir, temp_name, temp_suffix) + ' = call ptr @tb_future_i64_retain(ptr ' + temp_ref(temp_name) + ')']
+
+string emit_future_bool_owned_value(ParsedFunction function_ir, string temp_name, string temp_suffix):
+    if (temp_needs_backend_free(function_ir, temp_name)):
+        return temp_ref(temp_name)
+    return '%future.copy.' + temp_suffix
+
+string[] emit_future_bool_materialize_if_needed(ParsedFunction function_ir, string temp_name, string temp_suffix):
+    if (temp_needs_backend_free(function_ir, temp_name)):
+        return []
+    if (!temp_is_future_bool(function_ir, temp_name)):
+        return []
+    return ['  ' + emit_future_bool_owned_value(function_ir, temp_name, temp_suffix) + ' = call ptr @tb_future_bool_retain(ptr ' + temp_ref(temp_name) + ')']
+
+string emit_future_string_owned_value(ParsedFunction function_ir, string temp_name, string temp_suffix):
+    if (temp_needs_backend_free(function_ir, temp_name)):
+        return temp_ref(temp_name)
+    return '%future.copy.' + temp_suffix
+
+string[] emit_future_string_materialize_if_needed(ParsedFunction function_ir, string temp_name, string temp_suffix):
+    if (temp_needs_backend_free(function_ir, temp_name)):
+        return []
+    if (!temp_is_future_string(function_ir, temp_name)):
+        return []
+    return ['  ' + emit_future_string_owned_value(function_ir, temp_name, temp_suffix) + ' = call ptr @tb_future_string_retain(ptr ' + temp_ref(temp_name) + ')']
 
 string emit_string_owned_value(ParsedFunction function_ir, string temp_name, string temp_suffix):
     if (temp_needs_backend_free(function_ir, temp_name)):
@@ -2124,6 +2309,7 @@ void analyze_program_features(ProgramIR program, string[] map_types):
     LLVM_SCAN_NEEDS_NUM_HASH = 0
     LLVM_SCAN_NEEDS_STRING_HELPERS_OPS = 0
     LLVM_SCAN_NEEDS_RUNTIME_GLOBAL_INIT = 0
+    LLVM_SCAN_NEEDS_THREAD_POOL = 0
     string[] record_set_types = []
     bool needs_strcmp = !map_types.is_empty()
     bool needs_string_search = false
@@ -2164,6 +2350,7 @@ void analyze_program_features(ProgramIR program, string[] map_types):
     bool needs_num_hash = false
     bool needs_string_helpers_ops = false
     bool needs_runtime_global_init = false
+    bool needs_thread_pool = false
     bool has_edges_for_point = false
     bool uses_edges_for_point_mapper = false
     for (string map_type in map_types):
@@ -2174,6 +2361,8 @@ void analyze_program_features(ProgramIR program, string[] map_types):
         string global_type = normalize_llvm_type_name(global_binding.type_name)
         if (global_type == 'num'):
             needs_num = true
+        if (is_thread_pool_type_name(global_type) || is_future_type_name(global_type)):
+            needs_thread_pool = true
         if (global_type == 'string' || global_type == 'string[]'):
             needs_runtime_string_copy = true
         if (global_type == 'string[]'):
@@ -2202,6 +2391,8 @@ void analyze_program_features(ProgramIR program, string[] map_types):
             string result_type = normalize_llvm_type_name(op.result_type)
             if (result_type == 'num'):
                 needs_num = true
+            if (is_thread_pool_type_name(result_type) || is_future_type_name(result_type)):
+                needs_thread_pool = true
             if (result_type == 'string' || result_type == 'string[]'):
                 needs_runtime_string_copy = true
             if (result_type == 'string[]'):
@@ -2241,6 +2432,8 @@ void analyze_program_features(ProgramIR program, string[] map_types):
         string return_type = normalize_llvm_type_name(function_ir.return_type)
         if (return_type == 'num'):
             needs_num = true
+        if (is_thread_pool_type_name(return_type) || is_future_type_name(return_type)):
+            needs_thread_pool = true
         if (return_type == 'string' || return_type == 'string[]'):
             needs_runtime_string_copy = true
         if (return_type == 'prio_q<int>'):
@@ -2249,6 +2442,8 @@ void analyze_program_features(ProgramIR program, string[] map_types):
             string type_name = normalize_llvm_type_name(param_decl.type_name)
             if (type_name == 'num'):
                 needs_num = true
+            if (is_thread_pool_type_name(type_name) || is_future_type_name(type_name)):
+                needs_thread_pool = true
             if (type_name == 'string' || type_name == 'string[]'):
                 needs_runtime_string_copy = true
             if (type_name == 'string[]'):
@@ -2275,6 +2470,8 @@ void analyze_program_features(ProgramIR program, string[] map_types):
             string type_name = normalize_llvm_type_name(local_decl.type_name)
             if (type_name == 'num'):
                 needs_num = true
+            if (is_thread_pool_type_name(type_name) || is_future_type_name(type_name)):
+                needs_thread_pool = true
             if (type_name == 'string' || type_name == 'string[]'):
                 needs_runtime_string_copy = true
             if (type_name == 'string[]'):
@@ -2304,6 +2501,8 @@ void analyze_program_features(ProgramIR program, string[] map_types):
                 string result_type = normalize_llvm_type_name(op.result_type)
                 if (result_type == 'num'):
                     needs_num = true
+                if (is_thread_pool_type_name(result_type) || is_future_type_name(result_type)):
+                    needs_thread_pool = true
                 if (result_type == 'string' || result_type == 'string[]'):
                     needs_runtime_string_copy = true
                 if (result_type == 'string[]'):
@@ -2346,6 +2545,8 @@ void analyze_program_features(ProgramIR program, string[] map_types):
                         if ((left_type == 'string' && right_type == 'int') || (left_type == 'int' && right_type == 'string')):
                             needs_int_to_string = true
                 if (op.detail == 'call' && !op.args.is_empty()):
+                    if (op.args[0] == 'thread_pool'):
+                        needs_thread_pool = true
                     if (op.args[0] == 'has_flag' || op.args[0] == 'option_value'):
                         needs_string_helpers_ops = true
                     if (op.args[0] == 'read_lines'):
@@ -2382,6 +2583,8 @@ void analyze_program_features(ProgramIR program, string[] map_types):
                     if (normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0])) == 'string'):
                         needs_string_helpers_ops = true
                 if (op.detail == 'method-call'):
+                    if (op.args[0] == 'submit' || op.args[0] == 'await'):
+                        needs_thread_pool = true
                     if (!op.args.is_empty() && op.args[0] == 'hash'):
                         needs_hash = true
                     if (op.args[0] == 'values'):
@@ -2413,6 +2616,7 @@ void analyze_program_features(ProgramIR program, string[] map_types):
     if (needs_prio_q_int):
         needs_int_array = true
     needs_flat_map_edges_for_point = has_edges_for_point && uses_edges_for_point_mapper
+    configure_runtime_build_metadata(needs_thread_pool)
     if (needs_strcmp):
         LLVM_SCAN_NEEDS_STRCMP = 1
     if (needs_string_search):
@@ -2491,6 +2695,8 @@ void analyze_program_features(ProgramIR program, string[] map_types):
         LLVM_SCAN_NEEDS_STRING_HELPERS_OPS = 1
     if (needs_runtime_global_init):
         LLVM_SCAN_NEEDS_RUNTIME_GLOBAL_INIT = 1
+    if (needs_thread_pool):
+        LLVM_SCAN_NEEDS_THREAD_POOL = 1
 
 bool program_uses_string_compare(ProgramIR program):
     if (!collect_used_map_types(program).is_empty()):
@@ -4007,6 +4213,10 @@ string emit_call_value_instruction_core(ProgramIR program, ParsedFunction functi
         if (op.args.length() != 1):
             throw 'unsupported llvm time_ms arity'
         return emit_tracked_builtin_call_line('  ' + lhs + ' = call i64 @tb_bootstrap_time_ms()')
+    if (call_name == 'thread_pool'):
+        if (op.args.length() != 2):
+            throw 'unsupported llvm thread_pool arity'
+        return emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_thread_pool_new(i64 ' + temp_ref(op.args[1]) + ')')
     if (call_name == 'has_flag'):
         if (op.args.length() != 3):
             throw 'unsupported llvm has_flag arity'
@@ -4653,6 +4863,27 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
         if (op.args.length() != 2):
             throw 'unsupported llvm int[] clear arity'
         return '  call void @tb_bootstrap_int_array_clear(ptr ' + temp_ref(op.args[1]) + ')'
+    if (method_name == 'await' && method_base_type == 'future<int>'):
+        if (op.args.length() != 2):
+            throw 'unsupported llvm future<int> await arity'
+        return '  ' + lhs + ' = call i64 @tb_future_i64_await(ptr ' + temp_ref(op.args[1]) + ')'
+    if (method_name == 'await' && method_base_type == 'future<bool>'):
+        if (op.args.length() != 2):
+            throw 'unsupported llvm future<bool> await arity'
+        return '  ' + lhs + ' = call i1 @tb_future_bool_await(ptr ' + temp_ref(op.args[1]) + ')'
+    if (method_name == 'await' && method_base_type == 'future<string>'):
+        if (op.args.length() != 2):
+            throw 'unsupported llvm future<string> await arity'
+        return '  ' + lhs + ' = call ptr @tb_future_string_await(ptr ' + temp_ref(op.args[1]) + ')'
+    if (method_name == 'submit' && method_base_type == 'thread_pool'):
+        if (op.args.length() != 4):
+            throw 'unsupported llvm thread_pool submit arity'
+        string future_type = normalize_llvm_type_name(op.result_type)
+        string arg_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[3]))
+        string submit_name = llvm_thread_pool_submit_name(future_type, arg_type)
+        if (submit_name == ''):
+            throw 'unsupported llvm thread_pool submit signature: ' + future_type + ' ' + arg_type
+        return '  ' + lhs + ' = call ptr ' + submit_name + '(ptr ' + temp_ref(op.args[1]) + ', ptr @' + op.args[2] + ', ' + llvm_type(arg_type) + ' ' + temp_ref(op.args[3]) + ')'
     if (method_name == 'length' && method_base_type == 'int[][]'):
         return '  ' + lhs + '.len32 = call i32 @tb_bootstrap_int_array_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64'
     if (method_name == 'is_empty' && method_base_type == 'int[][]'):
@@ -5783,6 +6014,42 @@ string[] emit_terminator(ParsedFunction function_ir, BlockIR block, TerminatorIR
             string returned_value = temp_ref(terminator.args[0])
             if (temp_is_record(function_ir, terminator.args[0]) && !temp_needs_backend_free(function_ir, terminator.args[0])):
                 returned_value = emit_record_owned_value(function_ir, terminator.args[0], 'return.' + temp_suffix)
+            for (string restore_line in emit_try_restore_lines(try_suffix, temp_suffix)):
+                lines.push(restore_line)
+            lines.push('  ret ptr ' + returned_value)
+            return lines
+        if (is_thread_pool_type_name(result_type)):
+            string[] lines = emit_thread_pool_materialize_if_needed(function_ir, terminator.args[0], 'return.' + temp_suffix)
+            string returned_value = temp_ref(terminator.args[0])
+            if (temp_is_thread_pool(function_ir, terminator.args[0]) && !temp_needs_backend_free(function_ir, terminator.args[0])):
+                returned_value = emit_thread_pool_owned_value(function_ir, terminator.args[0], 'return.' + temp_suffix)
+            for (string restore_line in emit_try_restore_lines(try_suffix, temp_suffix)):
+                lines.push(restore_line)
+            lines.push('  ret ptr ' + returned_value)
+            return lines
+        if (normalize_llvm_type_name(result_type) == 'future<int>'):
+            string[] lines = emit_future_i64_materialize_if_needed(function_ir, terminator.args[0], 'return.' + temp_suffix)
+            string returned_value = temp_ref(terminator.args[0])
+            if (temp_is_future_i64(function_ir, terminator.args[0]) && !temp_needs_backend_free(function_ir, terminator.args[0])):
+                returned_value = emit_future_i64_owned_value(function_ir, terminator.args[0], 'return.' + temp_suffix)
+            for (string restore_line in emit_try_restore_lines(try_suffix, temp_suffix)):
+                lines.push(restore_line)
+            lines.push('  ret ptr ' + returned_value)
+            return lines
+        if (normalize_llvm_type_name(result_type) == 'future<bool>'):
+            string[] lines = emit_future_bool_materialize_if_needed(function_ir, terminator.args[0], 'return.' + temp_suffix)
+            string returned_value = temp_ref(terminator.args[0])
+            if (temp_is_future_bool(function_ir, terminator.args[0]) && !temp_needs_backend_free(function_ir, terminator.args[0])):
+                returned_value = emit_future_bool_owned_value(function_ir, terminator.args[0], 'return.' + temp_suffix)
+            for (string restore_line in emit_try_restore_lines(try_suffix, temp_suffix)):
+                lines.push(restore_line)
+            lines.push('  ret ptr ' + returned_value)
+            return lines
+        if (normalize_llvm_type_name(result_type) == 'future<string>'):
+            string[] lines = emit_future_string_materialize_if_needed(function_ir, terminator.args[0], 'return.' + temp_suffix)
+            string returned_value = temp_ref(terminator.args[0])
+            if (temp_is_future_string(function_ir, terminator.args[0]) && !temp_needs_backend_free(function_ir, terminator.args[0])):
+                returned_value = emit_future_string_owned_value(function_ir, terminator.args[0], 'return.' + temp_suffix)
             for (string restore_line in emit_try_restore_lines(try_suffix, temp_suffix)):
                 lines.push(restore_line)
             lines.push('  ret ptr ' + returned_value)
@@ -7130,6 +7397,7 @@ string[] llvm_codegen_ir(ProgramIR program):
     bool needs_popcount = LLVM_SCAN_NEEDS_POPCOUNT != 0
     bool needs_hash = LLVM_SCAN_NEEDS_HASH != 0
     bool needs_num_hash = LLVM_SCAN_NEEDS_NUM_HASH != 0
+    bool needs_thread_pool = LLVM_SCAN_NEEDS_THREAD_POOL != 0
     LLVM_PHASE_FEATURE_SCAN_MS += time_ms() - feature_scan_start_ms
     reset_function_lookup_cache()
     int record_decls_start_ms = time_ms()
@@ -7143,7 +7411,7 @@ string[] llvm_codegen_ir(ProgramIR program):
     StringConstIR[] string_constants = collect_string_constants(program)
     LLVM_PHASE_STRING_CONSTANTS_MS += time_ms() - string_constants_start_ms
     string[] foreign_modules = active_foreign_modules(program)
-    bool needs_string_helpers = needs_runtime_string_copy || needs_to_int || needs_int_to_string || needs_hash || LLVM_SCAN_NEEDS_STRING_HELPERS_OPS != 0 || needs_read_lines || needs_read_file || needs_getenv
+    bool needs_string_helpers = needs_runtime_string_copy || needs_to_int || needs_int_to_string || needs_hash || LLVM_SCAN_NEEDS_STRING_HELPERS_OPS != 0 || needs_read_lines || needs_read_file || needs_getenv || needs_thread_pool
     bool needs_string_array_helpers = needs_string_array || needs_string_helpers
     bool needs_runtime_global_init = LLVM_SCAN_NEEDS_RUNTIME_GLOBAL_INIT != 0
     if (needs_num || needs_num_hash):
@@ -7172,9 +7440,9 @@ string[] llvm_codegen_ir(ProgramIR program):
     if (!string_constants.is_empty()):
         for (StringConstIR constant in string_constants):
             lines.push(emit_string_constant(constant))
-    if (needs_throw || needs_try_catch || needs_read_lines || needs_read_file):
-        lines.push(exception_handler_symbol() + ' = internal global ptr null')
-        lines.push(exception_message_symbol() + ' = internal global ptr null')
+    if (needs_thread_pool || needs_throw || needs_try_catch || needs_read_lines || needs_read_file):
+        lines.push(exception_handler_symbol() + ' = thread_local global ptr null')
+        lines.push(exception_message_symbol() + ' = thread_local global ptr null')
     for (string map_type in map_types):
         lines.push(emit_map_type(map_type))
     for (RecordDeclIR record_decl in record_decls):
@@ -7183,9 +7451,12 @@ string[] llvm_codegen_ir(ProgramIR program):
         lines.push('declare ptr @malloc(i64)')
         lines.push('declare ptr @realloc(ptr, i64)')
         lines.push('declare void @qsort(ptr, i64, i64, ptr)')
-    if (needs_try_catch):
+    if (needs_thread_pool):
+        for (string declaration in emit_thread_pool_runtime_declarations()):
+            lines.push(declaration)
+    if (needs_string_helpers || needs_thread_pool || needs_try_catch):
         lines.push('declare i32 @setjmp(ptr) returns_twice')
-    if (needs_throw || needs_try_catch || needs_read_lines || needs_read_file):
+    if (needs_string_helpers || needs_thread_pool || needs_throw || needs_try_catch || needs_read_lines || needs_read_file):
         lines.push('declare void @longjmp(ptr, i32) noreturn')
     if (needs_string_array_helpers || needs_string_array_array || needs_bool_array || needs_int_array || needs_int_array_array || needs_record_array || needs_backend_free || needs_records || needs_maps || needs_read_lines || needs_read_file):
         lines.push('declare void @free(ptr)')
@@ -7421,6 +7692,7 @@ void llvm_print_ir(ProgramIR program):
     bool needs_popcount = LLVM_SCAN_NEEDS_POPCOUNT != 0
     bool needs_hash = LLVM_SCAN_NEEDS_HASH != 0
     bool needs_num_hash = LLVM_SCAN_NEEDS_NUM_HASH != 0
+    bool needs_thread_pool = LLVM_SCAN_NEEDS_THREAD_POOL != 0
     reset_function_lookup_cache()
     string[] foreign_modules = active_foreign_modules(program)
     bool needs_string_helpers = needs_runtime_string_copy || needs_to_int || needs_int_to_string || needs_hash || LLVM_SCAN_NEEDS_STRING_HELPERS_OPS != 0 || needs_read_lines || needs_read_file || needs_getenv
@@ -7461,9 +7733,9 @@ void llvm_print_ir(ProgramIR program):
         for (StringConstIR constant in string_constants):
             print(emit_string_constant(constant))
         emitted_any_header = true
-    if (needs_throw || needs_try_catch || needs_read_lines || needs_read_file):
-        print(exception_handler_symbol() + ' = internal global ptr null')
-        print(exception_message_symbol() + ' = internal global ptr null')
+    if (needs_thread_pool || needs_throw || needs_try_catch || needs_read_lines || needs_read_file):
+        print(exception_handler_symbol() + ' = thread_local global ptr null')
+        print(exception_message_symbol() + ' = thread_local global ptr null')
         emitted_any_header = true
     for (string map_type in map_types):
         print(emit_map_type(map_type))
@@ -7476,10 +7748,14 @@ void llvm_print_ir(ProgramIR program):
         print('declare ptr @realloc(ptr, i64)')
         print('declare void @qsort(ptr, i64, i64, ptr)')
         emitted_any_header = true
-    if (needs_try_catch):
+    if (needs_thread_pool):
+        for (string declaration in emit_thread_pool_runtime_declarations()):
+            print(declaration)
+        emitted_any_header = true
+    if (needs_string_helpers || needs_thread_pool || needs_try_catch):
         print('declare i32 @setjmp(ptr) returns_twice')
         emitted_any_header = true
-    if (needs_throw || needs_try_catch || needs_read_lines || needs_read_file):
+    if (needs_string_helpers || needs_thread_pool || needs_throw || needs_try_catch || needs_read_lines || needs_read_file):
         print('declare void @longjmp(ptr, i32) noreturn')
         emitted_any_header = true
     if (needs_string_array_helpers || needs_string_array_array || needs_bool_array || needs_int_array || needs_int_array_array || needs_record_array || needs_backend_free || needs_records || needs_maps || needs_read_lines || needs_read_file):
