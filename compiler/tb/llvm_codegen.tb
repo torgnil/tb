@@ -319,6 +319,8 @@ string[] thread_pool_submit_supported_future_types():
 bool llvm_thread_pool_submit_signature_supported(string future_type, string arg_type):
     future_type = normalize_llvm_type_name(future_type)
     arg_type = normalize_llvm_type_name(arg_type)
+    if (arg_type == 'void'):
+        return future_type in thread_pool_submit_supported_future_types()
     return future_type in thread_pool_submit_supported_future_types() && arg_type in thread_pool_submit_supported_arg_types()
 
 string llvm_thread_pool_submit_name(string future_type, string arg_type):
@@ -326,6 +328,12 @@ string llvm_thread_pool_submit_name(string future_type, string arg_type):
     arg_type = normalize_llvm_type_name(arg_type)
     if (!llvm_thread_pool_submit_signature_supported(future_type, arg_type)):
         return ''
+    if (future_type == 'future<int>' && arg_type == 'void'):
+        return '@tb_thread_pool_submit_i64'
+    if (future_type == 'future<bool>' && arg_type == 'void'):
+        return '@tb_thread_pool_submit_bool'
+    if (future_type == 'future<string>' && arg_type == 'void'):
+        return '@tb_thread_pool_submit_string'
     if (future_type == 'future<int>' && arg_type == 'int'):
         return '@tb_thread_pool_submit_i64_i64'
     if (future_type == 'future<int>' && arg_type == 'bool'):
@@ -351,23 +359,27 @@ string[] emit_thread_pool_runtime_declarations():
         'declare ptr @tb_thread_pool_new(i64)',
         'declare ptr @tb_thread_pool_retain(ptr)',
         'declare void @tb_thread_pool_release(ptr)',
+        'declare ptr @tb_thread_pool_submit_i64(ptr, ptr)',
         'declare ptr @tb_thread_pool_submit_i64_i64(ptr, ptr, i64)',
         'declare ptr @tb_thread_pool_submit_i64_bool(ptr, ptr, i1)',
         'declare ptr @tb_thread_pool_submit_i64_string(ptr, ptr, ptr)',
         'declare ptr @tb_future_i64_retain(ptr)',
         'declare void @tb_future_i64_release(ptr)',
         'declare i64 @tb_future_i64_await(ptr)',
+        'declare ptr @tb_thread_pool_submit_bool(ptr, ptr)',
         'declare ptr @tb_thread_pool_submit_bool_i64(ptr, ptr, i64)',
         'declare ptr @tb_thread_pool_submit_bool_bool(ptr, ptr, i1)',
         'declare ptr @tb_thread_pool_submit_bool_string(ptr, ptr, ptr)',
         'declare ptr @tb_future_bool_retain(ptr)',
         'declare void @tb_future_bool_release(ptr)',
         'declare i1 @tb_future_bool_await(ptr)',
+        'declare ptr @tb_thread_pool_submit_string(ptr, ptr)',
         'declare ptr @tb_thread_pool_submit_string_i64(ptr, ptr, i64)',
         'declare ptr @tb_thread_pool_submit_string_bool(ptr, ptr, i1)',
         'declare ptr @tb_thread_pool_submit_string_string(ptr, ptr, ptr)',
         'declare ptr @tb_future_string_retain(ptr)',
         'declare void @tb_future_string_release(ptr)',
+        'declare ptr @tb_future_string_await(ptr)',
         'declare ptr @tb_future_string_await(ptr)'
     ]
 
@@ -1615,6 +1627,7 @@ bool temp_is_future_bool(ParsedFunction function_ir, string temp_name):
 bool temp_is_future_string(ParsedFunction function_ir, string temp_name):
     return normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, temp_name)) == 'future<string>'
 
+
 string emit_thread_pool_owned_value(ParsedFunction function_ir, string temp_name, string temp_suffix):
     if (temp_needs_backend_free(function_ir, temp_name)):
         return temp_ref(temp_name)
@@ -1662,6 +1675,7 @@ string[] emit_future_string_materialize_if_needed(ParsedFunction function_ir, st
     if (!temp_is_future_string(function_ir, temp_name)):
         return []
     return ['  ' + emit_future_string_owned_value(function_ir, temp_name, temp_suffix) + ' = call ptr @tb_future_string_retain(ptr ' + temp_ref(temp_name) + ')']
+
 
 string emit_string_owned_value(ParsedFunction function_ir, string temp_name, string temp_suffix):
     if (temp_needs_backend_free(function_ir, temp_name)):
@@ -4876,13 +4890,17 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
             throw 'unsupported llvm future<string> await arity'
         return '  ' + lhs + ' = call ptr @tb_future_string_await(ptr ' + temp_ref(op.args[1]) + ')'
     if (method_name == 'submit' && method_base_type == 'thread_pool'):
-        if (op.args.length() != 4):
+        if (op.args.length() != 3 && op.args.length() != 4):
             throw 'unsupported llvm thread_pool submit arity'
         string future_type = normalize_llvm_type_name(op.result_type)
-        string arg_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[3]))
+        string arg_type = 'void'
+        if (op.args.length() == 4):
+            arg_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[3]))
         string submit_name = llvm_thread_pool_submit_name(future_type, arg_type)
         if (submit_name == ''):
             throw 'unsupported llvm thread_pool submit signature: ' + future_type + ' ' + arg_type
+        if (op.args.length() == 3):
+            return '  ' + lhs + ' = call ptr ' + submit_name + '(ptr ' + temp_ref(op.args[1]) + ', ptr @' + op.args[2] + ')'
         return '  ' + lhs + ' = call ptr ' + submit_name + '(ptr ' + temp_ref(op.args[1]) + ', ptr @' + op.args[2] + ', ' + llvm_type(arg_type) + ' ' + temp_ref(op.args[3]) + ')'
     if (method_name == 'length' && method_base_type == 'int[][]'):
         return '  ' + lhs + '.len32 = call i32 @tb_bootstrap_int_array_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64'
@@ -5996,6 +6014,15 @@ string[] emit_terminator(ParsedFunction function_ir, BlockIR block, TerminatorIR
             string returned_value = temp_ref(terminator.args[0])
             if (temp_is_string_array(function_ir, terminator.args[0]) && !temp_needs_backend_free(function_ir, terminator.args[0])):
                 returned_value = emit_string_array_owned_value(function_ir, terminator.args[0], 'return.' + temp_suffix)
+            for (string restore_line in emit_try_restore_lines(try_suffix, temp_suffix)):
+                lines.push(restore_line)
+            lines.push('  ret ptr ' + returned_value)
+            return lines
+        if (normalize_llvm_type_name(result_type) == 'int[]'):
+            string[] lines = emit_int_array_materialize_if_needed(function_ir, terminator.args[0], 'return.' + temp_suffix)
+            string returned_value = temp_ref(terminator.args[0])
+            if (temp_is_int_array(function_ir, terminator.args[0]) && !temp_needs_backend_free(function_ir, terminator.args[0])):
+                returned_value = emit_int_array_owned_value(function_ir, terminator.args[0], 'return.' + temp_suffix)
             for (string restore_line in emit_try_restore_lines(try_suffix, temp_suffix)):
                 lines.push(restore_line)
             lines.push('  ret ptr ' + returned_value)

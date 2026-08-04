@@ -116,6 +116,25 @@ Build and invocation details are documented in the repository or release `README
 - Lambdas: single-parameter lambdas such as `int x -> x * 2`, block lambdas such as `int[] row -> { return row[0] < 0; }`, and multi-parameter comparator lambdas such as `(int a, int b) -> a - b`.
 - UFCS (parser sugar): `value.method(args)` lowers to `method(value, args)` — parser-only sugar, no dynamic dispatch.
 
+### Thread pools and futures
+
+- `thread_pool(n)` creates an explicit pool with exactly `n` worker threads. `n` must be at least `1`.
+- `pool.submit(work)` or `pool.submit(work, value)` queues a top-level named function and returns `future<T>` immediately.
+- Submitted functions may return `int`, `bool`, or `string`; they may accept zero arguments or one `int`, `bool`, or `string` argument.
+- `future.await()` blocks until completion and returns the task result. A task exception is rethrown by `await()` on the calling thread.
+- Arrays, records, maps, sets, priority queues, files, pools, futures, and closures cannot yet be submitted or returned. Composite task values will use deep-copy snapshots rather than shared mutable storage when support is added.
+
+```tb
+int worker_id():
+    return 7
+
+int main(string[] args):
+    thread_pool pool = thread_pool(2)
+    future<int> id = pool.submit(worker_id)
+    print(id.await())
+    return 0
+```
+
 7. Statements and control flow
 
 - Expression statement: `expr;`.

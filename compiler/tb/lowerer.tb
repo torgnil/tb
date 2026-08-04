@@ -666,10 +666,14 @@ TempIRResult lower_linear_value_ir(Node node, int next_temp):
                 return TempIRResult(name, instructions, needle.next_temp + 1)
         TempIRResult base = lower_linear_value_ir(node.children[0], next_temp)
         if (node.value == 'submit'):
-            if (node.children.length() != 3):
-                throw 'thread_pool.submit currently requires exactly a function name and one argument'
+            if (node.children.length() != 2 && node.children.length() != 3):
+                throw 'thread_pool.submit currently requires a function name with zero or one argument'
             if (node.children[1].kind != 'Identifier'):
                 throw 'thread_pool.submit currently requires a top-level named function'
+            if (node.children.length() == 2):
+                string name = temp_name(base.next_temp)
+                LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', name, 'unknown', 'owned', 'method-call', ['submit', base.name, node.children[1].value])])
+                return TempIRResult(name, instructions, base.next_temp + 1)
             TempIRResult arg = lower_linear_value_ir(node.children[2], base.next_temp)
             string name = temp_name(arg.next_temp)
             LinearInstruction[] instructions = append_instructions(base.instructions, arg.instructions)

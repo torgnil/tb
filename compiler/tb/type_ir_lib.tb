@@ -340,14 +340,22 @@ FunctionSigIR[] collect_function_sigs(ParsedFunction[] functions):
         result.push(FunctionSigIR(function_name_from_header(function_ir.header), function_return_type_from_header(function_ir.header), param_types))
     return result
 
-string thread_pool_submit_result_type(FunctionSigIR[] functions, string function_name):
+string thread_pool_submit_result_type(FunctionSigIR[] functions, string function_name, int argument_count):
     FunctionSigIR function_sig = lookup_function_sig(functions, function_name)
     if (function_sig.name == ''):
         throw 'thread_pool.submit currently requires a top-level named function'
-    if (function_sig.param_types.length() != 1 || !is_thread_pool_submit_arg_type(function_sig.param_types[0])):
-        throw 'thread_pool.submit currently requires a function with signature T fn(U) where T is int, bool or string and U is int, bool or string'
+    if (argument_count == 0):
+        if (function_sig.param_types.length() != 0):
+            throw 'thread_pool.submit currently requires a function with signature T fn() or T fn(U) where T is int, bool or string and U is int, bool or string'
+    else if (argument_count == 1):
+        if (function_sig.param_types.length() != 1):
+            throw 'thread_pool.submit currently requires a function with signature T fn() or T fn(U) where T is int, bool or string and U is int, bool or string'
+        if (!is_thread_pool_submit_arg_type(function_sig.param_types[0])):
+            throw 'thread_pool.submit currently requires a function with signature T fn() or T fn(U) where T is int, bool or string and U is int, bool or string'
+    else:
+        throw 'thread_pool.submit currently requires a function name with zero or one argument'
     if (!is_thread_pool_submit_return_type(function_sig.return_type)):
-        throw 'thread_pool.submit currently requires a function with signature T fn(U) where T is int, bool or string and U is int, bool or string'
+        throw 'thread_pool.submit currently requires a function with signature T fn() or T fn(U) where T is int, bool or string and U is int, bool or string'
     return 'future<' + function_sig.return_type + '>'
 
 RecordFieldIR[] collect_record_fields(RecordDeclIR[] records):
@@ -969,8 +977,8 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             return op
         string method_name = op.args[0]
         string base_type = lookup_temp_type_slot(temp_types, op.args[1])
-        if (method_name == 'submit' && base_type == 'thread_pool' && op.args.length() == 4):
-            string future_type = thread_pool_submit_result_type(functions, op.args[2])
+        if (method_name == 'submit' && base_type == 'thread_pool' && (op.args.length() == 3 || op.args.length() == 4)):
+            string future_type = thread_pool_submit_result_type(functions, op.args[2], op.args.length() - 3)
             return refined_value_op(op, future_type, refine_ownership_mode(op, future_type))
         if (method_name == 'length' || method_name == 'index_of' || method_name == 'hash'):
             string result_type = infer_method_call_type(method_name, 'unknown', functions)
