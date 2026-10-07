@@ -1255,6 +1255,9 @@ BindingIR lookup_named_global(ProgramIR program, string name):
 string try_prev_slot_ref(string temp_suffix):
     return '%tb.exc.prev.slot.' + temp_suffix
 
+string try_message_owned_slot_ref(string temp_suffix):
+    return '%tb.exc.message.owned.slot.' + temp_suffix
+
 string try_env_ref(string temp_suffix):
     return '%tb.exc.env.' + temp_suffix
 
@@ -1295,34 +1298,6 @@ string[] emit_try_restore_lines(string try_suffix, string temp_suffix):
         '  %tb.exc.prev.restore.' + temp_suffix + ' = load ptr, ptr ' + try_prev_slot_ref(try_suffix),
         '  store ptr %tb.exc.prev.restore.' + temp_suffix + ', ptr ' + exception_handler_symbol()
     ]
-
-int block_index_by_label(ParsedFunction function_ir, string label):
-    int block_index = 0
-    while (block_index < function_ir.blocks.length()):
-        if (function_ir.blocks[block_index].label == label):
-            return block_index
-        block_index += 1
-    return -1
-
-int enclosing_try_catch_block_index(ParsedFunction function_ir, string block_label):
-    int block_index = block_index_by_label(function_ir, block_label)
-    if (block_index < 0):
-        return -1
-    int best_try_block_index = -1
-    int best_catch_block_index = -1
-    int scan_block_index = 0
-    while (scan_block_index <= block_index):
-        BlockIR block = function_ir.blocks[scan_block_index]
-        int instruction_index = 0
-        for (LinearInstruction op in block.instructions):
-            if (op.kind == 'try'):
-                int catch_block_index = block_index_by_label(function_ir, op.detail)
-                if (catch_block_index > block_index && scan_block_index >= best_try_block_index):
-                    best_try_block_index = scan_block_index
-                    best_catch_block_index = catch_block_index
-            instruction_index += 1
-        scan_block_index += 1
-    return best_catch_block_index
 
 string enclosing_try_suffix(ParsedFunction function_ir, string block_label):
     int catch_block_index = enclosing_try_catch_block_index(function_ir, block_label)
@@ -6051,6 +6026,8 @@ string emit_instruction(ProgramIR program, ParsedFunction function_ir, string bl
         return join_llvm_strings([
             '  ' + env_ref + ' = alloca [192 x i8]',
             '  ' + prev_slot_ref + ' = alloca ptr',
+            '  ' + try_message_owned_slot_ref(temp_suffix) + ' = alloca i1',
+            '  store i1 false, ptr ' + try_message_owned_slot_ref(temp_suffix),
             '  ' + prev_value_ref + ' = load ptr, ptr ' + exception_handler_symbol(),
             '  store ptr ' + prev_value_ref + ', ptr ' + prev_slot_ref,
             '  ' + env_ptr_ref + ' = getelementptr [192 x i8], ptr ' + env_ref + ', i32 0, i32 0',
@@ -6064,13 +6041,15 @@ string emit_instruction(ProgramIR program, ParsedFunction function_ir, string bl
         string try_suffix = catch_try_suffix(function_ir, block_label)
         string[] lines = emit_try_restore_lines(try_suffix, temp_suffix)
         string message_ref = '%tb.exc.message.' + temp_suffix
+        string message_owned_ref = '%tb.exc.message.owned.' + temp_suffix
+        lines.push('  ' + message_owned_ref + ' = load i1, ptr ' + try_message_owned_slot_ref(try_suffix))
         lines.push('  ' + message_ref + ' = load ptr, ptr ' + exception_message_symbol())
         lines.push('  store ptr ' + message_ref + ', ptr ' + slot_ref(ir_parse_binding_decl(op.detail).name))
         lines.push('  store ptr null, ptr ' + exception_message_symbol())
         if (is_backend_managed_type(ir_parse_binding_decl(op.detail).type_name)):
-            lines.push('  store i1 false, ptr ' + owned_slot_ref(ir_parse_binding_decl(op.detail).name))
+            lines.push('  store i1 ' + message_owned_ref + ', ptr ' + owned_slot_ref(ir_parse_binding_decl(op.detail).name))
         if (normalize_llvm_type_name(ir_parse_binding_decl(op.detail).type_name) == 'string'):
-            lines.push('  store i1 false, ptr ' + managed_slot_ref(ir_parse_binding_decl(op.detail).name))
+            lines.push('  store i1 ' + message_owned_ref + ', ptr ' + managed_slot_ref(ir_parse_binding_decl(op.detail).name))
         return join_llvm_strings(lines, '\n')
     if (op.kind == 'release_field'):
         BindingIR field = record_field_binding_from_temp(program, function_ir, op.args[0], op.detail)
@@ -6299,6 +6278,20 @@ string[] emit_terminator(ParsedFunction function_ir, BlockIR block, TerminatorIR
         lines.push('  ret ' + llvm_type(result_type) + ' ' + temp_ref(terminator.args[0]))
         return lines
     if (terminator.kind == 'throw' || terminator.kind == 'throw_owned'):
+        int catch_block_index = enclosing_try_catch_block_index(function_ir, block.label)
+        if (catch_block_index >= 0):
+            # Snapshot borrowed messages without transferring a live local binding.
+            # Owned expression temporaries can transfer directly to the catch.
+            string[] lines = []
+            string message = temp_ref(terminator.args[0]).substring(0)
+            if (!temp_has_owned_semantics(function_ir, terminator.args[0])):
+                lines = emit_string_materialize_if_needed(function_ir, terminator.args[0], 'throw.' + temp_suffix)
+                message = emit_string_owned_value(function_ir, terminator.args[0], 'throw.' + temp_suffix)
+            string try_suffix = enclosing_try_suffix(function_ir, block.label)
+            lines.push('  store ptr ' + message + ', ptr ' + exception_message_symbol())
+            lines.push('  store i1 true, ptr ' + try_message_owned_slot_ref(try_suffix))
+            lines.push('  br label %' + function_ir.blocks[catch_block_index].label)
+            return lines
         return [
             '  %tb.throw.handler.' + temp_suffix + ' = load ptr, ptr ' + exception_handler_symbol(),
             '  %tb.throw.has_handler.' + temp_suffix + ' = icmp ne ptr %tb.throw.handler.' + temp_suffix + ', null',

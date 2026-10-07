@@ -175,6 +175,12 @@ int main(string[] args):
       print(err)
   ```
 
+  A direct throw caught in the same function preserves preceding local mutations
+  and live arrays, strings, and other function-owned values. The catch receives
+  a string snapshot that remains valid if the original message binding changes.
+  Nested throws use the nearest active try; a throw from a catch uses an enclosing
+  try, if present.
+
   If an exception is not caught, the program prints `Unhandled exception: ...` and exits with a non-zero status.
 
 8. Arrays and slices
