@@ -107,7 +107,7 @@ Build and invocation details are documented in the repository or release `README
 - Integer `/` and `%` use signed truncating division, matching LLVM runtime behavior. Division rounds toward zero, and the remainder keeps the sign of the left operand. Examples: `(0 - 5) / 3` is `-1`, `(0 - 5) % 3` is `-2`, `5 % (0 - 3)` is `2`, and `(0 - 5) % (0 - 3)` is `-2`.
 - Compile-time `num` arithmetic keeps the highest operand precision for `+`, `-`, `*`, and `/`. For example, `1.5 + 2.50` yields `4.00`, `2.50 * 1.5` yields `3.75`, and `2.50 / 1.5` yields `1.67`.
 - Bitwise integers: `&`, `|`, `^`, `<<`, `>>`.
-- Integer shifts require a non-negative shift count. Counts `>= 64` shift all bits out: `x << 64` becomes `0`, and `x >> 64` becomes `0` for non-negative `x` or `-1` for negative `x`.
+- Integer shifts require a non-negative shift count; a negative runtime count aborts. Counts `>= 64` shift all bits out: `x << 64` becomes `0`, and `x >> 64` becomes `0` for non-negative `x` or `-1` for negative `x`.
 - Comparison: `==`, `!=`, `<`, `<=`, `>`, `>=`.
 - Boolean: `&&`, `||`, unary `!` (and aliases `and`, `or`, `not`).
 - Assignment: `=`, with compound operators `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, and `>>=`, plus postfix `++` / `--` shorthand for identifier assignments.
