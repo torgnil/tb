@@ -1,0 +1,16 @@
+int[][] fail_rows():
+    throw 'nested array result failed'
+
+int plus_one(int value):
+    return value + 1
+
+int main(string[] args):
+    thread_pool pool = thread_pool(1)
+    future<int[][]> failed = pool.submit(fail_rows)
+    try:
+        int[][] ignored = failed.await()
+    catch (exception err):
+        print(err)
+    future<int> recovered = pool.submit(plus_one, 7)
+    print(recovered.await())
+    return 0

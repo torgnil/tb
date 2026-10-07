@@ -1,0 +1,17 @@
+int fail_rows(int[][] rows):
+    throw 'nested task failed'
+
+int plus_one(int value):
+    return value + 1
+
+int main(string[] args):
+    int[][] rows = [[2], [3]]
+    thread_pool pool = thread_pool(1)
+    future<int> failed = pool.submit(fail_rows, rows)
+    try:
+        print(failed.await())
+    catch (exception err):
+        print(err)
+    future<int> recovered = pool.submit(plus_one, 7)
+    print(recovered.await())
+    return 0

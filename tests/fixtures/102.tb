@@ -1,0 +1,20 @@
+int fail_after_snapshot(int[] values):
+    values[0] = 77
+    throw 'array task failed'
+
+int plus_one(int value):
+    return value + 1
+
+int main(string[] args):
+    int[] values = [2, 3]
+    thread_pool pool = thread_pool(1)
+    future<int> failed = pool.submit(fail_after_snapshot, values)
+    values[0] = 99
+    try:
+        print(failed.await())
+    catch (exception err):
+        print(err)
+    future<int> recovered = pool.submit(plus_one, 7)
+    print(values)
+    print(recovered.await())
+    return 0
