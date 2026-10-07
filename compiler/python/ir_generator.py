@@ -1070,6 +1070,8 @@ class IRGenerator:
             setup = []
             iterable_expression = statement.iterable
 
+        # Look across the repeated body so earlier reads cannot use stale constants.
+        self._invalidate_assigned_bindings(statement)
         index_name = self._next_synthetic_name("foreach_index")
         self.variable_types[index_name] = "int"
         self.variable_types[statement.item_name] = statement.item_type
@@ -1289,6 +1291,8 @@ class IRGenerator:
         base_record_variables = self.record_variables.copy()
         base_enum_variables = self.enum_variables.copy()
         base_const_variables = self.const_variables.copy()
+        # Look across the whole loop before lowering repeated reads and updates.
+        self._invalidate_assigned_bindings(statement)
         body_instructions = []
         self.loop_depth += 1
         try:
@@ -1340,6 +1344,8 @@ class IRGenerator:
         base_record_variables = self.record_variables.copy()
         base_enum_variables = self.enum_variables.copy()
         base_const_variables = self.const_variables.copy()
+        # Look across the repeated body so its condition and early reads stay runtime.
+        self._invalidate_assigned_bindings(statement)
         body_instructions: list = []
         self.loop_depth += 1
         try:
@@ -4312,6 +4318,11 @@ class IRGenerator:
                 names.update(self._assigned_binding_names(body_statement))
         elif isinstance(statement, WhileStatement):
             for body_statement in statement.body:
+                names.update(self._assigned_binding_names(body_statement))
+        elif isinstance(statement, TryCatchStatement):
+            for body_statement in statement.try_body:
+                names.update(self._assigned_binding_names(body_statement))
+            for body_statement in statement.catch_body:
                 names.update(self._assigned_binding_names(body_statement))
         elif isinstance(statement, ForEachStatement):
             for body_statement in statement.body:

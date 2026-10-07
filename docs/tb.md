@@ -151,6 +151,7 @@ int main(string[] args):
 - For loops (C-style): `for (int i = 0; i < n; i++) { ... }` or `for (int i = 0; i < n; i++): ...` — lowers to structured IR with condition, body, update and end labels.
 - Foreach (array or set iteration): `for (string line : lines) { ... }`, `for (string line : lines): ...`, `for (string line in lines) { ... }`, or `for (string line in lines): ...`.
 - `for (int i : range(n))` iterates over the fixed array produced by `range(...)`; it does not observe later mutations to some other array while the loop runs.
+- Values changed in a runtime loop use their current iteration values, including in reads that appear before the write in the loop body. Unmodified constants remain eligible for compile-time folding.
 - Switch: `switch (expr) { case value: { ... } default: { ... } }` or:
 
   ```tb
