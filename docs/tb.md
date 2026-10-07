@@ -120,9 +120,11 @@ Build and invocation details are documented in the repository or release `README
 
 - `thread_pool(n)` creates an explicit pool with exactly `n` worker threads. `n` must be at least `1`.
 - `pool.submit(work)` or `pool.submit(work, value)` queues a top-level named function and returns `future<T>` immediately.
-- Submitted functions may return `int`, `bool`, or `string`; they may accept zero arguments or one `int`, `bool`, or `string` argument.
+- Submitted functions may return `int`, `bool`, `string`, `int[]`, or `int[][]`; they may accept zero arguments or one `int`, `bool`, `string`, `int[]`, or `int[][]` argument.
 - `future.await()` blocks until completion and returns the task result. A task exception is rethrown by `await()` on the calling thread.
-- Arrays, records, maps, sets, priority queues, files, pools, futures, and closures cannot yet be submitted or returned. Composite task values will use deep-copy snapshots rather than shared mutable storage when support is added.
+- `future.is_done()` returns whether the task has completed without blocking.
+- `future.wait_for(milliseconds)` blocks for at most the requested duration and returns whether the task completed. It does not consume the result; call `await()` afterward. Nonpositive durations only check the current completion state.
+- `int[]` and `int[][]` arguments cross the queue as deep-copy snapshots. `int[]` and `int[][]` results are retained by their futures and each `await()` returns a fresh snapshot. Records, maps, sets, priority queues, files, pools, futures, and closures cannot yet be returned or otherwise passed across a task boundary.
 
 ```tb
 int worker_id():

@@ -123,7 +123,7 @@ def run_fixture(
                 object_dir = resolved_c_source.parent / "lib"
                 object_dir.mkdir(parents=True, exist_ok=True)
                 object_output = object_dir / f"{resolved_c_source.stem}_{platform_suffix}.o"
-                if not object_output.exists():
+                if not object_output.exists() or resolved_c_source.stat().st_mtime > object_output.stat().st_mtime:
                     c_compile_result = subprocess.run(
                         ["clang", "-c", *cflags, str(resolved_c_source), "-o", str(object_output)],
                         capture_output=True,

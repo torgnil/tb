@@ -139,11 +139,11 @@ string future_value_type(string type_name):
 
 bool is_thread_pool_submit_arg_type(string type_name):
     type_name = normalize_llvm_type_name(type_name)
-    return type_name == 'int' || type_name == 'bool' || type_name == 'string'
+    return type_name == 'int' || type_name == 'bool' || type_name == 'string' || type_name == 'int[]' || type_name == 'int[][]'
 
 bool is_thread_pool_submit_return_type(string type_name):
     type_name = normalize_llvm_type_name(type_name)
-    return type_name == 'int' || type_name == 'bool' || type_name == 'string'
+    return type_name == 'int' || type_name == 'bool' || type_name == 'string' || type_name == 'int[]' || type_name == 'int[][]'
 
 string record_name_from_type(string type_name):
     if (type_name == '' || type_name == 'int' || type_name == 'bool' || type_name == 'num' || type_name == 'string' || type_name == 'file' || is_thread_pool_type(type_name) || is_future_type(type_name)):
@@ -346,16 +346,16 @@ string thread_pool_submit_result_type(FunctionSigIR[] functions, string function
         throw 'thread_pool.submit currently requires a top-level named function'
     if (argument_count == 0):
         if (function_sig.param_types.length() != 0):
-            throw 'thread_pool.submit currently requires a function with signature T fn() or T fn(U) where T is int, bool or string and U is int, bool or string'
+            throw 'thread_pool.submit currently requires a function with signature T fn() or T fn(U) where T is int, bool, string, or int[] and U is int, bool, string, int[], or int[][]'
     else if (argument_count == 1):
         if (function_sig.param_types.length() != 1):
-            throw 'thread_pool.submit currently requires a function with signature T fn() or T fn(U) where T is int, bool or string and U is int, bool or string'
+            throw 'thread_pool.submit currently requires a function with signature T fn() or T fn(U) where T is int, bool, string, or int[] and U is int, bool, string, int[], or int[][]'
         if (!is_thread_pool_submit_arg_type(function_sig.param_types[0])):
-            throw 'thread_pool.submit currently requires a function with signature T fn() or T fn(U) where T is int, bool or string and U is int, bool or string'
+            throw 'thread_pool.submit currently requires a function with signature T fn() or T fn(U) where T is int, bool, string, or int[] and U is int, bool, string, int[], or int[][]'
     else:
         throw 'thread_pool.submit currently requires a function name with zero or one argument'
     if (!is_thread_pool_submit_return_type(function_sig.return_type)):
-        throw 'thread_pool.submit currently requires a function with signature T fn() or T fn(U) where T is int, bool or string and U is int, bool or string'
+        throw 'thread_pool.submit currently requires a function with signature T fn() or T fn(U) where T is int, bool, string, int[], or int[][] and U is int, bool, string, int[], or int[][]'
     return 'future<' + function_sig.return_type + '>'
 
 RecordFieldIR[] collect_record_fields(RecordDeclIR[] records):
@@ -732,6 +732,10 @@ string infer_call_type_cached(string name, FunctionSigIR[] functions, string[] c
 string infer_method_call_type(string method_name, string base_type, FunctionSigIR[] functions):
     if (method_name == 'await' && is_future_type(base_type)):
         return future_value_type(base_type)
+    if (method_name == 'is_done' && is_future_type(base_type)):
+        return 'bool'
+    if (method_name == 'wait_for' && is_future_type(base_type)):
+        return 'bool'
     if (method_name == 'length'):
         return 'int'
     if (method_name == 'add' && base_type.starts_with('set<')):
