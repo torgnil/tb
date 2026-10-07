@@ -166,6 +166,7 @@ int main(string[] args):
 - Continue and break are supported inside loop bodies, including nested `if` / `switch` blocks within `for`, `foreach`, and `while`.
 - A `continue` in a C-style `for` loop runs its update before testing the condition again; `break` and `return` skip the update.
 - `return;` is allowed inside `void` functions for early exit.
+- No extra trailing return is needed when every reachable path in a non-void function returns or throws.
 - Exceptions use `throw expr`, where `expr` must be string-compatible. `exception` is currently a string-backed alias for catch bindings.
 - Catch exceptions with `try` / `catch`:
 

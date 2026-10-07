@@ -6307,6 +6307,58 @@ string[] emit_terminator(ParsedFunction function_ir, BlockIR block, TerminatorIR
         ]
     throw 'unsupported llvm terminator kind: ' + terminator.kind
 
+bool[] llvm_reachable_blocks(ParsedFunction function_ir):
+    int block_count = function_ir.blocks.length()
+    bool[] visited = []
+    int block_index = 0
+    while (block_index < block_count):
+        visited.push(false)
+        block_index += 1
+    if (block_count == 0):
+        return visited
+
+    int[] worklist = [0]
+    visited[0] = true
+    int work_index = 0
+    while (work_index < worklist.length()):
+        int current_index = worklist[work_index]
+        BlockIR block = function_ir.blocks[current_index]
+
+        for (LinearInstruction op in block.instructions):
+            if (op.kind == 'try'):
+                int catch_index = block_index_by_label(function_ir, op.detail)
+                if (catch_index >= 0):
+                    if (!visited[catch_index]):
+                        visited[catch_index] = true
+                        worklist.push(catch_index)
+
+        if (block.terminator.kind == 'jump'):
+            if (block.terminator.args.length() > 0):
+                int target_index = block_index_by_label(function_ir, block.terminator.args[0])
+                if (target_index >= 0):
+                    if (!visited[target_index]):
+                        visited[target_index] = true
+                        worklist.push(target_index)
+        else if (block.terminator.kind == 'branch_if'):
+            if (block.terminator.args.length() > 2):
+                int true_index = block_index_by_label(function_ir, block.terminator.args[1])
+                int false_index = block_index_by_label(function_ir, block.terminator.args[2])
+                if (true_index >= 0):
+                    if (!visited[true_index]):
+                        visited[true_index] = true
+                        worklist.push(true_index)
+                if (false_index >= 0):
+                    if (!visited[false_index]):
+                        visited[false_index] = true
+                        worklist.push(false_index)
+        else if (block.terminator.kind == ''):
+            if (current_index + 1 < block_count):
+                if (!visited[current_index + 1]):
+                    visited[current_index + 1] = true
+                    worklist.push(current_index + 1)
+        work_index += 1
+    return visited
+
 string[] emit_allocas(ParsedFunction function_ir, bool bootstrap_main_args):
     string[] lines = []
     bool emitted_bootstrap_args = false
@@ -6386,7 +6438,17 @@ void append_plain_function_lines(string[] lines, ProgramIR program, ParsedFuncti
             else if (block_index + 1 < function_ir.blocks.length()):
                 lines.push('  br label %' + function_ir.blocks[block_index + 1].label)
             else:
-                throw 'unsupported llvm terminator kind: '
+                bool can_return_unreachable = false
+                if (normalize_llvm_type_name(result_type) != 'void'):
+                    if (!is_bootstrap_c_main(function_ir)):
+                        bool[] reachable = llvm_reachable_blocks(function_ir)
+                        if (block_index < reachable.length()):
+                            if (!reachable[block_index]):
+                                can_return_unreachable = true
+                if (can_return_unreachable):
+                    lines.push('  unreachable')
+                else:
+                    throw 'unsupported llvm terminator kind: '
         else:
             for (string line in emit_terminator(function_ir, block, block.terminator, block.label)):
                 lines.push(line)
