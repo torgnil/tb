@@ -378,7 +378,7 @@ Array helpers
 Set and map helpers
 
 - map literal syntax: `{'a': 1, 'b': 2}` in a typed context such as `map<string, int> counts = {'a': 1};`
-- empty map literal: `map<string, int> counts = {};`
+- empty map literal: `map<string, int> counts = {};` The declared map type supplies the key and value types, both when initializing a local map and when resetting an existing typed map with `counts = {};`.
 - `map<K, V>` supports cache-stringifiable keys such as `int`, `string`, arrays, and records with cache-stringifiable fields.
 - map.keys() -> `K[]`
 - map.values() -> `V[]`
