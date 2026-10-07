@@ -2110,6 +2110,32 @@ string track_string_method_value(string emitted):
 string llvm_i32_index_temp(string temp_suffix):
     return '%index32.' + temp_suffix
 
+string emit_array_index_materialize(string base_type, string array_temp, string index_temp, string temp_suffix):
+    string length_call = ''
+    string normalized_type = normalize_llvm_type_name(base_type)
+    if (normalized_type == 'string[]'):
+        length_call = 'call i32 @tb_bootstrap_string_array_length(ptr ' + temp_ref(array_temp) + ')'
+    else if (normalized_type == 'string[][]'):
+        length_call = 'call i32 @tb_bootstrap_string_array_array_length(ptr ' + temp_ref(array_temp) + ')'
+    else if (normalized_type == 'bool[]'):
+        length_call = 'call i32 @tb_bootstrap_bool_array_length(ptr ' + temp_ref(array_temp) + ')'
+    else if (normalized_type == 'int[]'):
+        length_call = 'call i32 @tb_bootstrap_int_array_length(ptr ' + temp_ref(array_temp) + ')'
+    else if (normalized_type == 'int[][]'):
+        length_call = 'call i32 @tb_bootstrap_int_array_array_length(ptr ' + temp_ref(array_temp) + ')'
+    else if (normalized_type.ends_with('[]') && record_name_from_type(array_item_type(normalized_type)) != ''):
+        string record_name = record_name_from_type(array_item_type(normalized_type))
+        length_call = 'call i32 @tb_bootstrap_record_array_length_' + record_name + '(ptr ' + temp_ref(array_temp) + ')'
+    else:
+        throw 'unsupported llvm array index type: ' + base_type
+    string length32_name = '%index.len32.' + temp_suffix
+    string length64_name = '%index.len64.' + temp_suffix
+    string negative_name = '%index.negative.' + temp_suffix
+    string adjusted_name = '%index.adjusted.' + temp_suffix
+    string normalized_name = '%index.normalized.' + temp_suffix
+    string index32_name = llvm_i32_index_temp(temp_suffix)
+    return '  ' + length32_name + ' = ' + length_call + '\n  ' + length64_name + ' = sext i32 ' + length32_name + ' to i64\n  ' + negative_name + ' = icmp slt i64 ' + temp_ref(index_temp) + ', 0\n  ' + adjusted_name + ' = add i64 ' + length64_name + ', ' + temp_ref(index_temp) + '\n  ' + normalized_name + ' = select i1 ' + negative_name + ', i64 ' + adjusted_name + ', i64 ' + temp_ref(index_temp) + '\n  ' + index32_name + ' = trunc i64 ' + normalized_name + ' to i32'
+
 string[] emit_i32_index_materialize(string temp_name, string temp_suffix):
     return ['  ' + llvm_i32_index_temp(temp_suffix) + ' = trunc i64 ' + temp_ref(temp_name) + ' to i32']
 
@@ -5127,23 +5153,23 @@ string emit_index_value_instruction(ParsedFunction function_ir, LinearInstructio
     if (base_type == 'string'):
         return emit_string_char_at_value(function_ir, op.args[0], op.args[1], lhs, op.lhs + '.string.index')
     if (base_type == 'string[]'):
-        return '  ' + llvm_i32_index_temp(op.lhs) + ' = trunc i64 ' + temp_ref(op.args[1]) + ' to i32\n  ' + lhs + ' = call ptr @tb_bootstrap_string_array_get(ptr ' + temp_ref(op.args[0]) + ', i32 ' + llvm_i32_index_temp(op.lhs) + ')'
+        return emit_array_index_materialize(base_type, op.args[0], op.args[1], op.lhs) + '\n  ' + lhs + ' = call ptr @tb_bootstrap_string_array_get(ptr ' + temp_ref(op.args[0]) + ', i32 ' + llvm_i32_index_temp(op.lhs) + ')'
     if (base_type == 'string[][]'):
-        return '  ' + llvm_i32_index_temp(op.lhs) + ' = trunc i64 ' + temp_ref(op.args[1]) + ' to i32\n  ' + lhs + ' = call ptr @tb_bootstrap_string_array_array_get(ptr ' + temp_ref(op.args[0]) + ', i32 ' + llvm_i32_index_temp(op.lhs) + ')'
+        return emit_array_index_materialize(base_type, op.args[0], op.args[1], op.lhs) + '\n  ' + lhs + ' = call ptr @tb_bootstrap_string_array_array_get(ptr ' + temp_ref(op.args[0]) + ', i32 ' + llvm_i32_index_temp(op.lhs) + ')'
     if (base_type == 'bool[]'):
-        return '  ' + llvm_i32_index_temp(op.lhs) + ' = trunc i64 ' + temp_ref(op.args[1]) + ' to i32\n  ' + lhs + ' = call i1 @tb_bootstrap_bool_array_get(ptr ' + temp_ref(op.args[0]) + ', i32 ' + llvm_i32_index_temp(op.lhs) + ')'
+        return emit_array_index_materialize(base_type, op.args[0], op.args[1], op.lhs) + '\n  ' + lhs + ' = call i1 @tb_bootstrap_bool_array_get(ptr ' + temp_ref(op.args[0]) + ', i32 ' + llvm_i32_index_temp(op.lhs) + ')'
     if (base_type == 'int[]'):
-        return '  ' + llvm_i32_index_temp(op.lhs) + ' = trunc i64 ' + temp_ref(op.args[1]) + ' to i32\n  ' + lhs + ' = call i64 @tb_bootstrap_int_array_get(ptr ' + temp_ref(op.args[0]) + ', i32 ' + llvm_i32_index_temp(op.lhs) + ')'
+        return emit_array_index_materialize(base_type, op.args[0], op.args[1], op.lhs) + '\n  ' + lhs + ' = call i64 @tb_bootstrap_int_array_get(ptr ' + temp_ref(op.args[0]) + ', i32 ' + llvm_i32_index_temp(op.lhs) + ')'
     if (base_type == 'set<int>'):
         return '  ' + llvm_i32_index_temp(op.lhs) + ' = trunc i64 ' + temp_ref(op.args[1]) + ' to i32\n  ' + lhs + ' = call i64 @tb_bootstrap_int_set_get(ptr ' + temp_ref(op.args[0]) + ', i32 ' + llvm_i32_index_temp(op.lhs) + ')'
     if (base_type.starts_with('set<') && record_name_from_type(set_item_type(base_type)) != ''):
         string record_name = record_name_from_type(set_item_type(base_type))
         return '  ' + llvm_i32_index_temp(op.lhs) + ' = trunc i64 ' + temp_ref(op.args[1]) + ' to i32\n  ' + lhs + ' = call ptr @tb_bootstrap_record_set_get_' + record_name + '(ptr ' + temp_ref(op.args[0]) + ', i32 ' + llvm_i32_index_temp(op.lhs) + ')'
     if (base_type == 'int[][]'):
-        return '  ' + llvm_i32_index_temp(op.lhs) + ' = trunc i64 ' + temp_ref(op.args[1]) + ' to i32\n  ' + lhs + ' = call ptr @tb_bootstrap_int_array_array_get(ptr ' + temp_ref(op.args[0]) + ', i32 ' + llvm_i32_index_temp(op.lhs) + ')'
+        return emit_array_index_materialize(base_type, op.args[0], op.args[1], op.lhs) + '\n  ' + lhs + ' = call ptr @tb_bootstrap_int_array_array_get(ptr ' + temp_ref(op.args[0]) + ', i32 ' + llvm_i32_index_temp(op.lhs) + ')'
     if (base_type.ends_with('[]') && record_name_from_type(array_item_type(base_type)) != ''):
         string record_name = record_name_from_type(array_item_type(base_type))
-        return '  ' + llvm_i32_index_temp(op.lhs) + ' = trunc i64 ' + temp_ref(op.args[1]) + ' to i32\n  ' + lhs + ' = call ptr @tb_bootstrap_record_array_get_' + record_name + '(ptr ' + temp_ref(op.args[0]) + ', i32 ' + llvm_i32_index_temp(op.lhs) + ')'
+        return emit_array_index_materialize(base_type, op.args[0], op.args[1], op.lhs) + '\n  ' + lhs + ' = call ptr @tb_bootstrap_record_array_get_' + record_name + '(ptr ' + temp_ref(op.args[0]) + ', i32 ' + llvm_i32_index_temp(op.lhs) + ')'
     if (base_type.starts_with('map<')):
         if (normalize_llvm_type_name(map_key_type(base_type)) == 'int'):
             return '  ' + lhs + ' = call ' + llvm_type(map_value_type(base_type)) + ' ' + llvm_map_get_name(base_type) + '(ptr ' + temp_ref(op.args[0]) + ', i64 ' + temp_ref(op.args[1]) + ')'
@@ -5838,17 +5864,17 @@ string emit_release_index_instruction(ProgramIR program, ParsedFunction function
         return '  ; release_index ' + temp_ref(op.args[0]) + ' ' + temp_ref(op.args[1])
     if (base_type == 'string[]'):
         string index_name = llvm_i32_index_temp('release.' + temp_suffix)
-        return '  ' + index_name + ' = trunc i64 ' + temp_ref(op.args[1]) + ' to i32\n  call void @tb_bootstrap_string_array_release_slot(ptr ' + temp_ref(op.args[0]) + ', i32 ' + index_name + ')'
+        return emit_array_index_materialize(base_type, op.args[0], op.args[1], 'release.' + temp_suffix) + '\n  call void @tb_bootstrap_string_array_release_slot(ptr ' + temp_ref(op.args[0]) + ', i32 ' + index_name + ')'
     if (base_type == 'string[][]'):
         string index_name = llvm_i32_index_temp('release.' + temp_suffix)
-        return '  ' + index_name + ' = trunc i64 ' + temp_ref(op.args[1]) + ' to i32\n  call void @tb_bootstrap_string_array_array_release_slot(ptr ' + temp_ref(op.args[0]) + ', i32 ' + index_name + ')'
+        return emit_array_index_materialize(base_type, op.args[0], op.args[1], 'release.' + temp_suffix) + '\n  call void @tb_bootstrap_string_array_array_release_slot(ptr ' + temp_ref(op.args[0]) + ', i32 ' + index_name + ')'
     if (base_type == 'int[][]'):
         string index_name = llvm_i32_index_temp('release.' + temp_suffix)
-        return '  ' + index_name + ' = trunc i64 ' + temp_ref(op.args[1]) + ' to i32\n  call void @tb_bootstrap_int_array_array_release_slot(ptr ' + temp_ref(op.args[0]) + ', i32 ' + index_name + ')'
+        return emit_array_index_materialize(base_type, op.args[0], op.args[1], 'release.' + temp_suffix) + '\n  call void @tb_bootstrap_int_array_array_release_slot(ptr ' + temp_ref(op.args[0]) + ', i32 ' + index_name + ')'
     if (base_type.ends_with('[]') && record_name_from_type(array_item_type(base_type)) != ''):
         string index_name = llvm_i32_index_temp('release.' + temp_suffix)
         string record_name = record_name_from_type(array_item_type(base_type))
-        return '  ' + index_name + ' = trunc i64 ' + temp_ref(op.args[1]) + ' to i32\n  call void @tb_bootstrap_record_array_release_slot_' + record_name + '(ptr ' + temp_ref(op.args[0]) + ', i32 ' + index_name + ')'
+        return emit_array_index_materialize(base_type, op.args[0], op.args[1], 'release.' + temp_suffix) + '\n  call void @tb_bootstrap_record_array_release_slot_' + record_name + '(ptr ' + temp_ref(op.args[0]) + ', i32 ' + index_name + ')'
     if (base_type.starts_with('map<')):
         string value_type = normalize_llvm_type_name(map_value_type(base_type))
         if (!is_backend_managed_type(value_type)):
@@ -5867,7 +5893,7 @@ string emit_assign_index_add_instruction(ProgramIR program, ParsedFunction funct
     string base_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0]))
     if (base_type == 'int[]'):
         string index_name = llvm_i32_index_temp('assign.add.' + temp_suffix)
-        return '  ' + index_name + ' = trunc i64 ' + temp_ref(op.args[1]) + ' to i32\n  %assign.add.old.' + temp_suffix + ' = call i64 @tb_bootstrap_int_array_get(ptr ' + temp_ref(op.args[0]) + ', i32 ' + index_name + ')\n  %assign.add.new.' + temp_suffix + ' = add i64 %assign.add.old.' + temp_suffix + ', ' + temp_ref(op.args[2]) + '\n  call void @tb_bootstrap_int_array_set(ptr ' + temp_ref(op.args[0]) + ', i32 ' + index_name + ', i64 %assign.add.new.' + temp_suffix + ')'
+        return emit_array_index_materialize(base_type, op.args[0], op.args[1], 'assign.add.' + temp_suffix) + '\n  %assign.add.old.' + temp_suffix + ' = call i64 @tb_bootstrap_int_array_get(ptr ' + temp_ref(op.args[0]) + ', i32 ' + index_name + ')\n  %assign.add.new.' + temp_suffix + ' = add i64 %assign.add.old.' + temp_suffix + ', ' + temp_ref(op.args[2]) + '\n  call void @tb_bootstrap_int_array_set(ptr ' + temp_ref(op.args[0]) + ', i32 ' + index_name + ', i64 %assign.add.new.' + temp_suffix + ')'
     if (base_type == 'map<int, int>'):
         return '  call void ' + llvm_map_increment_by_key_name(base_type) + '(ptr ' + temp_ref(op.args[0]) + ', i64 ' + temp_ref(op.args[1]) + ', i64 ' + temp_ref(op.args[2]) + ')'
     return emit_assign_index_instruction(program, function_ir, LinearInstruction('assign_index', '', '', '', '', op.args), temp_suffix)
@@ -5876,16 +5902,16 @@ string emit_assign_index_instruction(ProgramIR program, ParsedFunction function_
     string base_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0]))
     if (base_type == 'bool[]'):
         string index_name = llvm_i32_index_temp('assign.' + temp_suffix)
-        return '  ' + index_name + ' = trunc i64 ' + temp_ref(op.args[1]) + ' to i32\n  call void @tb_bootstrap_bool_array_set(ptr ' + temp_ref(op.args[0]) + ', i32 ' + index_name + ', i1 ' + temp_ref(op.args[2]) + ')'
+        return emit_array_index_materialize(base_type, op.args[0], op.args[1], 'assign.' + temp_suffix) + '\n  call void @tb_bootstrap_bool_array_set(ptr ' + temp_ref(op.args[0]) + ', i32 ' + index_name + ', i1 ' + temp_ref(op.args[2]) + ')'
     if (base_type == 'int[]'):
         string index_name = llvm_i32_index_temp('assign.' + temp_suffix)
-        return '  ' + index_name + ' = trunc i64 ' + temp_ref(op.args[1]) + ' to i32\n  call void @tb_bootstrap_int_array_set(ptr ' + temp_ref(op.args[0]) + ', i32 ' + index_name + ', i64 ' + temp_ref(op.args[2]) + ')'
+        return emit_array_index_materialize(base_type, op.args[0], op.args[1], 'assign.' + temp_suffix) + '\n  call void @tb_bootstrap_int_array_set(ptr ' + temp_ref(op.args[0]) + ', i32 ' + index_name + ', i64 ' + temp_ref(op.args[2]) + ')'
     if (base_type == 'string[]'):
         string[] lines = emit_string_materialize_if_needed(function_ir, op.args[2], 'index.' + temp_suffix)
         string stored_value = temp_ref(op.args[2]).substring(0)
         string owned_flag = 'false'.substring(0)
         string index_name = llvm_i32_index_temp('assign.' + temp_suffix)
-        lines.push('  ' + index_name + ' = trunc i64 ' + temp_ref(op.args[1]) + ' to i32')
+        lines.push(emit_array_index_materialize(base_type, op.args[0], op.args[1], 'assign.' + temp_suffix))
         if (temp_is_string(function_ir, op.args[2])):
             if (temp_needs_backend_free(function_ir, op.args[2])):
                 owned_flag = 'true'.substring(0)
@@ -5899,7 +5925,7 @@ string emit_assign_index_instruction(ProgramIR program, ParsedFunction function_
         string stored_value = temp_ref(op.args[2]).substring(0)
         string owned_flag = 'false'.substring(0)
         string index_name = llvm_i32_index_temp('assign.' + temp_suffix)
-        lines.push('  ' + index_name + ' = trunc i64 ' + temp_ref(op.args[1]) + ' to i32')
+        lines.push(emit_array_index_materialize(base_type, op.args[0], op.args[1], 'assign.' + temp_suffix))
         if (temp_is_string_array(function_ir, op.args[2])):
             if (temp_needs_backend_free(function_ir, op.args[2])):
                 owned_flag = 'true'.substring(0)
@@ -5913,7 +5939,7 @@ string emit_assign_index_instruction(ProgramIR program, ParsedFunction function_
         string stored_value = temp_ref(op.args[2]).substring(0)
         string owned_flag = 'false'.substring(0)
         string index_name = llvm_i32_index_temp('assign.' + temp_suffix)
-        lines.push('  ' + index_name + ' = trunc i64 ' + temp_ref(op.args[1]) + ' to i32')
+        lines.push(emit_array_index_materialize(base_type, op.args[0], op.args[1], 'assign.' + temp_suffix))
         if (temp_is_int_array(function_ir, op.args[2])):
             if (temp_needs_backend_free(function_ir, op.args[2])):
                 owned_flag = 'true'.substring(0)
@@ -5928,7 +5954,7 @@ string emit_assign_index_instruction(ProgramIR program, ParsedFunction function_
         string stored_value = temp_ref(op.args[2]).substring(0)
         string owned_flag = 'false'.substring(0)
         string index_name = llvm_i32_index_temp('assign.' + temp_suffix)
-        lines.push('  ' + index_name + ' = trunc i64 ' + temp_ref(op.args[1]) + ' to i32')
+        lines.push(emit_array_index_materialize(base_type, op.args[0], op.args[1], 'assign.' + temp_suffix))
         if (temp_is_record(function_ir, op.args[2])):
             if (temp_needs_backend_free(function_ir, op.args[2])):
                 owned_flag = 'true'.substring(0)

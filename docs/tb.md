@@ -179,7 +179,7 @@ int main(string[] args):
 
 - Array literal: `['a', 'b', 'c']`.
 - Empty array literals are allowed in a typed context, for example `int[] nums = [];` or `string[] words = [];`.
-- Indexing: `arr[0]`, with negative indexing like `arr[-1]` (last element) supported for arrays and strings.
+- Indexing: `arr[0]`, with negative indexing like `arr[-1]` (last element) supported for arrays and strings. For arrays, negative indices count from the end for both reads and writes: `arr[-length(arr)]` refers to the first element.
 - Slice notation with `[]` is supported for both arrays and strings. For example, `nums[1:3]` gives a subarray, and `text[2:5]` gives a substring. Open-ended, omitted-start, and negative-end slices are supported, e.g. `arr[1:]`, `text[:3]`, `text[:-1]`.
   - Negative end bounds follow Python-style exclusive semantics, so `text[:-1]` drops the last character and `nums[0:-1]` drops the last element.
   - Example (array): `int[] nums = [1, 2, 3, 4]; int[] mid = nums[1:3];  // [2, 3]`

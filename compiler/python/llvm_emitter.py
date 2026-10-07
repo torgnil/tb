@@ -5630,8 +5630,18 @@ class LLVMEmitter:
             value_pointer = self._emit_value_pointer(instruction.item_type, instruction.value, lines, string_lengths, own_for_storage=True)
             array_pointer = self._emit_array_expression(IRVariable(instruction.target_name), lines, string_lengths)
             index = self._emit_integer_expression(instruction.index, lines)
+            len_pointer = self._next_temp("len")
+            length = self._next_temp("len")
+            is_negative = self._next_temp("neg")
+            normalized = self._next_temp("idx")
+            actual_index = self._next_temp("idx")
+            lines.append(f"  {len_pointer} = getelementptr inbounds {self.ARRAY_TYPE_NAME}, ptr {array_pointer}, i32 0, i32 0")
+            lines.append(f"  {length} = load i64, ptr {len_pointer}")
+            lines.append(f"  {is_negative} = icmp slt i64 {index}, 0")
+            lines.append(f"  {normalized} = add i64 {length}, {index}")
+            lines.append(f"  {actual_index} = select i1 {is_negative}, i64 {normalized}, i64 {index}")
             lines.append(
-                f"  call void @tb_array_set(ptr {array_pointer}, i64 {index}, ptr {value_pointer}, i64 {self._element_size(instruction.item_type)})"
+                f"  call void @tb_array_set(ptr {array_pointer}, i64 {actual_index}, ptr {value_pointer}, i64 {self._element_size(instruction.item_type)})"
             )
             return False
         if isinstance(instruction, IRMapSet):
