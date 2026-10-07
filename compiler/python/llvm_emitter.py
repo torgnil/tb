@@ -6121,9 +6121,9 @@ class LLVMEmitter:
             self.break_labels.pop()
         if not terminated:
             lines.append(f"  br label %{update_label}")
-            lines.append(f"{update_label}:")
-            self._emit_instruction(instruction.update, lines, string_lengths)
-            lines.append(f"  br label %{condition_label}")
+        lines.append(f"{update_label}:")
+        self._emit_instruction(instruction.update, lines, string_lengths)
+        lines.append(f"  br label %{condition_label}")
         lines.append(f"{end_label}:")
         return False
 
@@ -6176,8 +6176,10 @@ class LLVMEmitter:
                 break
         if not else_terminated:
             lines.append(f"  br label %{end_label}")
-        lines.append(f"{end_label}:")
-        return then_terminated and else_terminated
+        terminated = then_terminated and else_terminated
+        if not terminated:
+            lines.append(f"{end_label}:")
+        return terminated
 
     def _emit_try_catch_statement(self, instruction: IRTryCatch, lines: list[str], string_lengths: dict[str, int]) -> bool:
         catch_label = self._next_label("catch")
@@ -6225,7 +6227,9 @@ class LLVMEmitter:
         if not catch_terminated:
             lines.append(f"  br label %{end_label}")
 
-        lines.append(f"{end_label}:")
+        terminated = terminated and catch_terminated
+        if not terminated:
+            lines.append(f"{end_label}:")
         if previous_slot is None:
             self.variable_slots.pop(instruction.catch_name, None)
             self.variable_types.pop(instruction.catch_name, None)
@@ -6233,7 +6237,7 @@ class LLVMEmitter:
             self.variable_slots[instruction.catch_name] = previous_slot
             if previous_type is not None:
                 self.variable_types[instruction.catch_name] = previous_type
-        return terminated and catch_terminated
+        return terminated
 
     def _emit_condition(self, condition: IRComparison, lines: list[str]) -> str:
         if isinstance(condition, IRLogicalCondition):

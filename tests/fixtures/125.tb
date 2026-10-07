@@ -1,0 +1,65 @@
+int choose(int value):
+    if (value < 0):
+        return 10
+    else:
+        return 20
+    return 0
+
+int always_throw(int value):
+    if (value < 0):
+        throw 'negative'
+    else:
+        throw 'nonnegative'
+    return 0
+
+int fail_by_switch(int value):
+    switch (value):
+        case 0:
+            throw 'zero'
+        default:
+            throw 'other'
+    return 0
+
+int main(string[] args):
+    try:
+        try:
+            throw 'inner'
+        catch (exception inner):
+            throw inner
+    catch (exception outer):
+        print(outer)
+
+    print(choose(1))
+    try:
+        always_throw(1)
+    catch (exception error):
+        print(error)
+    try:
+        fail_by_switch(0)
+    catch (exception error):
+        print(error)
+
+    int value = 0
+    if (args.length() > 1):
+        value = 4
+    else:
+        print('mixed fallthrough')
+    print(value)
+
+    for (int i = 0; i < 5; i++):
+        print('transfer ' + i)
+        if (i < 2):
+            continue
+        else:
+            break
+    print('after transfers')
+
+    for (int i = 0; i < 5; i++):
+        if (i < 2):
+            continue
+        else:
+            if (i == 3):
+                break
+            print('loop ' + i)
+    print('after loop')
+    return 0
