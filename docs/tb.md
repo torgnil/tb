@@ -33,6 +33,7 @@ Build and invocation details are documented in the repository or release `README
 2. Lexical rules
 
 - Strings: single quotes only. Example: `'hello'`.
+- String literals live for the duration of the program and can be stored in containers or passed to and returned from functions.
 - Supported string escapes inside single-quoted strings:
   - `\\`
   - `\'`

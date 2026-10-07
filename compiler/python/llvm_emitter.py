@@ -230,9 +230,7 @@ class LLVMEmitter:
         lines.append("")
         for string in module.strings:
             encoded = self._encode_string_literal(string.value)
-            lines.append(
-                f"@{string.label} = private unnamed_addr constant [{len(encoded)} x i8] c\"{self._escape_bytes(encoded)}\""
-            )
+            lines.extend(self._emit_static_string_global(string.label, encoded))
         for function in module.functions:
             if function.cached:
                 lines.append(f"@{self._cached_cache_symbol(function.name)} = internal global ptr null")
@@ -292,14 +290,8 @@ class LLVMEmitter:
             f"@{self.NEWLINE_LABEL} = private unnamed_addr constant [{len(self.NEWLINE_BYTES)} x i8] "
             f'c"{self._escape_bytes(self.NEWLINE_BYTES)}"'
         )
-        lines.append(
-            f"@{self.BOOL_TRUE_LABEL} = private unnamed_addr constant [{len(self.BOOL_TRUE_BYTES)} x i8] "
-            f'c"{self._escape_bytes(self.BOOL_TRUE_BYTES)}"'
-        )
-        lines.append(
-            f"@{self.BOOL_FALSE_LABEL} = private unnamed_addr constant [{len(self.BOOL_FALSE_BYTES)} x i8] "
-            f'c"{self._escape_bytes(self.BOOL_FALSE_BYTES)}"'
-        )
+        lines.extend(self._emit_static_string_global(self.BOOL_TRUE_LABEL, self.BOOL_TRUE_BYTES))
+        lines.extend(self._emit_static_string_global(self.BOOL_FALSE_LABEL, self.BOOL_FALSE_BYTES))
 
         lines.append("")
         string_lengths = {string.label: len(self._encode_string_literal(string.value)) for string in module.strings}
@@ -371,6 +363,18 @@ class LLVMEmitter:
             else:
                 parts.append(f"\\{byte:02X}")
         return "".join(parts)
+
+    def _emit_static_string_global(self, label: str, data: bytes) -> list[str]:
+        array_type = f"[{len(data)} x i8]"
+        storage_type = f"{{ {self.RC_HEADER_TYPE_NAME}, {array_type} }}"
+        storage_label = f"{label}.storage"
+        # Zero flags make retain/release leave this program-lifetime storage untouched.
+        return [
+            f"@{storage_label} = private unnamed_addr constant {storage_type} "
+            f"{{ {self.RC_HEADER_TYPE_NAME} zeroinitializer, {array_type} c\"{self._escape_bytes(data)}\" }}, align 8",
+            f"@{label} = private alias {array_type}, getelementptr inbounds ({storage_type}, "
+            f"ptr @{storage_label}, i32 0, i32 1)",
+        ]
 
     def _emit_runtime_helpers(self) -> list[str]:
         helpers = [
