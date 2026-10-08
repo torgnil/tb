@@ -225,6 +225,7 @@ int main(string[] args):
   - known mutating array, set, and priority-queue operations through a `const` binding are rejected, including UFCS and free-function forms
   - passing a const value to an arbitrary user function does not make that function's parameters const
 - When values are not known at compile time, corresponding operations lower to runtime helpers and library calls.
+- Local declarations and reassignment transfer owned `string[]`, `int[][]`, map, and record temporaries. Borrowed values keep their existing copy behavior, and reassignment releases the previous owned local value.
 
 11. Built-in calling and printing
 

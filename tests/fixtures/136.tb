@@ -1,0 +1,134 @@
+record Entry(string label, int value);
+record Cell(int value);
+
+string make_text(int value):
+    return 'text-' + value
+
+string[] make_words(string prefix):
+    string[] words = []
+    words.push(prefix + '-word')
+    return words
+
+int[][] make_rows(int seed):
+    const int[][] rows = [[seed, seed + 1], [seed + 2]]
+    return rows
+
+map<string, int> make_counts(int value):
+    const map<string, int> counts = {'key': value}
+    return counts
+
+Entry make_entry(int value):
+    return Entry('entry-' + value, value)
+
+Cell make_cell(int value):
+    return Cell(value)
+
+int borrowed_rows(int[][] source):
+    int[][] copy = source
+    copy[0][0] = 99
+    return source[0][0]
+
+bool borrowed_words(string[] source):
+    string[] copy = source
+    copy[0] = 'changed'
+    return source[0] == 'source'
+
+int borrowed_counts(map<string, int> source):
+    map<string, int> copy = source
+    copy['key'] = 99
+    return source['key']
+
+int borrowed_entry(Entry source):
+    Entry copy = source
+    copy.value = 99
+    return source.value
+
+int early_return(int seed):
+    int[][] rows = seed.make_rows()
+    return rows[0][0]
+
+int main(string[] args):
+    string text = make_text(1)
+    const string const_text = make_text(2)
+    text = make_text(3)
+    print(text)
+    print(const_text)
+
+    string[] words = make_words('first')
+    const string[] const_words = make_words('const')
+    words = ('second,' + args.length()).split(',')
+    print(words[0])
+    print(const_words[0])
+
+    int[][] rows = make_rows(4)
+    int[][] transfer_rows = (args.length() + 4).make_rows()
+    const int[][] const_rows = (args.length() + 5).make_rows()
+    rows = make_rows(6)
+    transfer_rows = (args.length() + 7).make_rows()
+    print(rows[0][0])
+    print(transfer_rows[0][0])
+    print(const_rows[0][0])
+
+    map<string, int> counts = make_counts(7)
+    map<string, int> transfer_counts = (args.length() + 8).make_counts()
+    const map<string, int> const_counts = (args.length() + 9).make_counts()
+    map<string, int> copied_const_counts = const_counts
+    counts = make_counts(9)
+    transfer_counts = (args.length() + 10).make_counts()
+    print(counts['key'])
+    print(transfer_counts['key'])
+    print(copied_const_counts['key'])
+
+    Entry entry = make_entry(10)
+    const Entry const_entry = make_entry(11)
+    entry = make_entry(12)
+    Cell cell = (args.length() + 13).make_cell()
+    cell = (args.length() + 14).make_cell()
+    print(entry.label)
+    print(entry.value)
+    print(const_entry.value)
+    print(cell.value)
+
+    string owned_text = make_text(13)
+    string[] owned_words = make_words('owned')
+    int[][] owned_rows = make_rows(14)
+    int scalar = args.length()
+    scalar = scalar
+    print(owned_text)
+    print(owned_words[0])
+    print(owned_rows[0][0])
+    print(scalar)
+
+    int[][] source_rows = [[15, 16]]
+    string[] source_words = ['source']
+    map<string, int> source_counts = {'key': 17}
+    Entry source_entry = Entry('source-entry', 18)
+    print(borrowed_rows(source_rows))
+    print(source_rows[0][0])
+    print(borrowed_words(source_words))
+    print(borrowed_counts(source_counts))
+    print(borrowed_entry(source_entry))
+
+    string branch_text = make_text(19)
+    int[][] branch_rows = (args.length() + 28).make_rows()
+    if (args.length() > 0):
+        branch_text = make_text(20)
+        branch_rows = (args.length() + 29).make_rows()
+    else:
+        branch_text = make_text(21)
+        branch_rows = (args.length() + 30).make_rows()
+    for (int i : range(2)):
+        branch_text = make_text(22 + i)
+        branch_rows = (i + args.length() + 31).make_rows()
+    print(branch_text)
+    print(branch_rows[0][0])
+    print(early_return(24))
+
+    thread_pool pool = thread_pool(1)
+    const future<int[][]> rows_future = pool.submit(make_rows, 25)
+    int[][] first_snapshot = rows_future.await()
+    first_snapshot[0][0] = 99
+    int[][] second_snapshot = rows_future.await()
+    print(second_snapshot[0][0])
+    print(second_snapshot[1][0])
+    return 0
