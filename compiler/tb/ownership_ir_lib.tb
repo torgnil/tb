@@ -368,6 +368,11 @@ LinearInstruction[] apply_ownership_to_instructions(ParsedFunction function_ir, 
             result = append_instructions(result, move_temp_if_owned(cache, op.args[0], record_names, enum_names))
         if (op.kind == 'assign_local'):
             string binding_decl = named_binding_decl_cached(binding_cache, op.detail)
+            if (!op.args.is_empty()):
+                string source_binding_decl = identifier_target_binding_cached(identifier_target_cache, op.args[0])
+                if (binding_decl != '' && binding_is_managed_cached(binding_decl, record_names, enum_names)):
+                    if (source_binding_decl == binding_decl):
+                        continue
             if (binding_decl != '' && binding_is_managed_cached(binding_decl, record_names, enum_names)):
                 result.push(LinearInstruction('release_local', '', '', '', binding_decl, []))
             result = append_instructions(result, move_temp_if_owned(cache, op.args[0], record_names, enum_names))
