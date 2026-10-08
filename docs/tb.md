@@ -207,6 +207,7 @@ int main(string[] args):
 
 - Access: `r.field`.
 - Field writes and reads lower to runtime heap-backed record values when needed.
+- Const record bindings allow field reads, including nested record fields and array-valued fields; the binding remains protected from direct field writes.
 
 10. Compile-time vs runtime evaluation
 

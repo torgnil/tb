@@ -192,6 +192,15 @@ def main(argv: list[str] | None = None) -> int:
             "set<int> merged = fixed.union({2})\n"
             "print(merged.length())"
         ),
+        "const_record_field_reads": (
+            "record ReadBundle(Point point, int[] values, string[] words);\n",
+            "const ReadBundle fixed = ReadBundle(Point(3, 4), [5], ['read'])\n"
+            "print(fixed.point.x)\n"
+            "print(fixed.values[0])\n"
+            "print(fixed.values.length())\n"
+            "print(fixed.words[0])\n"
+            "print(fixed.words.length())"
+        ),
     }
 
     try:
