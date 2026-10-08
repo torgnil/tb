@@ -230,6 +230,7 @@ int main(string[] args):
 - `print(...)` is provided by the standard library (resolved via `compiler/python/stdlib.py`), not a keyword.
 - Integer printing uses `printf` with `%lld\n` via an emitted LLVM format string.
 - Runtime string concatenation with `int` and `num` values is supported; the compiler automatically converts numeric values to strings when concatenating or printing. Explicit `to_string()` is also available for supported types.
+- A runtime string concatenation produces an owned string value. Returning it transfers that value to the caller, while an unused result is released when its expression is dropped.
 
 12. Error reporting
 
