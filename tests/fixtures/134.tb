@@ -1,0 +1,102 @@
+record Text(string value);
+
+int const_record_local(int n):
+    const Text text = Text('record' + n)
+    return text.value.length()
+
+string const_string_return(int n):
+    const string value = 'direct' + n
+    return value
+
+string const_alias_return(int n):
+    const string value = 'alias' + n
+    const string alias = value
+    return alias
+
+string const_exception_alias_return(int n):
+    try:
+        throw 'caught' + n
+    catch (exception err):
+        const exception alias = err
+        return alias
+
+string const_field_return(int n):
+    const Text text = Text('field' + n)
+    return text.value
+
+Text const_record_identifier_return(int n):
+    const Text value = Text('returned' + n)
+    return value
+
+Text const_record_alias_return(int n):
+    const Text value = Text('record-alias' + n)
+    const Text alias = value
+    return alias
+
+int[] const_array_identifier_return(int n):
+    const int[] values = [n, n + 1]
+    return values
+
+int const_collections(int n):
+    const int[] values = [n, n + 1]
+    const map<string, int> counts = {'key': n}
+    const set<int> seen = {n}
+    if (n in seen):
+        return values.length() + counts['key']
+    return 0
+
+int const_branch_record(int n):
+    if (n > 0):
+        const Text text = Text('branch' + n)
+        return text.value.length()
+    return 0
+
+int const_loop_records(int n):
+    int i = 0
+    int total = 0
+    while (i < n):
+        const Text text = Text('loop' + i)
+        total += text.value.length()
+        i += 1
+    return total
+
+int const_throw_keeps_local(int n):
+    const Text text = Text('keep' + n)
+    try:
+        throw 'caught' + n
+    catch (exception err):
+        return text.value.length() + err.length()
+
+string borrowed_string(string value):
+    const string local = value
+    return local
+
+record Message(string text);
+
+void fail_with_const_field(int n):
+    const Message owner = Message('failed' + n)
+    throw owner.text
+
+int main(string[] args):
+    int n = args.length()
+    print(const_record_local(n))
+    print(const_string_return(n))
+    print(const_alias_return(n))
+    print(const_exception_alias_return(n))
+    print(const_field_return(n))
+    Text returned_record = const_record_identifier_return(n)
+    print(returned_record.value.length())
+    Text returned_alias = const_record_alias_return(n)
+    print(returned_alias.value.length())
+    print(const_array_identifier_return(n).length())
+    print(const_collections(n))
+    print(const_branch_record(n))
+    print(const_branch_record(0 - n))
+    print(const_loop_records(n + 2))
+    print(const_throw_keeps_local(n))
+    print(borrowed_string(args[0]) == args[0])
+    try:
+        fail_with_const_field(n)
+    catch (exception err):
+        print(err)
+    return 0

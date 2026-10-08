@@ -293,7 +293,7 @@ string num_literal_value_text(string value):
 
 string normalize_llvm_type_name(string type_name):
     if (type_name.starts_with('const ')):
-        return type_name.substring(6)
+        type_name = type_name.substring(6)
     if (type_name == 'exception'):
         return 'string'
     return type_name
@@ -2122,7 +2122,7 @@ string[] emit_record_materialize_if_needed(ProgramIR program, ParsedFunction fun
         return []
     if (!temp_is_record(function_ir, temp_name)):
         return []
-    string record_name = record_name_from_type(lookup_temp_llvm_type(function_ir, temp_name))
+    string record_name = record_name_from_type(normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, temp_name)))
     return ['  ' + emit_record_owned_value(function_ir, temp_name, temp_suffix) + ' = call ptr @tb_bootstrap_record_clone_' + record_name + '(ptr ' + temp_ref(temp_name) + ')']
 
 string emit_record_array_owned_value(ParsedFunction function_ir, string temp_name, string temp_suffix):
@@ -6178,6 +6178,16 @@ string[] emit_terminator(ParsedFunction function_ir, BlockIR block, TerminatorIR
             string[] lines = emit_try_restore_lines(try_suffix, temp_suffix)
             lines.push('  ret void')
             return lines
+        if (!terminator.args.is_empty()):
+            string local_name = transferable_local_binding_name(function_ir, terminator.args[0])
+            if (local_name != ''):
+                BindingIR local_binding = lookup_named_local_binding(function_ir, local_name)
+                if (local_binding.type_name.starts_with('const ')):
+                    string local_type = normalize_llvm_type_name(local_binding.type_name)
+                    if (local_type != 'string'):
+                        string[] lines = emit_try_restore_lines(try_suffix, temp_suffix)
+                        lines.push('  ret ' + llvm_type(result_type) + ' ' + temp_ref(terminator.args[0]))
+                        return lines
         if (normalize_llvm_type_name(result_type) == 'string'):
             bool return_string_prepared = false
             for (LinearInstruction op in block.instructions):

@@ -102,6 +102,7 @@ string[] collect_record_names(RecordDeclIR[] records):
     return names
 
 bool is_managed_type(string type_name, string[] record_names, string[] enum_names):
+    type_name = normalize_llvm_type_name(type_name)
     if (type_name == '' || type_name == 'unknown' || type_name == 'int' || type_name == 'bool'):
         return false
     if (type_name == 'string' || type_name == 'exception'):
@@ -422,11 +423,17 @@ LinearInstruction[] exit_cleanup_instructions(OwnershipIdentifierTargetCache ide
         transferred_binding = identifier_target_binding_cached(identifier_target_cache, terminator.args[0])
         if (terminator.kind == 'return_owned' && transferred_binding != ''):
             BindingIR transferred = ir_parse_binding_decl(transferred_binding)
-            if (transferred.type_name == 'string' || transferred.type_name == 'exception'):
+            string transferred_type = normalize_llvm_type_name(transferred.type_name)
+            if (transferred_type == 'string'):
                 transferred_binding = ''
     for (BindingIR binding in initialized_managed):
         string current = binding_decl(binding)
-        if (current != transferred_binding):
+        bool preserve_const_throw = false
+        # Newly recognized const owners must stay live on nonlocal throws until borrowed exception messages have independent ownership. Const arrays keep their existing cleanup policy.
+        if (terminator.kind == 'throw' || terminator.kind == 'throw_owned'):
+            if (binding.type_name.starts_with('const ')):
+                preserve_const_throw = !binding.type_name.ends_with('[]')
+        if (current != transferred_binding && !preserve_const_throw):
             result.push(LinearInstruction('release_local', '', '', '', current, []))
     return result
 
@@ -452,7 +459,8 @@ BlockIR apply_ownership_to_block(ParsedFunction function_ir, OwnershipTempMetaCa
             bool prepare_string_return = false
             if (!terminator.args.is_empty()):
                 string return_type = lookup_temp_result_type_cached(cache, terminator.args[0])
-                prepare_string_return = return_type == 'string' || return_type == 'exception'
+                string normalized_return_type = normalize_llvm_type_name(return_type)
+                prepare_string_return = normalized_return_type == 'string'
             if (prepare_string_return):
                 instructions.push(LinearInstruction('prepare_return_string', '', '', '', '', [terminator.args[0]]))
         instructions = append_instructions(instructions, exit_cleanup_instructions(identifier_target_cache, terminator, initialized_managed))
