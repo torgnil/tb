@@ -6022,6 +6022,8 @@ string emit_instruction(ProgramIR program, ParsedFunction function_ir, string bl
         return emit_value_instruction(program, function_ir, op)
     if (op.kind == 'move_temp'):
         return '  ; move_temp ' + op.detail + ' ' + temp_ref(op.args[0])
+    if (op.kind == 'prepare_return_string'):
+        return join_llvm_strings(emit_string_materialize_if_needed(function_ir, op.args[0], 'return.' + block_label), '\n')
     if (op.kind == 'release_local'):
         BindingIR binding = ir_parse_binding_decl(op.detail)
         return emit_backend_release_binding(binding, temp_suffix)
@@ -6175,7 +6177,15 @@ string[] emit_terminator(ParsedFunction function_ir, BlockIR block, TerminatorIR
             lines.push('  ret void')
             return lines
         if (normalize_llvm_type_name(result_type) == 'string'):
-            string[] lines = emit_string_materialize_if_needed(function_ir, terminator.args[0], 'return.' + temp_suffix)
+            bool return_string_prepared = false
+            for (LinearInstruction op in block.instructions):
+                if (op.kind == 'prepare_return_string'):
+                    if (!op.args.is_empty()):
+                        if (op.args[0] == terminator.args[0]):
+                            return_string_prepared = true
+            string[] lines = []
+            if (!return_string_prepared):
+                lines = emit_string_materialize_if_needed(function_ir, terminator.args[0], 'return.' + temp_suffix)
             string returned_value = temp_ref(terminator.args[0])
             if (temp_is_string(function_ir, terminator.args[0]) && !temp_needs_backend_free(function_ir, terminator.args[0])):
                 returned_value = emit_string_owned_value(function_ir, terminator.args[0], 'return.' + temp_suffix)

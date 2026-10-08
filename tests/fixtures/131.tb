@@ -1,0 +1,44 @@
+record Text(string[] words);
+record Shelf(Text item);
+
+string from_array(int n):
+    string[] words = ['array' + n]
+    return words[0]
+
+string from_record(int n):
+    Text text = Text(['record' + n])
+    return text.words[0]
+
+string from_nested_record(int n):
+    Shelf shelf = Shelf(Text(['nested' + n]))
+    return shelf.item.words[0]
+
+string from_branch(int n):
+    if (n > 0):
+        Text text = Text(['branch' + n])
+        return text.words[0]
+    string[] words = ['fallback' + n]
+    return words[0]
+
+string from_owned(int n):
+    return 'owned' + n
+
+string from_parameter(string value):
+    return value
+
+string from_literal():
+    return 'literal'
+
+int main(string[] args):
+    int n = args.length()
+    print(from_array(n))
+    print(from_record(n))
+    print(from_nested_record(n))
+    print(from_branch(n))
+    print(from_branch(0 - n))
+    print(from_owned(n))
+    string runtime_value = 'parameter' + n
+    print(from_parameter(runtime_value))
+    print(from_literal())
+    print(from_record(n))
+    return 0
