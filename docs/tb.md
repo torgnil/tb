@@ -217,9 +217,10 @@ int main(string[] args):
   - `read_lines(path)` always reads `path` when the compiled program runs.
   - `read_file(path)` always reads `path` when the compiled program runs.
   - The compiler emits the file path string, not the file contents, into the generated LLVM.
-- Const enforcement is compile-time:
-  - reassigning a `const` variable is rejected during compilation
-  - direct mutation through a `const` array, set, or record binding is also rejected during compilation
+- Const enforcement is compile-time and applies to the binding:
+  - reassigning a `const` variable and direct writes through its array, map, set, or record target are rejected during compilation
+  - known mutating array, set, and priority-queue operations through a `const` binding are rejected, including UFCS and free-function forms
+  - passing a const value to an arbitrary user function does not make that function's parameters const
 - When values are not known at compile time, corresponding operations lower to runtime helpers and library calls.
 
 11. Built-in calling and printing

@@ -1766,7 +1766,232 @@ string[] lower_statement_lines(Node node, string indent):
         return lines
     return [indent + '<unsupported-stmt ' + node.kind + '>']
 
+BindingIR[] const_copy_bindings(BindingIR[] bindings):
+    BindingIR[] copied = []
+    for (BindingIR binding : bindings):
+        copied.push(binding)
+    return copied
+
+BindingIR const_lookup_binding(BindingIR[] bindings, string name):
+    int index = bindings.length() - 1
+    while (index >= 0):
+        if (bindings[index].name == name):
+            return bindings[index]
+        index -= 1
+    return BindingIR('', '')
+
+string const_target_root(Node target):
+    if (target.kind == 'Identifier'):
+        return target.value
+    if ((target.kind == 'Field' || target.kind == 'Index') && target.children.length() > 0):
+        return const_target_root(target.children[0])
+    return ''
+
+bool const_type_is_array(string type_name):
+    return type_name.ends_with('[]')
+
+bool const_method_mutates_type(string method, string type_name):
+    string value_type = type_name
+    if (value_type.starts_with('const ')):
+        value_type = value_type.substring(6)
+    if (method == 'add'):
+        return value_type.starts_with('set<')
+    if (method == 'push' || method == 'pop'):
+        return const_type_is_array(value_type) || value_type.starts_with('prio_q<')
+    if (method == 'insert' || method == 'remove_at' || method == 'clear' || method == 'sort'):
+        return const_type_is_array(value_type)
+    return false
+
+string const_type_of_expression(Node expression, BindingIR[] bindings, Node[] record_nodes):
+    if (expression.kind == 'Identifier'):
+        return const_lookup_binding(bindings, expression.value).type_name.substring(0)
+    if (expression.kind == 'Index' && expression.children.length() > 0):
+        string base_type = const_type_of_expression(expression.children[0], bindings, record_nodes)
+        if (base_type.starts_with('const ')):
+            base_type = base_type.substring(6)
+        if (base_type.ends_with('[]') && base_type.length() > 2):
+            return base_type.substring(0, base_type.length() - 2)
+        if (base_type.starts_with('map<')):
+            int depth = 0
+            int index = 0
+            while (index < base_type.length()):
+                string ch = base_type[index]
+                if (ch == '<'):
+                    depth += 1
+                else if (ch == '>'):
+                    depth -= 1
+                else if (ch == ',' && depth == 1):
+                    return base_type.substring(index + 2, base_type.length() - 1)
+                index += 1
+    if (expression.kind == 'Field' && expression.children.length() > 0):
+        string record_type = const_type_of_expression(expression.children[0], bindings, record_nodes)
+        if (record_type.starts_with('const ')):
+            record_type = record_type.substring(6)
+        for (Node record_node : record_nodes):
+            if (record_type == record_node.value):
+                for (Node field_node : record_node.children):
+                    BindingIR field = ir_parse_binding_decl(field_node.value)
+                    if (field.name == expression.value):
+                        return field.type_name.substring(0)
+    return ''
+
+bool const_method_mutates_receiver(string method, Node receiver, BindingIR[] bindings, Node[] record_nodes):
+    return const_method_mutates_type(method, const_type_of_expression(receiver, bindings, record_nodes))
+
+bool const_function_mutates_first_arg(string name):
+    return name == 'push' || name == 'pop' || name == 'insert' || name == 'remove_at' || name == 'clear' || name == 'sort' || name == 'add'
+
+void const_reject_mutation(BindingIR[] bindings, string root, bool assignment):
+    if (root == ''):
+        return
+    BindingIR binding = const_lookup_binding(bindings, root)
+    if (binding.name != '' && binding.type_name.starts_with('const ')):
+        if (assignment):
+            throw 'Cannot assign to const variable: ' + root
+        throw 'Cannot mutate const variable: ' + root
+
+void validate_const_expression(Node node, BindingIR[] bindings, string[] function_names, Node[] record_nodes):
+    if (node.kind == 'Lambda'):
+        BindingIR[] inner = const_copy_bindings(bindings)
+        inner.push(ir_parse_binding_decl(node.value))
+        if (node.children.length() > 0):
+            validate_const_expression(node.children[0], inner, function_names, record_nodes)
+        return
+    if (node.kind == 'Lambda2'):
+        BindingIR[] inner = const_copy_bindings(bindings)
+        int separator = node.value.index_of(' | ')
+        if (separator >= 0):
+            inner.push(ir_parse_binding_decl(node.value.substring(0, separator)))
+            inner.push(ir_parse_binding_decl(node.value.substring(separator + 3)))
+        if (node.children.length() > 0):
+            validate_const_expression(node.children[0], inner, function_names, record_nodes)
+        return
+    if (node.kind == 'Call'):
+        if (!(node.value in function_names) && const_function_mutates_first_arg(node.value) && node.children.length() > 0):
+            string root = const_target_root(node.children[0])
+            if (const_method_mutates_receiver(node.value, node.children[0], bindings, record_nodes)):
+                const_reject_mutation(bindings, root, false)
+        for (Node child : node.children):
+            validate_const_expression(child, bindings, function_names, record_nodes)
+        return
+    if (node.kind == 'MethodCall'):
+        if (node.children.length() > 0):
+            string root = const_target_root(node.children[0])
+            if (const_method_mutates_receiver(node.value, node.children[0], bindings, record_nodes)):
+                const_reject_mutation(bindings, root, false)
+        for (Node child : node.children):
+            validate_const_expression(child, bindings, function_names, record_nodes)
+        return
+    for (Node child : node.children):
+        validate_const_expression(child, bindings, function_names, record_nodes)
+
+void validate_const_statement(Node node, BindingIR[] bindings, string[] function_names, Node[] record_nodes):
+    if (node.kind == 'VarDecl'):
+        if (node.children.length() > 0):
+            validate_const_expression(node.children[0], bindings, function_names, record_nodes)
+        bindings.push(ir_parse_binding_decl(node.value))
+        return
+    if (node.kind == 'Assign'):
+        if (node.children.length() > 0):
+            string root = const_target_root(node.children[0])
+            const_reject_mutation(bindings, root, node.children[0].kind == 'Identifier')
+            validate_const_expression(node.children[0], bindings, function_names, record_nodes)
+        if (node.children.length() > 1):
+            validate_const_expression(node.children[1], bindings, function_names, record_nodes)
+        return
+    if (node.kind == 'ExprStmt' || node.kind == 'Return' || node.kind == 'Throw'):
+        for (Node child : node.children):
+            validate_const_expression(child, bindings, function_names, record_nodes)
+        return
+    if (node.kind == 'If'):
+        if (node.children.length() > 0):
+            validate_const_expression(node.children[0], bindings, function_names, record_nodes)
+        BindingIR[] then_bindings = const_copy_bindings(bindings)
+        BindingIR[] else_bindings = const_copy_bindings(bindings)
+        for (Node child : if_then_nodes(node)):
+            validate_const_statement(child, then_bindings, function_names, record_nodes)
+        for (Node child : if_else_nodes(node)):
+            validate_const_statement(child, else_bindings, function_names, record_nodes)
+        return
+    if (node.kind == 'While'):
+        if (node.children.length() > 0):
+            validate_const_expression(node.children[0], bindings, function_names, record_nodes)
+        BindingIR[] body_bindings = const_copy_bindings(bindings)
+        for (Node child : tail_nodes(node.children, 1)):
+            validate_const_statement(child, body_bindings, function_names, record_nodes)
+        return
+    if (node.kind == 'For'):
+        BindingIR[] loop_bindings = const_copy_bindings(bindings)
+        if (node.children.length() > 0):
+            validate_const_statement(node.children[0], loop_bindings, function_names, record_nodes)
+        if (node.children.length() > 1):
+            validate_const_expression(node.children[1], loop_bindings, function_names, record_nodes)
+        if (node.children.length() > 2):
+            validate_const_statement(node.children[2], loop_bindings, function_names, record_nodes)
+        BindingIR[] body_bindings = const_copy_bindings(loop_bindings)
+        for (Node child : lowerer_for_body_nodes(node)):
+            validate_const_statement(child, body_bindings, function_names, record_nodes)
+        return
+    if (node.kind == 'ForEach'):
+        if (node.children.length() > 0):
+            validate_const_expression(node.children[0], bindings, function_names, record_nodes)
+        BindingIR[] body_bindings = const_copy_bindings(bindings)
+        body_bindings.push(ir_parse_binding_decl(node.value))
+        for (Node child : tail_nodes(node.children, 1)):
+            validate_const_statement(child, body_bindings, function_names, record_nodes)
+        return
+    if (node.kind == 'Switch'):
+        if (node.children.length() > 0):
+            validate_const_expression(node.children[0], bindings, function_names, record_nodes)
+        for (Node branch : tail_nodes(node.children, 1)):
+            BindingIR[] branch_bindings = const_copy_bindings(bindings)
+            int start = 0
+            if (branch.kind == 'Case'):
+                if (branch.children.length() > 0):
+                    validate_const_expression(branch.children[0], bindings, function_names, record_nodes)
+                start = 1
+            for (Node child : tail_nodes(branch.children, start)):
+                validate_const_statement(child, branch_bindings, function_names, record_nodes)
+        return
+    if (node.kind == 'Try'):
+        BindingIR[] try_bindings = const_copy_bindings(bindings)
+        Node catch_part = catch_node(node)
+        for (Node child : try_body_nodes(node)):
+            validate_const_statement(child, try_bindings, function_names, record_nodes)
+        BindingIR[] catch_bindings = const_copy_bindings(bindings)
+        catch_bindings.push(ir_parse_binding_decl(catch_part.value))
+        for (Node child : catch_part.children):
+            validate_const_statement(child, catch_bindings, function_names, record_nodes)
+        return
+    for (Node child : node.children):
+        validate_const_expression(child, bindings, function_names, record_nodes)
+
+void validate_const_bindings(Node program):
+    BindingIR[] globals = []
+    string[] function_names = []
+    Node[] record_nodes = []
+    for (Node child : program.children):
+        if (child.kind == 'VarDecl'):
+            globals.push(ir_parse_binding_decl(child.value))
+        if (child.kind == 'Function' || child.kind == 'CachedFunction'):
+            BindingIR signature = ir_parse_binding_decl(child.value)
+            function_names.push(signature.name)
+        if (child.kind == 'RecordDecl'):
+            record_nodes.push(child)
+    for (Node child : program.children):
+        if (child.kind == 'VarDecl' && child.children.length() > 0):
+            validate_const_expression(child.children[0], globals, function_names, record_nodes)
+        if (child.kind == 'Function' || child.kind == 'CachedFunction'):
+            BindingIR[] function_bindings = const_copy_bindings(globals)
+            for (Node fn_child : child.children):
+                if (fn_child.kind == 'Param'):
+                    function_bindings.push(ir_parse_binding_decl(fn_child.value))
+            for (Node fn_child : child.children):
+                if (fn_child.kind != 'Param'):
+                    validate_const_statement(fn_child, function_bindings, function_names, record_nodes)
+
 string[] lower_program(Node program):
+    validate_const_bindings(program)
     string[] lines = ['program']
     for (Node child in program.children):
         string[] child_lines = lower_statement_lines(child, '  ')
@@ -1880,6 +2105,7 @@ BlockIR[] linear_instructions_to_blocks(LinearInstruction[] instructions):
     return blocks
 
 ProgramIR lower_program_ir(Node program):
+    validate_const_bindings(program)
     ImportDeclIR[] imports = []
     GlobalDeclIR[] globals = []
     RecordDeclIR[] records = []
@@ -1924,6 +2150,12 @@ ProgramIR lower_program_ir(Node program):
     return ProgramIR(imports, globals, records, enums, functions)
 
 ProgramIR lower_tokens_ir(Token[] tokens):
+    bool has_const = false
+    for (Token token : tokens):
+        if (token_is(token, 'KEYWORD', 'const')):
+            has_const = true
+    if (has_const):
+        validate_const_bindings(parse_program(tokens))
     ImportDeclIR[] imports = []
     GlobalDeclIR[] globals = []
     RecordDeclIR[] records = []
