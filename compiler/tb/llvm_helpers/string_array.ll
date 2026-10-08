@@ -87,6 +87,38 @@ read:
   %len = load i32, ptr %len.ptr
   ret i32 %len
 }
+define private void @tb_bootstrap_string_array_clear(ptr %array) {
+entry:
+  %is.null = icmp eq ptr %array, null
+  br i1 %is.null, label %done, label %start
+start:
+  %len.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 0
+  %len = load i32, ptr %len.ptr
+  br label %loop.cond
+loop.cond:
+  %index = phi i32 [0, %start], [%next.index, %loop.step]
+  %keep.loop = icmp slt i32 %index, %len
+  br i1 %keep.loop, label %loop.body, label %loop.done
+loop.body:
+  call void @tb_bootstrap_string_array_release_slot(ptr %array, i32 %index)
+  %data.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 2
+  %data = load ptr, ptr %data.ptr
+  %data.slot = getelementptr inbounds ptr, ptr %data, i32 %index
+  store ptr null, ptr %data.slot
+  %owned.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 3
+  %owned = load ptr, ptr %owned.ptr
+  %owned.slot = getelementptr inbounds i8, ptr %owned, i32 %index
+  store i8 0, ptr %owned.slot
+  br label %loop.step
+loop.step:
+  %next.index = add i32 %index, 1
+  br label %loop.cond
+loop.done:
+  store i32 0, ptr %len.ptr
+  br label %done
+done:
+  ret void
+}
 define private ptr @tb_bootstrap_string_array_get(ptr %array, i32 %index) {
 entry:
   %data.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 2

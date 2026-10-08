@@ -348,6 +348,7 @@ Array helpers
 - remove_at(arr: T[], index: int) -> T
 
 - clear(arr: T[]) -> void
+  - For `string[]`, clear releases owned strings in live slots and keeps the array storage available for reuse. Also available as `arr.clear()`.
 
 - contains(arr: T[], value: T) -> bool
   - Return `true` when the array contains `value`. Also available via UFCS (`arr.contains(value)`) and membership syntax (`value in arr`) for supported arrays, sets, and map keys.

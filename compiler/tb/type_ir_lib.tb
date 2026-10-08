@@ -781,6 +781,8 @@ string infer_method_call_type(string method_name, string base_type, FunctionSigI
         return 'int'
     if (method_name == 'clear' && base_type == 'int[]'):
         return 'void'
+    if (method_name == 'clear' && base_type == 'string[]'):
+        return 'void'
     if (method_name == 'insert' && base_type == 'int[]'):
         return 'int'
     if (method_name == 'push'):
@@ -953,6 +955,9 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
         if (op.args.is_empty()):
             return op
         string result_type = infer_call_type_cached(op.args[0], functions, TYPE_IR_FUNCTION_TYPE_CACHE_NAMES, TYPE_IR_FUNCTION_TYPE_CACHE_VALUES)
+        if (result_type == 'unknown' && op.args[0] == 'clear' && op.args.length() == 2):
+            if (lookup_temp_type_slot(temp_types, op.args[1]) == 'string[]'):
+                result_type = 'void'
         if (result_type == 'unknown' && (op.args[0] == 'min' || op.args[0] == 'max') && op.args.length() == 3):
             string left_type = lookup_temp_type_slot(temp_types, op.args[1])
             string right_type = lookup_temp_type_slot(temp_types, op.args[2])
