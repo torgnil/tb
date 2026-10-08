@@ -5484,6 +5484,12 @@ string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, Lin
         if (method_base_type == 'string' || method_base_type == 'string[]' || method_base_type == 'string[][]'):
             return track_string_method_value(method_line)
         return track_method_value(method_line)
+    if (op.detail == 'target-index'):
+        string base_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0]))
+        if (base_type.ends_with('[]')):
+            return emit_array_index_materialize(base_type, op.args[0], op.args[1], op.lhs) + '\n  ' + lhs + ' = sext i32 ' + llvm_i32_index_temp(op.lhs) + ' to i64'
+        string index_type = llvm_type(normalize_llvm_type_name(op.result_type))
+        return '  ' + lhs + ' = select i1 true, ' + index_type + ' ' + temp_ref(op.args[1]) + ', ' + index_type + ' ' + temp_ref(op.args[1])
     if (op.detail == 'index'):
         return emit_index_value_instruction(function_ir, op)
     if (op.detail == 'slice'):

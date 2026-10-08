@@ -112,7 +112,7 @@ Build and invocation details are documented in the repository or release `README
 - Comparison: `==`, `!=`, `<`, `<=`, `>`, `>=`.
 - Boolean: `&&`, `||`, unary `!` (and aliases `and`, `or`, `not`).
 - Assignment: `=`, with compound operators `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, and `>>=`, plus postfix `++` / `--` shorthand for identifier assignments.
-- Compound assignment also works on array element and record field targets such as `nums[i] += 1;`, `nums[i] >>= 1;`, and `point.x |= 1;`.
+- Compound assignment also works on array element and record field targets such as `nums[i] += 1;`, `nums[i] >>= 1;`, and `point.x |= 1;`. The target base and index are evaluated once, and the selected element or field value is read before the right-hand side. Negative array indices select their element before right-hand-side effects, including changes to the array length. Explicit ordinary assignment such as `nums[f()] = nums[f()] + 1;` evaluates both written calls independently.
 - Ternary (compile-time): `condition ? whenTrue : whenFalse`.
 - Lambdas: single-parameter lambdas such as `int x -> x * 2`, block lambdas such as `int[] row -> { return row[0] < 0; }`, and multi-parameter comparator lambdas such as `(int a, int b) -> a - b`.
 - UFCS (parser sugar): `value.method(args)` lowers to `method(value, args)` — parser-only sugar, no dynamic dispatch.

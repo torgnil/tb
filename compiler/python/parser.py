@@ -543,8 +543,7 @@ class Parser:
         if isinstance(target, Identifier):
             return Assignment(target.name, BinaryExpression(Identifier(target.name), operator, value))
         if isinstance(target, ArrayAccess):
-            current_value = ArrayAccess(target.target, target.index)
-            return ArrayAssignment(target, BinaryExpression(current_value, operator, value))
+            return ArrayAssignment(target, value, operator)
         if isinstance(target, FieldAccess):
             current_value = FieldAccess(target.target, target.field_name)
             return FieldAssignment(target, BinaryExpression(current_value, operator, value))

@@ -834,7 +834,7 @@ bool ownership_is_owned_mode(string ownership_mode):
 string refine_ownership_mode(LinearInstruction op, string result_type):
     if (result_type == 'int' || result_type == 'bool' || result_type == 'num'):
         return 'plain'
-    if (op.detail == 'identifier' || op.detail == 'field' || op.detail == 'index'):
+    if (op.detail == 'identifier' || op.detail == 'field' || op.detail == 'index' || op.detail == 'target-index'):
         if (is_managed_ir_type(result_type)):
             return 'borrowed'
         return 'plain'
@@ -1026,6 +1026,11 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             if (op.args[0] == 'map_to' && base_type == 'int[]' && binding.type_name == 'int'):
                 return refined_value_op(op, 'int[]', 'owned')
         return op
+    if (op.detail == 'target-index'):
+        if (op.args.length() < 2):
+            return op
+        string index_type = lookup_temp_type_slot(temp_types, op.args[1])
+        return refined_value_op(op, index_type, refine_ownership_mode(op, index_type))
     if (op.detail == 'index'):
         if (op.args.is_empty()):
             return op

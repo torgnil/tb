@@ -936,6 +936,44 @@ class IRGenerator:
         variable_name = statement.target.target.name
         self._ensure_mutable_binding(variable_name, "mutate")
         variable_type = self.variable_types.get(variable_name)
+        if statement.compound_operator is not None:
+            if variable_type is not None and self._is_map_type(variable_type):
+                index_type, item_type = self._map_parts(variable_type)
+            elif variable_type is not None and self._is_array_type(variable_type):
+                index_type, item_type = "int", self._array_item_type(variable_type)
+                self.array_variables.pop(variable_name, None)
+            else:
+                raise TypeError(f"Expected array variable: {variable_name}")
+            # Dots are legal in IR names but cannot occur in source identifiers.
+            base_name = self._next_synthetic_name("compound.base")
+            index_name = self._next_synthetic_name("compound.index")
+            old_name = self._next_synthetic_name("compound.old")
+            instructions = self._lower_variable_declaration(
+                VariableDeclaration(variable_type, base_name, statement.target.target)
+            )
+            instructions.extend(self._lower_variable_declaration(
+                VariableDeclaration(index_type, index_name, statement.target.index)
+            ))
+            if self._is_array_type(variable_type):
+                # Resolve negative indices before an RHS can change the length.
+                index = Identifier(index_name)
+                instructions.extend(self._lower_assignment(Assignment(
+                    index_name,
+                    TernaryExpression(
+                        BinaryExpression(index, "<", IntegerLiteral(0)),
+                        BinaryExpression(BuiltinCallExpression("length", [Identifier(base_name)]), "+", index),
+                        index,
+                    ),
+                )))
+            target = ArrayAccess(Identifier(base_name), Identifier(index_name))
+            instructions.extend(self._lower_variable_declaration(
+                VariableDeclaration(item_type, old_name, target)
+            ))
+            instructions.extend(self._lower_array_assignment(ArrayAssignment(
+                target,
+                BinaryExpression(Identifier(old_name), statement.compound_operator, statement.value),
+            )))
+            return instructions
         if variable_type is not None and self._is_map_type(variable_type):
             key_type, value_type = self._map_parts(variable_type)
             return [
