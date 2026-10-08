@@ -986,6 +986,10 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             return op
         string method_name = op.args[0]
         string base_type = lookup_temp_type_slot(temp_types, op.args[1])
+        if (base_type.starts_with('const ')):
+            string canonical_base_type = normalize_llvm_type_name(base_type)
+            if (is_thread_pool_type(canonical_base_type) || is_future_type(canonical_base_type)):
+                base_type = canonical_base_type
         if (method_name == 'submit' && base_type == 'thread_pool' && (op.args.length() == 3 || op.args.length() == 4)):
             string future_type = thread_pool_submit_result_type(functions, op.args[2], op.args.length() - 3)
             return refined_value_op(op, future_type, refine_ownership_mode(op, future_type))
