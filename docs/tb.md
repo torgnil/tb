@@ -167,7 +167,7 @@ int main(string[] args):
 - A `continue` in a C-style `for` loop runs its update before testing the condition again; `break` and `return` skip the update.
 - `return;` is allowed inside `void` functions for early exit.
 - No extra trailing return is needed when every reachable path in a non-void function returns or throws.
-- Returning a string from a function preserves the value before releasing that function's local variables, including when the string comes from a local array or record field.
+- Returning a string from a function preserves the value before releasing that function's local variables. This includes direct local bindings and strings read from a local array or record field; borrowed parameters and literals keep their existing behavior.
 - Exceptions use `throw expr`, where `expr` must be string-compatible. `exception` is currently a string-backed alias for catch bindings.
 - Catch exceptions with `try` / `catch`:
 

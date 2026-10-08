@@ -420,6 +420,10 @@ LinearInstruction[] exit_cleanup_instructions(OwnershipIdentifierTargetCache ide
     string transferred_binding = ''
     if ((terminator.kind == 'return_owned' || terminator.kind == 'throw_owned') && !terminator.args.is_empty()):
         transferred_binding = identifier_target_binding_cached(identifier_target_cache, terminator.args[0])
+        if (terminator.kind == 'return_owned' && transferred_binding != ''):
+            BindingIR transferred = ir_parse_binding_decl(transferred_binding)
+            if (transferred.type_name == 'string' || transferred.type_name == 'exception'):
+                transferred_binding = ''
     for (BindingIR binding in initialized_managed):
         string current = binding_decl(binding)
         if (current != transferred_binding):

@@ -1,0 +1,66 @@
+record Box(int value);
+
+string direct_local(int n):
+    string value = 'local' + n
+    return value
+
+string alias_local(int n):
+    string value = 'alias' + n
+    string alias = value
+    return alias
+
+string branch_local(int n):
+    if (n > 0):
+        string value = 'positive' + n
+        return value
+    string value = 'negative' + n
+    return value
+
+string try_local(int n):
+    try:
+        string value = 'try' + n
+        return value
+    catch (exception err):
+        return err
+
+string catch_local(int n):
+    try:
+        throw 'caught' + n
+    catch (exception err):
+        return err
+
+string borrowed_parameter(string value):
+    return value
+
+string literal_return():
+    return 'literal'
+
+string local_literal_return():
+    string value = 'fixed'
+    return value
+
+int[] array_return(int n):
+    int[] values = [n]
+    return values
+
+Box record_return(int n):
+    Box value = Box(n)
+    return value
+
+int main(string[] args):
+    int n = args.length()
+    print(direct_local(n))
+    print(alias_local(n))
+    print(branch_local(n))
+    print(branch_local(0 - n))
+    print(direct_local(n))
+    print(try_local(n))
+    print(catch_local(n))
+    string borrowed = 'borrowed' + n
+    print(borrowed_parameter(borrowed))
+    print(borrowed_parameter(args[0]) == args[0])
+    print(literal_return())
+    print(local_literal_return())
+    print(array_return(n).length())
+    print(record_return(n).value)
+    return 0
