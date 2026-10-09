@@ -171,7 +171,7 @@ int main(string[] args):
 - Empty brace bodies such as `void noop(string text) {}` are allowed. Calls still evaluate their arguments, and borrowed values remain available to the caller. An empty `int main` returns `0`; other non-void functions must return a value or throw on every reachable path.
 - No extra trailing return is needed when every reachable path in a non-void function returns or throws.
 - Returning a local map transfers its owned value to the caller, which keeps it alive until that value is released. Mutable and const local maps follow this rule. Returning a borrowed parameter or global map produces an independent copy.
-- Returning a function-local `int[]` or `string[]` transfers that owned array to the caller, which releases it normally. Const local arrays follow the same rule. Returning a borrowed parameter or global array produces an independent copy.
+- Returning a function-local `int[]`, `int[][]`, or `string[]` transfers that owned array to the caller, which releases it normally. Const local arrays follow the same rule. Returning a borrowed parameter or global array produces an independent copy.
 - Returning a string from a function preserves the value before releasing that function's local variables. This includes direct local bindings and strings read from a local array or record field; borrowed parameters and literals keep their existing behavior.
 - Exceptions use `throw expr`, where `expr` must be string-compatible. `exception` is currently a string-backed alias for catch bindings.
 - Catch exceptions with `try` / `catch`:
