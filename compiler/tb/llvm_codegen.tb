@@ -1928,6 +1928,9 @@ string llvm_map_length_name(string type_name):
 string llvm_map_get_name(string type_name):
     return '@' + llvm_map_suffix(type_name) + '_get'
 
+string llvm_map_contains_name(string type_name):
+    return '@' + llvm_map_suffix(type_name) + '_contains'
+
 string llvm_map_get_slice_name(string type_name):
     return '@' + llvm_map_suffix(type_name) + '_get_slice'
 
@@ -4701,6 +4704,11 @@ string emit_string_method_call_value_instruction(ProgramIR program, ParsedFuncti
 
 string emit_builtin_query_call_value_instruction(ParsedFunction function_ir, LinearInstruction op, string call_name, string call_arg1_type):
     string lhs = temp_ref(op.lhs)
+    if (call_name == 'contains'):
+        if (call_arg1_type.starts_with('map<')):
+            if (op.args.length() != 3):
+                throw 'unsupported llvm map contains arity'
+            return emit_map_contains_value(function_ir, op.lhs, call_arg1_type, op.args[1], op.args[2])
     if (call_name == 'length'):
         if (op.args.length() != 2):
             throw 'unsupported llvm length arity'
@@ -4790,10 +4798,21 @@ string emit_string_byte_at_or_zero_value(ParsedFunction function_ir, string sour
         return '  ' + managed_name + ' = load i1, ptr ' + managed_slot_ref(local_binding.name) + '\n  br i1 ' + managed_name + ', label %' + managed_label + ', label %' + fallback_label + '\n' + managed_label + ':\n  ' + managed_value + ' = call i8 @tb_managed_string_byte_at_or_zero(ptr ' + temp_ref(source_name) + ', i64 ' + temp_ref(index_name) + ')\n  br label %' + done_label + '\n' + fallback_label + ':\n  ' + fallback_value + ' = call i8 @tb_bootstrap_string_byte_at_or_zero(ptr ' + temp_ref(source_name) + ', i64 ' + temp_ref(index_name) + ')\n  br label %' + done_label + '\n' + done_label + ':\n  ' + result_name + ' = phi i8 [' + managed_value + ', %' + managed_label + '], [' + fallback_value + ', %' + fallback_label + ']'
     return '  ' + result_name + ' = call i8 @tb_bootstrap_string_byte_at_or_zero(ptr ' + temp_ref(source_name) + ', i64 ' + temp_ref(index_name) + ')'
 
-string emit_map_method_call_value_instruction(LinearInstruction op, string method_name, string method_base_type):
+string emit_map_contains_value(ParsedFunction function_ir, string result_name, string map_type, string map_name, string key_name):
+    string key_type = normalize_llvm_type_name(map_key_type(map_type))
+    string actual_key_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, key_name))
+    if (actual_key_type != key_type):
+        throw 'unsupported llvm map contains key type: ' + actual_key_type + '; expected ' + key_type
+    return '  ' + temp_ref(result_name) + ' = call i1 ' + llvm_map_contains_name(map_type) + '(ptr ' + temp_ref(map_name) + ', ' + llvm_type(key_type) + ' ' + temp_ref(key_name) + ')'
+
+string emit_map_method_call_value_instruction(ParsedFunction function_ir, LinearInstruction op, string method_name, string method_base_type):
     if (!method_base_type.starts_with('map<')):
         return ''
     string lhs = temp_ref(op.lhs)
+    if (method_name == 'contains'):
+        if (op.args.length() != 3):
+            throw 'unsupported llvm map contains arity'
+        return emit_map_contains_value(function_ir, op.lhs, method_base_type, op.args[1], op.args[2])
     if (method_name == 'length'):
         return '  ' + lhs + '.len32 = call i32 ' + llvm_map_length_name(method_base_type) + '(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64'
     if (method_name == 'is_empty'):
@@ -4910,7 +4929,7 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
     string string_result = emit_string_method_call_value_instruction(program, function_ir, op, method_name, method_base_type)
     if (string_result != ''):
         return string_result
-    string map_result = emit_map_method_call_value_instruction(op, method_name, method_base_type)
+    string map_result = emit_map_method_call_value_instruction(function_ir, op, method_name, method_base_type)
     if (map_result != ''):
         return map_result
     string prio_q_result = emit_prio_q_method_call_value_instruction(program, function_ir, op, method_name, method_base_type)
@@ -5433,6 +5452,8 @@ string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, Lin
         if (op_name == '||' || op_name == 'or'):
             return track_scalar_binary('  ' + lhs + ' = or i1 ' + temp_ref(op.args[1]) + ', ' + temp_ref(op.args[2]))
         if (op_name == 'in'):
+            if (right_type_normalized.starts_with('map<')):
+                return emit_map_contains_value(function_ir, op.lhs, right_type_normalized, op.args[2], op.args[1])
             if (left_type_normalized == 'string' && right_type_normalized == 'string[]'):
                 return '  ' + lhs + ' = call i1 @tb_bootstrap_string_array_contains(ptr ' + temp_ref(op.args[2]) + ', ptr ' + temp_ref(op.args[1]) + ')'
             if (left_type_normalized == 'bool' && right_type_normalized == 'bool[]'):
@@ -5443,6 +5464,8 @@ string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, Lin
                 return '  ' + lhs + ' = call i1 @tb_bootstrap_int_array_contains(ptr ' + temp_ref(op.args[2]) + ', i64 ' + temp_ref(op.args[1]) + ')'
             throw 'unsupported llvm in operand types: ' + left_type + ' in ' + right_type
         if (op_name == 'not in'):
+            if (right_type_normalized.starts_with('map<')):
+                return emit_map_contains_value(function_ir, op.lhs + '.in', right_type_normalized, op.args[2], op.args[1]) + '\n  ' + lhs + ' = xor i1 ' + temp_ref(op.lhs + '.in') + ', true'
             if (left_type_normalized == 'string' && right_type_normalized == 'string[]'):
                 return '  ' + lhs + '.in = call i1 @tb_bootstrap_string_array_contains(ptr ' + temp_ref(op.args[2]) + ', ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = xor i1 ' + temp_ref(op.lhs + '.in') + ', true'
             if (left_type_normalized == 'bool' && right_type_normalized == 'bool[]'):
@@ -7368,6 +7391,7 @@ string[] emit_map_helpers(string type_name):
         lines = replace_llvm_template_lines(lines, '__MAP_SET_NAME__', llvm_map_set_name(type_name))
         lines = replace_llvm_template_lines(lines, '__MAP_LENGTH_NAME__', llvm_map_length_name(type_name))
         lines = replace_llvm_template_lines(lines, '__MAP_GET_NAME__', llvm_map_get_name(type_name))
+        lines = replace_llvm_template_lines(lines, '__MAP_CONTAINS_NAME__', llvm_map_contains_name(type_name))
         lines = replace_llvm_template_lines(lines, '__MAP_SET_BY_KEY_NAME__', llvm_map_set_by_key_name(type_name))
         lines = replace_llvm_template_lines(lines, '__MAP_INCREMENT_BY_KEY_NAME__', llvm_map_increment_by_key_name(type_name))
         lines = replace_llvm_template_lines(lines, '__MAP_RELEASE_BY_KEY_NAME__', llvm_map_release_by_key_name(type_name))
@@ -7386,6 +7410,7 @@ string[] emit_map_helpers(string type_name):
     lines = replace_llvm_template_lines(lines, '__MAP_SET_NAME__', llvm_map_set_name(type_name))
     lines = replace_llvm_template_lines(lines, '__MAP_LENGTH_NAME__', llvm_map_length_name(type_name))
     lines = replace_llvm_template_lines(lines, '__MAP_GET_NAME__', llvm_map_get_name(type_name))
+    lines = replace_llvm_template_lines(lines, '__MAP_CONTAINS_NAME__', llvm_map_contains_name(type_name))
     lines = replace_llvm_template_lines(lines, '__MAP_GET_SLICE_NAME__', llvm_map_get_slice_name(type_name))
     lines = replace_llvm_template_lines(lines, '__MAP_SET_BY_KEY_NAME__', llvm_map_set_by_key_name(type_name))
     lines = replace_llvm_template_lines(lines, '__MAP_SET_BY_SLICE_NAME__', llvm_map_set_by_slice_name(type_name))
@@ -7427,6 +7452,7 @@ string[] emit_map_helpers(string type_name):
             '  call void @tb_release(ptr %key.value)'
         ]
     lines = replace_llvm_template_block_lines(lines, '__KEY_COMPARE_GET__', key_compare_lines)
+    lines = replace_llvm_template_block_lines(lines, '__KEY_COMPARE_CONTAINS__', key_compare_lines)
     lines = replace_llvm_template_block_lines(lines, '__KEY_COMPARE_SET_BY_KEY__', key_compare_lines)
     lines = replace_llvm_template_block_lines(lines, '__KEY_COMPARE_RELEASE_BY_KEY__', key_compare_lines)
     lines = replace_llvm_template_block_lines(lines, '__INSERT_KEY_BLOCK__', insert_key_lines)

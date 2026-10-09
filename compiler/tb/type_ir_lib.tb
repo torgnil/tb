@@ -955,6 +955,11 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
         if (op.args.is_empty()):
             return op
         string result_type = infer_call_type_cached(op.args[0], functions, TYPE_IR_FUNCTION_TYPE_CACHE_NAMES, TYPE_IR_FUNCTION_TYPE_CACHE_VALUES)
+        if (op.args[0] == 'contains'):
+            if (op.args.length() >= 2):
+                string receiver_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+                if (receiver_type.starts_with('map<')):
+                    result_type = 'bool'
         if (result_type == 'unknown' && op.args[0] == 'clear' && op.args.length() == 2):
             if (lookup_temp_type_slot(temp_types, op.args[1]) == 'string[]'):
                 result_type = 'void'

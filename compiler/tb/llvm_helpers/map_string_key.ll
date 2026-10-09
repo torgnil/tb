@@ -193,6 +193,41 @@ missing:
   ret __VALUE_LLVM_TYPE__ __ZERO_VALUE__
 }
 
+define private i1 __MAP_CONTAINS_NAME__(ptr %map, ptr %key) {
+entry:
+  %cap.ptr = getelementptr inbounds __MAP_STRUCT__, ptr %map, i32 0, i32 1
+  %cap = load i32, ptr %cap.ptr
+  %keys.ptr = getelementptr inbounds __MAP_STRUCT__, ptr %map, i32 0, i32 2
+  %keys = load ptr, ptr %keys.ptr
+  %states.ptr = getelementptr inbounds __MAP_STRUCT__, ptr %map, i32 0, i32 5
+  %states = load ptr, ptr %states.ptr
+  %hash = call i64 @tb_bootstrap_hash_string(ptr %key)
+  %cap64 = zext i32 %cap to i64
+  %slot64 = urem i64 %hash, %cap64
+  %slot = trunc i64 %slot64 to i32
+  br label %probe
+probe:
+  %index = phi i32 [%slot, %entry], [%next.index, %step]
+  %state.slot = getelementptr inbounds i8, ptr %states, i32 %index
+  %state = load i8, ptr %state.slot
+  %is.empty = icmp eq i8 %state, 0
+  br i1 %is.empty, label %missing, label %check
+check:
+  %key.slot = getelementptr inbounds ptr, ptr %keys, i32 %index
+  %key.value = load ptr, ptr %key.slot
+  %key.match = call i1 @tb_bootstrap_managed_string_equals(ptr %key.value, ptr %key)
+  br i1 %key.match, label %found, label %step
+found:
+  ret i1 true
+step:
+  %next.raw = add i32 %index, 1
+  %wrap = icmp eq i32 %next.raw, %cap
+  %next.index = select i1 %wrap, i32 0, i32 %next.raw
+  br label %probe
+missing:
+  ret i1 false
+}
+
 define private __VALUE_LLVM_TYPE__ __MAP_GET_SLICE_NAME__(ptr %map, ptr %src, i64 %start, i64 %end) {
 entry:
   %len = call i64 @strlen(ptr %src)

@@ -160,6 +160,41 @@ missing:
   ret i64 0
 }
 
+define private i1 __MAP_CONTAINS_NAME__(ptr %map, i64 %key) {
+entry:
+  %cap.ptr = getelementptr inbounds __MAP_STRUCT__, ptr %map, i32 0, i32 1
+  %cap = load i32, ptr %cap.ptr
+  %keys.ptr = getelementptr inbounds __MAP_STRUCT__, ptr %map, i32 0, i32 2
+  %keys = load ptr, ptr %keys.ptr
+  %states.ptr = getelementptr inbounds __MAP_STRUCT__, ptr %map, i32 0, i32 4
+  %states = load ptr, ptr %states.ptr
+  %hash = call i64 @tb_bootstrap_hash_int(i64 %key)
+  %cap64 = zext i32 %cap to i64
+  %slot64 = urem i64 %hash, %cap64
+  %slot = trunc i64 %slot64 to i32
+  br label %probe
+probe:
+  %index = phi i32 [%slot, %entry], [%next.index, %step]
+  %state.slot = getelementptr inbounds i8, ptr %states, i32 %index
+  %state = load i8, ptr %state.slot
+  %is.empty = icmp eq i8 %state, 0
+  br i1 %is.empty, label %missing, label %check
+check:
+  %key.slot = getelementptr inbounds i64, ptr %keys, i32 %index
+  %key.value = load i64, ptr %key.slot
+  %key.match = icmp eq i64 %key.value, %key
+  br i1 %key.match, label %found, label %step
+found:
+  ret i1 true
+step:
+  %next.raw = add i32 %index, 1
+  %wrap = icmp eq i32 %next.raw, %cap
+  %next.index = select i1 %wrap, i32 0, i32 %next.raw
+  br label %probe
+missing:
+  ret i1 false
+}
+
 define private void __MAP_SET_BY_KEY_NAME__(ptr %map, i64 %key, i64 %value, i1 %is_owned) {
 entry:
   %len.ptr = getelementptr inbounds __MAP_STRUCT__, ptr %map, i32 0, i32 0

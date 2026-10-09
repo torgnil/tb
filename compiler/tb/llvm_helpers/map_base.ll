@@ -79,6 +79,30 @@ missing:
   ret __VALUE_LLVM_TYPE__ __ZERO_VALUE__
 }
 
+define private i1 __MAP_CONTAINS_NAME__(ptr %map, __KEY_LLVM_TYPE__ %key) {
+entry:
+  %len = call i32 __MAP_LENGTH_NAME__(ptr %map)
+  %keys.ptr = getelementptr inbounds __MAP_STRUCT__, ptr %map, i32 0, i32 1
+  %keys = load ptr, ptr %keys.ptr
+  br label %loop.cond
+loop.cond:
+  %index = phi i32 [0, %entry], [%next.index, %loop.step]
+  %keep.loop = icmp slt i32 %index, %len
+  br i1 %keep.loop, label %loop.body, label %missing
+loop.body:
+  %key.slot = getelementptr inbounds __KEY_LLVM_TYPE__, ptr %keys, i32 %index
+  %key.value = load __KEY_LLVM_TYPE__, ptr %key.slot
+__KEY_COMPARE_CONTAINS__
+  br i1 %key.match, label %found, label %loop.step
+found:
+  ret i1 true
+loop.step:
+  %next.index = add i32 %index, 1
+  br label %loop.cond
+missing:
+  ret i1 false
+}
+
 define private void __MAP_SET_BY_KEY_NAME__(ptr %map, __KEY_LLVM_TYPE__ %key, __VALUE_LLVM_TYPE__ %value, i1 %is_owned) {
 entry:
   %len = call i32 __MAP_LENGTH_NAME__(ptr %map)

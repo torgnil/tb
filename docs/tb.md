@@ -225,7 +225,7 @@ int main(string[] args):
 - Const enforcement is compile-time and applies to the binding:
   - reassigning a `const` variable and direct writes through its array, map, set, or record target are rejected during compilation
   - known mutating array, set, and priority-queue operations through a `const` binding are rejected, including UFCS and free-function forms
-  - const maps support the same read operations as mutable maps, including indexed value reads and `keys()` / `values()`
+  - const maps support the same read operations as mutable maps, including indexed value reads, key membership, and `keys()` / `values()`
   - passing a const value to an arbitrary user function does not make that function's parameters const
 - When values are not known at compile time, corresponding operations lower to runtime helpers and library calls.
 - Local declarations and reassignment transfer owned `string[]`, `int[][]`, map, and record temporaries. Assigning a managed local directly to itself preserves its existing value and ownership. Borrowed values keep their existing copy behavior, and reassignment to a different value releases the previous owned local value.
@@ -403,7 +403,7 @@ Set and map helpers
 - map.keys() -> `K[]`
 - map.values() -> `V[]`
 - contains(map<K, V>, key: K) -> bool
-  - Return `true` when `key` exists in the map. Also available as `map.contains(key)` and `key in map`.
+  - Return `true` when `key` exists in the map, including keys whose values are zero or empty strings. Also available as `map.contains(key)`, `key in map`, and the inverse `key not in map`, for mutable and const maps. Empty maps and missing keys return `false`. Queries borrow the key and leave keys, values, and length unchanged; the query key must match the map key type.
 - Set literals support cache-stringifiable complex values such as arrays and records, for example `set<Row> rows = {Row(1, 2)};`
 
 Hashing, misc
