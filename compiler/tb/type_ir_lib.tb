@@ -1125,13 +1125,14 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                 if (value_type == 'unknown' && binding.type_name.starts_with('set<')):
                     block_refined = set_temp_type(block_refined, current.args[0], binding.type_name)
                     temp_types = set_temp_type_slot(temp_types, current.args[0], binding.type_name)
-                if (value_type == 'unknown' && binding.type_name.starts_with('map<')):
+                string declared_map_type = normalize_llvm_type_name(binding.type_name)
+                if (value_type == 'unknown' && declared_map_type.starts_with('map<')):
                     LinearInstruction candidate = lookup_instruction_pair(block_refined, prior_instructions, current.args[0])
                     if (candidate.kind == 'value'):
                         if (candidate.detail == 'map'):
                             if (candidate.args.is_empty()):
-                                block_refined = set_temp_type(block_refined, current.args[0], binding.type_name)
-                                temp_types = set_temp_type_slot(temp_types, current.args[0], binding.type_name)
+                                block_refined = set_temp_type(block_refined, current.args[0], declared_map_type)
+                                temp_types = set_temp_type_slot(temp_types, current.args[0], declared_map_type)
                 if (value_type == '[]' && binding.type_name.ends_with('[]')):
                     block_refined = set_temp_type(block_refined, current.args[0], binding.type_name)
                     temp_types = set_temp_type_slot(temp_types, current.args[0], binding.type_name)
@@ -1193,8 +1194,11 @@ GlobalDeclIR refine_global(GlobalDeclIR global_decl, BindingIR[] globals, Functi
     LinearInstruction[] refined = refined_result.instructions
     BindingIR binding = ir_parse_binding_decl(strip_prefix(global_decl.header, 'global '))
     string value_type = lookup_temp_type(refined, global_decl.value_name)
-    if (value_type == 'unknown' && (binding.type_name.starts_with('set<') || binding.type_name.starts_with('map<'))):
+    if (value_type == 'unknown' && binding.type_name.starts_with('set<')):
         refined = set_temp_type(refined, global_decl.value_name, binding.type_name)
+    string declared_map_type = normalize_llvm_type_name(binding.type_name)
+    if (value_type == 'unknown' && declared_map_type.starts_with('map<')):
+        refined = set_temp_type(refined, global_decl.value_name, declared_map_type)
     if (value_type == '[]' && binding.type_name.ends_with('[]')):
         refined = set_temp_type(refined, global_decl.value_name, binding.type_name)
     else if (is_untyped_array_shape(value_type) && binding.type_name.ends_with('[]')):
@@ -1243,8 +1247,11 @@ ProgramIR refine_program_ir(ProgramIR program):
         GlobalDeclIR refined_global = GlobalDeclIR(global_decl.header.substring(0), refined_global_result.instructions, global_decl.value_name.substring(0))
         BindingIR binding = ir_parse_binding_decl(strip_prefix(global_decl.header, 'global '))
         string value_type = lookup_temp_type(refined_global.instructions, global_decl.value_name)
-        if (value_type == 'unknown' && (binding.type_name.starts_with('set<') || binding.type_name.starts_with('map<'))):
+        if (value_type == 'unknown' && binding.type_name.starts_with('set<')):
             refined_global = GlobalDeclIR(refined_global.header, set_temp_type(refined_global.instructions, global_decl.value_name, binding.type_name), refined_global.value_name)
+        string declared_map_type = normalize_llvm_type_name(binding.type_name)
+        if (value_type == 'unknown' && declared_map_type.starts_with('map<')):
+            refined_global = GlobalDeclIR(refined_global.header, set_temp_type(refined_global.instructions, global_decl.value_name, declared_map_type), refined_global.value_name)
         if (value_type == '[]' && binding.type_name.ends_with('[]')):
             refined_global = GlobalDeclIR(refined_global.header, set_temp_type(refined_global.instructions, global_decl.value_name, binding.type_name), refined_global.value_name)
         else if (is_untyped_array_shape(value_type) && binding.type_name.ends_with('[]')):
