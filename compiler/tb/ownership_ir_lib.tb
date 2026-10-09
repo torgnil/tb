@@ -480,8 +480,14 @@ ParsedFunction apply_ownership_to_function(ParsedFunction function_ir, RecordFie
     BindingIR[] initialized_managed = initialized_managed_locals(function_ir, record_names, enum_names)
     BlockIR[] blocks = []
     string[] seen_sets = []
+    int block_index = 0
     for (BlockIR block in function_ir.blocks):
+        if (function_ir.return_type == 'void'):
+            if (block_index == function_ir.blocks.length() - 1):
+                if (block.terminator.kind == ''):
+                    block = BlockIR(block.label, block.instructions, TerminatorIR('return', []))
         blocks.push(apply_ownership_to_block(function_ir, cache, binding_cache, identifier_target_cache, block, initialized_managed, record_fields, record_names, enum_names, seen_sets))
+        block_index += 1
     return ParsedFunction(function_ir.header, function_ir.name, function_ir.return_type, function_ir.params, function_ir.locals, blocks)
 
 ProgramIR owned_program_ir(ProgramIR program):
