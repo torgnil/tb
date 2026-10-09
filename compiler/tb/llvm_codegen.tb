@@ -4483,6 +4483,16 @@ string emit_call_value_instruction_core(ProgramIR program, ParsedFunction functi
     if (call_name == 'abs'):
         if (op.args.length() != 2):
             throw 'unsupported llvm abs arity'
+        if (call_arg1_type == 'num'):
+            string[] lines = emit_num_materialize_if_needed(function_ir, op.args[1], op.lhs + '.abs')
+            lines.push('  ' + lhs + '.value = extractvalue %tb_bootstrap_num ' + emit_num_store_value(function_ir, op.args[1], op.lhs + '.abs') + ', 0')
+            lines.push('  ' + lhs + '.neg = sub i64 0, ' + temp_ref(op.lhs + '.value'))
+            lines.push('  ' + lhs + '.is_neg = icmp slt i64 ' + temp_ref(op.lhs + '.value') + ', 0')
+            lines.push('  ' + lhs + '.abs_value = select i1 ' + temp_ref(op.lhs + '.is_neg') + ', i64 ' + temp_ref(op.lhs + '.neg') + ', i64 ' + temp_ref(op.lhs + '.value'))
+            lines.push('  ' + lhs + ' = insertvalue %tb_bootstrap_num ' + emit_num_store_value(function_ir, op.args[1], op.lhs + '.abs') + ', i64 ' + temp_ref(op.lhs + '.abs_value') + ', 0')
+            return emit_tracked_builtin_call_line(join_llvm_strings(lines, '\n'))
+        if (call_arg1_type != 'int'):
+            throw 'unsupported llvm abs arg type: ' + call_arg1_type
         return emit_tracked_builtin_call_line('  ' + lhs + '.neg = sub i64 0, ' + temp_ref(op.args[1]) + '\n  ' + lhs + '.is_neg = icmp slt i64 ' + temp_ref(op.args[1]) + ', 0\n  ' + lhs + ' = select i1 ' + temp_ref(op.lhs + '.is_neg') + ', i64 ' + temp_ref(op.lhs + '.neg') + ', i64 ' + temp_ref(op.args[1]))
     if (call_name == 'popcount'):
         if (op.args.length() != 2):
@@ -4940,6 +4950,11 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
     string lhs = temp_ref(op.lhs)
     string method_name = op.args[0]
     string method_base_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[1]))
+    if (method_name == 'abs' && (method_base_type == 'int' || method_base_type == 'num')):
+        if (op.args.length() != 2):
+            throw 'unsupported llvm abs arity'
+        LinearInstruction abs_call = LinearInstruction('value', op.lhs, op.result_type, op.ownership_mode, 'call', ['abs', op.args[1]])
+        return emit_call_value_instruction_core(program, function_ir, abs_call)
     if (op.args.length() >= 2 && is_string_char_predicate_method_name(method_name) && temp_is_string_index_value(function_ir, op.args[1])):
         LinearInstruction index_op = lookup_temp_instruction(function_ir, op.args[1])
         return emit_string_char_predicate_fast_path(function_ir, lhs, method_name, index_op.args[0], index_op.args[1], op.lhs)

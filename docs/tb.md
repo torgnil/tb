@@ -390,8 +390,8 @@ Array helpers
 - sum(arr: int[]) -> int
   - Aggregate helper for integer arrays (compile-time for constant arrays).
 
-- abs(x: int | num) -> int | num
-  - Return the absolute value. `num` remains compile-time today; runtime lowering currently covers `int`.
+- abs(x: int | num) -> int | num — returns the value's magnitude and preserves a `num` value's decimal scale.
+  - Runtime lowering supports both `int` and `num` values; `value.abs()` is also supported through UFCS.
 
 - min(a: int | num, b: int | num) -> int | num
   - Return the smaller value. `int` lowers at runtime; `num` is currently folded at compile time.
