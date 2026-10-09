@@ -201,6 +201,7 @@ int main(string[] args):
   - Example (array): `int[] nums = [1, 2, 3, 4]; int[] mid = nums[1:3];  // [2, 3]`
   - Example (string): `string s = 'hello'; string sub = s[1:4];  // 'ell'`
 - Function-local `int[]` declarations and reassignment copy borrowed arrays, including const arrays, parameters, globals, indexed rows, and record fields. Mutating the copy leaves its source unchanged. Owned array literals and call results transfer into the local binding.
+- Function-local `bool[]` declarations and reassignment also copy borrowed arrays, including const arrays, parameters, globals, and record fields. Mutating the copy leaves its source unchanged. Owned array literals and call results transfer into the local binding.
 - Runtime arrays are heap-backed when mutation or runtime flow requires it. Helpers: `push`, `pop`, `insert`, `remove_at`, `clear`, `sort`, `map_to`, `filter`, and `flat_map`.
 - `filter` keeps the elements whose predicate returns `true` and returns a new array of the same item type.
 - `prio_q<T>` is supported for runtime element types such as `int`, `bool`, `string`, enums, records, and arrays. Create one with `create_prio_q(values, comparator)` or UFCS form `values.create_prio_q(comparator)`, mutate it with `pq.push(value)`, test with `is_empty(pq)` or `pq.is_empty()`, and remove the highest-priority item with `pop(pq)` or `pq.pop()`. The queue copies the source array, so later mutations of the original array do not affect the queue.
