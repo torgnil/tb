@@ -394,10 +394,11 @@ Array helpers
   - Runtime lowering supports both `int` and `num` values; `value.abs()` is also supported through UFCS.
 
 - min(a: int | num, b: int | num) -> int | num
-  - Return the smaller value. `int` lowers at runtime; `num` is currently folded at compile time.
+  - Return the smaller value. Runtime lowering supports same-type `int` and `num` operands; `num` keeps the selected operand's scale. Equal values select the right operand.
 
 - max(a: int | num, b: int | num) -> int | num
-  - Return the larger value. `int` lowers at runtime; `num` is currently folded at compile time.
+  - Return the larger value. Runtime lowering supports same-type `int` and `num` operands; `num` keeps the selected operand's scale. Equal values select the right operand.
+  - UFCS forms `a.min(b)` and `a.max(b)` are supported for `int` and `num`.
 
 - sqrt(x: int | num) -> num
   - Return the square root as `num`. Constant inputs are folded at compile time.

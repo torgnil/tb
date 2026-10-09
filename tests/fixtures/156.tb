@@ -1,0 +1,101 @@
+const int GLOBAL_LOW = 3
+const int GLOBAL_HIGH = 9
+
+int evaluation_order = 0
+
+int int_minimum(int left, int right):
+    return min(left, right)
+
+num num_minimum(num left, num right):
+    return min(left, right)
+
+num num_maximum(num left, num right):
+    return max(left, right)
+
+string min(string left, string right):
+    return left
+
+num counted_receiver():
+    evaluation_order = evaluation_order * 10 + 1
+    return 2.50
+
+num counted_argument():
+    evaluation_order = evaluation_order * 10 + 2
+    return 3.500
+
+int counted_free_left():
+    evaluation_order = evaluation_order * 10 + 1
+    return 7
+
+int counted_free_right():
+    evaluation_order = evaluation_order * 10 + 2
+    return 7
+
+num clipped(num value):
+    const num lower = 1.250
+    const num upper = 3.50
+    return max(lower, min(value, upper))
+
+num clipped_ufcs(num value):
+    const num lower = 1.250
+    const num upper = 3.50
+    return lower.max(value.min(upper))
+
+int main(string[] args):
+    const int fixed_int = 7
+    const num fixed_num = 2.500
+    int dynamic_int = args.length() - 2
+    num dynamic_num = 0.000 - args.length()
+    const int runtime_int_left = args.length() - 2
+    const int runtime_int_right = args.length() + 5
+    const num runtime_num_left = 0.00 - args.length()
+    const num runtime_num_right = args.length() + 0.000
+    const num runtime_tie_left = args.length() + 0.00
+    const num runtime_tie_right = args.length() + 0.000
+
+    print(min(fixed_int, dynamic_int))
+    print(max(dynamic_int, fixed_int))
+    print(fixed_int.min(dynamic_int))
+    print(dynamic_int.max(fixed_int))
+    print(min(runtime_int_left, runtime_int_right))
+    print(max(runtime_int_left, runtime_int_right))
+    print(runtime_int_left.min(runtime_int_right))
+    print(runtime_int_left.max(runtime_int_right))
+    print('left'.min('right'))
+    print(min(0 - 9223372036854775807 - 1, dynamic_int))
+    print(max(9223372036854775807, dynamic_int))
+
+    print(min(fixed_num, dynamic_num))
+    print(max(dynamic_num, fixed_num))
+    print(fixed_num.min(dynamic_num))
+    print(dynamic_num.max(fixed_num))
+    print(min(runtime_num_left, runtime_num_right))
+    print(max(runtime_num_left, runtime_num_right))
+    print(runtime_num_left.min(runtime_num_right))
+    print(runtime_num_left.max(runtime_num_right))
+    print(min(runtime_tie_left, runtime_tie_right))
+    print(max(runtime_tie_left, runtime_tie_right))
+    print(runtime_tie_left.min(runtime_tie_right))
+    print(runtime_tie_left.max(runtime_tie_right))
+    print(min(GLOBAL_LOW, dynamic_int))
+    print(max(dynamic_int, GLOBAL_HIGH))
+    print(num_minimum(fixed_num, dynamic_num))
+    print(num_maximum(dynamic_num, fixed_num))
+    print(clipped(dynamic_num))
+    print(clipped_ufcs(dynamic_num))
+
+    print(min(2.50, 2.500))
+    print(max(2.50, 2.500))
+    print(2.50.min(2.500))
+    print(2.50.max(2.500))
+
+    evaluation_order = 0
+    print(counted_receiver().max(counted_argument()))
+    print(evaluation_order)
+    evaluation_order = 0
+    print(min(counted_free_left(), counted_free_right()))
+    print(evaluation_order)
+    evaluation_order = 0
+    print(counted_free_left().max(counted_free_right()))
+    print(evaluation_order)
+    return 0
