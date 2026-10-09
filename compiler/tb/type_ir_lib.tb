@@ -1224,7 +1224,7 @@ ParsedFunction refine_function(ParsedFunction function_ir, BindingIR[] globals, 
         temp_types = refined_result.temp_types
         if ((refined_block.terminator.kind == 'return' || refined_block.terminator.kind == 'return_owned') && refined_block.terminator.args.length() == 1 && function_return_type.ends_with('[]')):
             string return_temp = refined_block.terminator.args[0]
-            if (lookup_temp_type(refined_block.instructions, return_temp) == '[]'):
+            if (is_untyped_array_shape(lookup_temp_type(refined_block.instructions, return_temp))):
                 refined_block = BlockIR(refined_block.label, set_temp_type(refined_block.instructions, return_temp, function_return_type), refined_block.terminator)
         blocks.push(refined_block)
         int block_op_index = 0

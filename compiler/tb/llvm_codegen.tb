@@ -1316,6 +1316,15 @@ string lookup_temp_llvm_type_uncached(ParsedFunction function_ir, string lookup_
             if (result_type == 'unknown' && op.lhs == lookup_name):
                 result_type = op.result_type
     if (result_type == '[]'):
+        # An empty child literal has no item type of its own. Its enclosing
+        # array literal does, and is the most specific source of that type.
+        for (BlockIR block in function_ir.blocks):
+            for (LinearInstruction op in block.instructions):
+                string enclosing_type = normalize_llvm_type_name(op.result_type)
+                if (op.kind == 'value' && op.detail == 'array' && enclosing_type.ends_with('[][]') && !is_untyped_array_shape(enclosing_type)):
+                    for (string arg in op.args):
+                        if (arg == lookup_name):
+                            return array_item_type(enclosing_type)
         if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
             LLVM_LOOKUP_TEMP_TYPE_ARRAY_FALLBACK_CALLS += 1
         bool found_def = false
@@ -1568,6 +1577,8 @@ bool temp_is_moved(ParsedFunction function_ir, string temp_name):
 bool temp_needs_backend_free(ParsedFunction function_ir, string temp_name):
     LinearInstruction op = lookup_temp_instruction(function_ir, temp_name)
     string result_type = normalize_llvm_type_name(op.result_type)
+    if (result_type == '[]'):
+        result_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, temp_name))
     if (!ownership_is_owned_mode(op.ownership_mode)):
         return false
     if (result_type == 'string'):
