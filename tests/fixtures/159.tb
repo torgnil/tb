@@ -1,0 +1,53 @@
+int inspect_shared(string text):
+    int total = 0
+    int i = 0
+    while (i < 40):
+        string copied = return_shared(text)
+        string decorated = copied + ','
+        string ch = text[0]
+        string[] pieces = decorated.split(',')
+        pieces.push(text[0])
+        pieces.push(i.to_string())
+        total += decorated.length() + ch.length() + pieces.length()
+        i++
+    return total
+
+string return_shared(string text):
+    return text
+
+string decorate_shared(string text):
+    return text + '!'
+
+string fail_shared(string text):
+    throw text
+
+int main(string[] args):
+    string text = 'shared-' + args.length().to_string()
+    thread_pool pool = thread_pool(4)
+    int total = 0
+    int i = 0
+    while (i < 20):
+        future<int> a = pool.submit(inspect_shared, text)
+        future<int> b = pool.submit(inspect_shared, text)
+        future<int> c = pool.submit(inspect_shared, text)
+        future<int> d = pool.submit(inspect_shared, text)
+        total += a.await() + b.await() + c.await() + d.await()
+        i++
+    print(total)
+    future<string> shared = pool.submit(return_shared, text)
+    print(shared.await())
+    print(shared.await())
+    future<string> decorated = pool.submit(decorate_shared, text)
+    print(decorated.await())
+    print(decorated.await())
+    future<string> failed = pool.submit(fail_shared, text)
+    try:
+        print(failed.await())
+    catch (exception err):
+        print(err)
+    try:
+        print(failed.await())
+    catch (exception err):
+        print(err)
+    print(text)
+    return 0

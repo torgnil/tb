@@ -126,6 +126,7 @@ Build and invocation details are documented in the repository or release `README
 - `future.await()` blocks until completion and returns the task result. A task exception is rethrown by `await()` on the calling thread.
 - `future.is_done()` returns whether the task has completed without blocking.
 - `future.wait_for(milliseconds)` blocks for at most the requested duration and returns whether the task completed. It does not consume the result; call `await()` afterward. Nonpositive durations only check the current completion state.
+- String task arguments and results share immutable managed values safely across workers; repeated awaits preserve the result. Internal string reference counts, character caching, and runtime counters are synchronized. This does not synchronize user globals or mutable containers. Memoization tables for `cached` functions are not synchronized; avoid invoking the same cached function concurrently.
 - `int[]` and `int[][]` arguments cross the queue as deep-copy snapshots. `int[]` and `int[][]` results are retained by their futures and each `await()` returns a fresh snapshot. Records, maps, sets, priority queues, files, pools, futures, and closures cannot yet be returned or otherwise passed across a task boundary.
 
 ```tb

@@ -21,12 +21,8 @@ entry:
   %len64 = sext i32 %len to i64
   %has.items = icmp sgt i32 %len, 0
   %alloc.len64 = select i1 %has.items, i64 %len64, i64 1
-  %an.old = load i64, ptr @tb_rt_an
-  %an.new = add i64 %an.old, 1
-  store i64 %an.new, ptr @tb_rt_an
-  %as.old = load i64, ptr @tb_rt_as
-  %as.new = add i64 %as.old, %alloc.len64
-  store i64 %as.new, ptr @tb_rt_as
+  %an.old = atomicrmw add ptr @tb_rt_an, i64 1 seq_cst, align 8
+  %as.old = atomicrmw add ptr @tb_rt_as, i64 %alloc.len64 seq_cst, align 8
   %bytes = mul i64 %alloc.len64, 8
   %data = call ptr @malloc(i64 %bytes)
   %owned = call ptr @malloc(i64 %alloc.len64)
@@ -175,9 +171,7 @@ done:
 }
 define private i32 @tb_bootstrap_string_array_push(ptr %array, ptr %value, i1 %is_owned) {
 entry:
-  %ap.old = load i64, ptr @tb_rt_ap
-  %ap.new = add i64 %ap.old, 1
-  store i64 %ap.new, ptr @tb_rt_ap
+  %ap.old = atomicrmw add ptr @tb_rt_ap, i64 1 seq_cst, align 8
   %len.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 0
   %len = load i32, ptr %len.ptr
   %cap.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 1
@@ -204,12 +198,8 @@ grow:
   %cap.big.enough = icmp sge i32 %cap.base, %next.len
   %new.cap = select i1 %cap.big.enough, i32 %cap.base, i32 %next.len
   %new.cap64 = sext i32 %new.cap to i64
-  %ag.old = load i64, ptr @tb_rt_ag
-  %ag.new = add i64 %ag.old, 1
-  store i64 %ag.new, ptr @tb_rt_ag
-  %ah.old = load i64, ptr @tb_rt_ah
-  %ah.new = add i64 %ah.old, %new.cap64
-  store i64 %ah.new, ptr @tb_rt_ah
+  %ag.old = atomicrmw add ptr @tb_rt_ag, i64 1 seq_cst, align 8
+  %ah.old = atomicrmw add ptr @tb_rt_ah, i64 %new.cap64 seq_cst, align 8
   %data.bytes = mul i64 %new.cap64, 8
   %owned.bytes = mul i64 %new.cap64, 1
   %data.new = call ptr @malloc(i64 %data.bytes)
@@ -333,17 +323,17 @@ done:
 }
 define private void @tb_bootstrap_dump_runtime_activity() {
 entry:
-  %sc = load i64, ptr @tb_rt_sc
-  %sb = load i64, ptr @tb_rt_sb
-  %xc = load i64, ptr @tb_rt_xc
-  %xb = load i64, ptr @tb_rt_xb
-  %ic = load i64, ptr @tb_rt_ic
-  %ib = load i64, ptr @tb_rt_ib
-  %an = load i64, ptr @tb_rt_an
-  %as = load i64, ptr @tb_rt_as
-  %ap = load i64, ptr @tb_rt_ap
-  %ag = load i64, ptr @tb_rt_ag
-  %ah = load i64, ptr @tb_rt_ah
+  %sc = load atomic i64, ptr @tb_rt_sc seq_cst, align 8
+  %sb = load atomic i64, ptr @tb_rt_sb seq_cst, align 8
+  %xc = load atomic i64, ptr @tb_rt_xc seq_cst, align 8
+  %xb = load atomic i64, ptr @tb_rt_xb seq_cst, align 8
+  %ic = load atomic i64, ptr @tb_rt_ic seq_cst, align 8
+  %ib = load atomic i64, ptr @tb_rt_ib seq_cst, align 8
+  %an = load atomic i64, ptr @tb_rt_an seq_cst, align 8
+  %as = load atomic i64, ptr @tb_rt_as seq_cst, align 8
+  %ap = load atomic i64, ptr @tb_rt_ap seq_cst, align 8
+  %ag = load atomic i64, ptr @tb_rt_ag seq_cst, align 8
+  %ah = load atomic i64, ptr @tb_rt_ah seq_cst, align 8
   call i32 (ptr, ...) @printf(ptr @.fmt.rt.sc, i64 %sc)
   call i32 (ptr, ...) @printf(ptr @.fmt.rt.sb, i64 %sb)
   call i32 (ptr, ...) @printf(ptr @.fmt.rt.xc, i64 %xc)

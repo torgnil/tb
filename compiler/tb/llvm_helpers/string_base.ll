@@ -19,9 +19,7 @@ retain:
   br i1 %is.managed, label %retain.managed, label %done
 retain.managed:
   %refcount.ptr = getelementptr inbounds %tb_bootstrap_rc_header, ptr %header, i32 0, i32 1
-  %refcount = load i64, ptr %refcount.ptr
-  %next.refcount = add i64 %refcount, 1
-  store i64 %next.refcount, ptr %refcount.ptr
+  %refcount = atomicrmw add ptr %refcount.ptr, i64 1 seq_cst, align 8
   br label %done
 done:
   ret ptr %value
@@ -38,10 +36,8 @@ release:
   br i1 %is.managed, label %release.managed, label %done
 release.managed:
   %refcount.ptr = getelementptr inbounds %tb_bootstrap_rc_header, ptr %header, i32 0, i32 1
-  %refcount = load i64, ptr %refcount.ptr
-  %next.refcount = sub i64 %refcount, 1
-  store i64 %next.refcount, ptr %refcount.ptr
-  %is.zero = icmp eq i64 %next.refcount, 0
+  %refcount = atomicrmw sub ptr %refcount.ptr, i64 1 seq_cst, align 8
+  %is.zero = icmp eq i64 %refcount, 1
   br i1 %is.zero, label %destroy, label %done
 destroy:
   call void @free(ptr %header)
@@ -157,12 +153,8 @@ define private ptr @tb_bootstrap_string_copy(ptr %src) {
 entry:
   %len = call i64 @strlen(ptr %src)
   %bytes = add i64 %len, 1
-  %sc.old = load i64, ptr @tb_rt_sc
-  %sc.new = add i64 %sc.old, 1
-  store i64 %sc.new, ptr @tb_rt_sc
-  %sb.old = load i64, ptr @tb_rt_sb
-  %sb.new = add i64 %sb.old, %bytes
-  store i64 %sb.new, ptr @tb_rt_sb
+  %sc.old = atomicrmw add ptr @tb_rt_sc, i64 1 seq_cst, align 8
+  %sb.old = atomicrmw add ptr @tb_rt_sb, i64 %bytes seq_cst, align 8
   %data = call ptr @tb_string_clone(ptr %src)
   ret ptr %data
 }
@@ -205,7 +197,7 @@ define private ptr @tb_bootstrap_cached_char(i8 %ch) {
 entry:
   %index = zext i8 %ch to i64
   %slot = getelementptr inbounds [256 x ptr], ptr @tb_char_cache, i32 0, i64 %index
-  %cached = load ptr, ptr %slot
+  %cached = load atomic ptr, ptr %slot seq_cst, align 8
   %has.cached = icmp ne ptr %cached, null
   br i1 %has.cached, label %reuse, label %create
 reuse:
@@ -216,9 +208,18 @@ create:
   store i8 %ch, ptr %data
   %term = getelementptr inbounds i8, ptr %data, i64 1
   store i8 0, ptr %term
-  %cache.ref = call ptr @tb_retain(ptr %data)
-  store ptr %data, ptr %slot
-  ret ptr %data
+  ; The published allocation keeps its initial reference for the process-long cache.
+  %publication = cmpxchg ptr %slot, ptr null, ptr %data seq_cst seq_cst, align 8
+  %winner = extractvalue { ptr, i1 } %publication, 0
+  %published = extractvalue { ptr, i1 } %publication, 1
+  br i1 %published, label %published.owner, label %lost
+published.owner:
+  %owner = call ptr @tb_retain(ptr %data)
+  ret ptr %owner
+lost:
+  call void @tb_release(ptr %data)
+  %winner.owner = call ptr @tb_retain(ptr %winner)
+  ret ptr %winner.owner
 }
 define private i8 @tb_bootstrap_string_byte_at_or_zero(ptr %src, i64 %index) {
 entry:
@@ -615,12 +616,8 @@ entry:
   %right.len = call i64 @strlen(ptr %right)
   %total.len = add i64 %left.len, %right.len
   %total.bytes = add i64 %total.len, 1
-  %xc.old = load i64, ptr @tb_rt_xc
-  %xc.new = add i64 %xc.old, 1
-  store i64 %xc.new, ptr @tb_rt_xc
-  %xb.old = load i64, ptr @tb_rt_xb
-  %xb.new = add i64 %xb.old, %total.bytes
-  store i64 %xb.new, ptr @tb_rt_xb
+  %xc.old = atomicrmw add ptr @tb_rt_xc, i64 1 seq_cst, align 8
+  %xb.old = atomicrmw add ptr @tb_rt_xb, i64 %total.bytes seq_cst, align 8
   %data = call ptr @tb_string_new(i64 %total.len)
   call void @llvm.memcpy.p0.p0.i64(ptr %data, ptr %left, i64 %left.len, i1 false)
   %right.dst = getelementptr inbounds i8, ptr %data, i64 %left.len
@@ -635,15 +632,11 @@ entry:
   %right.len = call i64 @strlen(ptr %right)
   %total.len = add i64 %left.len, %right.len
   %total.bytes = add i64 %total.len, 1
-  %xc.old = load i64, ptr @tb_rt_xc
-  %xc.new = add i64 %xc.old, 1
-  store i64 %xc.new, ptr @tb_rt_xc
-  %xb.old = load i64, ptr @tb_rt_xb
-  %xb.new = add i64 %xb.old, %total.bytes
-  store i64 %xb.new, ptr @tb_rt_xb
+  %xc.old = atomicrmw add ptr @tb_rt_xc, i64 1 seq_cst, align 8
+  %xb.old = atomicrmw add ptr @tb_rt_xb, i64 %total.bytes seq_cst, align 8
   %header = getelementptr inbounds i8, ptr %left, i64 -24
   %refcount.ptr = getelementptr inbounds %tb_bootstrap_rc_header, ptr %header, i32 0, i32 1
-  %refcount = load i64, ptr %refcount.ptr
+  %refcount = load atomic i64, ptr %refcount.ptr seq_cst, align 8
   %is.unique = icmp eq i64 %refcount, 1
   br i1 %is.unique, label %reuse, label %copy
 reuse:
@@ -674,12 +667,8 @@ entry:
   %right.bytes = add i64 %right.len, 1
   %total.len = add i64 %left.len, %right.len
   %total.bytes = add i64 %total.len, 1
-  %xc.old = load i64, ptr @tb_rt_xc
-  %xc.new = add i64 %xc.old, 1
-  store i64 %xc.new, ptr @tb_rt_xc
-  %xb.old = load i64, ptr @tb_rt_xb
-  %xb.new = add i64 %xb.old, %total.bytes
-  store i64 %xb.new, ptr @tb_rt_xb
+  %xc.old = atomicrmw add ptr @tb_rt_xc, i64 1 seq_cst, align 8
+  %xb.old = atomicrmw add ptr @tb_rt_xb, i64 %total.bytes seq_cst, align 8
   %data = call ptr @tb_string_new(i64 %total.len)
   call void @llvm.memcpy.p0.p0.i64(ptr %data, ptr %left, i64 %left.len, i1 false)
   %right.dst = getelementptr inbounds i8, ptr %data, i64 %left.len
@@ -693,15 +682,11 @@ entry:
   %right.bytes = add i64 %right.len, 1
   %total.len = add i64 %left.len, %right.len
   %total.bytes = add i64 %total.len, 1
-  %xc.old = load i64, ptr @tb_rt_xc
-  %xc.new = add i64 %xc.old, 1
-  store i64 %xc.new, ptr @tb_rt_xc
-  %xb.old = load i64, ptr @tb_rt_xb
-  %xb.new = add i64 %xb.old, %total.bytes
-  store i64 %xb.new, ptr @tb_rt_xb
+  %xc.old = atomicrmw add ptr @tb_rt_xc, i64 1 seq_cst, align 8
+  %xb.old = atomicrmw add ptr @tb_rt_xb, i64 %total.bytes seq_cst, align 8
   %header = getelementptr inbounds i8, ptr %left, i64 -24
   %refcount.ptr = getelementptr inbounds %tb_bootstrap_rc_header, ptr %header, i32 0, i32 1
-  %refcount = load i64, ptr %refcount.ptr
+  %refcount = load atomic i64, ptr %refcount.ptr seq_cst, align 8
   %is.unique = icmp eq i64 %refcount, 1
   br i1 %is.unique, label %reuse, label %copy
 reuse:
@@ -937,12 +922,8 @@ define private ptr @tb_bootstrap_int_to_string(i64 %value) {
 entry:
   %len = call i64 @tb_bootstrap_int_decimal_length(i64 %value)
   %bytes = add i64 %len, 1
-  %ic.old = load i64, ptr @tb_rt_ic
-  %ic.new = add i64 %ic.old, 1
-  store i64 %ic.new, ptr @tb_rt_ic
-  %ib.old = load i64, ptr @tb_rt_ib
-  %ib.new = add i64 %ib.old, %bytes
-  store i64 %ib.new, ptr @tb_rt_ib
+  %ic.old = atomicrmw add ptr @tb_rt_ic, i64 1 seq_cst, align 8
+  %ib.old = atomicrmw add ptr @tb_rt_ib, i64 %bytes seq_cst, align 8
   %data = call ptr @tb_string_new(i64 %len)
   call void @tb_bootstrap_write_int_decimal(ptr %data, i64 %value)
   ret ptr %data
