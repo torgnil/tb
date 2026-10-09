@@ -1492,7 +1492,7 @@ void require_backend_value_type(string type_name, string context):
 
 bool is_backend_managed_type(string type_name):
     type_name = normalize_llvm_type_name(type_name)
-    return type_name == 'string' || is_thread_pool_type_name(type_name) || is_future_type_name(type_name) || type_name == 'string[]' || type_name == 'bool[]' || type_name == 'int[]' || type_name == 'int[][]' || type_name.starts_with('set<') || (type_name.ends_with('[]') && record_name_from_type(array_item_type(type_name)) != '') || type_name.starts_with('map<') || record_name_from_type(type_name) != ''
+    return type_name == 'string' || is_thread_pool_type_name(type_name) || is_future_type_name(type_name) || type_name == 'string[]' || type_name == 'string[][]' || type_name == 'bool[]' || type_name == 'int[]' || type_name == 'int[][]' || type_name.starts_with('set<') || (type_name.ends_with('[]') && record_name_from_type(array_item_type(type_name)) != '') || type_name.starts_with('map<') || record_name_from_type(type_name) != ''
 
 bool temp_has_owned_semantics(ParsedFunction function_ir, string temp_name):
     LinearInstruction op = lookup_temp_instruction(function_ir, temp_name)
@@ -4271,6 +4271,12 @@ string emit_record_value_instruction_core(ProgramIR program, ParsedFunction func
                 lines.push(line)
             if (temp_is_string_array(function_ir, arg_name)):
                 stored_value = emit_string_array_owned_value(function_ir, arg_name, record_name + '.' + field.name + '.' + op.lhs)
+        else if (field_type == 'string[][]'):
+            string[] prefix = emit_string_array_array_materialize_if_needed(function_ir, arg_name, record_name + '.' + field.name + '.' + op.lhs)
+            for (string line in prefix):
+                lines.push(line)
+            if (temp_is_string_array_array(function_ir, arg_name)):
+                stored_value = emit_string_array_array_owned_value(function_ir, arg_name, record_name + '.' + field.name + '.' + op.lhs)
         else if (field_type.starts_with('map<')):
             if (LLVM_USER_CALL_STATS_ACTIVE != 0):
                 LLVM_RECORD_CTOR_MAP_FIELDS += 1
@@ -5638,6 +5644,20 @@ string emit_set_instruction(ProgramIR program, ParsedFunction function_ir, Linea
         lines.push('  store ptr ' + stored_value + ', ptr ' + slot_ref(binding.name))
         lines.push('  store i1 ' + owned_flag + ', ptr ' + owned_slot_ref(binding.name))
         return join_llvm_strings(lines, '\n')
+    if (normalize_llvm_type_name(binding.type_name) == 'string[][]'):
+        string[] lines = []
+        string stored_value = temp_ref(op.args[0]).substring(0)
+        string owned_flag = 'false'.substring(0)
+        if (temp_is_string_array_array(function_ir, op.args[0])):
+            if (temp_can_transfer_to_local(function_ir, op.args[0])):
+                owned_flag = 'true'.substring(0)
+            else:
+                lines = emit_string_array_array_materialize_if_needed(function_ir, op.args[0], binding.name + '.' + temp_suffix)
+                stored_value = emit_string_array_array_owned_value(function_ir, op.args[0], binding.name + '.' + temp_suffix)
+                owned_flag = 'true'.substring(0)
+        lines.push('  store ptr ' + stored_value + ', ptr ' + slot_ref(binding.name))
+        lines.push('  store i1 ' + owned_flag + ', ptr ' + owned_slot_ref(binding.name))
+        return join_llvm_strings(lines, '\n')
     if (normalize_llvm_type_name(binding.type_name).starts_with('map<')):
         string[] lines = []
         string stored_value = temp_ref(op.args[0]).substring(0)
@@ -5768,6 +5788,22 @@ string emit_assign_local_instruction(ProgramIR program, ParsedFunction function_
         lines.push('  store ptr ' + stored_value + ', ptr ' + slot_ref(binding.name))
         lines.push('  store i1 ' + owned_flag + ', ptr ' + owned_slot_ref(binding.name))
         return join_llvm_strings(lines, '\n')
+    if (normalize_llvm_type_name(binding.type_name) == 'string[][]' && lookup_named_local_binding(function_ir, binding.name).name != ''):
+        string[] lines = []
+        string stored_value = temp_ref(op.args[0]).substring(0)
+        string owned_flag = 'false'.substring(0)
+        if (temp_is_string_array_array(function_ir, op.args[0])):
+            if (temp_can_transfer_to_local(function_ir, op.args[0])):
+                owned_flag = 'true'.substring(0)
+            else:
+                lines = emit_string_array_array_materialize_if_needed(function_ir, op.args[0], binding.name + '.' + temp_suffix)
+                stored_value = emit_string_array_array_owned_value(function_ir, op.args[0], binding.name + '.' + temp_suffix)
+                owned_flag = 'true'.substring(0)
+        lines.push('  store ptr ' + stored_value + ', ptr ' + slot_ref(binding.name))
+        lines.push('  store i1 ' + owned_flag + ', ptr ' + owned_slot_ref(binding.name))
+        return join_llvm_strings(lines, '\n')
+    if (normalize_llvm_type_name(binding.type_name) == 'string[][]'):
+        return '  store ptr ' + temp_ref(op.args[0]) + ', ptr ' + slot_ref(binding.name)
     if (normalize_llvm_type_name(binding.type_name) == 'int[][]'):
         string[] lines = []
         string stored_value = temp_ref(op.args[0]).substring(0)
@@ -5925,6 +5961,20 @@ string emit_assign_field_instruction(ProgramIR program, ParsedFunction function_
         lines.push(emit_record_owned_field_ptr(program, function_ir, op.args[0], op.detail, '%store.field.owned.ptr.' + temp_suffix))
         lines.push('  store i8 ' + owned_flag + ', ptr %store.field.owned.ptr.' + temp_suffix)
         return join_llvm_strings(lines, '\n')
+    if (normalize_llvm_type_name(field.type_name) == 'string[][]'):
+        string[] lines = emit_string_array_array_materialize_if_needed(function_ir, op.args[1], op.detail + '.' + temp_suffix)
+        string stored_value = temp_ref(op.args[1]).substring(0)
+        string owned_flag = '0'.substring(0)
+        if (temp_is_string_array_array(function_ir, op.args[1])):
+            stored_value = emit_string_array_array_owned_value(function_ir, op.args[1], op.detail + '.' + temp_suffix)
+            owned_flag = '1'.substring(0)
+        LinearInstruction release_op = LinearInstruction('release_field', '', '', '', op.detail, [op.args[0]])
+        lines.push(emit_release_field_instruction(program, function_ir, release_op, 'replace.' + temp_suffix))
+        lines.push(emit_record_field_ptr(program, function_ir, op.args[0], op.detail, ptr_name))
+        lines.push('  store ptr ' + stored_value + ', ptr ' + ptr_name)
+        lines.push(emit_record_owned_field_ptr(program, function_ir, op.args[0], op.detail, '%store.field.owned.ptr.' + temp_suffix))
+        lines.push('  store i8 ' + owned_flag + ', ptr %store.field.owned.ptr.' + temp_suffix)
+        return join_llvm_strings(lines, '\n')
     if (normalize_llvm_type_name(field.type_name).starts_with('map<')):
         string[] lines = emit_map_materialize_if_needed(function_ir, op.args[1], op.detail + '.' + temp_suffix)
         string stored_value = temp_ref(op.args[1]).substring(0)
@@ -5954,6 +6004,18 @@ string emit_assign_field_instruction(ProgramIR program, ParsedFunction function_
         lines.push('  store i8 ' + owned_flag + ', ptr %store.field.owned.ptr.' + temp_suffix)
         return join_llvm_strings(lines, '\n')
     return emit_record_field_ptr(program, function_ir, op.args[0], op.detail, ptr_name) + '\n  store ' + llvm_type(field.type_name) + ' ' + temp_ref(op.args[1]) + ', ptr ' + ptr_name
+
+string emit_release_field_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op, string temp_suffix):
+    BindingIR field = record_field_binding_from_temp(program, function_ir, op.args[0], op.detail)
+    if (!is_backend_managed_type(field.type_name)):
+        return '  ; release_field ' + op.detail + ' ' + temp_ref(op.args[0])
+    string ptr_name = '%release.field.ptr.' + temp_suffix
+    string value_name = '%release.field.value.' + temp_suffix
+    string owned_ptr_name = '%release.field.owned.ptr.' + temp_suffix
+    string owned_byte_name = '%release.field.owned.byte.' + temp_suffix
+    string owned_name = '%release.field.owned.' + temp_suffix
+    string[] lines = [emit_record_field_ptr(program, function_ir, op.args[0], op.detail, ptr_name), '  ' + value_name + ' = load ' + llvm_type(field.type_name) + ', ptr ' + ptr_name, emit_record_owned_field_ptr(program, function_ir, op.args[0], op.detail, owned_ptr_name), '  ' + owned_byte_name + ' = load i8, ptr ' + owned_ptr_name, '  ' + owned_name + ' = icmp ne i8 ' + owned_byte_name + ', 0', '  br i1 ' + owned_name + ', label %release_field.do.' + temp_suffix + ', label %release_field.done.' + temp_suffix, 'release_field.do.' + temp_suffix + ':', '  ' + emit_backend_release_ptr(field.type_name, value_name).trim_left(), '  store ' + llvm_type(field.type_name) + ' zeroinitializer, ptr ' + ptr_name, '  store i8 0, ptr ' + owned_ptr_name, '  br label %release_field.done.' + temp_suffix, 'release_field.done.' + temp_suffix + ':']
+    return join_llvm_strings(lines, '\n')
 
 string emit_release_index_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op, string temp_suffix):
     string base_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0]))
@@ -6132,6 +6194,10 @@ string emit_instruction(ProgramIR program, ParsedFunction function_ir, string bl
         return '  ; move_temp ' + op.detail + ' ' + temp_ref(op.args[0])
     if (op.kind == 'prepare_return_string'):
         return join_llvm_strings(emit_string_materialize_if_needed(function_ir, op.args[0], 'return.' + block_label), '\n')
+    if (op.kind == 'prepare_return_string_array_array'):
+        if (transferable_local_binding_name(function_ir, op.args[0]) != '' && temp_is_string_array_array(function_ir, op.args[0])):
+            return '  ; return string[][] local transfers directly'
+        return join_llvm_strings(emit_string_array_array_materialize_if_needed(function_ir, op.args[0], 'return.' + block_label), '\n')
     if (op.kind == 'release_local'):
         BindingIR binding = ir_parse_binding_decl(op.detail)
         return emit_backend_release_binding(binding, temp_suffix)
@@ -6177,15 +6243,11 @@ string emit_instruction(ProgramIR program, ParsedFunction function_ir, string bl
         return join_llvm_strings(lines, '\n')
     if (op.kind == 'release_field'):
         BindingIR field = record_field_binding_from_temp(program, function_ir, op.args[0], op.detail)
+        if (normalize_llvm_type_name(field.type_name) == 'string[][]'):
+            return '  ; defer release_field ' + op.detail + ' until assign_field materializes the replacement'
         if (!is_backend_managed_type(field.type_name)):
             return '  ; release_field ' + op.detail + ' ' + temp_ref(op.args[0])
-        string ptr_name = '%release.field.ptr.' + temp_suffix
-        string value_name = '%release.field.value.' + temp_suffix
-        string owned_ptr_name = '%release.field.owned.ptr.' + temp_suffix
-        string owned_byte_name = '%release.field.owned.byte.' + temp_suffix
-        string owned_name = '%release.field.owned.' + temp_suffix
-        string[] lines = [emit_record_field_ptr(program, function_ir, op.args[0], op.detail, ptr_name), '  ' + value_name + ' = load ' + llvm_type(field.type_name) + ', ptr ' + ptr_name, emit_record_owned_field_ptr(program, function_ir, op.args[0], op.detail, owned_ptr_name), '  ' + owned_byte_name + ' = load i8, ptr ' + owned_ptr_name, '  ' + owned_name + ' = icmp ne i8 ' + owned_byte_name + ', 0', '  br i1 ' + owned_name + ', label %release_field.do.' + temp_suffix + ', label %release_field.done.' + temp_suffix, 'release_field.do.' + temp_suffix + ':', '  ' + emit_backend_release_ptr(field.type_name, value_name).trim_left(), '  store ' + llvm_type(field.type_name) + ' zeroinitializer, ptr ' + ptr_name, '  store i8 0, ptr ' + owned_ptr_name, '  br label %release_field.done.' + temp_suffix, 'release_field.done.' + temp_suffix + ':']
-        return join_llvm_strings(lines, '\n')
+        return emit_release_field_instruction(program, function_ir, op, temp_suffix)
     if (op.kind == 'set'):
         if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
             int start_ms = time_ms()
@@ -6292,7 +6354,7 @@ string[] emit_terminator(ParsedFunction function_ir, BlockIR block, TerminatorIR
                     string[] lines = emit_try_restore_lines(try_suffix, temp_suffix)
                     lines.push('  ret ' + llvm_type(result_type) + ' ' + temp_ref(terminator.args[0]))
                     return lines
-                if (normalize_llvm_type_name(local_binding.type_name) == 'int[]' || normalize_llvm_type_name(local_binding.type_name) == 'bool[]' || normalize_llvm_type_name(local_binding.type_name) == 'string[]' || normalize_llvm_type_name(local_binding.type_name) == 'int[][]' || local_binding.type_name.starts_with('const ')):
+                if (normalize_llvm_type_name(local_binding.type_name) == 'int[]' || normalize_llvm_type_name(local_binding.type_name) == 'bool[]' || normalize_llvm_type_name(local_binding.type_name) == 'string[]' || normalize_llvm_type_name(local_binding.type_name) == 'int[][]' || normalize_llvm_type_name(local_binding.type_name) == 'string[][]' || local_binding.type_name.starts_with('const ')):
                     string local_type = normalize_llvm_type_name(local_binding.type_name)
                     if (local_type != 'string'):
                         string[] lines = emit_try_restore_lines(try_suffix, temp_suffix)
@@ -6320,6 +6382,23 @@ string[] emit_terminator(ParsedFunction function_ir, BlockIR block, TerminatorIR
             string returned_value = temp_ref(terminator.args[0])
             if (temp_is_string_array(function_ir, terminator.args[0]) && !temp_needs_backend_free(function_ir, terminator.args[0])):
                 returned_value = emit_string_array_owned_value(function_ir, terminator.args[0], 'return.' + temp_suffix)
+            for (string restore_line in emit_try_restore_lines(try_suffix, temp_suffix)):
+                lines.push(restore_line)
+            lines.push('  ret ptr ' + returned_value)
+            return lines
+        if (normalize_llvm_type_name(result_type) == 'string[][]'):
+            bool return_string_array_array_prepared = false
+            for (LinearInstruction op in block.instructions):
+                if (op.kind == 'prepare_return_string_array_array'):
+                    if (!op.args.is_empty()):
+                        if (op.args[0] == terminator.args[0]):
+                            return_string_array_array_prepared = true
+            string[] lines = []
+            if (!return_string_array_array_prepared):
+                lines = emit_string_array_array_materialize_if_needed(function_ir, terminator.args[0], 'return.' + temp_suffix)
+            string returned_value = temp_ref(terminator.args[0])
+            if (temp_is_string_array_array(function_ir, terminator.args[0]) && !temp_needs_backend_free(function_ir, terminator.args[0])):
+                returned_value = emit_string_array_array_owned_value(function_ir, terminator.args[0], 'return.' + temp_suffix)
             for (string restore_line in emit_try_restore_lines(try_suffix, temp_suffix)):
                 lines.push(restore_line)
             lines.push('  ret ptr ' + returned_value)
@@ -7091,6 +7170,17 @@ string[] emit_record_helpers(RecordDeclIR record_decl):
             clone_field_lines.push('  br i1 %field.owned.' + field.name + ', label %field.clone.owned.' + field.name + ', label %field.clone.borrowed.' + field.name)
             clone_field_lines.push('field.clone.owned.' + field.name + ':')
             clone_field_lines.push('  %field.copy.' + field.name + ' = call ptr @tb_bootstrap_string_array_clone(ptr %field.value.' + field.name + ')')
+            clone_field_lines.push('  br label %field.clone.done.' + field.name)
+            clone_field_lines.push('field.clone.borrowed.' + field.name + ':')
+            clone_field_lines.push('  br label %field.clone.done.' + field.name)
+            clone_field_lines.push('field.clone.done.' + field.name + ':')
+            clone_field_lines.push('  %field.clone.value.' + field.name + ' = phi ptr [%field.copy.' + field.name + ', %field.clone.owned.' + field.name + '], [%field.value.' + field.name + ', %field.clone.borrowed.' + field.name + ']')
+            stored_value = '%field.clone.value.' + field.name
+            stored_owned = '%field.owned.' + field.name
+        else if (normalize_llvm_type_name(field.type_name) == 'string[][]'):
+            clone_field_lines.push('  br i1 %field.owned.' + field.name + ', label %field.clone.owned.' + field.name + ', label %field.clone.borrowed.' + field.name)
+            clone_field_lines.push('field.clone.owned.' + field.name + ':')
+            clone_field_lines.push('  %field.copy.' + field.name + ' = call ptr @tb_bootstrap_string_array_array_clone(ptr %field.value.' + field.name + ')')
             clone_field_lines.push('  br label %field.clone.done.' + field.name)
             clone_field_lines.push('field.clone.borrowed.' + field.name + ':')
             clone_field_lines.push('  br label %field.clone.done.' + field.name)

@@ -203,6 +203,8 @@ int main(string[] args):
   - Example (string): `string s = 'hello'; string sub = s[1:4];  // 'ell'`
 - Function-local `int[]` declarations and reassignment copy borrowed arrays, including const arrays, parameters, globals, indexed rows, and record fields. Mutating the copy leaves its source unchanged. Owned array literals and call results transfer into the local binding.
 - Function-local `bool[]` declarations and reassignment also copy borrowed arrays, including const arrays, parameters, globals, and record fields. Mutating the copy leaves its source unchanged. Owned array literals and call results transfer into the local binding.
+- Function-local `string[][]` declarations and reassignment copy borrowed arrays by cloning the outer array and its child `string[]` arrays. Strings remain shared immutable values. Owned literals and call results transfer into the local binding.
+- Returning `string[][]` snapshots a borrowed parameter, global, or record field before local cleanup. Returning an owned local transfers it to the caller; nested array structure is independent while immutable strings are shared.
 - Runtime arrays are heap-backed when mutation or runtime flow requires it. Helpers: `push`, `pop`, `insert`, `remove_at`, `clear`, `sort`, `map_to`, `filter`, and `flat_map`.
 - `filter` keeps the elements whose predicate returns `true` and returns a new array of the same item type.
 - `prio_q<T>` is supported for runtime element types such as `int`, `bool`, `string`, enums, records, and arrays. Create one with `create_prio_q(values, comparator)` or UFCS form `values.create_prio_q(comparator)`, mutate it with `pq.push(value)`, test with `is_empty(pq)` or `pq.is_empty()`, and remove the highest-priority item with `pop(pq)` or `pq.pop()`. The queue copies the source array, so later mutations of the original array do not affect the queue.
@@ -233,7 +235,7 @@ int main(string[] args):
   - const maps support the same read operations as mutable maps, including indexed value reads, key membership, and `keys()` / `values()`
   - passing a const value to an arbitrary user function does not make that function's parameters const
 - When values are not known at compile time, corresponding operations lower to runtime helpers and library calls.
-- Local declarations and reassignment transfer owned `int[]`, `string[]`, `int[][]`, map, and record temporaries. Assigning a managed local directly to itself preserves its existing value and ownership. Borrowed values keep their existing copy behavior, and reassignment to a different value releases the previous owned local value.
+- Local declarations and reassignment transfer owned `int[]`, `string[]`, `int[][]`, `string[][]`, map, and record temporaries. Assigning a managed local directly to itself preserves its existing value and ownership. Borrowed values keep their existing copy behavior, and reassignment to a different value releases the previous owned local value. Returning an owned `string[][]` local transfers it to the caller, including a const local.
 
 11. Built-in calling and printing
 
