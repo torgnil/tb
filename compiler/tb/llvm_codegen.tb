@@ -4388,6 +4388,12 @@ string emit_call_value_instruction_core(ProgramIR program, ParsedFunction functi
         if (op.args.length() != 2):
             throw 'unsupported llvm to_set arity'
         return emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_to_set_int_array(ptr ' + temp_ref(op.args[1]) + ')')
+    if (call_name == 'sum' && (call_arg1_type == 'int[]' || call_arg1_type == 'bool[]')):
+        if (op.args.length() != 2):
+            throw 'unsupported llvm array sum arity'
+        if (call_arg1_type == 'int[]'):
+            return emit_tracked_builtin_call_line('  ' + lhs + ' = call i64 @tb_bootstrap_int_array_sum(ptr ' + temp_ref(op.args[1]) + ')')
+        return emit_tracked_builtin_call_line('  ' + lhs + ' = call i64 @tb_bootstrap_bool_array_sum(ptr ' + temp_ref(op.args[1]) + ')')
     string builtin_query_result = emit_builtin_query_call_value_instruction(function_ir, op, call_name, call_arg1_type)
     if (builtin_query_result != ''):
         return emit_tracked_builtin_call_line(builtin_query_result)
@@ -5039,6 +5045,10 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
         if (op.args.length() != 2):
             throw 'unsupported llvm int[] sum arity'
         return '  ' + lhs + ' = call i64 @tb_bootstrap_int_array_sum(ptr ' + temp_ref(op.args[1]) + ')'
+    if (method_name == 'sum' && method_base_type == 'bool[]'):
+        if (op.args.length() != 2):
+            throw 'unsupported llvm bool[] sum arity'
+        return '  ' + lhs + ' = call i64 @tb_bootstrap_bool_array_sum(ptr ' + temp_ref(op.args[1]) + ')'
     if (method_name == 'pop' && method_base_type == 'int[]'):
         if (op.args.length() != 2):
             throw 'unsupported llvm int[] pop arity'

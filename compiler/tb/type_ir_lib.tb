@@ -955,6 +955,10 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
         if (op.args.is_empty()):
             return op
         string result_type = infer_call_type_cached(op.args[0], functions, TYPE_IR_FUNCTION_TYPE_CACHE_NAMES, TYPE_IR_FUNCTION_TYPE_CACHE_VALUES)
+        if (op.args[0] == 'sum' && op.args.length() >= 2):
+            string sum_arg_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+            if (sum_arg_type == 'int[]' || sum_arg_type == 'bool[]'):
+                result_type = 'int'
         if (op.args[0] == 'abs'):
             if (op.args.length() == 2):
                 string argument_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
@@ -998,7 +1002,7 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
         string base_type = lookup_temp_type_slot(temp_types, op.args[1])
         if (base_type.starts_with('const ')):
             string canonical_base_type = normalize_llvm_type_name(base_type)
-            if (is_thread_pool_type(canonical_base_type) || is_future_type(canonical_base_type) || canonical_base_type.starts_with('map<')):
+            if (is_thread_pool_type(canonical_base_type) || is_future_type(canonical_base_type) || canonical_base_type.starts_with('map<') || ((method_name == 'sum') && (canonical_base_type == 'int[]' || canonical_base_type == 'bool[]'))):
                 base_type = canonical_base_type
         if (method_name == 'abs'):
             string canonical_base_type = normalize_llvm_type_name(base_type)

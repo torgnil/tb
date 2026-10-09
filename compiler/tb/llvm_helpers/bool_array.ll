@@ -80,6 +80,26 @@ found:
 notfound:
   ret i1 false
 }
+define private i64 @tb_bootstrap_bool_array_sum(ptr %array) {
+entry:
+  %len = call i32 @tb_bootstrap_bool_array_length(ptr %array)
+  br label %loop.cond
+loop.cond:
+  %index = phi i32 [0, %entry], [%next.index, %loop.step]
+  %sum = phi i64 [0, %entry], [%next.sum, %loop.step]
+  %keep.loop = icmp slt i32 %index, %len
+  br i1 %keep.loop, label %loop.body, label %done
+loop.body:
+  %value = call i1 @tb_bootstrap_bool_array_get(ptr %array, i32 %index)
+  %value.i64 = zext i1 %value to i64
+  %next.sum = add i64 %sum, %value.i64
+  br label %loop.step
+loop.step:
+  %next.index = add i32 %index, 1
+  br label %loop.cond
+done:
+  ret i64 %sum
+}
 define private ptr @tb_bootstrap_bool_array_clone(ptr %array) {
 entry:
   %is.null = icmp eq ptr %array, null
