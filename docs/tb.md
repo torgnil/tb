@@ -223,6 +223,7 @@ int main(string[] args):
 - Const enforcement is compile-time and applies to the binding:
   - reassigning a `const` variable and direct writes through its array, map, set, or record target are rejected during compilation
   - known mutating array, set, and priority-queue operations through a `const` binding are rejected, including UFCS and free-function forms
+  - const maps support the same read operations as mutable maps, including indexed value reads and `keys()` / `values()`
   - passing a const value to an arbitrary user function does not make that function's parameters const
 - When values are not known at compile time, corresponding operations lower to runtime helpers and library calls.
 - Local declarations and reassignment transfer owned `string[]`, `int[][]`, map, and record temporaries. Assigning a managed local directly to itself preserves its existing value and ownership. Borrowed values keep their existing copy behavior, and reassignment to a different value releases the previous owned local value.
