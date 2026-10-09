@@ -5585,6 +5585,20 @@ string emit_set_instruction(ProgramIR program, ParsedFunction function_ir, Linea
         lines.push('  store ptr ' + stored_value + ', ptr ' + slot_ref(binding.name))
         lines.push('  store i1 ' + owned_flag + ', ptr ' + owned_slot_ref(binding.name))
         return join_llvm_strings(lines, '\n')
+    if (normalize_llvm_type_name(binding.type_name) == 'int[]'):
+        string[] lines = []
+        string stored_value = temp_ref(op.args[0]).substring(0)
+        string owned_flag = 'false'.substring(0)
+        if (temp_is_int_array(function_ir, op.args[0])):
+            if (temp_can_transfer_to_local(function_ir, op.args[0])):
+                owned_flag = 'true'.substring(0)
+            else:
+                lines = emit_int_array_materialize_if_needed(function_ir, op.args[0], binding.name + '.' + temp_suffix)
+                stored_value = emit_int_array_owned_value(function_ir, op.args[0], binding.name + '.' + temp_suffix)
+                owned_flag = 'true'.substring(0)
+        lines.push('  store ptr ' + stored_value + ', ptr ' + slot_ref(binding.name))
+        lines.push('  store i1 ' + owned_flag + ', ptr ' + owned_slot_ref(binding.name))
+        return join_llvm_strings(lines, '\n')
     if (normalize_llvm_type_name(binding.type_name) == 'int[][]'):
         string[] lines = []
         string stored_value = temp_ref(op.args[0]).substring(0)
@@ -5697,6 +5711,20 @@ string emit_assign_local_instruction(ProgramIR program, ParsedFunction function_
             else:
                 lines = emit_string_array_materialize_if_needed(function_ir, op.args[0], binding.name + '.' + temp_suffix)
                 stored_value = emit_string_array_owned_value(function_ir, op.args[0], binding.name + '.' + temp_suffix)
+                owned_flag = 'true'.substring(0)
+        lines.push('  store ptr ' + stored_value + ', ptr ' + slot_ref(binding.name))
+        lines.push('  store i1 ' + owned_flag + ', ptr ' + owned_slot_ref(binding.name))
+        return join_llvm_strings(lines, '\n')
+    if (normalize_llvm_type_name(binding.type_name) == 'int[]' && lookup_named_local_binding(function_ir, binding.name).name != ''):
+        string[] lines = []
+        string stored_value = temp_ref(op.args[0]).substring(0)
+        string owned_flag = 'false'.substring(0)
+        if (temp_is_int_array(function_ir, op.args[0])):
+            if (temp_can_transfer_to_local(function_ir, op.args[0])):
+                owned_flag = 'true'.substring(0)
+            else:
+                lines = emit_int_array_materialize_if_needed(function_ir, op.args[0], binding.name + '.' + temp_suffix)
+                stored_value = emit_int_array_owned_value(function_ir, op.args[0], binding.name + '.' + temp_suffix)
                 owned_flag = 'true'.substring(0)
         lines.push('  store ptr ' + stored_value + ', ptr ' + slot_ref(binding.name))
         lines.push('  store i1 ' + owned_flag + ', ptr ' + owned_slot_ref(binding.name))
