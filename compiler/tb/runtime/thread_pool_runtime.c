@@ -302,6 +302,7 @@ static void tb_future_int_array_fail(tb_future_int_array* future, char* error) {
 
 static void tb_rethrow_async_error(char* error) {
     void* handler = __tb_exception_handler;
+    /* Each await transfers a new owned message reference to its catch. */
     if (error != NULL) {
         __tb_exception_message = (char*)tb_runtime_retain(error);
     } else {
@@ -493,6 +494,7 @@ static void* tb_thread_pool_worker(void* raw_pool) {
             pthread_mutex_unlock(&task->future.string_future->mutex);
             tb_future_string_release_internal(task->future.string_future);
         } else if (caught != 0) {
+            /* The throw transfers an owned message; task argument cleanup is independent. */
             char* error = __tb_exception_message;
             __tb_exception_message = NULL;
             if (task->kind == TB_TASK_KIND_INT_ARRAY_ARRAY || task->kind == TB_TASK_KIND_INT_ARRAY_ARRAY_FROM_I64 || task->kind == TB_TASK_KIND_INT_ARRAY_ARRAY_FROM_BOOL || task->kind == TB_TASK_KIND_INT_ARRAY_ARRAY_FROM_STRING || task->kind == TB_TASK_KIND_INT_ARRAY_ARRAY_FROM_INT_ARRAY || task->kind == TB_TASK_KIND_INT_ARRAY_ARRAY_FROM_INT_ARRAY_ARRAY) {

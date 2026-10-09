@@ -1255,9 +1255,6 @@ BindingIR lookup_named_global(ProgramIR program, string name):
 string try_prev_slot_ref(string temp_suffix):
     return '%tb.exc.prev.slot.' + temp_suffix
 
-string try_message_owned_slot_ref(string temp_suffix):
-    return '%tb.exc.message.owned.slot.' + temp_suffix
-
 string try_env_ref(string temp_suffix):
     return '%tb.exc.env.' + temp_suffix
 
@@ -6286,6 +6283,8 @@ string emit_instruction(ProgramIR program, ParsedFunction function_ir, string bl
         return emit_value_instruction(program, function_ir, op)
     if (op.kind == 'move_temp'):
         return '  ; move_temp ' + op.detail + ' ' + temp_ref(op.args[0])
+    if (op.kind == 'prepare_throw_string'):
+        return join_llvm_strings(emit_string_materialize_if_needed(function_ir, op.args[0], 'throw.' + block_label), '\n')
     if (op.kind == 'prepare_return_string'):
         return join_llvm_strings(emit_string_materialize_if_needed(function_ir, op.args[0], 'return.' + block_label), '\n')
     if (op.kind == 'prepare_return_string_array_array'):
@@ -6318,8 +6317,6 @@ string emit_instruction(ProgramIR program, ParsedFunction function_ir, string bl
         return join_llvm_strings([
             '  ' + env_ref + ' = alloca [192 x i8]',
             '  ' + prev_slot_ref + ' = alloca ptr',
-            '  ' + try_message_owned_slot_ref(temp_suffix) + ' = alloca i1',
-            '  store i1 false, ptr ' + try_message_owned_slot_ref(temp_suffix),
             '  ' + prev_value_ref + ' = load ptr, ptr ' + exception_handler_symbol(),
             '  store ptr ' + prev_value_ref + ', ptr ' + prev_slot_ref,
             '  ' + env_ptr_ref + ' = getelementptr [192 x i8], ptr ' + env_ref + ', i32 0, i32 0',
@@ -6332,16 +6329,15 @@ string emit_instruction(ProgramIR program, ParsedFunction function_ir, string bl
     if (op.kind == 'catch'):
         string try_suffix = catch_try_suffix(function_ir, block_label)
         string[] lines = emit_try_restore_lines(try_suffix, temp_suffix)
+        # Every publisher transfers one managed string reference to the catch.
         string message_ref = '%tb.exc.message.' + temp_suffix
-        string message_owned_ref = '%tb.exc.message.owned.' + temp_suffix
-        lines.push('  ' + message_owned_ref + ' = load i1, ptr ' + try_message_owned_slot_ref(try_suffix))
         lines.push('  ' + message_ref + ' = load ptr, ptr ' + exception_message_symbol())
         lines.push('  store ptr ' + message_ref + ', ptr ' + slot_ref(ir_parse_binding_decl(op.detail).name))
         lines.push('  store ptr null, ptr ' + exception_message_symbol())
         if (is_backend_managed_type(ir_parse_binding_decl(op.detail).type_name)):
-            lines.push('  store i1 ' + message_owned_ref + ', ptr ' + owned_slot_ref(ir_parse_binding_decl(op.detail).name))
+            lines.push('  store i1 true, ptr ' + owned_slot_ref(ir_parse_binding_decl(op.detail).name))
         if (normalize_llvm_type_name(ir_parse_binding_decl(op.detail).type_name) == 'string'):
-            lines.push('  store i1 ' + message_owned_ref + ', ptr ' + managed_slot_ref(ir_parse_binding_decl(op.detail).name))
+            lines.push('  store i1 true, ptr ' + managed_slot_ref(ir_parse_binding_decl(op.detail).name))
         return join_llvm_strings(lines, '\n')
     if (op.kind == 'release_field'):
         BindingIR field = record_field_binding_from_temp(program, function_ir, op.args[0], op.detail)
@@ -6639,24 +6635,31 @@ string[] emit_terminator(ParsedFunction function_ir, BlockIR block, TerminatorIR
             if (!temp_has_owned_semantics(function_ir, terminator.args[0])):
                 lines = emit_string_materialize_if_needed(function_ir, terminator.args[0], 'throw.' + temp_suffix)
                 message = emit_string_owned_value(function_ir, terminator.args[0], 'throw.' + temp_suffix)
-            string try_suffix = enclosing_try_suffix(function_ir, block.label)
             lines.push('  store ptr ' + message + ', ptr ' + exception_message_symbol())
-            lines.push('  store i1 true, ptr ' + try_message_owned_slot_ref(try_suffix))
             lines.push('  br label %' + function_ir.blocks[catch_block_index].label)
             return lines
-        return [
-            '  %tb.throw.handler.' + temp_suffix + ' = load ptr, ptr ' + exception_handler_symbol(),
-            '  %tb.throw.has_handler.' + temp_suffix + ' = icmp ne ptr %tb.throw.handler.' + temp_suffix + ', null',
-            '  br i1 %tb.throw.has_handler.' + temp_suffix + ', label %tb.throw.unwind.' + temp_suffix + ', label %tb.throw.fatal.' + temp_suffix,
-            'tb.throw.unwind.' + temp_suffix + ':',
-            '  store ptr ' + temp_ref(terminator.args[0]) + ', ptr ' + exception_message_symbol(),
-            '  call void @longjmp(ptr %tb.throw.handler.' + temp_suffix + ', i32 1)',
-            '  unreachable',
-            'tb.throw.fatal.' + temp_suffix + ':',
-            '  call i32 @puts(ptr ' + temp_ref(terminator.args[0]) + ')',
-            '  call void @exit(i32 1)',
-            '  unreachable'
-        ]
+        bool throw_string_prepared = false
+        for (LinearInstruction op in block.instructions):
+            if (op.kind == 'prepare_throw_string'):
+                if (!op.args.is_empty()):
+                    if (op.args[0] == terminator.args[0]):
+                        throw_string_prepared = true
+        string[] lines = []
+        if (!throw_string_prepared):
+            lines = emit_string_materialize_if_needed(function_ir, terminator.args[0], 'throw.' + temp_suffix)
+        string message = emit_string_owned_value(function_ir, terminator.args[0], 'throw.' + temp_suffix)
+        lines.push('  %tb.throw.handler.' + temp_suffix + ' = load ptr, ptr ' + exception_handler_symbol())
+        lines.push('  %tb.throw.has_handler.' + temp_suffix + ' = icmp ne ptr %tb.throw.handler.' + temp_suffix + ', null')
+        lines.push('  br i1 %tb.throw.has_handler.' + temp_suffix + ', label %tb.throw.unwind.' + temp_suffix + ', label %tb.throw.fatal.' + temp_suffix)
+        lines.push('tb.throw.unwind.' + temp_suffix + ':')
+        lines.push('  store ptr ' + message + ', ptr ' + exception_message_symbol())
+        lines.push('  call void @longjmp(ptr %tb.throw.handler.' + temp_suffix + ', i32 1)')
+        lines.push('  unreachable')
+        lines.push('tb.throw.fatal.' + temp_suffix + ':')
+        lines.push('  call i32 @puts(ptr ' + message + ')')
+        lines.push('  call void @exit(i32 1)')
+        lines.push('  unreachable')
+        return lines
     throw 'unsupported llvm terminator kind: ' + terminator.kind
 
 bool[] llvm_reachable_blocks(ParsedFunction function_ir):

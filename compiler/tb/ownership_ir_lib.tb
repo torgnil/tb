@@ -426,7 +426,7 @@ LinearInstruction[] exit_cleanup_instructions(OwnershipIdentifierTargetCache ide
     string transferred_binding = ''
     if ((terminator.kind == 'return_owned' || terminator.kind == 'throw_owned') && !terminator.args.is_empty()):
         transferred_binding = identifier_target_binding_cached(identifier_target_cache, terminator.args[0])
-        if (terminator.kind == 'return_owned' && transferred_binding != ''):
+        if (transferred_binding != ''):
             BindingIR transferred = ir_parse_binding_decl(transferred_binding)
             string transferred_type = normalize_llvm_type_name(transferred.type_name)
             if (transferred_type == 'string'):
@@ -434,10 +434,10 @@ LinearInstruction[] exit_cleanup_instructions(OwnershipIdentifierTargetCache ide
     for (BindingIR binding in initialized_managed):
         string current = binding_decl(binding)
         bool preserve_const_throw = false
-        # Newly recognized const owners must stay live on nonlocal throws until borrowed exception messages have independent ownership. Const arrays keep their existing cleanup policy.
+        # Preserve the existing non-string const cleanup policy on nonlocal throws.
         if (terminator.kind == 'throw' || terminator.kind == 'throw_owned'):
             if (binding.type_name.starts_with('const ')):
-                preserve_const_throw = !binding.type_name.ends_with('[]')
+                preserve_const_throw = !binding.type_name.ends_with('[]') && normalize_llvm_type_name(binding.type_name) != 'string'
         if (current != transferred_binding && !preserve_const_throw):
             result.push(LinearInstruction('release_local', '', '', '', current, []))
     return result
@@ -480,6 +480,10 @@ BlockIR apply_ownership_to_block(ParsedFunction function_ir, OwnershipTempMetaCa
                 instructions.push(LinearInstruction('prepare_return_bool_array', '', '', '', '', [terminator.args[0]]))
             if (prepare_int_array_return):
                 instructions.push(LinearInstruction('prepare_return_int_array', '', '', '', '', [terminator.args[0]]))
+        if (terminator.kind == 'throw' || terminator.kind == 'throw_owned'):
+            if (!terminator.args.is_empty()):
+                if (normalize_llvm_type_name(lookup_temp_result_type_cached(cache, terminator.args[0])) == 'string'):
+                    instructions.push(LinearInstruction('prepare_throw_string', '', '', '', '', [terminator.args[0]]))
         instructions = append_instructions(instructions, exit_cleanup_instructions(identifier_target_cache, terminator, initialized_managed))
     return BlockIR(block.label, instructions, terminator)
 
