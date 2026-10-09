@@ -4748,6 +4748,10 @@ string emit_builtin_query_call_value_instruction(ParsedFunction function_ir, Lin
             if (op.args.length() != 3):
                 throw 'unsupported llvm map contains arity'
             return emit_map_contains_value(function_ir, op.lhs, call_arg1_type, op.args[1], op.args[2])
+        if (call_arg1_type == 'int[]' || call_arg1_type == 'bool[]' || call_arg1_type == 'string[]'):
+            if (op.args.length() != 3):
+                throw 'unsupported llvm array contains arity'
+            return emit_array_contains_value(function_ir, op.lhs, call_arg1_type, op.args[1], op.args[2])
     if (call_name == 'length'):
         if (op.args.length() != 2):
             throw 'unsupported llvm length arity'
@@ -4843,6 +4847,22 @@ string emit_map_contains_value(ParsedFunction function_ir, string result_name, s
     if (actual_key_type != key_type):
         throw 'unsupported llvm map contains key type: ' + actual_key_type + '; expected ' + key_type
     return '  ' + temp_ref(result_name) + ' = call i1 ' + llvm_map_contains_name(map_type) + '(ptr ' + temp_ref(map_name) + ', ' + llvm_type(key_type) + ' ' + temp_ref(key_name) + ')'
+
+string emit_array_contains_value(ParsedFunction function_ir, string result_name, string array_type, string array_name, string item_name):
+    string expected_item_type = array_item_type(array_type)
+    string actual_item_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, item_name))
+    if (actual_item_type != expected_item_type):
+        throw 'unsupported llvm array contains item type: ' + actual_item_type + '; expected ' + expected_item_type
+    string helper_name = ''
+    if (array_type == 'int[]'):
+        helper_name = '@tb_bootstrap_int_array_contains'
+    if (array_type == 'bool[]'):
+        helper_name = '@tb_bootstrap_bool_array_contains'
+    if (array_type == 'string[]'):
+        helper_name = '@tb_bootstrap_string_array_contains'
+    if (helper_name == ''):
+        throw 'unsupported llvm array contains receiver type: ' + array_type
+    return '  ' + temp_ref(result_name) + ' = call i1 ' + helper_name + '(ptr ' + temp_ref(array_name) + ', ' + llvm_type(expected_item_type) + ' ' + temp_ref(item_name) + ')'
 
 string emit_map_method_call_value_instruction(ParsedFunction function_ir, LinearInstruction op, string method_name, string method_base_type):
     if (!method_base_type.starts_with('map<')):
@@ -4976,6 +4996,10 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
     string map_result = emit_map_method_call_value_instruction(function_ir, op, method_name, method_base_type)
     if (map_result != ''):
         return map_result
+    if (method_name == 'contains' && (method_base_type == 'int[]' || method_base_type == 'bool[]' || method_base_type == 'string[]')):
+        if (op.args.length() != 3):
+            throw 'unsupported llvm array contains arity'
+        return emit_array_contains_value(function_ir, op.lhs, method_base_type, op.args[1], op.args[2])
     string prio_q_result = emit_prio_q_method_call_value_instruction(program, function_ir, op, method_name, method_base_type)
     if (prio_q_result != ''):
         return prio_q_result

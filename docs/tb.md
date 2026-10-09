@@ -365,7 +365,7 @@ Array helpers
   - For `string[]`, clear releases owned strings in live slots and keeps the array storage available for reuse. Also available as `arr.clear()`.
 
 - contains(arr: T[], value: T) -> bool
-  - Return `true` when the array contains `value`. Also available via UFCS (`arr.contains(value)`) and membership syntax (`value in arr`) for supported arrays, sets, and map keys.
+  - For `int[]`, `bool[]`, and `string[]`, return `true` when the array contains `value`. Also available via UFCS (`arr.contains(value)`) and membership syntax (`value in arr`). Queries borrow the array and item, preserve the array contents and length, and require the item type to match the array element type.
 
 - is_empty(x: string | T[] | set<T> | map<K, V> | prio_q<T>) -> bool
   - Return `true` when the value has no items. UFCS sugar such as `arr.is_empty()` and `scores.is_empty()` is supported.
