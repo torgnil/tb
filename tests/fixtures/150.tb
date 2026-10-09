@@ -1,0 +1,153 @@
+bool[] MUTABLE_FLAGS = [true, false]
+const bool[] CONST_FLAGS = [true, false]
+
+record BoolBox(bool[] flags);
+
+bool[] return_borrowed(bool[] source):
+    return source
+
+bool[] return_empty_borrowed(bool[] source):
+    return source
+
+bool[] return_global():
+    return MUTABLE_FLAGS
+
+bool[] return_const_global():
+    return CONST_FLAGS
+
+bool[] return_record_field(BoolBox box):
+    return box.flags
+
+bool[] return_local(int n):
+    bool[] values = [n > 0, false]
+    bool[] spare = [false]
+    return values
+
+bool[] return_const_local(int n):
+    const bool[] values = [n > 0, false]
+    return values
+
+bool[] return_local_copy(bool[] source):
+    bool[] values = source
+    values[0] = false
+    return values
+
+bool[] return_reassigned(bool[] source):
+    bool[] values = [false]
+    values = source
+    return values
+
+bool[] return_literal(int n):
+    return [n > 0, false]
+
+bool[] return_call(int n):
+    return return_literal(n)
+
+bool[] return_branch(bool[] source, bool[] fallback, int n):
+    if (n > 0):
+        return source
+    return fallback
+
+bool[] return_switch(bool[] source, bool[] fallback, int n):
+    switch (n):
+        case 1:
+            return source
+        default:
+            return fallback
+
+bool[] return_loop(bool[] source):
+    for (int i = 0; i < 2; i++):
+        if (i == 1):
+            return source
+    return source
+
+bool[] return_try(bool[] source, bool[] fallback):
+    try:
+        return source
+    catch (exception err):
+        return fallback
+
+bool[] return_catch(bool[] source):
+    try:
+        throw 'return-catch'
+    catch (exception err):
+        return source
+
+int main(string[] args):
+    int n = args.length()
+    bool[] source = [n > 0, false]
+    bool[] borrowed = return_borrowed(source)
+    borrowed[0] = false
+    print(source[0])
+    print(borrowed[0])
+
+    bool[] empty_source = []
+    bool[] empty_borrowed = return_empty_borrowed(empty_source)
+    empty_borrowed.push(n > 0)
+    print(empty_source.length())
+    print(empty_borrowed.length())
+
+    bool[] global_copy = return_global()
+    global_copy[0] = false
+    print(MUTABLE_FLAGS[0])
+    print(global_copy[0])
+    bool[] const_global_copy = return_const_global()
+    const_global_copy[0] = false
+    print(CONST_FLAGS[0])
+    print(const_global_copy[0])
+
+    BoolBox box = BoolBox([n > 0, false])
+    bool[] field_copy = return_record_field(box)
+    field_copy[0] = false
+    print(box.flags[0])
+    print(field_copy[0])
+
+    bool[] local = return_local(n)
+    print(local[0])
+    bool[] const_local = return_const_local(n)
+    print(const_local[0])
+    bool[] local_copy = return_local_copy(source)
+    print(source[0])
+    print(local_copy[0])
+    bool[] reassigned = return_reassigned(source)
+    print(source[0])
+    print(reassigned[0])
+    bool[] literal = return_literal(n)
+    print(literal[0])
+    bool[] called = return_call(n)
+    print(called[0])
+
+    bool[] branch = return_branch(source, CONST_FLAGS, n)
+    branch[0] = false
+    print(source[0])
+    bool[] branch_else = return_branch(source, CONST_FLAGS, 0 - n)
+    branch_else[0] = false
+    print(CONST_FLAGS[0])
+    bool[] switched = return_switch(source, CONST_FLAGS, n)
+    switched[0] = false
+    print(source[0])
+    bool[] switch_default = return_switch(source, CONST_FLAGS, n + 10)
+    switch_default[0] = false
+    print(CONST_FLAGS[0])
+    bool[] looped = return_loop(source)
+    looped[0] = false
+    print(source[0])
+    bool[] tried = return_try(source, CONST_FLAGS)
+    tried[0] = false
+    print(source[0])
+    bool[] caught = return_catch(source)
+    caught[0] = false
+    print(source[0])
+
+    try:
+        bool[] before_throw = return_borrowed(source)
+        before_throw[0] = true
+        throw 'caller-throw'
+    catch (exception err):
+        print(source[0])
+
+    for (int i = 0; i < 3; i++):
+        bool[] repeated = return_borrowed(source)
+        repeated[0] = false
+        print(source[0])
+    return 0

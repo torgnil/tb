@@ -6292,7 +6292,7 @@ string[] emit_terminator(ParsedFunction function_ir, BlockIR block, TerminatorIR
                     string[] lines = emit_try_restore_lines(try_suffix, temp_suffix)
                     lines.push('  ret ' + llvm_type(result_type) + ' ' + temp_ref(terminator.args[0]))
                     return lines
-                if (normalize_llvm_type_name(local_binding.type_name) == 'int[]' || normalize_llvm_type_name(local_binding.type_name) == 'string[]' || normalize_llvm_type_name(local_binding.type_name) == 'int[][]' || local_binding.type_name.starts_with('const ')):
+                if (normalize_llvm_type_name(local_binding.type_name) == 'int[]' || normalize_llvm_type_name(local_binding.type_name) == 'bool[]' || normalize_llvm_type_name(local_binding.type_name) == 'string[]' || normalize_llvm_type_name(local_binding.type_name) == 'int[][]' || local_binding.type_name.starts_with('const ')):
                     string local_type = normalize_llvm_type_name(local_binding.type_name)
                     if (local_type != 'string'):
                         string[] lines = emit_try_restore_lines(try_suffix, temp_suffix)
@@ -6329,6 +6329,15 @@ string[] emit_terminator(ParsedFunction function_ir, BlockIR block, TerminatorIR
             string returned_value = temp_ref(terminator.args[0])
             if (temp_is_int_array(function_ir, terminator.args[0]) && !temp_needs_backend_free(function_ir, terminator.args[0])):
                 returned_value = emit_int_array_owned_value(function_ir, terminator.args[0], 'return.' + temp_suffix)
+            for (string restore_line in emit_try_restore_lines(try_suffix, temp_suffix)):
+                lines.push(restore_line)
+            lines.push('  ret ptr ' + returned_value)
+            return lines
+        if (normalize_llvm_type_name(result_type) == 'bool[]'):
+            string[] lines = emit_bool_array_materialize_if_needed(function_ir, terminator.args[0], 'return.' + temp_suffix)
+            string returned_value = temp_ref(terminator.args[0])
+            if (temp_is_bool_array(function_ir, terminator.args[0]) && !temp_needs_backend_free(function_ir, terminator.args[0])):
+                returned_value = emit_bool_array_owned_value(function_ir, terminator.args[0], 'return.' + temp_suffix)
             for (string restore_line in emit_try_restore_lines(try_suffix, temp_suffix)):
                 lines.push(restore_line)
             lines.push('  ret ptr ' + returned_value)
