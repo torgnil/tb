@@ -463,15 +463,19 @@ BlockIR apply_ownership_to_block(ParsedFunction function_ir, OwnershipTempMetaCa
         if (terminator.kind == 'return_owned'):
             bool prepare_string_return = false
             bool prepare_string_array_array_return = false
+            bool prepare_bool_array_return = false
             if (!terminator.args.is_empty()):
                 string return_type = lookup_temp_result_type_cached(cache, terminator.args[0])
                 string normalized_return_type = normalize_llvm_type_name(return_type)
                 prepare_string_return = normalized_return_type == 'string'
                 prepare_string_array_array_return = normalized_return_type == 'string[][]'
+                prepare_bool_array_return = normalized_return_type == 'bool[]'
             if (prepare_string_return):
                 instructions.push(LinearInstruction('prepare_return_string', '', '', '', '', [terminator.args[0]]))
             if (prepare_string_array_array_return):
                 instructions.push(LinearInstruction('prepare_return_string_array_array', '', '', '', '', [terminator.args[0]]))
+            if (prepare_bool_array_return):
+                instructions.push(LinearInstruction('prepare_return_bool_array', '', '', '', '', [terminator.args[0]]))
         instructions = append_instructions(instructions, exit_cleanup_instructions(identifier_target_cache, terminator, initialized_managed))
     return BlockIR(block.label, instructions, terminator)
 

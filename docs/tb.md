@@ -235,7 +235,7 @@ int main(string[] args):
   - const maps support the same read operations as mutable maps, including indexed value reads, key membership, and `keys()` / `values()`
   - passing a const value to an arbitrary user function does not make that function's parameters const
 - When values are not known at compile time, corresponding operations lower to runtime helpers and library calls.
-- Local declarations and reassignment transfer owned `int[]`, `string[]`, `int[][]`, `string[][]`, map, and record temporaries. Assigning a managed local directly to itself preserves its existing value and ownership. Borrowed values keep their existing copy behavior, and reassignment to a different value releases the previous owned local value. Returning an owned `string[][]` local transfers it to the caller, including a const local.
+- Local declarations and reassignment transfer owned `int[]`, `bool[]`, `string[]`, `int[][]`, `string[][]`, map, and record temporaries. Assigning a managed local directly to itself preserves its existing value and ownership. Borrowed values keep their existing copy behavior, and reassignment to a different value releases the previous owned local value. Record fields of type `bool[]` are independent snapshots when constructed, replaced, or cloned; returning a bool-array field from a local record also returns an independent snapshot. Returning an owned local array transfers it to the caller, including a const local.
 
 11. Built-in calling and printing
 
