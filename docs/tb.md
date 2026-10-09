@@ -194,7 +194,7 @@ int main(string[] args):
 8. Arrays and slices
 
 - Array literal: `['a', 'b', 'c']`.
-- Empty array literals are allowed in a typed context, for example `int[] nums = [];` or `string[] words = [];`.
+- Empty array literals are allowed in a typed context, for example `int[] nums = [];`, `string[] words = [];`, or `box.values = [];` when `values` is an array-valued record field. The field's declared array type determines the empty array's element type.
 - Empty rows in a typed nested array literal use the row element type, for example `int[][] rows = [[1], []];` creates an empty `int[]` row.
 - Indexing: `arr[0]`, with negative indexing like `arr[-1]` (last element) supported for arrays and strings. For arrays, negative indices count from the end for both reads and writes: `arr[-length(arr)]` refers to the first element.
 - Slice notation with `[]` is supported for both arrays and strings. For example, `nums[1:3]` gives a subarray, and `text[2:5]` gives a substring. Open-ended, omitted-start, and negative-end slices are supported, e.g. `arr[1:]`, `text[:3]`, `text[:-1]`.

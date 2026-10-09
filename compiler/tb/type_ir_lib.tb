@@ -1171,6 +1171,22 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                             if (lookup_temp_type_slot(temp_types, arg_name) == '[]' && item_type.ends_with('[]')):
                                 block_refined = set_temp_type(block_refined, arg_name, item_type)
                                 temp_types = set_temp_type_slot(temp_types, arg_name, item_type)
+        if (current.kind == 'assign_field'):
+            if (current.args.length() >= 2):
+                string base_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[0]))
+                string record_name = record_name_from_type(base_type)
+                if (record_name != ''):
+                    string field_type = normalize_llvm_type_name(lookup_record_field_type(record_fields, record_name, current.detail))
+                    if (field_type.ends_with('[]')):
+                        string value_name = current.args[1]
+                        if (lookup_temp_type_slot(temp_types, value_name) == '[]'):
+                            LinearInstruction candidate = lookup_instruction_pair(block_refined, prior_instructions, value_name)
+                            if (candidate.lhs == value_name):
+                                if (candidate.kind == 'value'):
+                                    if (candidate.detail == 'array'):
+                                        if (candidate.args.is_empty()):
+                                            block_refined = set_temp_type(block_refined, value_name, field_type)
+                                            temp_types = set_temp_type_slot(temp_types, value_name, field_type)
         if (current.kind == 'assign_local'):
             string binding_type = lookup_binding_type(bindings, current.detail)
             if (current.args.length() == 1):
