@@ -378,7 +378,7 @@ Array helpers
   - Works for nested arrays too, for example `int[][] rows = []; rows.push([1, 2]);`.
 
 - pop(arr: T[]) -> T
-  - Remove and return last element.
+  - Remove and return the last element. For `bool[]`, `pop(flags)` and `flags.pop()` return the last boolean and reduce the array length by one. Popping an empty `bool[]` returns `false` and leaves it empty. A user-defined function named `pop` takes precedence for `bool[]` calls.
 
 - last(arr: T[]) -> T
   - Return the last element. Empty arrays still follow normal runtime bounds behavior.

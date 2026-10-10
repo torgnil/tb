@@ -23,6 +23,24 @@ read:
   %len = load i32, ptr %len.ptr
   ret i32 %len
 }
+define private i1 @tb_bootstrap_bool_array_pop(ptr %array) {
+entry:
+  %len = call i32 @tb_bootstrap_bool_array_length(ptr %array)
+  %is.empty = icmp sle i32 %len, 0
+  br i1 %is.empty, label %empty, label %pop
+empty:
+  ret i1 false
+pop:
+  %last.index = sub i32 %len, 1
+  %data.ptr = getelementptr inbounds %tb_bootstrap_bool_array, ptr %array, i32 0, i32 1
+  %data = load ptr, ptr %data.ptr
+  %slot = getelementptr inbounds i8, ptr %data, i32 %last.index
+  %value.byte = load i8, ptr %slot
+  %value = icmp ne i8 %value.byte, 0
+  %len.ptr = getelementptr inbounds %tb_bootstrap_bool_array, ptr %array, i32 0, i32 0
+  store i32 %last.index, ptr %len.ptr
+  ret i1 %value
+}
 define private i32 @tb_bootstrap_bool_array_push(ptr %array, i1 %value) {
 entry:
   %len = call i32 @tb_bootstrap_bool_array_length(ptr %array)
