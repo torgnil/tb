@@ -6821,6 +6821,9 @@ string cached_used_symbol(string function_name):
 string cached_values_symbol(string function_name):
     return '@__tb_cached_values_' + function_name
 
+string cached_lock_symbol(string function_name):
+    return '@__tb_cached_lock_' + function_name
+
 string cached_impl_symbol_local(string function_name):
     return '@__tb_cached_impl_' + function_name
 
@@ -6895,6 +6898,7 @@ bool supports_cached_function_backend(ProgramIR program, ParsedFunction function
 string[] emit_cached_function_globals(ProgramIR program, ParsedFunction function_ir):
     string function_name = function_ir.name
     return [
+        cached_lock_symbol(function_name) + ' = internal global i8 0, align 1',
         cached_used_symbol(function_name) + ' = internal global [' + cached_capacity() + ' x i8] zeroinitializer',
         cached_keys_symbol(function_name) + ' = internal global [' + cached_capacity() + ' x i64] zeroinitializer',
         cached_values_symbol(function_name) + ' = internal global [' + cached_capacity() + ' x i64] zeroinitializer'
@@ -6943,9 +6947,14 @@ void append_cached_function_lines(string[] lines, ProgramIR program, ParsedFunct
     else:
         lines.push('  %cache.arg.key = add i64 ' + param_ref(arg_name) + ', 0')
     lines.push('  %cache.start = urem i64 %cache.arg.key, ' + cached_capacity())
-    lines.push('  br label %cache.loop')
+    lines.push('  br label %cache.acquire')
+    lines.push('cache.acquire:')
+    lines.push('  %cache.lock = cmpxchg ptr ' + cached_lock_symbol(function_name) + ', i8 0, i8 1 acquire monotonic, align 1')
+    lines.push('  %cache.locked = extractvalue { i8, i1 } %cache.lock, 1')
+    lines.push('  br i1 %cache.locked, label %cache.loop, label %cache.acquire')
     lines.push('cache.loop:')
-    lines.push('  %cache.index = phi i64 [%cache.start, %entry], [%cache.next, %cache.step]')
+    lines.push('  %cache.index = phi i64 [%cache.start, %cache.acquire], [%cache.next, %cache.advance]')
+    lines.push('  %cache.probes = phi i64 [0, %cache.acquire], [%cache.probes.next, %cache.advance]')
     lines.push('  %cache.used.ptr = getelementptr inbounds [' + cached_capacity() + ' x i8], ptr ' + cached_used_symbol(function_name) + ', i32 0, i64 %cache.index')
     lines.push('  %cache.used.byte = load i8, ptr %cache.used.ptr')
     lines.push('  %cache.used = icmp ne i8 %cache.used.byte, 0')
@@ -6956,6 +6965,10 @@ void append_cached_function_lines(string[] lines, ProgramIR program, ParsedFunct
     lines.push('  %cache.hit = icmp eq i64 %cache.key, %cache.arg.key')
     lines.push('  br i1 %cache.hit, label %cache.found, label %cache.step')
     lines.push('cache.step:')
+    lines.push('  %cache.probes.next = add i64 %cache.probes, 1')
+    lines.push('  %cache.full = icmp eq i64 %cache.probes.next, ' + cached_capacity())
+    lines.push('  br i1 %cache.full, label %cache.uncached, label %cache.advance')
+    lines.push('cache.advance:')
     lines.push('  %cache.wrap = icmp eq i64 %cache.index, ' + (cached_capacity() - 1) + '')
     lines.push('  %cache.next.raw = add i64 %cache.index, 1')
     lines.push('  %cache.next = select i1 %cache.wrap, i64 0, i64 %cache.next.raw')
@@ -6963,16 +6976,27 @@ void append_cached_function_lines(string[] lines, ProgramIR program, ParsedFunct
     lines.push('cache.found:')
     lines.push('  %cache.value.ptr = getelementptr inbounds [' + cached_capacity() + ' x i64], ptr ' + cached_values_symbol(function_name) + ', i32 0, i64 %cache.index')
     lines.push('  %cache.value = load i64, ptr %cache.value.ptr')
+    lines.push('  store atomic i8 0, ptr ' + cached_lock_symbol(function_name) + ' release, align 1')
     lines.push('  ret i64 %cache.value')
+    lines.push('cache.uncached:')
+    lines.push('  store atomic i8 0, ptr ' + cached_lock_symbol(function_name) + ' release, align 1')
+    lines.push('  %cache.uncached.result = call i64 ' + cached_impl_symbol_local(function_name) + '(' + param_llvm_type + ' ' + param_ref(arg_name) + ')')
+    lines.push('  ret i64 %cache.uncached.result')
     lines.push('cache.miss:')
+    lines.push('  store atomic i8 0, ptr ' + cached_lock_symbol(function_name) + ' release, align 1')
     lines.push('  %cache.result = call i64 ' + cached_impl_symbol_local(function_name) + '(' + param_llvm_type + ' ' + param_ref(arg_name) + ')')
     lines.push('  br label %cache.store')
     lines.push('cache.store:')
+    lines.push('  %cache.store.lock = cmpxchg ptr ' + cached_lock_symbol(function_name) + ', i8 0, i8 1 acquire monotonic, align 1')
+    lines.push('  %cache.store.locked = extractvalue { i8, i1 } %cache.store.lock, 1')
+    lines.push('  br i1 %cache.store.locked, label %cache.publish, label %cache.store')
+    lines.push('cache.publish:')
     lines.push('  store i8 1, ptr %cache.used.ptr')
     lines.push('  %cache.store.key.ptr = getelementptr inbounds [' + cached_capacity() + ' x i64], ptr ' + cached_keys_symbol(function_name) + ', i32 0, i64 %cache.index')
     lines.push('  store i64 %cache.arg.key, ptr %cache.store.key.ptr')
     lines.push('  %cache.store.value.ptr = getelementptr inbounds [' + cached_capacity() + ' x i64], ptr ' + cached_values_symbol(function_name) + ', i32 0, i64 %cache.index')
     lines.push('  store i64 %cache.result, ptr %cache.store.value.ptr')
+    lines.push('  store atomic i8 0, ptr ' + cached_lock_symbol(function_name) + ' release, align 1')
     lines.push('  br label %cache.return')
     lines.push('cache.return:')
     lines.push('  ret i64 %cache.result')

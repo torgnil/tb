@@ -102,6 +102,8 @@ Build and invocation details are documented in the repository or release `README
 
   `cached` memoizes `int`-returning helper functions. The current implementation supports a single cacheable parameter such as `int`, `string`, `bool`, enums, and cacheable record values. Cached record parameters may contain scalar fields, nested cacheable records, and nested cacheable arrays such as `int[]`, `int[][]`, `string[]`, or `bool[][]`.
 
+  Native memoization currently covers one `int` parameter or a simple record with one or two `int` fields. These tables are synchronized across workers. The function body runs outside the cache lock, so recursive calls and exceptions remain supported. Simultaneous misses may evaluate the body more than once. A full native cache evaluates missing keys without storing them.
+
 6. Expressions and operators
 
 - Arithmetic: `+`, `-`, `*`, `/`, `%`.
@@ -126,7 +128,7 @@ Build and invocation details are documented in the repository or release `README
 - `future.await()` blocks until completion and returns the task result. A task exception is rethrown by `await()` on the calling thread. The future preserves its message independently of submitted argument bindings; repeated awaits each produce a catch-owned message.
 - `future.is_done()` returns whether the task has completed without blocking.
 - `future.wait_for(milliseconds)` blocks for at most the requested duration and returns whether the task completed. It does not consume the result; call `await()` afterward. Nonpositive durations only check the current completion state.
-- String task arguments and results share immutable managed values safely across workers; repeated awaits preserve the result. Internal string reference counts, character caching, and runtime counters are synchronized. This does not synchronize user globals or mutable containers. Memoization tables for `cached` functions are not synchronized; avoid invoking the same cached function concurrently.
+- String task arguments and results share immutable managed values safely across workers; repeated awaits preserve the result. Internal string reference counts, character caching, runtime counters, and native memoization tables for `cached` functions are synchronized. This does not synchronize user globals or mutable containers, including accesses made inside cached function bodies.
 - `int[]` and `int[][]` arguments cross the queue as deep-copy snapshots. `int[]` and `int[][]` results are retained by their futures and each `await()` returns a fresh snapshot. Records, maps, sets, priority queues, files, pools, futures, and closures cannot yet be returned or otherwise passed across a task boundary.
 
 ```tb
