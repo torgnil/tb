@@ -57,6 +57,7 @@ clang output.ll -o program
 - language reference: `docs/tb.md`
 - sample programs: `examples/aoc`
 - changelog: `CHANGELOG.md`
+- editor syntax highlighting: [TextMate bundle and grammar](editors/README.md)
 
 ## Status
 

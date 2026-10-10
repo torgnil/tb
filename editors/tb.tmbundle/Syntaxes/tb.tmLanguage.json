@@ -1,0 +1,224 @@
+{
+    "name": "tb",
+    "scopeName": "source.tb",
+    "fileTypes": ["tb"],
+    "patterns": [
+        { "include": "#comments" },
+        { "include": "#strings" },
+        { "include": "#imports" },
+        { "include": "#type-declarations" },
+        { "include": "#keywords" },
+        { "include": "#types" },
+        { "include": "#constants" },
+        { "include": "#numbers" },
+        { "include": "#builtin-functions" },
+        { "include": "#function-names" },
+        { "include": "#type-names" },
+        { "include": "#operators" },
+        { "include": "#punctuation" }
+    ],
+    "repository": {
+        "comments": {
+            "patterns": [
+                {
+                    "name": "comment.line.number-sign.tb",
+                    "begin": "#",
+                    "beginCaptures": {
+                        "0": { "name": "punctuation.definition.comment.tb" }
+                    },
+                    "end": "$"
+                },
+                {
+                    "name": "comment.line.double-slash.tb",
+                    "begin": "//",
+                    "beginCaptures": {
+                        "0": { "name": "punctuation.definition.comment.tb" }
+                    },
+                    "end": "$"
+                },
+                {
+                    "name": "comment.block.tb",
+                    "begin": "/\\*",
+                    "beginCaptures": {
+                        "0": { "name": "punctuation.definition.comment.begin.tb" }
+                    },
+                    "end": "\\*/",
+                    "endCaptures": {
+                        "0": { "name": "punctuation.definition.comment.end.tb" }
+                    }
+                }
+            ]
+        },
+        "strings": {
+            "patterns": [
+                {
+                    "name": "string.quoted.single.tb",
+                    "begin": "'",
+                    "beginCaptures": {
+                        "0": { "name": "punctuation.definition.string.begin.tb" }
+                    },
+                    "end": "'",
+                    "endCaptures": {
+                        "0": { "name": "punctuation.definition.string.end.tb" }
+                    },
+                    "patterns": [
+                        {
+                            "name": "constant.character.escape.tb",
+                            "match": "\\\\[\\\\'nrt]"
+                        },
+                        {
+                            "name": "invalid.illegal.escape.tb",
+                            "match": "\\\\(?:.|$)"
+                        }
+                    ]
+                },
+                {
+                    "name": "invalid.illegal.character.tb",
+                    "match": "\""
+                }
+            ]
+        },
+        "imports": {
+            "match": "\\b(import)[ \\t]+([A-Za-z0-9_]+)",
+            "captures": {
+                "1": { "name": "keyword.control.import.tb" },
+                "2": { "name": "entity.name.namespace.tb" }
+            }
+        },
+        "type-declarations": {
+            "match": "\\b(record|enum)[ \\t]+([A-Za-z_][A-Za-z0-9_]*)\\b",
+            "captures": {
+                "1": { "name": "storage.type.tb" },
+                "2": { "name": "entity.name.type.tb" }
+            }
+        },
+        "keywords": {
+            "patterns": [
+                {
+                    "name": "storage.modifier.tb",
+                    "match": "\\b(?:const|cached)\\b"
+                },
+                {
+                    "name": "keyword.control.tb",
+                    "match": "\\b(?:import|if|else|while|for|switch|case|default|return|break|continue|throw|try|catch)\\b"
+                },
+                {
+                    "name": "storage.type.tb",
+                    "match": "\\b(?:record|enum)\\b"
+                },
+                {
+                    "name": "keyword.operator.logical.tb",
+                    "match": "\\b(?:and|or|not|in)\\b"
+                }
+            ]
+        },
+        "types": {
+            "name": "storage.type.tb",
+            "match": "\\b(?:int|num|bool|string|void|file|exception|map|set|prio_q|thread_pool|future)\\b"
+        },
+        "constants": {
+            "patterns": [
+                {
+                    "name": "constant.language.boolean.tb",
+                    "match": "\\b(?:true|false)\\b"
+                },
+                {
+                    "name": "constant.other.tb",
+                    "match": "\\b[A-Z][A-Z0-9_]*\\b"
+                }
+            ]
+        },
+        "numbers": {
+            "patterns": [
+                {
+                    "name": "constant.numeric.decimal.tb",
+                    "match": "\\b[0-9]+\\.[0-9]+\\b"
+                },
+                {
+                    "name": "constant.numeric.integer.tb",
+                    "match": "\\b[0-9]+\\b"
+                }
+            ]
+        },
+        "builtin-functions": {
+            "name": "support.function.tb",
+            "match": "\\b(?:abs|add|await|char_at|clear|close|contains|copy|create_prio_q|dump_runtime_activity|ends_with|fill|filter|flat_map|getenv|has_flag|hash|index_of|insert|is_alnum|is_alpha|is_digit|is_done|is_empty|is_space|is_whitespace|join|keys|last|length|map_to|max|min|open|option_value|pop|popcount|print|push|range|read_file|read_lines|remove_at|replace|reset_runtime_activity|round|sort|split|split_lines|sqrt|starts_with|starts_with_at|submit|sum|time_ms|to_int|to_num|to_set|to_string|trim|trim_left|trim_right|substring|values|wait_for|write_all|write_line|write_lines)\\b(?=[ \\t]*\\()"
+        },
+        "function-names": {
+            "name": "entity.name.function.tb",
+            "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b(?=[ \\t]*\\()"
+        },
+        "type-names": {
+            "name": "entity.name.type.tb",
+            "match": "\\b[A-Z][A-Za-z0-9_]*\\b"
+        },
+        "operators": {
+            "patterns": [
+                {
+                    "name": "keyword.operator.assignment.tb",
+                    "match": "<<=|>>=|[+*/%&|^\\-]=|=(?!=)"
+                },
+                {
+                    "name": "keyword.operator.arrow.tb",
+                    "match": "->"
+                },
+                {
+                    "name": "keyword.operator.logical.tb",
+                    "match": "&&|\\|\\||!(?!=)"
+                },
+                {
+                    "name": "keyword.operator.comparison.tb",
+                    "match": "==|!=|<=|>=|[<>](?![<>])"
+                },
+                {
+                    "name": "keyword.operator.bitwise.tb",
+                    "match": "<<|>>|[&|^]"
+                },
+                {
+                    "name": "keyword.operator.arithmetic.tb",
+                    "match": "\\+\\+|--|[+*/%\\-]"
+                },
+                {
+                    "name": "keyword.operator.ternary.tb",
+                    "match": "\\?"
+                }
+            ]
+        },
+        "punctuation": {
+            "patterns": [
+                {
+                    "name": "punctuation.section.block.begin.tb",
+                    "match": "\\{"
+                },
+                {
+                    "name": "punctuation.section.block.end.tb",
+                    "match": "\\}"
+                },
+                {
+                    "name": "punctuation.section.group.begin.tb",
+                    "match": "\\("
+                },
+                {
+                    "name": "punctuation.section.group.end.tb",
+                    "match": "\\)"
+                },
+                {
+                    "name": "punctuation.section.brackets.begin.tb",
+                    "match": "\\["
+                },
+                {
+                    "name": "punctuation.section.brackets.end.tb",
+                    "match": "\\]"
+                },
+                {
+                    "name": "punctuation.separator.tb",
+                    "match": "[,;:]"
+                },
+                {
+                    "name": "punctuation.accessor.tb",
+                    "match": "\\."
+                }
+            ]
+        }
+    }
+}
