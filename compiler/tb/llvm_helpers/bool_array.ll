@@ -51,6 +51,45 @@ entry:
   %value = icmp ne i8 %value.byte, 0
   ret i1 %value
 }
+define private ptr @tb_bootstrap_bool_array_slice(ptr %array, i64 %start, i64 %end) {
+entry:
+  %len32 = call i32 @tb_bootstrap_bool_array_length(ptr %array)
+  %len = sext i32 %len32 to i64
+  %start.negative = icmp slt i64 %start, 0
+  %start.from.end = add i64 %len, %start
+  %start.adjusted = select i1 %start.negative, i64 %start.from.end, i64 %start
+  %start.before.zero = icmp slt i64 %start.adjusted, 0
+  %start.clamped.low = select i1 %start.before.zero, i64 0, i64 %start.adjusted
+  %start.past.end = icmp sgt i64 %start.clamped.low, %len
+  %start.clamped = select i1 %start.past.end, i64 %len, i64 %start.clamped.low
+  %end.negative = icmp slt i64 %end, 0
+  %end.from.end = add i64 %len, %end
+  %end.adjusted = select i1 %end.negative, i64 %end.from.end, i64 %end
+  %end.before.zero = icmp slt i64 %end.adjusted, 0
+  %end.clamped.low = select i1 %end.before.zero, i64 0, i64 %end.adjusted
+  %end.past.end = icmp sgt i64 %end.clamped.low, %len
+  %end.clamped.high = select i1 %end.past.end, i64 %len, i64 %end.clamped.low
+  %end.before.start = icmp slt i64 %end.clamped.high, %start.clamped
+  %end.clamped = select i1 %end.before.start, i64 %start.clamped, i64 %end.clamped.high
+  %slice.len64 = sub i64 %end.clamped, %start.clamped
+  %slice.len32 = trunc i64 %slice.len64 to i32
+  %result = call ptr @tb_bootstrap_bool_array_new(i32 %slice.len32)
+  br label %loop.cond
+loop.cond:
+  %index = phi i32 [0, %entry], [%next.index, %loop.body]
+  %index64 = sext i32 %index to i64
+  %keep.loop = icmp slt i64 %index64, %slice.len64
+  br i1 %keep.loop, label %loop.body, label %done
+loop.body:
+  %source.index64 = add i64 %start.clamped, %index64
+  %source.index32 = trunc i64 %source.index64 to i32
+  %value = call i1 @tb_bootstrap_bool_array_get(ptr %array, i32 %source.index32)
+  call void @tb_bootstrap_bool_array_set(ptr %result, i32 %index, i1 %value)
+  %next.index = add i32 %index, 1
+  br label %loop.cond
+done:
+  ret ptr %result
+}
 define private void @tb_bootstrap_bool_array_set(ptr %array, i32 %index, i1 %value) {
 entry:
   %data.ptr = getelementptr inbounds %tb_bootstrap_bool_array, ptr %array, i32 0, i32 1

@@ -1616,7 +1616,7 @@ bool temp_needs_backend_free(ParsedFunction function_ir, string temp_name):
     if (result_type == 'string[][]'):
         return op.detail == 'array' || op.detail == 'call'
     if (result_type == 'bool[]'):
-        return op.detail == 'array' || op.detail == 'call'
+        return op.detail == 'array' || op.detail == 'call' || op.detail == 'slice'
     if (result_type == 'int[]'):
         return op.detail == 'array' || op.detail == 'call'
     if (result_type.starts_with('set<')):
@@ -5301,6 +5301,12 @@ string emit_slice_value_instruction(ParsedFunction function_ir, LinearInstructio
         if (op.args.length() == 3):
             return '  ' + lhs + ' = call ptr @tb_bootstrap_int_array_slice(ptr ' + temp_ref(op.args[0]) + ', i64 ' + temp_ref(op.args[1]) + ', i64 ' + temp_ref(op.args[2]) + ')'
         throw 'unsupported llvm int[] slice arity'
+    if (base_type == 'bool[]'):
+        if (op.args.length() == 2):
+            return '  %slice_len32_' + op.lhs + ' = call i32 @tb_bootstrap_bool_array_length(ptr ' + temp_ref(op.args[0]) + ')\n  %slice_len64_' + op.lhs + ' = sext i32 %slice_len32_' + op.lhs + ' to i64\n  ' + lhs + ' = call ptr @tb_bootstrap_bool_array_slice(ptr ' + temp_ref(op.args[0]) + ', i64 ' + temp_ref(op.args[1]) + ', i64 %slice_len64_' + op.lhs + ')'
+        if (op.args.length() == 3):
+            return '  ' + lhs + ' = call ptr @tb_bootstrap_bool_array_slice(ptr ' + temp_ref(op.args[0]) + ', i64 ' + temp_ref(op.args[1]) + ', i64 ' + temp_ref(op.args[2]) + ')'
+        throw 'unsupported llvm bool[] slice arity'
     throw 'unsupported llvm slice base type: ' + lookup_temp_llvm_type(function_ir, op.args[0])
 
 string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op):
