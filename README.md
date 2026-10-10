@@ -49,6 +49,21 @@ python3 compiler/python/tb.py input.tb output.ll
 clang output.ll -o program
 ```
 
+## Standalone release bundle
+
+On macOS, build the self-hosted compiler and package a versioned bundle without
+including files from the local untracked workspace:
+
+```bash
+./build_tb.sh
+./bundle_release.sh 0.2.0
+```
+
+The archive is written to `.build/releases/`. The bundle contains the compiler,
+its LLVM helpers and thread runtime sources, the language reference, and native
+build launcher. See [release/README.md](release/README.md) for extraction,
+checksum, and use instructions. Only macOS arm64 is currently verified.
+
 ## Documentation
 
 - language reference: `docs/tb.md`
