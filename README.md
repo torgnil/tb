@@ -82,6 +82,18 @@ tracked files from the selected revision; local binaries and untracked files do
 not participate. The required tools and installed-bundle requirements are
 listed in [release/README.md](release/README.md).
 
+For the focused thread-pool queue, shutdown, future, and ownership audit, run
+the checkout-only verifier:
+
+```bash
+python3 verify_thread_pool_lifecycle.py --compiler bin/tb --mode focused \
+  --seed 7 --evidence-dir /tmp/tb-pool-lifecycle
+```
+
+Use `--mode all` for O0/O2, AddressSanitizer, ten ThreadSanitizer rounds, and
+the known-bad controls. The source inventory and limits are documented in
+[docs/thread_runtime_safety.md](docs/thread_runtime_safety.md).
+
 ## Documentation
 
 - language reference: `docs/tb.md`
@@ -94,7 +106,7 @@ listed in [release/README.md](release/README.md).
 
 - Compiling tb programs to LLVM IR with the Python compiler
 - Building and using the self-hosted tb compiler
-- Native numbered fixtures through `tests/fixtures/162.tb`
+- Native numbered fixtures through `tests/fixtures/164.tb`
 - Python compiler fixtures through phase 76; this is a separate suite from the
   native numbered fixtures
 - The current AoC sample set in `examples/aoc`
