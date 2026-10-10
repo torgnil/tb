@@ -659,6 +659,8 @@ string infer_call_type(string name, FunctionSigIR[] functions):
         return 'string[]'
     if (name == 'read_file'):
         return 'string'
+    if (name == 'write_all'):
+        return 'void'
     if (name == 'time_ms'):
         return 'int'
     if (name == 'has_flag'):
@@ -716,6 +718,11 @@ string lookup_cached_field_type(string[] keys, string[] types, string record_nam
     return lookup_cached_name_type(keys, types, record_name + '.' + field_name)
 
 string infer_call_type_cached(string name, FunctionSigIR[] functions, string[] cache_names, string[] cache_types):
+    if (name == 'write_all'):
+        string user_result_type = lookup_function_return_type(functions, name)
+        if (user_result_type != 'unknown'):
+            return user_result_type
+        return 'void'
     FunctionSigIR[] empty_functions = []
     string result_type = infer_call_type(name, empty_functions)
     if (result_type != 'unknown'):
@@ -802,6 +809,11 @@ string infer_method_call_type(string method_name, string base_type, FunctionSigI
     return lookup_function_return_type(functions, method_name)
 
 string infer_method_call_type_cached(string method_name, string base_type, FunctionSigIR[] functions, string[] cache_names, string[] cache_types):
+    if (method_name == 'write_all'):
+        string user_result_type = lookup_function_return_type(functions, method_name)
+        if (user_result_type != 'unknown'):
+            return user_result_type
+        return 'void'
     FunctionSigIR[] empty_functions = []
     string result_type = infer_method_call_type(method_name, base_type, empty_functions)
     if (result_type != 'unknown'):

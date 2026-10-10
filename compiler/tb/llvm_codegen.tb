@@ -198,6 +198,7 @@ int LLVM_SCAN_NEEDS_THROW = 0;
 int LLVM_SCAN_NEEDS_TRY_CATCH = 0;
 int LLVM_SCAN_NEEDS_READ_LINES = 0;
 int LLVM_SCAN_NEEDS_READ_FILE = 0;
+int LLVM_SCAN_NEEDS_WRITE_ALL = 0;
 int LLVM_SCAN_NEEDS_GETENV = 0;
 int LLVM_SCAN_NEEDS_TIME_MS = 0;
 int LLVM_SCAN_NEEDS_FILE_OUTPUT = 0;
@@ -606,6 +607,7 @@ void reset_llvm_backend_helper_stats():
     LLVM_SCAN_NEEDS_TRY_CATCH = 0
     LLVM_SCAN_NEEDS_READ_LINES = 0
     LLVM_SCAN_NEEDS_READ_FILE = 0
+    LLVM_SCAN_NEEDS_WRITE_ALL = 0
     LLVM_SCAN_NEEDS_GETENV = 0
     LLVM_SCAN_NEEDS_TIME_MS = 0
     LLVM_SCAN_NEEDS_FILE_OUTPUT = 0
@@ -1420,6 +1422,73 @@ ParsedFunction lookup_named_function_decl(ProgramIR program, string name):
         if (function_ir.name == name):
             return function_ir
     return ParsedFunction('', '', '', [], [], [])
+
+bool instruction_uses_temp(LinearInstruction op, string temp_name):
+    if (op.args.is_empty()):
+        return false
+    int first_operand = 0
+    int operand_limit = op.args.length()
+    if (op.kind == 'value'):
+        if (op.detail == 'int' || op.detail == 'num' || op.detail == 'string' || op.detail == 'bool' || op.detail == 'identifier' || op.detail == 'unsupported'):
+            return false
+        if (op.detail == 'call' || op.detail == 'method-call' || op.detail == 'field' || op.detail == 'binary'):
+            first_operand = 1
+        if (op.detail == 'unary'):
+            first_operand = 1
+        if (op.detail == 'method-call'):
+            first_operand = 1
+            int index = first_operand
+            while (index < operand_limit):
+                if (!(op.args[0] == 'submit' && index == 2) && temp_name == op.args[index]):
+                    return true
+                index += 1
+            return false
+        if (op.detail == 'method-call-lambda'):
+            if (op.args[0] == 'create_prio_q_int_desc' || op.args[0] == 'sort_int_desc' || op.args[0] == 'sort_int_asc' || op.args[0] == 'create_prio_q_record_field_desc' || op.args[0] == 'sort_record_field_asc'):
+                if (operand_limit > 1):
+                    if (temp_name == op.args[1]):
+                        return true
+                return false
+            first_operand = 1
+            int index = first_operand
+            while (index < operand_limit):
+                if (index != 2 && !(op.args[0] == 'map_to' && index == 3) && temp_name == op.args[index]):
+                    return true
+                index += 1
+            return false
+        while (first_operand < operand_limit):
+            if (temp_name == op.args[first_operand]):
+                return true
+            first_operand += 1
+        return false
+    if (op.kind == 'drop' || op.kind == 'release_local' || op.kind == 'release_temp' || op.kind == 'release_field' || op.kind == 'release_index' || op.kind == 'try' || op.kind == 'catch' || op.kind == 'label' || op.kind == 'jump'):
+        return false
+    if (op.kind == 'branch_if'):
+        operand_limit = 1
+    first_operand = 0
+    while (first_operand < operand_limit):
+        if (temp_name == op.args[first_operand]):
+            return true
+        first_operand += 1
+    return false
+
+bool function_uses_temp(ParsedFunction function_ir, string temp_name):
+    for (BlockIR block in function_ir.blocks):
+        for (LinearInstruction op in block.instructions):
+            if (op.lhs != temp_name):
+                if (instruction_uses_temp(op, temp_name)):
+                    return true
+        int term_operand_limit = block.terminator.args.length()
+        if (block.terminator.kind == 'branch_if'):
+            if (term_operand_limit > 1):
+                term_operand_limit = 1
+        if (block.terminator.kind == 'return' || block.terminator.kind == 'throw' || block.terminator.kind == 'branch_if'):
+            int term_index = 0
+            while (term_index < term_operand_limit):
+                if (temp_name == block.terminator.args[term_index]):
+                    return true
+                term_index += 1
+    return false
 
 LinearInstruction lookup_block_instruction(BlockIR block, string temp_name):
     for (LinearInstruction op in block.instructions):
@@ -2407,6 +2476,10 @@ string[] collect_used_map_types(ProgramIR program):
     return result
 
 void analyze_program_features(ProgramIR program, string[] map_types):
+    bool has_user_write_all = false
+    for (ParsedFunction function_ir in program.functions):
+        if (function_ir.name == 'write_all'):
+            has_user_write_all = true
     LLVM_SCAN_NEEDS_STRCMP = 0
     LLVM_SCAN_NEEDS_STRING_SEARCH = 0
     LLVM_SCAN_NEEDS_STRLEN = 0
@@ -2436,6 +2509,7 @@ void analyze_program_features(ProgramIR program, string[] map_types):
     LLVM_SCAN_NEEDS_TRY_CATCH = 0
     LLVM_SCAN_NEEDS_READ_LINES = 0
     LLVM_SCAN_NEEDS_READ_FILE = 0
+    LLVM_SCAN_NEEDS_WRITE_ALL = 0
     LLVM_SCAN_NEEDS_GETENV = 0
     LLVM_SCAN_NEEDS_TIME_MS = 0
     LLVM_SCAN_NEEDS_FILE_OUTPUT = 0
@@ -2478,6 +2552,7 @@ void analyze_program_features(ProgramIR program, string[] map_types):
     bool needs_try_catch = false
     bool needs_read_lines = false
     bool needs_read_file = false
+    bool needs_write_all = false
     bool needs_getenv = false
     bool needs_time_ms = false
     bool needs_file_output = false
@@ -2559,6 +2634,8 @@ void analyze_program_features(ProgramIR program, string[] map_types):
                     needs_read_lines = true
                 if (op.args[0] == 'read_file'):
                     needs_read_file = true
+                if (op.args[0] == 'write_all' && !has_user_write_all):
+                    needs_write_all = true
                 if (op.args[0] == 'getenv'):
                     needs_getenv = true
                 if (op.args[0] == 'time_ms'):
@@ -2699,6 +2776,8 @@ void analyze_program_features(ProgramIR program, string[] map_types):
                         needs_read_lines = true
                     if (op.args[0] == 'read_file'):
                         needs_read_file = true
+                    if (op.args[0] == 'write_all' && !has_user_write_all):
+                        needs_write_all = true
                     if (op.args[0] == 'getenv'):
                         needs_getenv = true
                     if (op.args[0] == 'time_ms'):
@@ -2729,6 +2808,9 @@ void analyze_program_features(ProgramIR program, string[] map_types):
                     if (normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0])) == 'string'):
                         needs_string_helpers_ops = true
                 if (op.detail == 'method-call'):
+                    if (!op.args.is_empty()):
+                        if (op.args[0] == 'write_all' && !has_user_write_all):
+                            needs_write_all = true
                     if (op.args[0] == 'submit' || op.args[0] == 'await'):
                         needs_thread_pool = true
                     if (!op.args.is_empty() && op.args[0] == 'hash'):
@@ -2823,6 +2905,8 @@ void analyze_program_features(ProgramIR program, string[] map_types):
         LLVM_SCAN_NEEDS_READ_LINES = 1
     if (needs_read_file):
         LLVM_SCAN_NEEDS_READ_FILE = 1
+    if (needs_write_all):
+        LLVM_SCAN_NEEDS_WRITE_ALL = 1
     if (needs_getenv):
         LLVM_SCAN_NEEDS_GETENV = 1
     if (needs_time_ms):
@@ -3764,6 +3848,42 @@ string[] emit_read_file_helper():
     lines.push('}')
     return lines
 
+string[] emit_write_all_helper():
+    string[] lines = []
+    lines.push('@.mode.write_all = private unnamed_addr constant [2 x i8] c"w\\00"')
+    lines.push('@.fmt.write_all.error = private unnamed_addr constant [15 x i8] c"write_all: %s\\0A\\00"')
+    lines.push('define private void @tb_bootstrap_write_all(ptr %path, ptr %text) {')
+    lines.push('entry:')
+    lines.push('  %mode = getelementptr inbounds [2 x i8], ptr @.mode.write_all, i32 0, i32 0')
+    lines.push('  %file = call ptr @fopen(ptr %path, ptr %mode)')
+    lines.push('  %file.ok = icmp ne ptr %file, null')
+    lines.push('  br i1 %file.ok, label %write, label %failure')
+    lines.push('write:')
+    lines.push('  %write.result = call i32 @fputs(ptr %text, ptr %file)')
+    lines.push('  %close.result = call i32 @fclose(ptr %file)')
+    lines.push('  %write.failed = icmp slt i32 %write.result, 0')
+    lines.push('  %close.failed = icmp ne i32 %close.result, 0')
+    lines.push('  %io.failed = or i1 %write.failed, %close.failed')
+    lines.push('  br i1 %io.failed, label %failure, label %done')
+    lines.push('failure:')
+    lines.push('  %handler = load ptr, ptr ' + exception_handler_symbol())
+    lines.push('  %has.handler = icmp ne ptr %handler, null')
+    lines.push('  br i1 %has.handler, label %unwind, label %fatal')
+    lines.push('unwind:')
+    lines.push('  %path.copy = call ptr @tb_bootstrap_string_copy(ptr %path)')
+    lines.push('  store ptr %path.copy, ptr ' + exception_message_symbol())
+    lines.push('  call void @longjmp(ptr %handler, i32 1)')
+    lines.push('  unreachable')
+    lines.push('fatal:')
+    lines.push('  %fmt = getelementptr inbounds [15 x i8], ptr @.fmt.write_all.error, i32 0, i32 0')
+    lines.push('  %print = call i32 (ptr, ...) @printf(ptr %fmt, ptr %path)')
+    lines.push('  call void @exit(i32 1)')
+    lines.push('  unreachable')
+    lines.push('done:')
+    lines.push('  ret void')
+    lines.push('}')
+    return lines
+
 string[] emit_getenv_helper():
     string[] lines = []
     lines.push('define private ptr @tb_bootstrap_getenv(ptr %name) {')
@@ -4527,6 +4647,17 @@ string emit_call_value_instruction_core(ProgramIR program, ParsedFunction functi
         if (op.args.length() != 3):
             throw 'unsupported llvm write_lines arity'
         return emit_tracked_builtin_call_line('  call void @tb_bootstrap_write_lines(ptr ' + temp_ref(op.args[1]) + ', ptr ' + temp_ref(op.args[2]) + ')')
+    if (call_name == 'write_all'):
+        if (lookup_call_meta_index(call_name) < 0):
+            if (op.args.length() != 3):
+                throw 'unsupported llvm write_all arity'
+            string path_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[1]))
+            string text_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[2]))
+            if (path_type != 'string' || text_type != 'string'):
+                throw 'unsupported llvm write_all arg types: ' + path_type + ' ' + text_type
+            if (function_uses_temp(function_ir, op.lhs)):
+                throw 'write_all result cannot be used as a value'
+            return emit_tracked_builtin_call_line('  call void @tb_bootstrap_write_all(ptr ' + temp_ref(op.args[1]) + ', ptr ' + temp_ref(op.args[2]) + ')')
     if (call_name == 'dump_runtime_activity'):
         if (op.args.length() != 1):
             throw 'unsupported llvm dump_runtime_activity arity'
@@ -4990,6 +5121,14 @@ string emit_set_method_call_value_instruction(ProgramIR program, ParsedFunction 
 string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction function_ir, LinearInstruction op):
     string lhs = temp_ref(op.lhs)
     string method_name = op.args[0]
+    if (method_name == 'write_all'):
+        if (lookup_call_meta_index(method_name) < 0):
+            if (op.args.length() != 3):
+                throw 'unsupported llvm write_all method arity'
+            LinearInstruction write_all_call = LinearInstruction('value', op.lhs, op.result_type, op.ownership_mode, 'call', ['write_all', op.args[1], op.args[2]])
+            return emit_call_value_instruction_core(program, function_ir, write_all_call)
+    if (op.args.length() < 2):
+        throw 'unsupported llvm method-call arity: ' + method_name
     string method_base_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[1]))
     if (method_name == 'abs' && (method_base_type == 'int' || method_base_type == 'num')):
         if (op.args.length() != 2):
@@ -8109,6 +8248,7 @@ string[] llvm_codegen_ir(ProgramIR program):
     bool needs_try_catch = LLVM_SCAN_NEEDS_TRY_CATCH != 0
     bool needs_read_lines = LLVM_SCAN_NEEDS_READ_LINES != 0
     bool needs_read_file = LLVM_SCAN_NEEDS_READ_FILE != 0
+    bool needs_write_all = LLVM_SCAN_NEEDS_WRITE_ALL != 0
     bool needs_getenv = LLVM_SCAN_NEEDS_GETENV != 0 || program_uses_getenv(program)
     bool needs_time_ms = LLVM_SCAN_NEEDS_TIME_MS != 0
     bool needs_file_output = LLVM_SCAN_NEEDS_FILE_OUTPUT != 0
@@ -8132,7 +8272,7 @@ string[] llvm_codegen_ir(ProgramIR program):
     StringConstIR[] string_constants = collect_string_constants(program)
     LLVM_PHASE_STRING_CONSTANTS_MS += time_ms() - string_constants_start_ms
     string[] foreign_modules = active_foreign_modules(program)
-    bool needs_string_helpers = needs_runtime_string_copy || needs_to_int || needs_int_to_string || needs_hash || LLVM_SCAN_NEEDS_STRING_HELPERS_OPS != 0 || needs_read_lines || needs_read_file || needs_getenv || needs_thread_pool
+    bool needs_string_helpers = needs_runtime_string_copy || needs_to_int || needs_int_to_string || needs_hash || LLVM_SCAN_NEEDS_STRING_HELPERS_OPS != 0 || needs_read_lines || needs_read_file || needs_write_all || needs_getenv || needs_thread_pool
     bool needs_string_array_helpers = needs_string_array || needs_string_helpers
     bool needs_runtime_global_init = LLVM_SCAN_NEEDS_RUNTIME_GLOBAL_INIT != 0
     if (needs_num || needs_num_hash):
@@ -8161,37 +8301,37 @@ string[] llvm_codegen_ir(ProgramIR program):
     if (!string_constants.is_empty()):
         for (StringConstIR constant in string_constants):
             lines.push(emit_string_constant(constant))
-    if (needs_thread_pool || needs_throw || needs_try_catch || needs_read_lines || needs_read_file):
+    if (needs_thread_pool || needs_throw || needs_try_catch || needs_read_lines || needs_read_file || needs_write_all):
         lines.push(exception_handler_symbol() + ' = thread_local global ptr null')
         lines.push(exception_message_symbol() + ' = thread_local global ptr null')
     for (string map_type in map_types):
         lines.push(emit_map_type(map_type))
     for (RecordDeclIR record_decl in record_decls):
         lines.push(emit_record_type(record_decl))
-    if (needs_string_array_helpers || needs_string_array_array || needs_bool_array || needs_int_array || needs_int_array_array || needs_record_array || needs_runtime_string_copy || needs_records || needs_maps || needs_read_lines || needs_read_file):
+    if (needs_string_array_helpers || needs_string_array_array || needs_bool_array || needs_int_array || needs_int_array_array || needs_record_array || needs_runtime_string_copy || needs_records || needs_maps || needs_read_lines || needs_read_file || needs_write_all):
         lines.push('declare ptr @malloc(i64)')
         lines.push('declare ptr @realloc(ptr, i64)')
         lines.push('declare void @qsort(ptr, i64, i64, ptr)')
     if (needs_thread_pool):
         for (string declaration in emit_thread_pool_runtime_declarations()):
             lines.push(declaration)
-    if (needs_string_helpers || needs_thread_pool || needs_try_catch):
+    if (needs_string_helpers || needs_thread_pool || needs_try_catch || needs_write_all):
         lines.push('declare i32 @setjmp(ptr) returns_twice')
-    if (needs_string_helpers || needs_thread_pool || needs_throw || needs_try_catch || needs_read_lines || needs_read_file):
+    if (needs_string_helpers || needs_thread_pool || needs_throw || needs_try_catch || needs_read_lines || needs_read_file || needs_write_all):
         lines.push('declare void @longjmp(ptr, i32) noreturn')
     if (needs_string_array_helpers || needs_string_array_array || needs_bool_array || needs_int_array || needs_int_array_array || needs_record_array || needs_backend_free || needs_records || needs_maps || needs_read_lines || needs_read_file):
         lines.push('declare void @free(ptr)')
-    if (needs_print_int || needs_print_string_array || needs_print_int_array || needs_print_num || needs_num || needs_int_array || needs_int_set || needs_string_array_helpers || needs_read_lines || needs_read_file):
+    if (needs_print_int || needs_print_string_array || needs_print_int_array || needs_print_num || needs_num || needs_int_array || needs_int_set || needs_string_array_helpers || needs_read_lines || needs_read_file || needs_write_all):
         lines.push('declare i32 @printf(ptr, ...)')
     if (needs_int_set):
         lines.push('declare i32 @putchar(i32)')
     if (needs_print_string || needs_print_bool || needs_throw):
         lines.push('declare i32 @puts(ptr)')
-    if (needs_throw || needs_read_lines || needs_read_file):
+    if (needs_throw || needs_read_lines || needs_read_file || needs_write_all):
         lines.push('declare void @exit(i32)')
     if (needs_strcmp || needs_string_search || needs_string_array_helpers):
         lines.push('declare i32 @strcmp(ptr, ptr)')
-    if (needs_strlen || needs_runtime_string_copy || needs_read_lines || needs_read_file || needs_string_helpers):
+    if (needs_strlen || needs_runtime_string_copy || needs_read_lines || needs_read_file || needs_string_helpers || needs_write_all):
         lines.push('declare i64 @strlen(ptr)')
     if (needs_getenv):
         lines.push('declare ptr @getenv(ptr)')
@@ -8212,14 +8352,15 @@ string[] llvm_codegen_ir(ProgramIR program):
         lines.push('declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)')
     if (needs_string_array_helpers || needs_string_array_array || needs_bool_array || needs_int_array || needs_int_array_array || needs_record_array || needs_maps || needs_read_lines):
         lines.push('declare void @llvm.memset.p0.i64(ptr, i8, i64, i1)')
-    if (needs_read_lines || needs_read_file || needs_file_output):
+    if (needs_read_lines || needs_read_file || needs_file_output || needs_write_all):
         lines.push('declare ptr @fopen(ptr, ptr)')
     if (needs_time_ms):
         lines.push('declare i32 @gettimeofday(ptr, ptr)')
-    if (needs_file_output):
+    if (needs_file_output || needs_write_all):
         lines.push('declare i32 @fputs(ptr, ptr)')
+    if (needs_file_output):
         lines.push('declare i32 @fputc(i32, ptr)')
-    if (needs_read_lines || needs_read_file || needs_file_output):
+    if (needs_read_lines || needs_read_file || needs_file_output || needs_write_all):
         lines.push('declare i32 @fclose(ptr)')
     if (needs_read_lines):
         lines.push('declare void @rewind(ptr)')
@@ -8285,6 +8426,9 @@ string[] llvm_codegen_ir(ProgramIR program):
             lines.push(helper)
     if (needs_read_file):
         for (string helper in emit_read_file_helper()):
+            lines.push(helper)
+    if (needs_write_all):
+        for (string helper in emit_write_all_helper()):
             lines.push(helper)
     if (needs_getenv):
         for (string helper in emit_getenv_helper()):
@@ -8410,6 +8554,7 @@ void llvm_print_ir(ProgramIR program):
     bool needs_try_catch = LLVM_SCAN_NEEDS_TRY_CATCH != 0
     bool needs_read_lines = LLVM_SCAN_NEEDS_READ_LINES != 0
     bool needs_read_file = LLVM_SCAN_NEEDS_READ_FILE != 0
+    bool needs_write_all = LLVM_SCAN_NEEDS_WRITE_ALL != 0
     bool needs_getenv = LLVM_SCAN_NEEDS_GETENV != 0 || program_uses_getenv(program)
     bool needs_time_ms = LLVM_SCAN_NEEDS_TIME_MS != 0
     bool needs_file_output = LLVM_SCAN_NEEDS_FILE_OUTPUT != 0
@@ -8422,7 +8567,7 @@ void llvm_print_ir(ProgramIR program):
     bool needs_thread_pool = LLVM_SCAN_NEEDS_THREAD_POOL != 0
     reset_function_lookup_cache()
     string[] foreign_modules = active_foreign_modules(program)
-    bool needs_string_helpers = needs_runtime_string_copy || needs_to_int || needs_int_to_string || needs_hash || LLVM_SCAN_NEEDS_STRING_HELPERS_OPS != 0 || needs_read_lines || needs_read_file || needs_getenv
+    bool needs_string_helpers = needs_runtime_string_copy || needs_to_int || needs_int_to_string || needs_hash || LLVM_SCAN_NEEDS_STRING_HELPERS_OPS != 0 || needs_read_lines || needs_read_file || needs_write_all || needs_getenv
     bool needs_string_array_helpers = needs_string_array || needs_string_helpers
     bool needs_runtime_global_init = LLVM_SCAN_NEEDS_RUNTIME_GLOBAL_INIT != 0
     bool emitted_any_header = false
@@ -8460,7 +8605,7 @@ void llvm_print_ir(ProgramIR program):
         for (StringConstIR constant in string_constants):
             print(emit_string_constant(constant))
         emitted_any_header = true
-    if (needs_thread_pool || needs_throw || needs_try_catch || needs_read_lines || needs_read_file):
+    if (needs_thread_pool || needs_throw || needs_try_catch || needs_read_lines || needs_read_file || needs_write_all):
         print(exception_handler_symbol() + ' = thread_local global ptr null')
         print(exception_message_symbol() + ' = thread_local global ptr null')
         emitted_any_header = true
@@ -8470,7 +8615,7 @@ void llvm_print_ir(ProgramIR program):
     for (RecordDeclIR record_decl in record_decls):
         print(emit_record_type(record_decl))
         emitted_any_header = true
-    if (needs_string_array_helpers || needs_string_array_array || needs_bool_array || needs_int_array || needs_int_array_array || needs_record_array || needs_runtime_string_copy || needs_records || needs_maps || needs_read_lines || needs_read_file):
+    if (needs_string_array_helpers || needs_string_array_array || needs_bool_array || needs_int_array || needs_int_array_array || needs_record_array || needs_runtime_string_copy || needs_records || needs_maps || needs_read_lines || needs_read_file || needs_write_all):
         print('declare ptr @malloc(i64)')
         print('declare ptr @realloc(ptr, i64)')
         print('declare void @qsort(ptr, i64, i64, ptr)')
@@ -8479,16 +8624,16 @@ void llvm_print_ir(ProgramIR program):
         for (string declaration in emit_thread_pool_runtime_declarations()):
             print(declaration)
         emitted_any_header = true
-    if (needs_string_helpers || needs_thread_pool || needs_try_catch):
+    if (needs_string_helpers || needs_thread_pool || needs_try_catch || needs_write_all):
         print('declare i32 @setjmp(ptr) returns_twice')
         emitted_any_header = true
-    if (needs_string_helpers || needs_thread_pool || needs_throw || needs_try_catch || needs_read_lines || needs_read_file):
+    if (needs_string_helpers || needs_thread_pool || needs_throw || needs_try_catch || needs_read_lines || needs_read_file || needs_write_all):
         print('declare void @longjmp(ptr, i32) noreturn')
         emitted_any_header = true
     if (needs_string_array_helpers || needs_string_array_array || needs_bool_array || needs_int_array || needs_int_array_array || needs_record_array || needs_backend_free || needs_records || needs_maps || needs_read_lines || needs_read_file):
         print('declare void @free(ptr)')
         emitted_any_header = true
-    if (needs_print_int || needs_print_string_array || needs_print_int_array || needs_print_num || needs_num || needs_int_array || needs_int_set || needs_string_array_helpers || needs_read_lines || needs_read_file):
+    if (needs_print_int || needs_print_string_array || needs_print_int_array || needs_print_num || needs_num || needs_int_array || needs_int_set || needs_string_array_helpers || needs_read_lines || needs_read_file || needs_write_all):
         print('declare i32 @printf(ptr, ...)')
         emitted_any_header = true
     if (needs_int_set):
@@ -8497,13 +8642,13 @@ void llvm_print_ir(ProgramIR program):
     if (needs_print_string || needs_print_bool || needs_throw):
         print('declare i32 @puts(ptr)')
         emitted_any_header = true
-    if (needs_throw || needs_read_lines || needs_read_file):
+    if (needs_throw || needs_read_lines || needs_read_file || needs_write_all):
         print('declare void @exit(i32)')
         emitted_any_header = true
     if (needs_strcmp || needs_string_search || needs_string_array_helpers):
         print('declare i32 @strcmp(ptr, ptr)')
         emitted_any_header = true
-    if (needs_strlen || needs_runtime_string_copy || needs_read_lines || needs_read_file || needs_string_helpers):
+    if (needs_strlen || needs_runtime_string_copy || needs_read_lines || needs_read_file || needs_string_helpers || needs_write_all):
         print('declare i64 @strlen(ptr)')
         emitted_any_header = true
     if (needs_getenv):
@@ -8530,17 +8675,18 @@ void llvm_print_ir(ProgramIR program):
     if (needs_string_array_helpers || needs_string_array_array || needs_bool_array || needs_int_array || needs_int_array_array || needs_record_array || needs_maps || needs_read_lines):
         print('declare void @llvm.memset.p0.i64(ptr, i8, i64, i1)')
         emitted_any_header = true
-    if (needs_read_lines || needs_read_file || needs_file_output):
+    if (needs_read_lines || needs_read_file || needs_file_output || needs_write_all):
         print('declare ptr @fopen(ptr, ptr)')
         emitted_any_header = true
     if (needs_time_ms):
         print('declare i32 @gettimeofday(ptr, ptr)')
         emitted_any_header = true
-    if (needs_file_output):
+    if (needs_file_output || needs_write_all):
         print('declare i32 @fputs(ptr, ptr)')
+    if (needs_file_output):
         print('declare i32 @fputc(i32, ptr)')
         emitted_any_header = true
-    if (needs_read_lines || needs_read_file || needs_file_output):
+    if (needs_read_lines || needs_read_file || needs_file_output || needs_write_all):
         print('declare i32 @fclose(ptr)')
         emitted_any_header = true
     if (needs_read_lines):
@@ -8625,6 +8771,10 @@ void llvm_print_ir(ProgramIR program):
     if (needs_read_file):
         string[] read_file_helper_lines = emit_read_file_helper()
         for (string line in read_file_helper_lines):
+            print(line)
+    if (needs_write_all):
+        string[] write_all_helper_lines = emit_write_all_helper()
+        for (string line in write_all_helper_lines):
             print(line)
     if (needs_getenv):
         string[] getenv_helper_lines = emit_getenv_helper()
