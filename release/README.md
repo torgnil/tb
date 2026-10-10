@@ -7,7 +7,11 @@ thread runtime when the program uses thread pools.
 
 ## Requirements
 
-- macOS and Apple's command line developer tools, including `clang`
+- The installed bundle requires macOS and Apple's command line developer tools,
+  including `clang`. Python is not needed to use an extracted bundle.
+- The source build and release verifier require Python 3.10 or newer, Git,
+  `clang`, `ditto`,
+  and `shasum`; packaging also uses Apple's `lipo`.
 
 The release packaging process verifies the host architecture before naming the
 archive. macOS arm64 is the only configuration verified for this candidate;
@@ -15,8 +19,41 @@ an x86_64 archive is named for its architecture but has not been validated.
 The bundle does not include foreign modules such as raylib or their external
 dependencies.
 
-The packager additionally uses `lipo`, `ditto`, and `shasum`; these are only
-needed when creating an archive from the source checkout.
+## Thread pools and futures
+
+Programs may create an explicit `thread_pool` and submit a top-level named
+function with no arguments or one argument. The argument and result types are
+independent: each may be `int`, `bool`, `string`, `int[]`, or `int[][]`.
+`await()` returns a result and rethrows a task exception; `is_done()` checks
+completion, and `wait_for(milliseconds)` waits for a bounded duration without
+consuming the result.
+
+Strings are immutable and may be shared between workers. `int[]` and `int[][]`
+arguments are copied when submitted, and array results are copied on each
+`await()`. Records, maps, sets, priority queues, files, pools, futures, and
+closures cannot cross the task boundary. Worker code does not synchronize
+access to user globals or mutable containers. Native memoization tables protect
+their internal accesses, though simultaneous cache misses may evaluate a body
+more than once and a full table returns an uncached result. There is no promise
+of cancellation or work stealing. Broader runtime audit, concurrent stress,
+and lifetime verification remain open, so the project has not declared this
+candidate ready to release. See the bundled language reference and changelog
+for the complete behavior and limitations.
+
+## Verify a source release
+
+From a source checkout on the verified macOS arm64 host, run:
+
+```sh
+python3 verify_release_bundle.py --revision HEAD --version 0.2.0 \
+  --evidence-dir /tmp/tb-release-verification
+```
+
+The verifier uses the selected Git tree to build the compiler, run the native
+fixture suite, Python fixtures through phase 76, const checks, and package and
+smoke-test an extracted bundle. Each run gets a separate manifest and process
+logs under the evidence directory. It does not use a prebuilt checkout compiler
+or untracked workspace files.
 
 ## Extract and verify
 

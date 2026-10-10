@@ -12,6 +12,8 @@ Current highlights:
 - native code generation through LLVM IR
 - working self-hosted compiler build path
 - core language support for strings, arrays, records, enums, maps, sets, slices, and exceptions
+- explicit thread pools and futures for the task types described in the
+  [language reference](docs/tb.md)
 - built-in foreign module support for `raylib`
 
 ## Build
@@ -64,6 +66,22 @@ its LLVM helpers and thread runtime sources, the language reference, and native
 build launcher. See [release/README.md](release/README.md) for extraction,
 checksum, and use instructions. Only macOS arm64 is currently verified.
 
+To reproduce the build, test, and bundle checks from a source revision on a
+verified macOS arm64 host, run:
+
+```bash
+python3 verify_release_bundle.py --revision HEAD --version 0.2.0 \
+  --evidence-dir /tmp/tb-release-verification
+```
+
+The verifier archives the selected Git tree into a fresh directory, builds the
+self-hosted compiler there, runs the native and Python fixture suites and const
+checks, then builds and tests an extracted bundle. It writes a separate
+manifest and process logs for each run under the evidence directory. It uses
+tracked files from the selected revision; local binaries and untracked files do
+not participate. The required tools and installed-bundle requirements are
+listed in [release/README.md](release/README.md).
+
 ## Documentation
 
 - language reference: `docs/tb.md`
@@ -76,10 +94,13 @@ checksum, and use instructions. Only macOS arm64 is currently verified.
 
 - Compiling tb programs to LLVM IR with the Python compiler
 - Building and using the self-hosted tb compiler
-- Numbered fixtures through `tests/fixtures/82.tb`
+- Native numbered fixtures through `tests/fixtures/162.tb`
+- Python compiler fixtures through phase 76; this is a separate suite from the
+  native numbered fixtures
 - The current AoC sample set in `examples/aoc`
 - Stage 2 and stage 3 self-hosting on the current verified path
-- The current bundled `raylib` demo path
+- The bundled `raylib` demo path when its external raylib dependencies are
+  installed; those dependencies are not part of the standalone bundle
 
 ### Experimental
 
@@ -92,7 +113,9 @@ checksum, and use instructions. Only macOS arm64 is currently verified.
 - Stage-2 self-compile memory usage is still higher than we want
 - Stage-3 self-compile throughput is still slower than we want
 - Backend string allocation churn is still high even after the major memory improvements
-- Some deeper compiler-internal ownership and cleanup work remains, but it is no longer blocking the current self-hosting gate
+- User globals and mutable containers are not synchronized when accessed by
+  worker tasks. Broader runtime-state audits, concurrent stress, and lifetime
+  checks remain open; release readiness is not yet established.
 
 ## License
 
