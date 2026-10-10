@@ -75,23 +75,20 @@ manual source review. The fixture and sanitizer cases below are dynamic checks
 of the specific worker and value families they execute, not an exhaustive run
 of every template or every user program.
 
-`verify_thread_pool_lifecycle.py` emits the fixture LLVM, rewrites its explicit
-allocation calls and the included thread-pool and composite C calls through one
-fixed, mutex-protected pointer tracker, then checks a blocked four-worker pool
-with 80 queued tasks. It verifies all five supported result families, five
+Maintainer lifecycle checks used generated fixture LLVM and a fixed,
+mutex-protected pointer tracker for its explicit allocation calls and the
+included thread-pool and composite C calls. They exercised a blocked four-worker
+pool with 80 queued tasks, all five supported result families, five
 failure families, dropped caller references, queue draining, repeated awaits,
 array snapshots, ten distinct owned error-message copies held by failed futures,
-and the exact 110-block selected live-allocation checkpoint. Its ASan
-and TSan modes verify actual memory hooks in generated worker functions and the
-included C runtime, run known-bad memory/race controls, and repeat the TSan case.
+and the exact 110-block selected live-allocation checkpoint. ASan
+and TSan runs verified actual memory hooks in generated worker functions and the
+included C runtime, ran known-bad memory/race controls, and repeated the TSan case.
 The tracker covers explicit allocations from those target translation units;
 it excludes allocations inside libc, pthreads, and the sanitizers themselves.
-See the run manifest for exact commands, environment, fingerprints, statuses,
-and logs.
 
-`verify_thread_pool_startup.py` separately exercises checked pool startup
-failures, including allocation, synchronization initialization, and partial
-worker creation. Submission-time allocation failure remains unchecked. The
-lifecycle tests do not establish general out-of-memory safety or generic
+Separate maintainer checks exercised pool startup failures, including
+allocation, synchronization initialization, and partial worker creation.
+Submission-time allocation failure remains unchecked. The lifecycle tests do not establish general out-of-memory safety or generic
 nonlocal-unwind leak freedom. The runtime's timed waits use `CLOCK_REALTIME`;
 changes to the wall clock can affect elapsed timeout duration.
