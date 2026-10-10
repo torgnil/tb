@@ -23,6 +23,32 @@ record RecordDeclIR(string header, string[] fields);
 record EnumDeclIR(string header, string[] values);
 record ProgramIR(ImportDeclIR[] imports, GlobalDeclIR[] globals, RecordDeclIR[] records, EnumDeclIR[] enums, ParsedFunction[] functions);
 
+# Lowering emits each try body before its catch. The last active try in
+# this order is the nearest handler, including nested tries in one block.
+int block_index_by_label(ParsedFunction function_ir, string label):
+    int block_index = 0
+    while (block_index < function_ir.blocks.length()):
+        if (function_ir.blocks[block_index].label == label):
+            return block_index
+        block_index += 1
+    return -1
+
+int enclosing_try_catch_block_index(ParsedFunction function_ir, string block_label):
+    int block_index = block_index_by_label(function_ir, block_label)
+    if (block_index < 0):
+        return -1
+    int best_catch_block_index = -1
+    int scan_block_index = 0
+    while (scan_block_index <= block_index):
+        BlockIR block = function_ir.blocks[scan_block_index]
+        for (LinearInstruction op in block.instructions):
+            if (op.kind == 'try'):
+                int catch_block_index = block_index_by_label(function_ir, op.detail)
+                if (catch_block_index > block_index):
+                    best_catch_block_index = catch_block_index
+        scan_block_index += 1
+    return best_catch_block_index
+
 int ir_last_space_index(string value):
     int index = value.length() - 1
     while (index >= 0):

@@ -1,0 +1,19 @@
+int first_failure(int x):
+    throw 'first=' + x
+
+string second_failure(string text):
+    throw 'second=' + text
+
+int main(string[] args):
+    thread_pool pool = thread_pool(2)
+    future<int> first = pool.submit(first_failure, 1)
+    future<string> second = pool.submit(second_failure, 'x')
+    try:
+        try:
+            print(first.await())
+        catch (exception err):
+            print('inner:' + err)
+        print(second.await())
+    catch (exception err):
+        print('outer:' + err)
+    return 0

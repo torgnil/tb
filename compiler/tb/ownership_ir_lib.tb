@@ -102,9 +102,12 @@ string[] collect_record_names(RecordDeclIR[] records):
     return names
 
 bool is_managed_type(string type_name, string[] record_names, string[] enum_names):
+    type_name = normalize_llvm_type_name(type_name)
     if (type_name == '' || type_name == 'unknown' || type_name == 'int' || type_name == 'bool'):
         return false
-    if (type_name == 'string'):
+    if (type_name == 'string' || type_name == 'exception'):
+        return true
+    if (is_thread_pool_type(type_name) || is_future_type(type_name)):
         return true
     if (type_name.ends_with('[]')):
         return true
@@ -355,6 +358,8 @@ LinearInstruction copy_instruction(LinearInstruction op):
 LinearInstruction[] apply_ownership_to_instructions(ParsedFunction function_ir, OwnershipTempMetaCache cache, OwnershipBindingCache binding_cache, OwnershipIdentifierTargetCache identifier_target_cache, string block_label, LinearInstruction[] instructions, RecordFieldIR[] record_fields, string[] record_names, string[] enum_names, string[] seen_sets):
     LinearInstruction[] result = []
     for (LinearInstruction op in instructions):
+        if (op.kind == 'catch' && binding_is_managed_cached(op.detail, record_names, enum_names)):
+            result.push(LinearInstruction('release_local', '', '', '', op.detail, []))
         if (op.kind == 'set' && binding_is_managed_cached(op.detail, record_names, enum_names)):
             if (op.detail in seen_sets || block_label != 'entry'):
                 result.push(LinearInstruction('release_local', '', '', '', op.detail, []))
@@ -363,6 +368,11 @@ LinearInstruction[] apply_ownership_to_instructions(ParsedFunction function_ir, 
             result = append_instructions(result, move_temp_if_owned(cache, op.args[0], record_names, enum_names))
         if (op.kind == 'assign_local'):
             string binding_decl = named_binding_decl_cached(binding_cache, op.detail)
+            if (!op.args.is_empty()):
+                string source_binding_decl = identifier_target_binding_cached(identifier_target_cache, op.args[0])
+                if (binding_decl != '' && binding_is_managed_cached(binding_decl, record_names, enum_names)):
+                    if (source_binding_decl == binding_decl):
+                        continue
             if (binding_decl != '' && binding_is_managed_cached(binding_decl, record_names, enum_names)):
                 result.push(LinearInstruction('release_local', '', '', '', binding_decl, []))
             result = append_instructions(result, move_temp_if_owned(cache, op.args[0], record_names, enum_names))
@@ -416,9 +426,19 @@ LinearInstruction[] exit_cleanup_instructions(OwnershipIdentifierTargetCache ide
     string transferred_binding = ''
     if ((terminator.kind == 'return_owned' || terminator.kind == 'throw_owned') && !terminator.args.is_empty()):
         transferred_binding = identifier_target_binding_cached(identifier_target_cache, terminator.args[0])
+        if (transferred_binding != ''):
+            BindingIR transferred = ir_parse_binding_decl(transferred_binding)
+            string transferred_type = normalize_llvm_type_name(transferred.type_name)
+            if (transferred_type == 'string'):
+                transferred_binding = ''
     for (BindingIR binding in initialized_managed):
         string current = binding_decl(binding)
-        if (current != transferred_binding):
+        bool preserve_const_throw = false
+        # Preserve the existing non-string const cleanup policy on nonlocal throws.
+        if (terminator.kind == 'throw' || terminator.kind == 'throw_owned'):
+            if (binding.type_name.starts_with('const ')):
+                preserve_const_throw = !binding.type_name.ends_with('[]') && normalize_llvm_type_name(binding.type_name) != 'string'
+        if (current != transferred_binding && !preserve_const_throw):
             result.push(LinearInstruction('release_local', '', '', '', current, []))
     return result
 
@@ -434,8 +454,37 @@ BlockIR apply_ownership_to_block(ParsedFunction function_ir, OwnershipTempMetaCa
         OWNERSHIP_APPLY_BLOCK_INSTRUCTION_ITEMS += block.instructions.length()
     LinearInstruction[] instructions = apply_ownership_to_instructions(function_ir, cache, binding_cache, identifier_target_cache, block.label, block.instructions, record_fields, record_names, enum_names, seen_sets)
     TerminatorIR terminator = apply_ownership_to_terminator(cache, block.terminator, record_names, enum_names)
-    instructions = append_instructions(instructions, transfer_terminator_instructions(cache, terminator, record_names, enum_names))
-    instructions = append_instructions(instructions, exit_cleanup_instructions(identifier_target_cache, terminator, initialized_managed))
+    bool local_throw = false
+    if (terminator.kind == 'throw' || terminator.kind == 'throw_owned'):
+        local_throw = enclosing_try_catch_block_index(function_ir, block.label) >= 0
+    # A local catch continues this function with all local bindings still live.
+    if (!local_throw):
+        instructions = append_instructions(instructions, transfer_terminator_instructions(cache, terminator, record_names, enum_names))
+        if (terminator.kind == 'return_owned'):
+            bool prepare_string_return = false
+            bool prepare_string_array_array_return = false
+            bool prepare_bool_array_return = false
+            bool prepare_int_array_return = false
+            if (!terminator.args.is_empty()):
+                string return_type = lookup_temp_result_type_cached(cache, terminator.args[0])
+                string normalized_return_type = normalize_llvm_type_name(return_type)
+                prepare_string_return = normalized_return_type == 'string'
+                prepare_string_array_array_return = normalized_return_type == 'string[][]'
+                prepare_bool_array_return = normalized_return_type == 'bool[]'
+                prepare_int_array_return = normalized_return_type == 'int[]'
+            if (prepare_string_return):
+                instructions.push(LinearInstruction('prepare_return_string', '', '', '', '', [terminator.args[0]]))
+            if (prepare_string_array_array_return):
+                instructions.push(LinearInstruction('prepare_return_string_array_array', '', '', '', '', [terminator.args[0]]))
+            if (prepare_bool_array_return):
+                instructions.push(LinearInstruction('prepare_return_bool_array', '', '', '', '', [terminator.args[0]]))
+            if (prepare_int_array_return):
+                instructions.push(LinearInstruction('prepare_return_int_array', '', '', '', '', [terminator.args[0]]))
+        if (terminator.kind == 'throw' || terminator.kind == 'throw_owned'):
+            if (!terminator.args.is_empty()):
+                if (normalize_llvm_type_name(lookup_temp_result_type_cached(cache, terminator.args[0])) == 'string'):
+                    instructions.push(LinearInstruction('prepare_throw_string', '', '', '', '', [terminator.args[0]]))
+        instructions = append_instructions(instructions, exit_cleanup_instructions(identifier_target_cache, terminator, initialized_managed))
     return BlockIR(block.label, instructions, terminator)
 
 ParsedFunction apply_ownership_to_function(ParsedFunction function_ir, RecordFieldIR[] record_fields, string[] record_names, string[] enum_names):
@@ -447,8 +496,14 @@ ParsedFunction apply_ownership_to_function(ParsedFunction function_ir, RecordFie
     BindingIR[] initialized_managed = initialized_managed_locals(function_ir, record_names, enum_names)
     BlockIR[] blocks = []
     string[] seen_sets = []
+    int block_index = 0
     for (BlockIR block in function_ir.blocks):
+        if (function_ir.return_type == 'void'):
+            if (block_index == function_ir.blocks.length() - 1):
+                if (block.terminator.kind == ''):
+                    block = BlockIR(block.label, block.instructions, TerminatorIR('return', []))
         blocks.push(apply_ownership_to_block(function_ir, cache, binding_cache, identifier_target_cache, block, initialized_managed, record_fields, record_names, enum_names, seen_sets))
+        block_index += 1
     return ParsedFunction(function_ir.header, function_ir.name, function_ir.return_type, function_ir.params, function_ir.locals, blocks)
 
 ProgramIR owned_program_ir(ProgramIR program):

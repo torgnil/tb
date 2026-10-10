@@ -1,0 +1,156 @@
+int[][] RETURN_GLOBAL_ROWS = [[70], [71]]
+
+int[][] return_local(int n):
+    int[][] values = [[n], [n + 1]]
+    int[][] spare = [[n + 90]]
+    print(spare[0][0])
+    return values
+
+int[][] return_empty():
+    int[][] values = []
+    return values
+
+int[][] return_const(int n):
+    int[] empty_row = []
+    const int[][] values = [[n], empty_row]
+    return values
+
+int[][] return_const_empty():
+    const int[][] values = []
+    return values
+
+int[][] return_empty_child(int n):
+    int[] empty_row = []
+    int[][] values = [empty_row, [n]]
+    return values
+
+int[][] return_copy(int[][] source, int n):
+    int[][] values = source
+    values[0].push(n + 40)
+    return values
+
+int[][] return_reassigned(int n):
+    int[][] values = [[n - 1]]
+    values = return_local(n + 5)
+    return values
+
+int[][] return_borrowed(int[][] source):
+    return source
+
+int[][] return_global():
+    return RETURN_GLOBAL_ROWS
+
+int[][] return_literal(int n):
+    int[] empty_row = []
+    return [[n], empty_row]
+
+int[][] return_call(int n):
+    return return_local(n + 10)
+
+int[][] return_branch(int n):
+    if (n > 0):
+        int[][] values = [[n]]
+        return values
+    int[][] values = [[0 - n]]
+    return values
+
+int[][] return_switch(int n):
+    switch (n):
+        case 1:
+            int[][] values = [[n + 20]]
+            return values
+        default:
+            int[][] values = [[n + 30]]
+            return values
+
+int[][] return_loop(int n):
+    int[] empty_row = []
+    int[][] values = [empty_row]
+    for (int i = 0; i < 2; i++):
+        values = [[n + i]]
+        if (i == 1):
+            return values
+    return values
+
+int[][] return_try(int n):
+    try:
+        int[][] values = [[n + 50]]
+        return values
+    catch (exception err):
+        int[][] values = [[n + 60]]
+        return values
+
+int[][] return_catch(int n):
+    try:
+        throw 'return-catch'
+    catch (exception err):
+        int[][] values = [[n + 70]]
+        return values
+
+int main(string[] args):
+    int n = args.length()
+    int[][] local = return_local(n)
+    print(local[0][0])
+    local[0].push(n + 2)
+    print(local[0].length())
+
+    int[][] empty = return_empty()
+    print(empty.length())
+    empty.push([n + 3])
+    print(empty[0][0])
+    int[][] const_empty = return_const_empty()
+    const_empty.push([n + 4])
+    print(const_empty[0][0])
+    int[][] const_values = return_const(n)
+    const_values[1].push(n + 5)
+    print(const_values[1][0])
+
+    int[][] child_rows = return_empty_child(n)
+    child_rows[0].push(n + 6)
+    print(child_rows[0][0])
+    print(child_rows[1][0])
+
+    int[][] source = [[n + 10], [n + 11]]
+    int[][] copied = return_copy(source, n)
+    print(source[0].length())
+    print(copied[0].length())
+    int[][] borrowed = return_borrowed(source)
+    borrowed[0].push(n + 12)
+    print(source[0].length())
+    print(borrowed[0].length())
+    int[][] global_copy = return_global()
+    global_copy[0].push(n + 13)
+    print(RETURN_GLOBAL_ROWS[0].length())
+    print(global_copy[0].length())
+
+    int[][] reassigned = return_reassigned(n)
+    print(reassigned[0][0])
+    int[][] branch = return_branch(n)
+    print(branch[0][0])
+    int[][] branch_else = return_branch(0 - n)
+    print(branch_else[0][0])
+    int[][] switched = return_switch(n)
+    print(switched[0][0])
+    int[][] switch_default = return_switch(n + 2)
+    print(switch_default[0][0])
+    int[][] looped = return_loop(n)
+    print(looped[0][0])
+    int[][] tried = return_try(n)
+    print(tried[0][0])
+    int[][] caught = return_catch(n)
+    print(caught[0][0])
+    int[][] literal = return_literal(n)
+    print(literal[1].length())
+    int[][] called = return_call(n)
+    print(called[0][0])
+
+    try:
+        int[][] restored = return_try(n)
+        throw 'caller-throw'
+    catch (exception err):
+        print('caller-caught')
+
+    for (int i = 0; i < 5; i++):
+        int[][] repeated = return_local(n + i)
+        print(repeated[0][0])
+    return 0

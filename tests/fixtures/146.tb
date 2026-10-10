@@ -1,0 +1,108 @@
+const bool[] GLOBAL_FLAGS = [true, false]
+
+record BoolBox(bool[] flags);
+
+bool[] make_flags(bool value):
+    return [value, !value]
+
+void copy_parameter(bool[] source):
+    bool[] copy = source
+    copy[0] = false
+    copy = copy
+    print(source[0])
+    print(copy[0])
+
+int main(string[] args):
+    bool[] source = [args.length() > 0]
+    bool[] copy = source
+    copy[0] = false
+    print(source[0])
+    print(copy[0])
+
+    const bool[] const_source = [args.length() > 0]
+    bool[] const_copy = const_source
+    const_copy[0] = false
+    print(const_source[0])
+    print(const_copy[0])
+    bool[] const_assigned = []
+    const_assigned = const_source
+    const_assigned[0] = false
+    print(const_source[0])
+    print(const_assigned[0])
+
+    bool[] assigned = [false]
+    assigned = source
+    assigned[0] = false
+    print(source[0])
+    print(assigned[0])
+    assigned = make_flags(false)
+    print(assigned[0])
+    assigned = assigned
+    assigned[0] = true
+    print(assigned[0])
+    assigned = []
+    print(assigned.length())
+
+    bool[] empty_source = []
+    bool[] empty_copy = empty_source
+    print(empty_copy.length())
+    empty_copy.push(args.length() > 0)
+    print(empty_source.length())
+    print(empty_copy[0])
+    empty_copy = source
+    empty_copy[0] = false
+    print(source[0])
+    print(empty_copy[0])
+
+    copy_parameter(source)
+
+    bool[] global_copy = GLOBAL_FLAGS
+    global_copy[0] = false
+    print(GLOBAL_FLAGS[0])
+    print(global_copy[0])
+
+    BoolBox box = BoolBox([args.length() > 0])
+    bool[] field_copy = box.flags
+    field_copy[0] = false
+    print(box.flags[0])
+    print(field_copy[0])
+    bool[] field_assigned = []
+    field_assigned = box.flags
+    field_assigned[0] = false
+    print(box.flags[0])
+    print(field_assigned[0])
+
+    bool[] branched = []
+    if (source[0]):
+        branched = source
+    else:
+        branched = GLOBAL_FLAGS
+    branched[0] = false
+    print(source[0])
+
+    switch (args.length()):
+        case 1:
+            branched = source
+        default:
+            branched = GLOBAL_FLAGS
+    branched[0] = false
+    print(source[0])
+
+    bool[] loop_copy = []
+    for (int i = 0; i < 3; i++):
+        loop_copy = source
+        loop_copy[0] = false
+        print(source[0])
+
+    bool[] try_copy = []
+    try:
+        try_copy = source
+        throw 'bool-array-copy'
+    catch (exception err):
+        print(try_copy[0])
+
+    bool[] call_copy = make_flags(source[0])
+    call_copy[0] = false
+    print(source[0])
+    print(call_copy[0])
+    return 0

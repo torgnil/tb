@@ -33,6 +33,7 @@ Build and invocation details are documented in the repository or release `README
 2. Lexical rules
 
 - Strings: single quotes only. Example: `'hello'`.
+- String literals live for the duration of the program and can be stored in containers or passed to and returned from functions.
 - Supported string escapes inside single-quoted strings:
   - `\\`
   - `\'`
@@ -82,7 +83,7 @@ Build and invocation details are documented in the repository or release `README
 
   `const string greeting = 'hello';`
 
-  `const` bindings are compile-time enforced. Reassignment such as `answer = 7;` fails at compile time. Direct mutation through a const array, set, or record binding such as `nums.push(3);`, `nums[0] = 1;`, or `point.x = 2;` also fails at compile time.
+  `const` bindings are compile-time enforced. Reassignment such as `answer = 7;` fails at compile time. Direct mutation through a const array, set, or record binding such as `nums.push(3);`, `nums[0] = 1;`, or `point.x = 2;` also fails at compile time. Const controls mutation permission, not ownership: runtime-managed const locals are released with other function locals on normal function exit, and returning a const string preserves its value before that cleanup.
   By convention, fixed configuration values and named constants use `UPPER_CASE`.
 
 - Record declaration (example):
@@ -101,20 +102,46 @@ Build and invocation details are documented in the repository or release `README
 
   `cached` memoizes `int`-returning helper functions. The current implementation supports a single cacheable parameter such as `int`, `string`, `bool`, enums, and cacheable record values. Cached record parameters may contain scalar fields, nested cacheable records, and nested cacheable arrays such as `int[]`, `int[][]`, `string[]`, or `bool[][]`.
 
+  Native memoization currently covers one `int` parameter or a simple record with one or two `int` fields. These tables are synchronized across workers. The function body runs outside the cache lock, so recursive calls and exceptions remain supported. Simultaneous misses may evaluate the body more than once. A full native cache evaluates missing keys without storing them.
+
 6. Expressions and operators
 
 - Arithmetic: `+`, `-`, `*`, `/`, `%`.
 - Integer `/` and `%` use signed truncating division, matching LLVM runtime behavior. Division rounds toward zero, and the remainder keeps the sign of the left operand. Examples: `(0 - 5) / 3` is `-1`, `(0 - 5) % 3` is `-2`, `5 % (0 - 3)` is `2`, and `(0 - 5) % (0 - 3)` is `-2`.
 - Compile-time `num` arithmetic keeps the highest operand precision for `+`, `-`, `*`, and `/`. For example, `1.5 + 2.50` yields `4.00`, `2.50 * 1.5` yields `3.75`, and `2.50 / 1.5` yields `1.67`.
 - Bitwise integers: `&`, `|`, `^`, `<<`, `>>`.
-- Integer shifts require a non-negative shift count. Counts `>= 64` shift all bits out: `x << 64` becomes `0`, and `x >> 64` becomes `0` for non-negative `x` or `-1` for negative `x`.
+- Integer shifts require a non-negative shift count; a negative runtime count aborts. Counts `>= 64` shift all bits out: `x << 64` becomes `0`, and `x >> 64` becomes `0` for non-negative `x` or `-1` for negative `x`.
 - Comparison: `==`, `!=`, `<`, `<=`, `>`, `>=`.
 - Boolean: `&&`, `||`, unary `!` (and aliases `and`, `or`, `not`).
 - Assignment: `=`, with compound operators `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, and `>>=`, plus postfix `++` / `--` shorthand for identifier assignments.
-- Compound assignment also works on array element and record field targets such as `nums[i] += 1;`, `nums[i] >>= 1;`, and `point.x |= 1;`.
+- Compound assignment also works on array element and record field targets such as `nums[i] += 1;`, `nums[i] >>= 1;`, and `point.x |= 1;`. The target base and index are evaluated once, and the selected element or field value is read before the right-hand side. Negative array indices select their element before right-hand-side effects, including changes to the array length. Explicit ordinary assignment such as `nums[f()] = nums[f()] + 1;` evaluates both written calls independently.
 - Ternary (compile-time): `condition ? whenTrue : whenFalse`.
 - Lambdas: single-parameter lambdas such as `int x -> x * 2`, block lambdas such as `int[] row -> { return row[0] < 0; }`, and multi-parameter comparator lambdas such as `(int a, int b) -> a - b`.
 - UFCS (parser sugar): `value.method(args)` lowers to `method(value, args)` — parser-only sugar, no dynamic dispatch.
+
+### Thread pools and futures
+
+- `thread_pool(n)` creates an explicit pool with exactly `n` worker threads. `n` must be from `1` to `2147483647`. If allocation, synchronization initialization, or worker creation fails during startup, any started workers are stopped and joined, initialized resources are released, and the process exits with `thread_pool startup failed`. A partially started pool is never returned. Allocation failures are not handled uniformly, including failures during task submission.
+- `pool.submit(work)` or `pool.submit(work, value)` queues a top-level named function and returns `future<T>` immediately.
+- Const pool bindings support `submit`; const future bindings support `await`, `is_done`, and `wait_for`. Const still prevents reassignment.
+- Submitted functions may return `int`, `bool`, `string`, `int[]`, or `int[][]`; they may accept zero arguments or one `int`, `bool`, `string`, `int[]`, or `int[][]` argument.
+- `future.await()` blocks until completion and returns the task result. A task exception is rethrown by `await()` on the calling thread. The future preserves its message independently of submitted argument bindings; repeated awaits each produce a catch-owned message.
+- `future.is_done()` returns whether the task has completed without blocking.
+- `future.wait_for(milliseconds)` waits for the requested timeout using the system wall clock and returns whether the task completed; clock adjustments can affect the elapsed duration. It does not consume the result; call `await()` afterward. Nonpositive durations only check the current completion state. Avoid pool dependency deadlocks: tasks must not all block waiting for work queued to the same fixed-size pool.
+- String task arguments and results share immutable managed values across workers; repeated awaits preserve the result. Internal string reference counts, character caching, runtime counters, and native memoization tables for `cached` functions are synchronized. The scoped audit and concurrency/lifetime checks cover these runtime paths on macOS arm64; they do not establish safety for arbitrary user code or foreign libraries. User globals and mutable containers, including accesses made inside cached function bodies, are not synchronized.
+- `int[]` and `int[][]` arguments cross the queue as deep-copy snapshots. `int[]` and `int[][]` results are retained by their futures and each `await()` returns a fresh snapshot. Records, maps, sets, priority queues, files, pools, futures, and closures cannot yet be returned or otherwise passed across a task boundary.
+- Do not start worker tasks from global initializers if they may read globals that have not finished initializing. Initialize shared state before starting tasks, preferably from `main`.
+
+```tb
+int worker_id():
+    return 7
+
+int main(string[] args):
+    thread_pool pool = thread_pool(2)
+    future<int> id = pool.submit(worker_id)
+    print(id.await())
+    return 0
+```
 
 7. Statements and control flow
 
@@ -129,6 +156,7 @@ Build and invocation details are documented in the repository or release `README
 - For loops (C-style): `for (int i = 0; i < n; i++) { ... }` or `for (int i = 0; i < n; i++): ...` — lowers to structured IR with condition, body, update and end labels.
 - Foreach (array or set iteration): `for (string line : lines) { ... }`, `for (string line : lines): ...`, `for (string line in lines) { ... }`, or `for (string line in lines): ...`.
 - `for (int i : range(n))` iterates over the fixed array produced by `range(...)`; it does not observe later mutations to some other array while the loop runs.
+- Values changed in a runtime loop use their current iteration values, including in reads that appear before the write in the loop body. Unmodified constants remain eligible for compile-time folding.
 - Switch: `switch (expr) { case value: { ... } default: { ... } }` or:
 
   ```tb
@@ -141,7 +169,14 @@ Build and invocation details are documented in the repository or release `README
 
   Switch has no fallthrough and supports `int`, `string`, and enum values.
 - Continue and break are supported inside loop bodies, including nested `if` / `switch` blocks within `for`, `foreach`, and `while`.
+- A `continue` in a C-style `for` loop runs its update before testing the condition again; `break` and `return` skip the update.
 - `return;` is allowed inside `void` functions for early exit.
+- Reaching the end of a `void` function releases its managed local values just like an explicit `return;`. Borrowed parameters remain available to the caller.
+- Empty brace bodies such as `void noop(string text) {}` are allowed. Calls still evaluate their arguments, and borrowed values remain available to the caller. An empty `int main` returns `0`; other non-void functions must return a value or throw on every reachable path.
+- No extra trailing return is needed when every reachable path in a non-void function returns or throws.
+- Returning a local map transfers its owned value to the caller, which keeps it alive until that value is released. Mutable and const local maps follow this rule. Returning a borrowed parameter or global map produces an independent copy.
+- Returning a function-local `int[]`, `bool[]`, `int[][]`, or `string[]` transfers that owned array to the caller, which releases it normally. Const local arrays follow the same rule. Returning a borrowed parameter or global array produces an independent copy. Returning a borrowed `bool[]` field of a record parameter also produces an independent copy.
+- Returning a string from a function preserves the value before releasing that function's local variables. This includes direct local bindings and strings read from a local array or record field; borrowed parameters and literals keep their existing behavior.
 - Exceptions use `throw expr`, where `expr` must be string-compatible. `exception` is currently a string-backed alias for catch bindings.
 - Catch exceptions with `try` / `catch`:
 
@@ -152,17 +187,29 @@ Build and invocation details are documented in the repository or release `README
       print(err)
   ```
 
-  If an exception is not caught, the program prints `Unhandled exception: ...` and exits with a non-zero status.
+  A direct throw caught in the same function preserves preceding local mutations
+  and live arrays, strings, and other function-owned values. The catch receives
+  a string snapshot that remains valid if the original message binding changes.
+  Nested throws use the nearest active try; a throw from a catch uses an enclosing
+  try, if present. Catch messages own their string snapshot, including messages
+  thrown by another function or worker, and may be returned or rethrown safely.
+
+  If an exception is not caught, the program prints its message and exits with a non-zero status. Missing `read_file` and `read_lines` inputs print `<helper>: <path>` and exit with status 1 when uncaught. Nonlocal exception transfer can bypass cleanup in intervening function frames, leaking managed values or other owned resources. Catch inside the function that owns resources when cleanup matters; normal return paths perform cleanup. This is not general exception-unwind safety.
 
 8. Arrays and slices
 
 - Array literal: `['a', 'b', 'c']`.
-- Empty array literals are allowed in a typed context, for example `int[] nums = [];` or `string[] words = [];`.
-- Indexing: `arr[0]`, with negative indexing like `arr[-1]` (last element) supported for arrays and strings.
+- Empty array literals are allowed in a typed context, for example `int[] nums = [];`, `string[] words = [];`, or `box.values = [];` when `values` is an array-valued record field. The field's declared array type determines the empty array's element type.
+- Empty rows in a typed nested array literal use the row element type, for example `int[][] rows = [[1], []];` creates an empty `int[]` row.
+- Indexing: `arr[0]`, with negative indexing like `arr[-1]` (last element) supported for arrays and strings. For arrays, negative indices count from the end for both reads and writes: `arr[-length(arr)]` refers to the first element.
 - Slice notation with `[]` is supported for both arrays and strings. For example, `nums[1:3]` gives a subarray, and `text[2:5]` gives a substring. Open-ended, omitted-start, and negative-end slices are supported, e.g. `arr[1:]`, `text[:3]`, `text[:-1]`.
   - Negative end bounds follow Python-style exclusive semantics, so `text[:-1]` drops the last character and `nums[0:-1]` drops the last element.
   - Example (array): `int[] nums = [1, 2, 3, 4]; int[] mid = nums[1:3];  // [2, 3]`
   - Example (string): `string s = 'hello'; string sub = s[1:4];  // 'ell'`
+- Function-local `int[]` declarations and reassignment copy borrowed arrays, including const arrays, parameters, globals, indexed rows, and record fields. Mutating the copy leaves its source unchanged. Owned array literals and call results transfer into the local binding. Record construction and field replacement snapshot borrowed `int[]` arrays, and record cloning copies owned `int[]` fields; owned array temporaries transfer into the field. Returning an `int[]` field from a local record snapshots it before the record is released, while returning an owned local array transfers it directly to the caller.
+- Function-local `bool[]` declarations and reassignment also copy borrowed arrays, including const arrays, parameters, globals, and record fields. Mutating the copy leaves its source unchanged. Owned array literals and call results transfer into the local binding.
+- Function-local `string[][]` declarations and reassignment copy borrowed arrays by cloning the outer array and its child `string[]` arrays. Strings remain shared immutable values. Owned literals and call results transfer into the local binding.
+- Returning `string[][]` snapshots a borrowed parameter, global, or record field before local cleanup. Returning an owned local transfers it to the caller; nested array structure is independent while immutable strings are shared.
 - Runtime arrays are heap-backed when mutation or runtime flow requires it. Helpers: `push`, `pop`, `insert`, `remove_at`, `clear`, `sort`, `map_to`, `filter`, and `flat_map`.
 - `filter` keeps the elements whose predicate returns `true` and returns a new array of the same item type.
 - `prio_q<T>` is supported for runtime element types such as `int`, `bool`, `string`, enums, records, and arrays. Create one with `create_prio_q(values, comparator)` or UFCS form `values.create_prio_q(comparator)`, mutate it with `pq.push(value)`, test with `is_empty(pq)` or `pq.is_empty()`, and remove the highest-priority item with `pop(pq)` or `pq.pop()`. The queue copies the source array, so later mutations of the original array do not affect the queue.
@@ -176,6 +223,7 @@ Build and invocation details are documented in the repository or release `README
 
 - Access: `r.field`.
 - Field writes and reads lower to runtime heap-backed record values when needed.
+- Const record bindings allow field reads, including nested record fields and array-valued fields; the binding remains protected from direct field writes.
 
 10. Compile-time vs runtime evaluation
 
@@ -186,20 +234,28 @@ Build and invocation details are documented in the repository or release `README
   - `read_lines(path)` always reads `path` when the compiled program runs.
   - `read_file(path)` always reads `path` when the compiled program runs.
   - The compiler emits the file path string, not the file contents, into the generated LLVM.
-- Const enforcement is compile-time:
-  - reassigning a `const` variable is rejected during compilation
-  - direct mutation through a `const` array, set, or record binding is also rejected during compilation
+  - A missing input path reports the helper name and path and exits with status 1 when uncaught; inside a `try` block it can be caught as an exception.
+  - `open(path)` opens a file for writing; use `read_file` and `read_lines` to read files. Call `close(file)` when finished. File output helpers do not consistently report open, write, or close failures.
+- Const enforcement is compile-time and applies to the binding:
+  - reassigning a `const` variable and direct writes through its array, map, set, or record target are rejected during compilation
+  - known mutating array, set, and priority-queue operations through a `const` binding are rejected, including UFCS and free-function forms
+  - const maps support the same read operations as mutable maps, including indexed value reads, key membership, and `keys()` / `values()`
+  - passing a const value to an arbitrary user function does not make that function's parameters const
 - When values are not known at compile time, corresponding operations lower to runtime helpers and library calls.
+- Local declarations and reassignment transfer owned `int[]`, `bool[]`, `string[]`, `int[][]`, `string[][]`, map, and record temporaries. Assigning a managed local directly to itself preserves its existing value and ownership. Borrowed values keep their existing copy behavior, and reassignment to a different value releases the previous owned local value. Record fields of type `bool[]` are independent snapshots when constructed, replaced, or cloned; returning a bool-array field from a local record also returns an independent snapshot. Returning an owned local array transfers it to the caller, including a const local.
 
 11. Built-in calling and printing
 
 - `print(...)` is provided by the standard library (resolved via `compiler/python/stdlib.py`), not a keyword.
 - Integer printing uses `printf` with `%lld\n` via an emitted LLVM format string.
 - Runtime string concatenation with `int` and `num` values is supported; the compiler automatically converts numeric values to strings when concatenating or printing. Explicit `to_string()` is also available for supported types.
+- A runtime string concatenation produces an owned string value. Returning it transfers that value to the caller, while an unused result is released when its expression is dropped.
 
 12. Error reporting
 
-- Lexer and parser errors include exact line and column. Runtime errors raise descriptive messages.
+- Lexer and parser errors include exact line and column. Runtime errors print a diagnostic and exit non-zero when uncaught; the message format depends on the failing operation.
+- The self-hosted compiler writes generated LLVM before resolving all foreign-module build metadata. A later metadata failure can leave LLVM in the requested output path, so output preservation is not guaranteed for every compiler failure.
+- The `raylib` foreign module searches Homebrew roots under `/opt/homebrew/opt/raylib` and `/usr/local/opt/raylib`. Set `TB_RAYLIB_ROOT` to override discovery; the bundle does not include raylib or its external dependencies.
 
 13. Standard library (stdlib) reference
 
@@ -217,11 +273,14 @@ Core IO and string helpers
   - Read the entire file contents at runtime and return them as one string.
   - Return file contents as a single string.
 
-- open(path: string, mode: string = 'r') -> file
-  - Open a file handle for runtime file IO. Lowered to runtime file operations.
+- open(path: string) -> file
+  - Open a file handle for writing at runtime. Use `read_file` or `read_lines` for reads.
 
 - write_line(f: file, line: string) -> void
   - Append `line` with a newline to the file handle.
+
+- close(f: file) -> void
+  - Close a file handle after writing. Output failures from opening, writing, and closing are not consistently reported.
 
 Conversion and numeric helpers
 
@@ -315,9 +374,10 @@ Array helpers
 - remove_at(arr: T[], index: int) -> T
 
 - clear(arr: T[]) -> void
+  - For `string[]`, clear releases owned strings in live slots and keeps the array storage available for reuse. Also available as `arr.clear()`.
 
 - contains(arr: T[], value: T) -> bool
-  - Return `true` when the array contains `value`. Also available via UFCS (`arr.contains(value)`) and membership syntax (`value in arr`) for supported arrays, sets, and map keys.
+  - For `int[]`, `bool[]`, and `string[]`, return `true` when the array contains `value`. Also available via UFCS (`arr.contains(value)`) and membership syntax (`value in arr`). Queries borrow the array and item, preserve the array contents and length, and require the item type to match the array element type.
 
 - is_empty(x: string | T[] | set<T> | map<K, V> | prio_q<T>) -> bool
   - Return `true` when the value has no items. UFCS sugar such as `arr.is_empty()` and `scores.is_empty()` is supported.
@@ -339,17 +399,18 @@ Array helpers
   - Transform each element into an array and flatten the results by one level.
   - Example: `range(n).flat_map(int i -> edges_for_point(points, i))`
 
-- sum(arr: int[]) -> int
-  - Aggregate helper for integer arrays (compile-time for constant arrays).
+- sum(arr: int[] | bool[]) -> int
+  - Aggregate helper for integer and boolean arrays. `true` contributes 1 and `false` contributes 0; empty arrays sum to 0. Runtime calls borrow the array and do not modify it. Constant arrays may be folded at compile time.
 
-- abs(x: int | num) -> int | num
-  - Return the absolute value. `num` remains compile-time today; runtime lowering currently covers `int`.
+- abs(x: int | num) -> int | num — returns the value's magnitude and preserves a `num` value's decimal scale.
+  - Runtime lowering supports both `int` and `num` values; `value.abs()` is also supported through UFCS.
 
 - min(a: int | num, b: int | num) -> int | num
-  - Return the smaller value. `int` lowers at runtime; `num` is currently folded at compile time.
+  - Return the smaller value. Runtime lowering supports same-type `int` and `num` operands; `num` keeps the selected operand's scale. Equal values select the right operand.
 
 - max(a: int | num, b: int | num) -> int | num
-  - Return the larger value. `int` lowers at runtime; `num` is currently folded at compile time.
+  - Return the larger value. Runtime lowering supports same-type `int` and `num` operands; `num` keeps the selected operand's scale. Equal values select the right operand.
+  - UFCS forms `a.min(b)` and `a.max(b)` are supported for `int` and `num`.
 
 - sqrt(x: int | num) -> num
   - Return the square root as `num`. Constant inputs are folded at compile time.
@@ -357,12 +418,12 @@ Array helpers
 Set and map helpers
 
 - map literal syntax: `{'a': 1, 'b': 2}` in a typed context such as `map<string, int> counts = {'a': 1};`
-- empty map literal: `map<string, int> counts = {};`
+- empty map literal: `map<string, int> counts = {};` The declared map type supplies the key and value types for local and global declarations, including `const map<string, int> counts = {};`, and when resetting an existing mutable typed map with `counts = {};`.
 - `map<K, V>` supports cache-stringifiable keys such as `int`, `string`, arrays, and records with cache-stringifiable fields.
 - map.keys() -> `K[]`
 - map.values() -> `V[]`
 - contains(map<K, V>, key: K) -> bool
-  - Return `true` when `key` exists in the map. Also available as `map.contains(key)` and `key in map`.
+  - Return `true` when `key` exists in the map, including keys whose values are zero or empty strings. Also available as `map.contains(key)`, `key in map`, and the inverse `key not in map`, for mutable and const maps. Empty maps and missing keys return `false`. Queries borrow the key and leave keys, values, and length unchanged; the query key must match the map key type.
 - Set literals support cache-stringifiable complex values such as arrays and records, for example `set<Row> rows = {Row(1, 2)};`
 
 Hashing, misc

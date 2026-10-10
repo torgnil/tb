@@ -1,0 +1,42 @@
+int wait_for_tick():
+    int deadline = time_ms() + 200
+    while (time_ms() < deadline):
+        int unused = 0
+    return 1
+
+int answer():
+    return 42
+
+bool ready():
+    return true
+
+string label():
+    return 'done'
+
+int[] values():
+    return [2]
+
+int[][] rows():
+    return [[3]]
+
+int main(string[] args):
+    thread_pool pool = thread_pool(1)
+    future<int> gate = pool.submit(wait_for_tick)
+    future<int> queued = pool.submit(answer)
+    print(queued.wait_for(10))
+    print(gate.await())
+    print(queued.wait_for(1000))
+    print(queued.await())
+    future<bool> bool_result = pool.submit(ready)
+    future<string> string_result = pool.submit(label)
+    future<int[]> array_result = pool.submit(values)
+    future<int[][]> rows_result = pool.submit(rows)
+    print(bool_result.wait_for(1000))
+    bool bool_value = bool_result.await()
+    print(string_result.wait_for(1000))
+    string string_value = string_result.await()
+    print(array_result.wait_for(1000))
+    int[] array_value = array_result.await()
+    print(rows_result.wait_for(1000))
+    int[][] rows_value = rows_result.await()
+    return 0

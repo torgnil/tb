@@ -230,9 +230,7 @@ class LLVMEmitter:
         lines.append("")
         for string in module.strings:
             encoded = self._encode_string_literal(string.value)
-            lines.append(
-                f"@{string.label} = private unnamed_addr constant [{len(encoded)} x i8] c\"{self._escape_bytes(encoded)}\""
-            )
+            lines.extend(self._emit_static_string_global(string.label, encoded))
         for function in module.functions:
             if function.cached:
                 lines.append(f"@{self._cached_cache_symbol(function.name)} = internal global ptr null")
@@ -292,14 +290,8 @@ class LLVMEmitter:
             f"@{self.NEWLINE_LABEL} = private unnamed_addr constant [{len(self.NEWLINE_BYTES)} x i8] "
             f'c"{self._escape_bytes(self.NEWLINE_BYTES)}"'
         )
-        lines.append(
-            f"@{self.BOOL_TRUE_LABEL} = private unnamed_addr constant [{len(self.BOOL_TRUE_BYTES)} x i8] "
-            f'c"{self._escape_bytes(self.BOOL_TRUE_BYTES)}"'
-        )
-        lines.append(
-            f"@{self.BOOL_FALSE_LABEL} = private unnamed_addr constant [{len(self.BOOL_FALSE_BYTES)} x i8] "
-            f'c"{self._escape_bytes(self.BOOL_FALSE_BYTES)}"'
-        )
+        lines.extend(self._emit_static_string_global(self.BOOL_TRUE_LABEL, self.BOOL_TRUE_BYTES))
+        lines.extend(self._emit_static_string_global(self.BOOL_FALSE_LABEL, self.BOOL_FALSE_BYTES))
 
         lines.append("")
         string_lengths = {string.label: len(self._encode_string_literal(string.value)) for string in module.strings}
@@ -371,6 +363,18 @@ class LLVMEmitter:
             else:
                 parts.append(f"\\{byte:02X}")
         return "".join(parts)
+
+    def _emit_static_string_global(self, label: str, data: bytes) -> list[str]:
+        array_type = f"[{len(data)} x i8]"
+        storage_type = f"{{ {self.RC_HEADER_TYPE_NAME}, {array_type} }}"
+        storage_label = f"{label}.storage"
+        # Zero flags make retain/release leave this program-lifetime storage untouched.
+        return [
+            f"@{storage_label} = private unnamed_addr constant {storage_type} "
+            f"{{ {self.RC_HEADER_TYPE_NAME} zeroinitializer, {array_type} c\"{self._escape_bytes(data)}\" }}, align 8",
+            f"@{label} = private alias {array_type}, getelementptr inbounds ({storage_type}, "
+            f"ptr @{storage_label}, i32 0, i32 1)",
+        ]
 
     def _emit_runtime_helpers(self) -> list[str]:
         helpers = [
@@ -5630,8 +5634,18 @@ class LLVMEmitter:
             value_pointer = self._emit_value_pointer(instruction.item_type, instruction.value, lines, string_lengths, own_for_storage=True)
             array_pointer = self._emit_array_expression(IRVariable(instruction.target_name), lines, string_lengths)
             index = self._emit_integer_expression(instruction.index, lines)
+            len_pointer = self._next_temp("len")
+            length = self._next_temp("len")
+            is_negative = self._next_temp("neg")
+            normalized = self._next_temp("idx")
+            actual_index = self._next_temp("idx")
+            lines.append(f"  {len_pointer} = getelementptr inbounds {self.ARRAY_TYPE_NAME}, ptr {array_pointer}, i32 0, i32 0")
+            lines.append(f"  {length} = load i64, ptr {len_pointer}")
+            lines.append(f"  {is_negative} = icmp slt i64 {index}, 0")
+            lines.append(f"  {normalized} = add i64 {length}, {index}")
+            lines.append(f"  {actual_index} = select i1 {is_negative}, i64 {normalized}, i64 {index}")
             lines.append(
-                f"  call void @tb_array_set(ptr {array_pointer}, i64 {index}, ptr {value_pointer}, i64 {self._element_size(instruction.item_type)})"
+                f"  call void @tb_array_set(ptr {array_pointer}, i64 {actual_index}, ptr {value_pointer}, i64 {self._element_size(instruction.item_type)})"
             )
             return False
         if isinstance(instruction, IRMapSet):
@@ -6107,9 +6121,9 @@ class LLVMEmitter:
             self.break_labels.pop()
         if not terminated:
             lines.append(f"  br label %{update_label}")
-            lines.append(f"{update_label}:")
-            self._emit_instruction(instruction.update, lines, string_lengths)
-            lines.append(f"  br label %{condition_label}")
+        lines.append(f"{update_label}:")
+        self._emit_instruction(instruction.update, lines, string_lengths)
+        lines.append(f"  br label %{condition_label}")
         lines.append(f"{end_label}:")
         return False
 
@@ -6162,8 +6176,10 @@ class LLVMEmitter:
                 break
         if not else_terminated:
             lines.append(f"  br label %{end_label}")
-        lines.append(f"{end_label}:")
-        return then_terminated and else_terminated
+        terminated = then_terminated and else_terminated
+        if not terminated:
+            lines.append(f"{end_label}:")
+        return terminated
 
     def _emit_try_catch_statement(self, instruction: IRTryCatch, lines: list[str], string_lengths: dict[str, int]) -> bool:
         catch_label = self._next_label("catch")
@@ -6211,7 +6227,9 @@ class LLVMEmitter:
         if not catch_terminated:
             lines.append(f"  br label %{end_label}")
 
-        lines.append(f"{end_label}:")
+        terminated = terminated and catch_terminated
+        if not terminated:
+            lines.append(f"{end_label}:")
         if previous_slot is None:
             self.variable_slots.pop(instruction.catch_name, None)
             self.variable_types.pop(instruction.catch_name, None)
@@ -6219,7 +6237,7 @@ class LLVMEmitter:
             self.variable_slots[instruction.catch_name] = previous_slot
             if previous_type is not None:
                 self.variable_types[instruction.catch_name] = previous_type
-        return terminated and catch_terminated
+        return terminated
 
     def _emit_condition(self, condition: IRComparison, lines: list[str]) -> str:
         if isinstance(condition, IRLogicalCondition):

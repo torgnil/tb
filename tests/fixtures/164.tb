@@ -1,0 +1,58 @@
+int lifecycle_int(int value):
+    return value + 7
+
+bool lifecycle_bool(bool value):
+    return !value
+
+string lifecycle_string(string value):
+    return value + '!'
+
+string lifecycle_message(int value):
+    return 'failure-' + value
+
+int[] lifecycle_array(int[] values):
+    values[0] += 10
+    return values
+
+int[][] lifecycle_nested(int[][] values):
+    values[0][0] += 10
+    return values
+
+int fail_lifecycle_int(string message):
+    throw message
+
+bool fail_lifecycle_bool(string message):
+    throw message
+
+string fail_lifecycle_string(string message):
+    throw message
+
+int[] fail_lifecycle_array(string message):
+    throw message
+
+int[][] fail_lifecycle_nested(string message):
+    throw message
+
+void lifecycle_abandoned_scope():
+    thread_pool pool = thread_pool(2)
+    future<string> abandoned = pool.submit(lifecycle_string, 'abandoned')
+
+int main(string[] args):
+    int[] input = [args.length(), 9]
+    int[][] nested = [[args.length(), 8], []]
+    thread_pool pool = thread_pool(2)
+    future<int[]> first_pending = pool.submit(lifecycle_array, input)
+    future<int[][]> nested_pending = pool.submit(lifecycle_nested, nested)
+    input[0] = 20
+    nested[0][0] = 30
+    int[] first = first_pending.await()
+    int[][] nested_first = nested_pending.await()
+    first[0] = 99
+    nested_first[0][0] = 99
+    int[] second = first_pending.await()
+    int[][] nested_second = nested_pending.await()
+    print('input=' + input[0])
+    print('array=' + second[0] + ',' + second[1])
+    print('nested=' + nested_second[0][0] + ',' + nested_second[0][1] + ',' + nested_second[1].length())
+    lifecycle_abandoned_scope()
+    return 0

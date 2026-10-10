@@ -1,0 +1,142 @@
+const string[] RETURN_GLOBAL = ['global', 'tail']
+
+string[] return_local(int n):
+    string[] values = ['v' + n]
+    string[] spare = ['s' + n]
+    return values
+
+string[] return_empty():
+    string[] values = []
+    return values
+
+string[] return_const(int n):
+    const string[] values = ['c' + n]
+    return values
+
+string[] return_const_empty():
+    const string[] values = []
+    return values
+
+string[] return_literal(int n):
+    return ['lit' + n]
+
+string[] return_call(int n):
+    return return_local(n)
+
+string[] return_reassigned(int n):
+    string[] values = ['old' + n]
+    values = return_local(n)
+    return values
+
+string[] return_copy(string[] source):
+    string[] values = source
+    values[0] = 'copy-' + source[0]
+    return values
+
+string[] return_borrowed(string[] source):
+    return source
+
+string[] return_global():
+    return RETURN_GLOBAL
+
+string[] return_branch(int n):
+    if (n > 0):
+        string[] values = ['b' + n]
+        return values
+    string[] values = ['z' + n]
+    return values
+
+string[] return_switch(int n):
+    switch (n):
+        case 1:
+            string[] values = ['sw' + n]
+            return values
+        default:
+            string[] values = ['sd' + n]
+            return values
+
+string[] return_loop(int n):
+    string[] values = []
+    for (int i = 0; i < 2; i++):
+        values = ['l' + (n + i)]
+        if (i == 1):
+            return values
+    return values
+
+string[] return_try(int n):
+    try:
+        string[] values = ['tr' + n]
+        return values
+    catch (exception err):
+        string[] values = ['tx' + n]
+        return values
+
+string[] return_catch(int n):
+    try:
+        throw 'return-catch'
+    catch (exception err):
+        string[] values = ['ca' + n]
+        return values
+
+int main(string[] args):
+    int n = args.length()
+    string[] local = return_local(n)
+    print(local[0])
+    local[0] = 'changed'
+    print(local[0])
+
+    string[] empty = return_empty()
+    print(empty.length())
+    empty.push('m' + n)
+    print(empty[0])
+    string[] const_empty = return_const_empty()
+    const_empty.push('e' + n)
+    print(const_empty[0])
+    string[] fixed = return_const(n)
+    print(fixed[0])
+
+    string[] source = ['source', 'tail']
+    string[] copied = return_copy(source)
+    print(source[0])
+    print(copied[0])
+    string[] borrowed = return_borrowed(source)
+    borrowed[0] = 'borrowed'
+    print(source[0])
+    print(borrowed[0])
+
+    string[] global_copy = return_global()
+    global_copy[0] = 'copy-global'
+    print(RETURN_GLOBAL[0])
+    print(global_copy[0])
+
+    string[] reassigned = return_reassigned(n)
+    print(reassigned[0])
+    string[] branch = return_branch(n)
+    print(branch[0])
+    string[] branch_else = return_branch(0 - n)
+    print(branch_else[0])
+    string[] switched = return_switch(n)
+    print(switched[0])
+    string[] switch_default = return_switch(n + 2)
+    print(switch_default[0])
+    string[] looped = return_loop(n)
+    print(looped[0])
+    string[] tried = return_try(n)
+    print(tried[0])
+    string[] caught = return_catch(n)
+    print(caught[0])
+    string[] literal = return_literal(n)
+    print(literal[0])
+    string[] called = return_call(n)
+    print(called[0])
+
+    try:
+        string[] restored = return_try(n)
+        throw 'caller-throw'
+    catch (exception err):
+        print('caller-caught')
+
+    for (int i = 0; i < 5; i++):
+        string[] repeated = return_local(n + i)
+        print(repeated[0])
+    return 0

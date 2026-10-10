@@ -91,22 +91,6 @@ bool int_node_is(Node node, string value):
 bool identifier_node_is(Node node, string value):
     return node.kind == 'Identifier' && node.value == value
 
-bool nodes_match_for_assign_add(Node left, Node right):
-    if (left.kind != right.kind):
-        return false
-    if (left.value != right.value):
-        return false
-    if (left.kind == 'Identifier' || left.kind == 'Int' || left.kind == 'String'):
-        return true
-    if (left.children.length() != right.children.length()):
-        return false
-    int index = 0
-    while (index < left.children.length()):
-        if (!nodes_match_for_assign_add(left.children[index], right.children[index])):
-            return false
-        index += 1
-    return true
-
 bool is_local_self_add_assignment(Node target, Node value):
     if (target.kind != 'Identifier'):
         return false
@@ -115,15 +99,6 @@ bool is_local_self_add_assignment(Node target, Node value):
     if (value.children.length() != 2):
         return false
     return identifier_node_is(value.children[0], target.value)
-
-bool is_index_self_add_assignment(Node target, Node value):
-    if (target.kind != 'Index'):
-        return false
-    if (value.kind != 'Binary' || value.value != '+'):
-        return false
-    if (value.children.length() != 2):
-        return false
-    return nodes_match_for_assign_add(target, value.children[0])
 
 bool binding_index_node_is(Node node, string binding_name, string index_value):
     if (node.kind != 'Index'):
@@ -665,6 +640,20 @@ TempIRResult lower_linear_value_ir(Node node, int next_temp):
                 instructions.push(LinearInstruction('value', name, 'unknown', 'unknown', 'method-call-lambda', ['sum_grid_eq', base.name, mapped.children[1].value, grid.name, row.name, col.name, needle.name]))
                 return TempIRResult(name, instructions, needle.next_temp + 1)
         TempIRResult base = lower_linear_value_ir(node.children[0], next_temp)
+        if (node.value == 'submit'):
+            if (node.children.length() != 2 && node.children.length() != 3):
+                throw 'thread_pool.submit currently requires a function name with zero or one argument'
+            if (node.children[1].kind != 'Identifier'):
+                throw 'thread_pool.submit currently requires a top-level named function'
+            if (node.children.length() == 2):
+                string name = temp_name(base.next_temp)
+                LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', name, 'unknown', 'owned', 'method-call', ['submit', base.name, node.children[1].value])])
+                return TempIRResult(name, instructions, base.next_temp + 1)
+            TempIRResult arg = lower_linear_value_ir(node.children[2], base.next_temp)
+            string name = temp_name(arg.next_temp)
+            LinearInstruction[] instructions = append_instructions(base.instructions, arg.instructions)
+            instructions.push(LinearInstruction('value', name, 'unknown', 'owned', 'method-call', ['submit', base.name, node.children[1].value, arg.name]))
+            return TempIRResult(name, instructions, arg.next_temp + 1)
         if (node.value == 'create_prio_q'):
             if (node.children.length() == 2 && node.children[1].kind == 'Lambda2'):
                 if (is_identifier_subtraction_lambda(node.children[1])):
@@ -864,6 +853,45 @@ LinearBlockResult lower_linear_statement(Node node, int next_temp, string indent
         lines.push(indent + 'set ' + node.value + ' ' + value.name)
         return LinearBlockResult(lines, value.next_temp)
     if (node.kind == 'Assign'):
+        Node target_node = node.children[0]
+        if (target_node.kind == 'Field' || target_node.kind == 'Index'):
+            TempResult base = lower_linear_value(target_node.children[0], next_temp)
+            string[] lines = base.lines
+            int current_temp = base.next_temp
+            string item_name = ''
+            if (target_node.kind == 'Index'):
+                TempResult item = lower_linear_value(target_node.children[1], current_temp)
+                lines = append_lines(lines, item.lines)
+                item_name = item.name
+                current_temp = item.next_temp
+            Node rhs = node.children[1]
+            string old_name = ''
+            if (node.value != ''):
+                if (target_node.kind == 'Index'):
+                    string selected_name = temp_name(current_temp)
+                    lines.push(selected_name + ' = target-index ' + base.name + ' ' + item_name)
+                    item_name = selected_name
+                    current_temp += 1
+                old_name = temp_name(current_temp)
+                if (target_node.kind == 'Field'):
+                    lines.push(old_name + ' = field ' + target_node.value + ' ' + base.name)
+                else:
+                    lines.push(old_name + ' = index ' + base.name + ' ' + item_name)
+                current_temp += 1
+                rhs = node.children[1].children[1]
+            TempResult value = lower_linear_value(rhs, current_temp)
+            lines = append_lines(lines, value.lines)
+            string value_name = value.name
+            current_temp = value.next_temp
+            if (node.value != ''):
+                value_name = temp_name(current_temp)
+                lines.push(value_name + ' = binary ' + node.value + ' ' + old_name + ' ' + value.name)
+                current_temp += 1
+            if (target_node.kind == 'Field'):
+                lines.push('assign_field ' + target_node.value + ' ' + base.name + ' ' + value_name)
+            else:
+                lines.push('assign_index ' + base.name + ' ' + item_name + ' ' + value_name)
+            return LinearBlockResult(indent_lines(lines, indent), current_temp)
         if (is_local_self_add_assignment(node.children[0], node.children[1])):
             TempResult value = lower_linear_value(node.children[1].children[1], next_temp)
             string[] lines = []
@@ -920,28 +948,44 @@ LinearIRBlockResult lower_linear_statement_ir(Node node, int next_temp):
             TempIRResult value = lower_linear_value_ir(node.children[1], next_temp)
             LinearInstruction[] instructions = append_instructions(value.instructions, [LinearInstruction('assign_local', '', '', '', target.value, [value.name])])
             return LinearIRBlockResult(instructions, value.next_temp)
-        if (target.kind == 'Field'):
+        if (target.kind == 'Field' || target.kind == 'Index'):
             TempIRResult base = lower_linear_value_ir(target.children[0], next_temp)
-            TempIRResult value = lower_linear_value_ir(node.children[1], base.next_temp)
-            LinearInstruction[] instructions = append_instructions(base.instructions, value.instructions)
-            instructions.push(LinearInstruction('assign_field', '', '', '', target.value, [base.name, value.name]))
-            return LinearIRBlockResult(instructions, value.next_temp)
-        if (target.kind == 'Index'):
-            if (is_index_self_add_assignment(target, node.children[1])):
-                TempIRResult base = lower_linear_value_ir(target.children[0], next_temp)
-                TempIRResult item = lower_linear_value_ir(target.children[1], base.next_temp)
-                TempIRResult value = lower_linear_value_ir(node.children[1].children[1], item.next_temp)
-                LinearInstruction[] instructions = append_instructions(base.instructions, item.instructions)
-                instructions = append_instructions(instructions, value.instructions)
-                instructions.push(LinearInstruction('assign_index_add', '', '', '', '', [base.name, item.name, value.name]))
-                return LinearIRBlockResult(instructions, value.next_temp)
-            TempIRResult base = lower_linear_value_ir(target.children[0], next_temp)
-            TempIRResult item = lower_linear_value_ir(target.children[1], base.next_temp)
-            TempIRResult value = lower_linear_value_ir(node.children[1], item.next_temp)
-            LinearInstruction[] instructions = append_instructions(base.instructions, item.instructions)
+            LinearInstruction[] instructions = base.instructions
+            int current_temp = base.next_temp
+            string item_name = ''
+            if (target.kind == 'Index'):
+                TempIRResult item = lower_linear_value_ir(target.children[1], current_temp)
+                instructions = append_instructions(instructions, item.instructions)
+                item_name = item.name
+                current_temp = item.next_temp
+            Node rhs = node.children[1]
+            string old_name = ''
+            if (node.value != ''):
+                if (target.kind == 'Index'):
+                    string selected_name = temp_name(current_temp)
+                    instructions.push(LinearInstruction('value', selected_name, 'unknown', 'unknown', 'target-index', [base.name, item_name]))
+                    item_name = selected_name
+                    current_temp += 1
+                old_name = temp_name(current_temp)
+                if (target.kind == 'Field'):
+                    instructions.push(LinearInstruction('value', old_name, 'unknown', 'borrowed', 'field', [target.value, base.name]))
+                else:
+                    instructions.push(LinearInstruction('value', old_name, 'unknown', 'borrowed', 'index', [base.name, item_name]))
+                current_temp += 1
+                rhs = node.children[1].children[1]
+            TempIRResult value = lower_linear_value_ir(rhs, current_temp)
             instructions = append_instructions(instructions, value.instructions)
-            instructions.push(LinearInstruction('assign_index', '', '', '', '', [base.name, item.name, value.name]))
-            return LinearIRBlockResult(instructions, value.next_temp)
+            string value_name = value.name
+            current_temp = value.next_temp
+            if (node.value != ''):
+                value_name = temp_name(current_temp)
+                instructions.push(LinearInstruction('value', value_name, 'unknown', 'unknown', 'binary', [node.value, old_name, value.name]))
+                current_temp += 1
+            if (target.kind == 'Field'):
+                instructions.push(LinearInstruction('assign_field', '', '', '', target.value, [base.name, value_name]))
+            else:
+                instructions.push(LinearInstruction('assign_index', '', '', '', '', [base.name, item_name, value_name]))
+            return LinearIRBlockResult(instructions, current_temp)
         TempIRResult target_value = lower_linear_value_ir(target, next_temp)
         TempIRResult value = lower_linear_value_ir(node.children[1], target_value.next_temp)
         LinearInstruction[] instructions = append_instructions(target_value.instructions, value.instructions)
@@ -1722,7 +1766,232 @@ string[] lower_statement_lines(Node node, string indent):
         return lines
     return [indent + '<unsupported-stmt ' + node.kind + '>']
 
+BindingIR[] const_copy_bindings(BindingIR[] bindings):
+    BindingIR[] copied = []
+    for (BindingIR binding : bindings):
+        copied.push(binding)
+    return copied
+
+BindingIR const_lookup_binding(BindingIR[] bindings, string name):
+    int index = bindings.length() - 1
+    while (index >= 0):
+        if (bindings[index].name == name):
+            return bindings[index]
+        index -= 1
+    return BindingIR('', '')
+
+string const_target_root(Node target):
+    if (target.kind == 'Identifier'):
+        return target.value
+    if ((target.kind == 'Field' || target.kind == 'Index') && target.children.length() > 0):
+        return const_target_root(target.children[0])
+    return ''
+
+bool const_type_is_array(string type_name):
+    return type_name.ends_with('[]')
+
+bool const_method_mutates_type(string method, string type_name):
+    string value_type = type_name
+    if (value_type.starts_with('const ')):
+        value_type = value_type.substring(6)
+    if (method == 'add'):
+        return value_type.starts_with('set<')
+    if (method == 'push' || method == 'pop'):
+        return const_type_is_array(value_type) || value_type.starts_with('prio_q<')
+    if (method == 'insert' || method == 'remove_at' || method == 'clear' || method == 'sort'):
+        return const_type_is_array(value_type)
+    return false
+
+string const_type_of_expression(Node expression, BindingIR[] bindings, Node[] record_nodes):
+    if (expression.kind == 'Identifier'):
+        return const_lookup_binding(bindings, expression.value).type_name.substring(0)
+    if (expression.kind == 'Index' && expression.children.length() > 0):
+        string base_type = const_type_of_expression(expression.children[0], bindings, record_nodes)
+        if (base_type.starts_with('const ')):
+            base_type = base_type.substring(6)
+        if (base_type.ends_with('[]') && base_type.length() > 2):
+            return base_type.substring(0, base_type.length() - 2)
+        if (base_type.starts_with('map<')):
+            int depth = 0
+            int index = 0
+            while (index < base_type.length()):
+                string ch = base_type[index]
+                if (ch == '<'):
+                    depth += 1
+                else if (ch == '>'):
+                    depth -= 1
+                else if (ch == ',' && depth == 1):
+                    return base_type.substring(index + 2, base_type.length() - 1)
+                index += 1
+    if (expression.kind == 'Field' && expression.children.length() > 0):
+        string record_type = const_type_of_expression(expression.children[0], bindings, record_nodes)
+        if (record_type.starts_with('const ')):
+            record_type = record_type.substring(6)
+        for (Node record_node : record_nodes):
+            if (record_type == record_node.value):
+                for (Node field_node : record_node.children):
+                    BindingIR field = ir_parse_binding_decl(field_node.value)
+                    if (field.name == expression.value):
+                        return field.type_name.substring(0)
+    return ''
+
+bool const_method_mutates_receiver(string method, Node receiver, BindingIR[] bindings, Node[] record_nodes):
+    return const_method_mutates_type(method, const_type_of_expression(receiver, bindings, record_nodes))
+
+bool const_function_mutates_first_arg(string name):
+    return name == 'push' || name == 'pop' || name == 'insert' || name == 'remove_at' || name == 'clear' || name == 'sort' || name == 'add'
+
+void const_reject_mutation(BindingIR[] bindings, string root, bool assignment):
+    if (root == ''):
+        return
+    BindingIR binding = const_lookup_binding(bindings, root)
+    if (binding.name != '' && binding.type_name.starts_with('const ')):
+        if (assignment):
+            throw 'Cannot assign to const variable: ' + root
+        throw 'Cannot mutate const variable: ' + root
+
+void validate_const_expression(Node node, BindingIR[] bindings, string[] function_names, Node[] record_nodes):
+    if (node.kind == 'Lambda'):
+        BindingIR[] inner = const_copy_bindings(bindings)
+        inner.push(ir_parse_binding_decl(node.value))
+        if (node.children.length() > 0):
+            validate_const_expression(node.children[0], inner, function_names, record_nodes)
+        return
+    if (node.kind == 'Lambda2'):
+        BindingIR[] inner = const_copy_bindings(bindings)
+        int separator = node.value.index_of(' | ')
+        if (separator >= 0):
+            inner.push(ir_parse_binding_decl(node.value.substring(0, separator)))
+            inner.push(ir_parse_binding_decl(node.value.substring(separator + 3)))
+        if (node.children.length() > 0):
+            validate_const_expression(node.children[0], inner, function_names, record_nodes)
+        return
+    if (node.kind == 'Call'):
+        if (!(node.value in function_names) && const_function_mutates_first_arg(node.value) && node.children.length() > 0):
+            string root = const_target_root(node.children[0])
+            if (const_method_mutates_receiver(node.value, node.children[0], bindings, record_nodes)):
+                const_reject_mutation(bindings, root, false)
+        for (Node child : node.children):
+            validate_const_expression(child, bindings, function_names, record_nodes)
+        return
+    if (node.kind == 'MethodCall'):
+        if (node.children.length() > 0):
+            string root = const_target_root(node.children[0])
+            if (const_method_mutates_receiver(node.value, node.children[0], bindings, record_nodes)):
+                const_reject_mutation(bindings, root, false)
+        for (Node child : node.children):
+            validate_const_expression(child, bindings, function_names, record_nodes)
+        return
+    for (Node child : node.children):
+        validate_const_expression(child, bindings, function_names, record_nodes)
+
+void validate_const_statement(Node node, BindingIR[] bindings, string[] function_names, Node[] record_nodes):
+    if (node.kind == 'VarDecl'):
+        if (node.children.length() > 0):
+            validate_const_expression(node.children[0], bindings, function_names, record_nodes)
+        bindings.push(ir_parse_binding_decl(node.value))
+        return
+    if (node.kind == 'Assign'):
+        if (node.children.length() > 0):
+            string root = const_target_root(node.children[0])
+            const_reject_mutation(bindings, root, node.children[0].kind == 'Identifier')
+            validate_const_expression(node.children[0], bindings, function_names, record_nodes)
+        if (node.children.length() > 1):
+            validate_const_expression(node.children[1], bindings, function_names, record_nodes)
+        return
+    if (node.kind == 'ExprStmt' || node.kind == 'Return' || node.kind == 'Throw'):
+        for (Node child : node.children):
+            validate_const_expression(child, bindings, function_names, record_nodes)
+        return
+    if (node.kind == 'If'):
+        if (node.children.length() > 0):
+            validate_const_expression(node.children[0], bindings, function_names, record_nodes)
+        BindingIR[] then_bindings = const_copy_bindings(bindings)
+        BindingIR[] else_bindings = const_copy_bindings(bindings)
+        for (Node child : if_then_nodes(node)):
+            validate_const_statement(child, then_bindings, function_names, record_nodes)
+        for (Node child : if_else_nodes(node)):
+            validate_const_statement(child, else_bindings, function_names, record_nodes)
+        return
+    if (node.kind == 'While'):
+        if (node.children.length() > 0):
+            validate_const_expression(node.children[0], bindings, function_names, record_nodes)
+        BindingIR[] body_bindings = const_copy_bindings(bindings)
+        for (Node child : tail_nodes(node.children, 1)):
+            validate_const_statement(child, body_bindings, function_names, record_nodes)
+        return
+    if (node.kind == 'For'):
+        BindingIR[] loop_bindings = const_copy_bindings(bindings)
+        if (node.children.length() > 0):
+            validate_const_statement(node.children[0], loop_bindings, function_names, record_nodes)
+        if (node.children.length() > 1):
+            validate_const_expression(node.children[1], loop_bindings, function_names, record_nodes)
+        if (node.children.length() > 2):
+            validate_const_statement(node.children[2], loop_bindings, function_names, record_nodes)
+        BindingIR[] body_bindings = const_copy_bindings(loop_bindings)
+        for (Node child : lowerer_for_body_nodes(node)):
+            validate_const_statement(child, body_bindings, function_names, record_nodes)
+        return
+    if (node.kind == 'ForEach'):
+        if (node.children.length() > 0):
+            validate_const_expression(node.children[0], bindings, function_names, record_nodes)
+        BindingIR[] body_bindings = const_copy_bindings(bindings)
+        body_bindings.push(ir_parse_binding_decl(node.value))
+        for (Node child : tail_nodes(node.children, 1)):
+            validate_const_statement(child, body_bindings, function_names, record_nodes)
+        return
+    if (node.kind == 'Switch'):
+        if (node.children.length() > 0):
+            validate_const_expression(node.children[0], bindings, function_names, record_nodes)
+        for (Node branch : tail_nodes(node.children, 1)):
+            BindingIR[] branch_bindings = const_copy_bindings(bindings)
+            int start = 0
+            if (branch.kind == 'Case'):
+                if (branch.children.length() > 0):
+                    validate_const_expression(branch.children[0], bindings, function_names, record_nodes)
+                start = 1
+            for (Node child : tail_nodes(branch.children, start)):
+                validate_const_statement(child, branch_bindings, function_names, record_nodes)
+        return
+    if (node.kind == 'Try'):
+        BindingIR[] try_bindings = const_copy_bindings(bindings)
+        Node catch_part = catch_node(node)
+        for (Node child : try_body_nodes(node)):
+            validate_const_statement(child, try_bindings, function_names, record_nodes)
+        BindingIR[] catch_bindings = const_copy_bindings(bindings)
+        catch_bindings.push(ir_parse_binding_decl(catch_part.value))
+        for (Node child : catch_part.children):
+            validate_const_statement(child, catch_bindings, function_names, record_nodes)
+        return
+    for (Node child : node.children):
+        validate_const_expression(child, bindings, function_names, record_nodes)
+
+void validate_const_bindings(Node program):
+    BindingIR[] globals = []
+    string[] function_names = []
+    Node[] record_nodes = []
+    for (Node child : program.children):
+        if (child.kind == 'VarDecl'):
+            globals.push(ir_parse_binding_decl(child.value))
+        if (child.kind == 'Function' || child.kind == 'CachedFunction'):
+            BindingIR signature = ir_parse_binding_decl(child.value)
+            function_names.push(signature.name)
+        if (child.kind == 'RecordDecl'):
+            record_nodes.push(child)
+    for (Node child : program.children):
+        if (child.kind == 'VarDecl' && child.children.length() > 0):
+            validate_const_expression(child.children[0], globals, function_names, record_nodes)
+        if (child.kind == 'Function' || child.kind == 'CachedFunction'):
+            BindingIR[] function_bindings = const_copy_bindings(globals)
+            for (Node fn_child : child.children):
+                if (fn_child.kind == 'Param'):
+                    function_bindings.push(ir_parse_binding_decl(fn_child.value))
+            for (Node fn_child : child.children):
+                if (fn_child.kind != 'Param'):
+                    validate_const_statement(fn_child, function_bindings, function_names, record_nodes)
+
 string[] lower_program(Node program):
+    validate_const_bindings(program)
     string[] lines = ['program']
     for (Node child in program.children):
         string[] child_lines = lower_statement_lines(child, '  ')
@@ -1833,9 +2102,12 @@ BlockIR[] linear_instructions_to_blocks(LinearInstruction[] instructions):
         current_instructions.push(op)
     if (current_label != '' && (current_label != 'entry' || !current_instructions.is_empty() || current_terminator.kind != '')):
         blocks.push(make_block(current_label, current_instructions, current_terminator))
+    if (blocks.is_empty()):
+        blocks.push(make_block('entry', current_instructions, empty_terminator()))
     return blocks
 
 ProgramIR lower_program_ir(Node program):
+    validate_const_bindings(program)
     ImportDeclIR[] imports = []
     GlobalDeclIR[] globals = []
     RecordDeclIR[] records = []
@@ -1880,6 +2152,12 @@ ProgramIR lower_program_ir(Node program):
     return ProgramIR(imports, globals, records, enums, functions)
 
 ProgramIR lower_tokens_ir(Token[] tokens):
+    bool has_const = false
+    for (Token token : tokens):
+        if (token_is(token, 'KEYWORD', 'const')):
+            has_const = true
+    if (has_const):
+        validate_const_bindings(parse_program(tokens))
     ImportDeclIR[] imports = []
     GlobalDeclIR[] globals = []
     RecordDeclIR[] records = []

@@ -1,0 +1,29 @@
+# Const bindings allow reads while mutable bindings remain writable.
+record Point(int x, int y);
+
+const int GLOBAL_VALUE = 7;
+
+int read_global():
+    return GLOBAL_VALUE
+
+int point_x(Point point):
+    return point.x
+
+int shadow_global(int GLOBAL_VALUE):
+    GLOBAL_VALUE += 1
+    return GLOBAL_VALUE
+
+int main(string[] args):
+    const int[] values = [args.length() + 8]
+    const Point point = Point(args.length() + 2, GLOBAL_VALUE)
+    print(values[0])
+    print(point_x(point))
+    print(read_global())
+    print(shadow_global(args.length()))
+
+    int[] mutable_values = [args.length()]
+    mutable_values.push(4)
+    mutable_values[0] += 1
+    print(mutable_values[0])
+    print(mutable_values.length())
+    return 0

@@ -24,7 +24,7 @@ echo "[2/4] link stage1 compiler"
 clang -O2 "$stage1_ll" -o "$stage1_bin"
 
 echo "[3/4] build stage2 llvm"
-"$stage1_bin" "$source_file" "$stage2_ll"
+TB_RESOURCE_ROOT="$repo_root" "$stage1_bin" "$source_file" "$stage2_ll"
 
 echo "[4/4] link self-hosted compiler"
 clang -O2 "$stage2_ll" -o "$output_bin"

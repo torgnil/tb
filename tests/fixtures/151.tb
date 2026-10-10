@@ -1,0 +1,157 @@
+string[][] GLOBAL_ROWS = [['global']]
+
+record StringRows(string[][] values);
+
+string[][] make_rows(int n):
+    return [['call' + n], []]
+
+string[][] make_local_rows(int n):
+    string[][] rows = [['local' + n]]
+    return rows
+
+string[][] return_parameter(string[][] source):
+    return source
+
+string[][] return_global():
+    return GLOBAL_ROWS
+
+string[][] return_record_field(string[][] values):
+    StringRows holder = StringRows(values)
+    return holder.values
+
+string[][] return_const_local(int n):
+    const string[][] rows = [['const-local' + n]]
+    return rows
+
+void check_parameter(string[][] source):
+    string[][] copy = source
+    copy[0][0] = 'parameter'
+    copy[0].push('extra')
+    print(source[0][0])
+    print(source[0].length())
+
+void check_field(StringRows holder):
+    string[][] copy = holder.values
+    copy[0][0] = 'field'
+    print(holder.values[0][0])
+    print(copy[0][0])
+
+int main(string[] args):
+    int n = args.length()
+    string[][] source = [['v' + n], ['s' + n]]
+    string[][] declared = source
+    declared[0][0] = 'declared'
+    declared[0].push('extra')
+    print(source[0][0])
+    print(source[0].length())
+    print(declared[0][0])
+    print(declared[0].length())
+    print(source[1][0])
+
+    string[][] reassigned = [['old']]
+    reassigned = source
+    reassigned = reassigned
+    reassigned[0][0] = 'reassigned'
+    print(source[0][0])
+    print(reassigned[0][0])
+
+    const string[][] frozen = source
+    string[][] const_copy = frozen
+    const_copy[0][0] = 'const-copy'
+    print(frozen[0][0])
+    print(const_copy[0][0])
+
+    check_parameter(source)
+    string[][] global_copy = GLOBAL_ROWS
+    global_copy[0][0] = 'global-copy'
+    print(GLOBAL_ROWS[0][0])
+    print(global_copy[0][0])
+    StringRows holder = StringRows(source)
+    check_field(holder)
+    StringRows cloned_holder = holder
+    cloned_holder.values[0][0] = 'record-copy'
+    print(holder.values[0][0])
+    print(cloned_holder.values[0][0])
+    holder.values = source
+    holder.values[0][0] = 'field-reassigned'
+    print(source[0][0])
+    print(cloned_holder.values[0][0])
+    holder.values = holder.values
+    holder.values[0][0] = 'field-self'
+    print(holder.values[0][0])
+    print(source[0][0])
+
+    string[][] empty_outer = []
+    string[][] empty_copy = empty_outer
+    empty_copy = [[]]
+    print(empty_outer.length())
+    print(empty_copy.length())
+    print(empty_copy[0].length())
+
+    string[][] empty_children = [[], ['row' + n]]
+    string[][] child_copy = empty_children
+    child_copy[0].push('filled')
+    child_copy[1][0] = 'copy-row'
+    print(empty_children[0].length())
+    print(empty_children[1][0])
+    print(child_copy[0].length())
+    print(child_copy[1][0])
+
+    string[][] literal = [['literal' + n]]
+    literal[0].push('tail')
+    print(literal[0].length())
+    string[][] called = make_rows(n)
+    print(called[0][0])
+    print(called[1].length())
+    string[][] returned = make_local_rows(n)
+    print(returned[0][0])
+    string[][] parameter_return = return_parameter(source)
+    parameter_return[0][0] = 'parameter-return'
+    print(source[0][0])
+    print(parameter_return[0][0])
+    string[][] global_return = return_global()
+    global_return[0][0] = 'global-return'
+    print(GLOBAL_ROWS[0][0])
+    print(global_return[0][0])
+    string[][] field_return = return_record_field(source)
+    field_return[0][0] = 'field-return'
+    print(source[0][0])
+    print(field_return[0][0])
+    string[][] const_local_return = return_const_local(n)
+    print(const_local_return[0][0])
+    StringRows literal_holder = StringRows([['record-literal' + n]])
+    string[][] owned_record_literal = literal_holder.values
+    print(owned_record_literal[0][0])
+    StringRows call_holder = StringRows(make_rows(n))
+    string[][] owned_record_call = call_holder.values
+    print(owned_record_call[0][0])
+
+    if (n > 0):
+        string[][] branch_copy = source
+        branch_copy[0][0] = 'branch'
+        print(source[0][0])
+    switch (n):
+        case 1:
+            string[][] switch_copy = source
+            switch_copy[0][0] = 'switch'
+            print(source[0][0])
+        default:
+            print('default')
+    for (int i = 0; i < 2; i++):
+        string[][] loop_copy = source
+        loop_copy[0][0] = 'loop'
+    print(source[0][0])
+    try:
+        string[][] try_copy = source
+        try_copy[0][0] = 'try'
+        throw 'array-copy'
+    catch (exception err):
+        string[][] catch_copy = source
+        catch_copy[0][0] = 'catch'
+        print(source[0][0])
+
+    for (int i = 0; i < 3; i++):
+        string[][] repeated = source
+        repeated[0][0] = 'repeat'
+        print(source[0][0])
+    return 0

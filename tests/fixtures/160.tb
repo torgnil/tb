@@ -1,0 +1,95 @@
+record Message(string text);
+
+int fail_int(string text):
+    throw text
+
+bool fail_bool(string text):
+    throw text
+
+string fail_string(string text):
+    throw text + '!'
+
+int[] fail_array(string text):
+    throw text
+
+int[][] fail_rows(string text):
+    throw 'literal failure'
+
+int fail_field(int n):
+    Message message = Message('field-' + n)
+    throw message.text
+
+int fail_index(int n):
+    string[] words = ['index-' + n]
+    throw words[0]
+
+int fail_const(int n):
+    const string message = 'const-' + n
+    throw message
+
+string escaped(string text):
+    thread_pool pool = thread_pool(2)
+    future<int> failed = pool.submit(fail_int, text)
+    try:
+        int ignored_1 = failed.await()
+    catch (exception err):
+        return err
+    return ''
+
+int main(string[] args):
+    int n = args.length()
+    string text = 'message-' + n
+    thread_pool pool = thread_pool(4)
+    future<int> a = pool.submit(fail_int, text)
+    future<bool> b = pool.submit(fail_bool, text)
+    future<string> c = pool.submit(fail_string, text)
+    future<int[]> d = pool.submit(fail_array, text)
+    future<int[][]> e = pool.submit(fail_rows, text)
+    text = 'replacement-' + n
+    int i = 0
+    while (i < 2):
+        try:
+            int ignored_2 = a.await()
+        catch (exception err):
+            print(err)
+        try:
+            bool ignored_3 = b.await()
+        catch (exception err):
+            print(err)
+        try:
+            string ignored_4 = c.await()
+        catch (exception err):
+            print(err)
+        try:
+            int[] ignored_5 = d.await()
+        catch (exception err):
+            print(err)
+        try:
+            int[][] ignored_6 = e.await()
+        catch (exception err):
+            print(err)
+        i++
+    print(text)
+    try:
+        int ignored_7 = fail_field(n)
+    catch (exception err):
+        print(err)
+    try:
+        int ignored_8 = fail_index(n)
+    catch (exception err):
+        print(err)
+    try:
+        int ignored_9 = fail_const(n)
+    catch (exception err):
+        print(err)
+    string saved = escaped('escaped-' + n)
+    try:
+        try:
+            throw saved
+        catch (exception inner):
+            saved = 'changed'
+            throw inner
+    catch (exception outer):
+        print(outer)
+    print(saved)
+    return 0

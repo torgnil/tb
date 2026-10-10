@@ -1,0 +1,112 @@
+# Compound targets capture their base, index, and old value before the RHS.
+record Box(int value);
+
+int index(int[] calls):
+    calls[0] += 1
+    return -1
+
+int ordered_index(int[] calls):
+    calls[0] += 10
+    return 0
+
+int mutate(int[] values, int[] calls):
+    calls[0] += 1
+    values[0] = 99
+    return 3
+
+int grow(int[] values):
+    values.push(99)
+    return 3
+
+string key(int[] calls):
+    calls[0] += 1
+    return 'key'
+
+int main(string[] args):
+    # Runtime inputs keep array observations from being folded.
+    int[] calls = [args.length() - 1]
+    int[] values = [args.length() + 19]
+    values[0] = args.length() + 19
+    values[index(calls)] += 3
+    print(values[0])
+    values[0] = args.length() + 19
+    values[index(calls)] -= 3
+    print(values[0])
+    values[0] = args.length() + 19
+    values[index(calls)] *= 3
+    print(values[0])
+    values[0] = args.length() + 19
+    values[index(calls)] /= 3
+    print(values[0])
+    values[0] = args.length() + 19
+    values[index(calls)] %= 3
+    print(values[0])
+    values[0] = args.length() + 19
+    values[index(calls)] &= 3
+    print(values[0])
+    values[0] = args.length() + 19
+    values[index(calls)] |= 3
+    print(values[0])
+    values[0] = args.length() + 19
+    values[index(calls)] ^= 3
+    print(values[0])
+    values[0] = args.length() + 19
+    values[index(calls)] <<= 3
+    print(values[0])
+    values[0] = args.length() + 19
+    values[index(calls)] >>= 3
+    print(values[0])
+    print(calls[0])
+
+    calls[0] = 0
+    values[0] = args.length() + 9
+    values[ordered_index(calls)] += mutate(values, calls)
+    print(calls[0])
+    print(values[0])
+    calls[0] = 0
+    values[0] = args.length() + 9
+    values[ordered_index(calls)] -= mutate(values, calls)
+    print(calls[0])
+    print(values[0])
+
+    calls[0] = 0
+    values[0] = args.length() + 9
+    values[index(calls)] += grow(values)
+    print(calls[0])
+    print(values.length())
+    print(values[0])
+    print(values[1])
+
+    calls[0] = 0
+    values = [args.length() + 9]
+    # The two explicitly written calls still both run.
+    values[index(calls)] = values[index(calls)] + 1
+    print(calls[0])
+    print(values[0])
+
+    calls[0] = 0
+    values[0] = args.length() + 19
+    int i = 0
+    while (i < args.length() + 1):
+        if (i == 0):
+            values[index(calls)] += 3
+        else:
+            if (i == 1):
+                values[index(calls)] -= 2
+        i += 1
+    print(calls[0])
+    print(values[0])
+
+    int scalar = args.length() + 4
+    scalar += 1
+    Box box = Box(args.length() + 19)
+    box.value |= 1
+    print(scalar)
+    print(box.value)
+
+    calls[0] = 0
+    map<string, int> counts = {'key': args.length() + 9}
+    counts[key(calls)] -= 3
+    print(calls[0])
+    print(counts['key'])
+    return 0

@@ -1,0 +1,107 @@
+record Row(string label, int value);
+
+enum Mode {
+    READY,
+    DONE
+}
+
+int worker(int value):
+    return value + 2
+
+int mutate_borrowed(Row source, int amount):
+    source = source
+    source.value += amount
+    return source.value
+
+string return_after_self_assignment(string value):
+    value = value
+    return value
+
+int local_cleanup_after_self_assignment(int seed):
+    string local = 'early-' + seed
+    local = local
+    return local.length()
+
+int main(string[] args):
+    int n = args.length()
+
+    string text = 'text-' + n
+    text = text
+    text = text
+    print(text)
+    text = text + '-computed'
+    print(text)
+    print(return_after_self_assignment('returned-' + n))
+
+    string[] words = ['word-' + n, 'tail-' + n]
+    words = words
+    words = words
+    words[0] = 'updated-' + n
+    print(words[0])
+    print(words[1])
+
+    int[] numbers = [n + 3, n + 4]
+    numbers = numbers
+    numbers[0] += 10
+    print(numbers[0])
+
+    int[][] rows = [[n + 5, n + 6], [n + 7]]
+    rows = rows
+    rows = rows
+    rows[0][1] += 20
+    print(rows[0][0])
+    print(rows[0][1])
+    print(rows[1][0])
+
+    map<string, int> counts = {'key': n + 8}
+    counts = counts
+    counts = counts
+    counts['key'] += 30
+    print(counts['key'])
+
+    set<int> values = {n + 9, n + 10}
+    values = values
+    print(values.length())
+    print(n + 9 in values)
+
+    Row item = Row('record-' + n, n + 11)
+    item = item
+    item = item
+    item.value += 40
+    item.label = 'updated-record-' + n
+    print(item.label)
+    print(item.value)
+    print(mutate_borrowed(item, n + 50))
+    print(item.value)
+
+    if (n > 0):
+        text = text
+    else:
+        text = text
+    for (int i : range(2)):
+        words = words
+        rows = rows
+    print(text)
+    print(words[0])
+    print(rows[0][1])
+    print(local_cleanup_after_self_assignment(n))
+
+    Mode mode = Mode.READY
+    mode = mode
+    print(mode)
+    int scalar = n + 60
+    scalar = scalar
+    print(scalar)
+
+    try:
+        throw 'caught-' + n
+    catch (exception err):
+        err = err
+        print(err)
+
+    thread_pool pool = thread_pool(1)
+    pool = pool
+    future<int> result = pool.submit(worker, n + 70)
+    result = result
+    print(result.await())
+    return 0

@@ -1,0 +1,121 @@
+const int[] GLOBAL_INTS = [0, 5]
+const bool[] GLOBAL_FLAGS = [false, true]
+const string[] GLOBAL_WORDS = ['', 'hello']
+int[] MUTABLE_GLOBAL_INTS = [3, 9]
+
+record ArrayFields(int[] numbers, bool[] flags, string[] words);
+
+int evaluation_order = 0
+
+bool contains(int left, int right):
+    return left == right
+
+int[] counted_receiver():
+    evaluation_order = evaluation_order * 10 + 1
+    return [7]
+
+int counted_item():
+    evaluation_order = evaluation_order * 10 + 2
+    return 7
+
+bool int_parameter_query(int[] values, int item):
+    return contains(values, item) && values.contains(item)
+
+bool bool_parameter_query(bool[] values, bool item):
+    return contains(values, item) && values.contains(item)
+
+bool string_parameter_query(string[] values, string item):
+    return contains(values, item) && values.contains(item)
+
+int[] returned_ints():
+    return [8, 0]
+
+bool[] returned_flags():
+    return [true, false]
+
+string[] returned_words():
+    return ['', 'world']
+
+int main(string[] args):
+    int[] numbers = [0, 5]
+    bool[] flags = [false, true]
+    string[] words = ['', 'hello']
+    const int[] fixed_numbers = [0, 5]
+    const bool[] fixed_flags = [false, true]
+    const string[] fixed_words = ['', 'hello']
+
+    print(contains(numbers, 0))
+    print(numbers.contains(5))
+    print(contains(numbers, 9))
+    print(numbers.contains(9))
+    print(contains(fixed_numbers, 5))
+    print(fixed_numbers.contains(0))
+    print(contains(GLOBAL_INTS, 0))
+    print(GLOBAL_INTS.contains(5))
+    print(contains(MUTABLE_GLOBAL_INTS, 3))
+    print(MUTABLE_GLOBAL_INTS.contains(9))
+    print(int_parameter_query(numbers, 5))
+    print(contains([1, 2], 2))
+    print(returned_ints().contains(0))
+    int[] empty_numbers = []
+    print(contains(empty_numbers, 0))
+    print(empty_numbers.contains(1))
+
+    print(contains(flags, false))
+    print(flags.contains(true))
+    print(contains(flags, true))
+    print(flags.contains(false))
+    print(false in flags)
+    print(false not in flags)
+    print(contains(fixed_flags, false))
+    print(fixed_flags.contains(true))
+    print(contains(GLOBAL_FLAGS, false))
+    print(GLOBAL_FLAGS.contains(true))
+    print(bool_parameter_query(flags, false))
+    bool[] empty_flags = []
+    print(contains(empty_flags, false))
+    print(empty_flags.contains(true))
+    print(returned_flags().contains(false))
+
+    print(contains(words, ''))
+    print(words.contains('hello'))
+    print(contains(words, 'missing'))
+    print(words.contains('missing'))
+    print('hello' in words)
+    print('missing' not in words)
+    print(contains(fixed_words, ''))
+    print(fixed_words.contains('hello'))
+    print(contains(GLOBAL_WORDS, ''))
+    print(GLOBAL_WORDS.contains('hello'))
+    print(string_parameter_query(words, ''))
+    string[] empty_words = []
+    print(contains(empty_words, ''))
+    print(empty_words.contains('hello'))
+    print(returned_words().contains(''))
+
+    print(contains(numbers, 0))
+    numbers[0] = 3
+    numbers.push(9)
+    print(contains(numbers, 0))
+    print(numbers.contains(3))
+    print(contains(numbers, 9))
+
+    ArrayFields fields = ArrayFields([0], [false], [''])
+    print(contains(fields.numbers, 0))
+    print(fields.numbers.contains(1))
+    print(contains(fields.flags, false))
+    print(fields.flags.contains(true))
+    print(contains(fields.words, ''))
+    print(fields.words.contains('x'))
+
+    print(contains(counted_receiver(), counted_item()))
+    print(evaluation_order)
+    evaluation_order = 0
+    print(counted_receiver().contains(counted_item()))
+    print(evaluation_order)
+
+    print(2 in numbers)
+    print(2 not in numbers)
+    print(contains(5, 5))
+    print(5.contains(5))
+    return 0

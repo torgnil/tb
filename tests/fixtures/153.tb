@@ -1,0 +1,52 @@
+record FlagBox(bool[] values);
+
+const bool[] GLOBAL_FLAGS = [true, false, true]
+const int[] GLOBAL_NUMBERS = [1, 2, 3]
+
+int sum(int value):
+    return value + 10
+
+int sum_borrowed(bool[] values):
+    return values.sum()
+
+bool[] make_flags():
+    return [true, false, true]
+
+bool[] receiver_once():
+    print('receiver')
+    return [true, false, true]
+
+int main(string[] args):
+    print(sum(GLOBAL_FLAGS))
+    print(GLOBAL_FLAGS.sum())
+    print(sum(GLOBAL_NUMBERS))
+    print(GLOBAL_NUMBERS.sum())
+
+    bool[] flags = [args.length() > 1, false, true]
+    print(sum(flags))
+    print(flags.sum())
+    print(sum_borrowed(flags))
+
+    int[] numbers = [-4, args.length(), 5]
+    print(sum(numbers))
+    print(numbers.sum())
+
+    bool[] no_flags = []
+    int[] no_numbers = []
+    print(sum(no_flags))
+    print(no_flags.sum())
+    print(sum(no_numbers))
+    print(no_numbers.sum())
+
+    const bool[] fixed_flags = [true, false, true]
+    print(fixed_flags.sum())
+    FlagBox box = FlagBox([args.length() > 1, false, true])
+    print(box.values.sum())
+
+    bool[] returned_flags = make_flags()
+    print(sum(returned_flags))
+    print(receiver_once().sum())
+    flags.push(args.length() > 1)
+    print(flags.sum())
+    print(sum(2))
+    return 0

@@ -527,7 +527,7 @@ ParseResult parse_increment_from_target(Token[] tokens, Node target_node, int ne
         binary_op = '-'
     Node one_value = Node('Int', '1', [])
     Node compound_value = Node('Binary', binary_op, [target_node, one_value])
-    return ParseResult(Node('Assign', '', [target_node, compound_value]), next_index + 1)
+    return ParseResult(Node('Assign', binary_op, [target_node, compound_value]), next_index + 1)
 
 ParseResult parse_assignment_from_target(Token[] tokens, Node target_node, int next_index):
     if (!is_assignment_target(target_node)):
@@ -545,7 +545,7 @@ ParseResult parse_assignment_from_target(Token[] tokens, Node target_node, int n
     else if (op_value == '>>='):
         binary_op = '>>'
     Node compound_value = Node('Binary', binary_op, [target_node, value.node])
-    return ParseResult(Node('Assign', '', [target_node, compound_value]), value.next_index)
+    return ParseResult(Node('Assign', binary_op, [target_node, compound_value]), value.next_index)
 
 ParseResult parse_increment_statement(Token[] tokens, int index):
     ParseResult target = parse_postfix(tokens, index)

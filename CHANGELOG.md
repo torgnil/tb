@@ -2,6 +2,53 @@
 
 All notable changes to tb will be documented in this file.
 
+## [0.2.0] - Unreleased
+
+### Added
+- Explicit thread pools and futures for top-level named worker functions.
+- Worker functions may take zero arguments or one argument of type `int`,
+  `bool`, `string`, `int[]`, or `int[][]`. Results may independently use any of
+  those five types.
+- Futures provide `await()`, `is_done()`, and `wait_for(milliseconds)`.
+- Worker exceptions are rethrown by `await()`. Managed string arguments and
+  results are shared as immutable values, while `int[]` and `int[][]` cross the
+  task boundary as snapshots; each array result await returns a fresh snapshot.
+- Missing runtime input files passed to `read_file` or `read_lines` report the
+  helper name and path, then exit non-zero when uncaught.
+- Native cached functions synchronize memo-table access for the supported key
+  types. Simultaneous misses may evaluate the function more than once; a full
+  table returns an uncached result.
+- A standalone macOS arm64 compiler bundle.
+
+### Limitations
+- Records, maps, sets, priority queues, files, pools, futures, and closures are
+  not supported as task arguments or results. Only top-level named functions
+  with the signatures above can be submitted.
+- Worker threads do not synchronize user globals or mutable containers shared
+  by task code. The scoped runtime-state audit, concurrency stress, and lifetime
+  checks for supported task values are complete on macOS arm64; they do not
+  cover arbitrary user code or foreign libraries. Initialize globals before
+  starting tasks, and start work from `main` rather than a global initializer
+  if workers can read those globals.
+- Allocation failures are not handled uniformly, including task submission.
+  Exceptions that jump across function frames can skip cleanup in those frames
+  and leak managed values or other owned resources. Catch inside the function
+  that owns resources when cleanup matters; normal return paths perform cleanup.
+- A fixed-size pool can deadlock if every worker waits for work queued to the
+  same pool. `wait_for` uses the system wall clock, so clock adjustments can
+  affect its elapsed duration.
+- File output helpers close opened handles, but do not consistently report
+  failures from opening, writing, or closing files. Some self-hosted compiler
+  errors while resolving foreign-module build metadata can leave generated LLVM
+  in the output path.
+- The current candidate compiler targets macOS 26.0 or newer and has been
+  verified on macOS 26.6.2 arm64. Other macOS versions and architectures have
+  not been validated. External `raylib` dependencies are not included; set
+  `TB_RAYLIB_ROOT` to a raylib installation when compiling a program that
+  imports it.
+
+See [docs/tb.md](docs/tb.md) for the detailed thread-pool language reference.
+
 ## [0.1.0] - 2026-06-20
 
 ### Added

@@ -1,0 +1,70 @@
+int add_two(int value):
+    return value + 2
+
+int answer():
+    return 42
+
+bool ready():
+    return true
+
+string label():
+    return 'done'
+
+int[] values():
+    return [2, 3]
+
+int[][] rows():
+    return [[4], [5]]
+
+int[][] fail_rows(int suffix):
+    throw 'const future task failed ' + suffix
+
+int main(string[] args):
+    const thread_pool const_pool = thread_pool(1)
+    future<int> mutable_future = const_pool.submit(add_two, 5)
+    print(mutable_future.await())
+
+    const future<int> const_future = const_pool.submit(answer)
+    print(const_future.await())
+    print(const_future.is_done())
+    print(const_future.wait_for(10))
+    print(const_future.wait_for(0))
+    print(const_future.wait_for(-1))
+
+    thread_pool mutable_pool = thread_pool(1)
+    const future<bool> bool_future = mutable_pool.submit(ready)
+    print(bool_future.await())
+    print(bool_future.is_done())
+    print(bool_future.wait_for(0))
+    const future<string> string_future = mutable_pool.submit(label)
+    print(string_future.await())
+    print(string_future.is_done())
+    print(string_future.wait_for(0))
+
+    const future<int[]> array_future = const_pool.submit(values)
+    int[] first_snapshot = array_future.await()
+    print(array_future.is_done())
+    print(array_future.wait_for(0))
+    first_snapshot[0] = 99
+    int[] second_snapshot = array_future.await()
+    print(second_snapshot[0])
+    print(second_snapshot[1])
+
+    const future<int[][]> rows_future = const_pool.submit(rows)
+    int[][] first_rows = rows_future.await()
+    print(rows_future.is_done())
+    print(rows_future.wait_for(0))
+    first_rows[0][0] = 99
+    int[][] second_rows = rows_future.await()
+    print(second_rows[0][0])
+    print(second_rows[1][0])
+
+    const thread_pool both_const_pool = thread_pool(1)
+    const future<int[][]> failed_future = both_const_pool.submit(fail_rows, 5)
+    try:
+        int[][] ignored = failed_future.await()
+    catch (exception err):
+        print(err)
+    const future<int> recovered_future = both_const_pool.submit(add_two, 8)
+    print(recovered_future.await())
+    return 0

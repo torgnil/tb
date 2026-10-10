@@ -1,0 +1,140 @@
+record Numbers(int[] values);
+record NestedNumbers(Numbers inner);
+
+const int[] GLOBAL_VALUES = [40, 41]
+
+int[] make_values(int value):
+    return [value, value + 1]
+
+Numbers make_numbers(int[] source):
+    return Numbers(source)
+
+int[] return_parameter(int[] source):
+    return source
+
+int[] return_local_field(int value):
+    Numbers local = Numbers([value, value + 1])
+    return local.values
+
+int[] return_branch_field(int[] source, int selector):
+    if (selector > 0):
+        Numbers local = Numbers(source)
+        return local.values
+    return source
+
+int[] return_loop_field(int[] source):
+    int index = 0
+    while (index < 2):
+        Numbers local = Numbers(source)
+        index++
+        return local.values
+    return source
+
+int[] return_switch_field(int[] source, int selector):
+    switch (selector):
+        case 1:
+            Numbers local = Numbers(source)
+            return local.values
+        default:
+            return source
+
+int[] return_try_field(int[] source):
+    try:
+        Numbers local = Numbers(source)
+        return local.values
+    catch (exception err):
+        return source
+
+int[] return_catch_field(int[] source):
+    try:
+        throw 'field-return'
+    catch (exception err):
+        Numbers local = Numbers(source)
+        return local.values
+
+int[] return_local_transfer(int value):
+    int[] local = [value, value + 1]
+    return local
+
+int[] return_const_local_transfer(int value):
+    const int[] local = [value, value + 1]
+    return local
+
+int main(string[] args):
+    int value = args.length()
+    int[] source = [value, value + 1]
+    Numbers local_box = Numbers(source)
+    source[0] = 90
+    print(local_box.values[0])
+    local_box.values[1] = 91
+    print(source[1])
+
+    const int[] const_source = [value + 2, value + 3]
+    Numbers const_box = Numbers(const_source)
+    print(const_box.values[0])
+
+    int[] parameter_source = [value + 4, value + 5]
+    Numbers parameter_box = make_numbers(parameter_source)
+    parameter_source[0] = 92
+    print(parameter_box.values[0])
+
+    Numbers global_box = Numbers(GLOBAL_VALUES)
+    print(global_box.values[0])
+    int[][] rows = [[value + 6, value + 7]]
+    Numbers row_box = Numbers(rows[0])
+    rows[0][0] = 93
+    print(row_box.values[0])
+
+    Numbers field_source = Numbers([value + 8, value + 9])
+    Numbers field_box = Numbers(field_source.values)
+    field_source.values[0] = 94
+    print(field_box.values[0])
+
+    Numbers copied = local_box
+    local_box.values[0] = 95
+    print(copied.values[0])
+    NestedNumbers nested = NestedNumbers(local_box)
+    NestedNumbers nested_copy = nested
+    nested.inner.values[1] = 96
+    print(nested_copy.inner.values[1])
+
+    local_box.values = parameter_source
+    local_box.values[0] = 97
+    print(parameter_source[0])
+    local_box.values = [value + 10, value + 11]
+    print(local_box.values[0])
+    local_box.values = make_values(value + 12)
+    print(local_box.values[0])
+    local_box.values = local_box.values
+    local_box.values[0] = 98
+    print(local_box.values[0])
+
+    int[] empty = []
+    local_box.values = empty
+    local_box.values.push(value)
+    print(empty.length())
+    print(local_box.values[0])
+    Numbers direct_empty = Numbers([])
+    direct_empty.values.push(value + 13)
+    print(direct_empty.values[0])
+    print(direct_empty.values.length())
+
+    int[] returned_parameter = return_parameter(parameter_source)
+    returned_parameter[0] = 99
+    print(parameter_source[0])
+    int[] returned_field = return_local_field(value + 14)
+    print(returned_field[0])
+    returned_field[0] = 100
+    print(returned_field[0])
+    print(return_branch_field(parameter_source, 1)[0])
+    print(return_loop_field(parameter_source)[0])
+    print(return_switch_field(parameter_source, 1)[0])
+    print(return_try_field(parameter_source)[0])
+    print(return_catch_field(parameter_source)[0])
+    print(return_local_transfer(value + 15)[0])
+    print(return_const_local_transfer(value + 16)[0])
+
+    int[] growth = [value, value + 1, value + 2, value + 3]
+    growth.push(value + 4)
+    print(growth[4])
+    return 0

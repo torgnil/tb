@@ -203,6 +203,7 @@ class Assignment(ASTNode):
 class ArrayAssignment(ASTNode):
     target: ArrayAccess
     value: Expression
+    compound_operator: str | None = None
 
 
 @dataclass(slots=True)

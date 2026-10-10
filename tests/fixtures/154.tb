@@ -1,0 +1,63 @@
+record Flags(bool[] bits);
+
+bool[] make_flags(int value):
+    return [value > 0, false]
+
+bool[] return_local_record_field(int value):
+    Flags local = Flags(make_flags(value))
+    return local.bits
+
+bool[] return_direct_local_array(int value):
+    bool[] local = make_flags(value)
+    return local
+
+Flags return_record(int value):
+    return Flags(make_flags(value))
+
+int main(string[] args):
+    int value = args.length()
+    bool[] source = [value > 0, false]
+    Flags box = Flags(source)
+    box.bits[0] = false
+    print(source[0])
+    print(box.bits[0])
+
+    Flags copied = box
+    box.bits[1] = true
+    print(copied.bits[1])
+
+    box.bits = source
+    box.bits[0] = false
+    print(source[0])
+    box.bits = box.bits
+    box.bits[1] = true
+    print(box.bits[1])
+
+    box.bits = [value > 0, false]
+    print(box.bits[0])
+    box.bits = make_flags(value)
+    print(box.bits[0])
+
+    bool[] empty = []
+    box.bits = empty
+    box.bits.push(value > 0)
+    print(empty.length())
+    print(box.bits.length())
+
+    Flags empty_box = Flags([])
+    empty_box.bits.push(value > 0)
+    print(empty_box.bits.length())
+
+    Flags returned_box = return_record(value)
+    Flags returned_box_copy = returned_box
+    returned_box.bits[0] = false
+    print(returned_box_copy.bits[0])
+
+    bool[] returned_field = return_local_record_field(value)
+    print(returned_field[0])
+    returned_field[0] = false
+    print(returned_field[0])
+
+    bool[] returned_local = return_direct_local_array(value)
+    print(returned_local[0])
+    return 0

@@ -21,12 +21,8 @@ entry:
   %len64 = sext i32 %len to i64
   %has.items = icmp sgt i32 %len, 0
   %alloc.len64 = select i1 %has.items, i64 %len64, i64 1
-  %an.old = load i64, ptr @tb_rt_an
-  %an.new = add i64 %an.old, 1
-  store i64 %an.new, ptr @tb_rt_an
-  %as.old = load i64, ptr @tb_rt_as
-  %as.new = add i64 %as.old, %alloc.len64
-  store i64 %as.new, ptr @tb_rt_as
+  %an.old = atomicrmw add ptr @tb_rt_an, i64 1 seq_cst, align 8
+  %as.old = atomicrmw add ptr @tb_rt_as, i64 %alloc.len64 seq_cst, align 8
   %bytes = mul i64 %alloc.len64, 8
   %data = call ptr @malloc(i64 %bytes)
   %owned = call ptr @malloc(i64 %alloc.len64)
@@ -87,6 +83,38 @@ read:
   %len = load i32, ptr %len.ptr
   ret i32 %len
 }
+define private void @tb_bootstrap_string_array_clear(ptr %array) {
+entry:
+  %is.null = icmp eq ptr %array, null
+  br i1 %is.null, label %done, label %start
+start:
+  %len.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 0
+  %len = load i32, ptr %len.ptr
+  br label %loop.cond
+loop.cond:
+  %index = phi i32 [0, %start], [%next.index, %loop.step]
+  %keep.loop = icmp slt i32 %index, %len
+  br i1 %keep.loop, label %loop.body, label %loop.done
+loop.body:
+  call void @tb_bootstrap_string_array_release_slot(ptr %array, i32 %index)
+  %data.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 2
+  %data = load ptr, ptr %data.ptr
+  %data.slot = getelementptr inbounds ptr, ptr %data, i32 %index
+  store ptr null, ptr %data.slot
+  %owned.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 3
+  %owned = load ptr, ptr %owned.ptr
+  %owned.slot = getelementptr inbounds i8, ptr %owned, i32 %index
+  store i8 0, ptr %owned.slot
+  br label %loop.step
+loop.step:
+  %next.index = add i32 %index, 1
+  br label %loop.cond
+loop.done:
+  store i32 0, ptr %len.ptr
+  br label %done
+done:
+  ret void
+}
 define private ptr @tb_bootstrap_string_array_get(ptr %array, i32 %index) {
 entry:
   %data.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 2
@@ -143,9 +171,7 @@ done:
 }
 define private i32 @tb_bootstrap_string_array_push(ptr %array, ptr %value, i1 %is_owned) {
 entry:
-  %ap.old = load i64, ptr @tb_rt_ap
-  %ap.new = add i64 %ap.old, 1
-  store i64 %ap.new, ptr @tb_rt_ap
+  %ap.old = atomicrmw add ptr @tb_rt_ap, i64 1 seq_cst, align 8
   %len.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 0
   %len = load i32, ptr %len.ptr
   %cap.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 1
@@ -172,12 +198,8 @@ grow:
   %cap.big.enough = icmp sge i32 %cap.base, %next.len
   %new.cap = select i1 %cap.big.enough, i32 %cap.base, i32 %next.len
   %new.cap64 = sext i32 %new.cap to i64
-  %ag.old = load i64, ptr @tb_rt_ag
-  %ag.new = add i64 %ag.old, 1
-  store i64 %ag.new, ptr @tb_rt_ag
-  %ah.old = load i64, ptr @tb_rt_ah
-  %ah.new = add i64 %ah.old, %new.cap64
-  store i64 %ah.new, ptr @tb_rt_ah
+  %ag.old = atomicrmw add ptr @tb_rt_ag, i64 1 seq_cst, align 8
+  %ah.old = atomicrmw add ptr @tb_rt_ah, i64 %new.cap64 seq_cst, align 8
   %data.bytes = mul i64 %new.cap64, 8
   %owned.bytes = mul i64 %new.cap64, 1
   %data.new = call ptr @malloc(i64 %data.bytes)
@@ -256,37 +278,62 @@ done:
 }
 define private ptr @tb_bootstrap_split_lines(ptr %src) {
 entry:
-  %array = call ptr @tb_bootstrap_split_char(ptr %src, i8 10)
-  %len = call i32 @tb_bootstrap_string_array_length(ptr %array)
-  %has.items = icmp sgt i32 %len, 0
-  br i1 %has.items, label %check.last, label %done
-check.last:
-  %last.index = sub i32 %len, 1
-  %last.item = call ptr @tb_bootstrap_string_array_get(ptr %array, i32 %last.index)
-  %last.len = call i64 @strlen(ptr %last.item)
-  %drop.last = icmp eq i64 %last.len, 0
-  br i1 %drop.last, label %trim, label %done
-trim:
-  call void @tb_bootstrap_string_array_release_slot(ptr %array, i32 %last.index)
-  %len.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 0
-  store i32 %last.index, ptr %len.ptr
+  %array = call ptr @tb_bootstrap_string_array_new(i32 0)
+  br label %loop.cond
+loop.cond:
+  %start = phi ptr [%src, %entry], [%next.start.sep, %emit.sep], [%start.keep.char, %step.char]
+  %cursor = phi ptr [%src, %entry], [%next.cursor.sep, %emit.sep], [%next.cursor.char, %step.char]
+  %ch = load i8, ptr %cursor
+  %is.end = icmp eq i8 %ch, 0
+  br i1 %is.end, label %finish, label %loop.body
+loop.body:
+  %is.sep = icmp eq i8 %ch, 10
+  br i1 %is.sep, label %emit.sep, label %step.char
+emit.sep:
+  %start.int.sep = ptrtoint ptr %start to i64
+  %cursor.int.sep = ptrtoint ptr %cursor to i64
+  %segment.len.sep = sub i64 %cursor.int.sep, %start.int.sep
+  %segment.data.sep = call ptr @tb_string_new(i64 %segment.len.sep)
+  call void @llvm.memcpy.p0.p0.i64(ptr %segment.data.sep, ptr %start, i64 %segment.len.sep, i1 false)
+  %segment.term.sep = getelementptr inbounds i8, ptr %segment.data.sep, i64 %segment.len.sep
+  store i8 0, ptr %segment.term.sep
+  %pushed.sep = call i32 @tb_bootstrap_string_array_push(ptr %array, ptr %segment.data.sep, i1 true)
+  %next.cursor.sep = getelementptr inbounds i8, ptr %cursor, i64 1
+  %next.start.sep = getelementptr inbounds i8, ptr %cursor, i64 1
+  br label %loop.cond
+step.char:
+  %start.keep.char = getelementptr inbounds i8, ptr %start, i64 0
+  %next.cursor.char = getelementptr inbounds i8, ptr %cursor, i64 1
+  br label %loop.cond
+finish:
+  %has.tail = icmp ne ptr %cursor, %start
+  br i1 %has.tail, label %emit.tail, label %done
+emit.tail:
+  %start.int.tail = ptrtoint ptr %start to i64
+  %cursor.int.tail = ptrtoint ptr %cursor to i64
+  %segment.len.tail = sub i64 %cursor.int.tail, %start.int.tail
+  %segment.data.tail = call ptr @tb_string_new(i64 %segment.len.tail)
+  call void @llvm.memcpy.p0.p0.i64(ptr %segment.data.tail, ptr %start, i64 %segment.len.tail, i1 false)
+  %segment.term.tail = getelementptr inbounds i8, ptr %segment.data.tail, i64 %segment.len.tail
+  store i8 0, ptr %segment.term.tail
+  %pushed.tail = call i32 @tb_bootstrap_string_array_push(ptr %array, ptr %segment.data.tail, i1 true)
   br label %done
 done:
   ret ptr %array
 }
 define private void @tb_bootstrap_dump_runtime_activity() {
 entry:
-  %sc = load i64, ptr @tb_rt_sc
-  %sb = load i64, ptr @tb_rt_sb
-  %xc = load i64, ptr @tb_rt_xc
-  %xb = load i64, ptr @tb_rt_xb
-  %ic = load i64, ptr @tb_rt_ic
-  %ib = load i64, ptr @tb_rt_ib
-  %an = load i64, ptr @tb_rt_an
-  %as = load i64, ptr @tb_rt_as
-  %ap = load i64, ptr @tb_rt_ap
-  %ag = load i64, ptr @tb_rt_ag
-  %ah = load i64, ptr @tb_rt_ah
+  %sc = load atomic i64, ptr @tb_rt_sc seq_cst, align 8
+  %sb = load atomic i64, ptr @tb_rt_sb seq_cst, align 8
+  %xc = load atomic i64, ptr @tb_rt_xc seq_cst, align 8
+  %xb = load atomic i64, ptr @tb_rt_xb seq_cst, align 8
+  %ic = load atomic i64, ptr @tb_rt_ic seq_cst, align 8
+  %ib = load atomic i64, ptr @tb_rt_ib seq_cst, align 8
+  %an = load atomic i64, ptr @tb_rt_an seq_cst, align 8
+  %as = load atomic i64, ptr @tb_rt_as seq_cst, align 8
+  %ap = load atomic i64, ptr @tb_rt_ap seq_cst, align 8
+  %ag = load atomic i64, ptr @tb_rt_ag seq_cst, align 8
+  %ah = load atomic i64, ptr @tb_rt_ah seq_cst, align 8
   call i32 (ptr, ...) @printf(ptr @.fmt.rt.sc, i64 %sc)
   call i32 (ptr, ...) @printf(ptr @.fmt.rt.sb, i64 %sb)
   call i32 (ptr, ...) @printf(ptr @.fmt.rt.xc, i64 %xc)
