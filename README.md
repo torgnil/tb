@@ -51,51 +51,6 @@ python3 compiler/python/tb.py input.tb output.ll
 clang output.ll -o program
 ```
 
-## Standalone release bundle
-
-On macOS, build the self-hosted compiler and package a versioned bundle without
-including files from the local untracked workspace:
-
-```bash
-./build_tb.sh
-./bundle_release.sh 0.2.0
-```
-
-The archive is written to `.build/releases/`. The bundle contains the compiler,
-its LLVM helpers and thread runtime sources, the language reference, and native
-build launcher. See [release/README.md](release/README.md) for extraction,
-checksum, and use instructions. The current candidate compiler targets macOS
-26.0 or newer and is verified on macOS 26.6.2 arm64; other versions and
-architectures have not been validated.
-
-To reproduce the build, test, and bundle checks from a source revision on a
-verified macOS arm64 host, run:
-
-```bash
-python3 verify_release_bundle.py --revision HEAD --version 0.2.0 \
-  --evidence-dir /tmp/tb-release-verification
-```
-
-The verifier archives the selected Git tree into a fresh directory, builds the
-self-hosted compiler there, runs the native and Python fixture suites and const
-checks, then builds and tests an extracted bundle. It writes a separate
-manifest and process logs for each run under the evidence directory. It uses
-tracked files from the selected revision; local binaries and untracked files do
-not participate. The required tools and installed-bundle requirements are
-listed in [release/README.md](release/README.md).
-
-For the focused thread-pool queue, shutdown, future, and ownership audit, run
-the checkout-only verifier:
-
-```bash
-python3 verify_thread_pool_lifecycle.py --compiler bin/tb --mode focused \
-  --seed 7 --evidence-dir /tmp/tb-pool-lifecycle
-```
-
-Use `--mode all` for O0/O2, AddressSanitizer, ten ThreadSanitizer rounds, and
-the known-bad controls. The source inventory and limits are documented in
-[docs/thread_runtime_safety.md](docs/thread_runtime_safety.md).
-
 ## Documentation
 
 - language reference: `docs/tb.md`
@@ -128,10 +83,7 @@ the known-bad controls. The source inventory and limits are documented in
 - Stage-3 self-compile throughput is still slower than we want
 - Backend string allocation churn is still high even after the major memory improvements
 - User globals and mutable containers are not synchronized when accessed by
-  worker tasks. The scoped runtime-state audit, lifecycle accounting, and
-  concurrent stress checks for supported task values are complete on macOS
-  arm64; they do not establish safety for arbitrary user code or foreign
-  libraries.
+  worker tasks. Use explicit coordination for shared mutable state.
 - Only top-level named workers with the documented argument and result types
   may cross a task boundary. Submission and general allocation failures are
   not handled uniformly. A nonlocal exception can skip cleanup in intervening
@@ -146,11 +98,9 @@ the known-bad controls. The source inventory and limits are documented in
   failures while resolving foreign-module build metadata can leave generated
   LLVM in the requested output path. `open`, `write_line`, and `close` also do
   not consistently report file output failures.
-- The standalone bundle is verified only on macOS arm64. Foreign modules such
-  as raylib and their external dependencies are not included; set
+- Foreign modules such as raylib require their external dependencies; set
   `TB_RAYLIB_ROOT` to a raylib installation when compiling programs that import
-  it. The current candidate compiler targets macOS 26.0 or newer and has been
-  tested on macOS 26.6.2 arm64.
+  it.
 
 ## License
 
