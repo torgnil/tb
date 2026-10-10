@@ -1,0 +1,137 @@
+record Snapshot(int[] values, string[][] words);
+
+int[] make_ints(int value):
+    return [value, value + 1]
+
+string[][] make_words(int value):
+    string text = 'runtime-' + value.to_string()
+    return [[text, 'shared'], []]
+
+string[][] return_words_copy(int value):
+    return make_words(value).copy()
+
+int[] return_copy(int[] values):
+    return copy(values)
+
+int main(string[] args):
+    int seed = args.length()
+    int[] ints = [seed, seed + 1]
+    int[] ints_copy = copy(ints)
+    ints_copy[0] = 90
+    print(ints[0])
+    print(ints_copy[0])
+    const int[] const_ints = [seed + 2]
+    int[] const_copy = const_ints.copy()
+    const_copy[0] = 91
+    print(const_ints[0])
+    print(const_copy[0])
+    const int[][] const_rows = [[seed + 2]]
+    int[][] const_rows_copy = copy(const_rows)
+    const_rows_copy[0][0] = 97
+    print(const_rows[0][0])
+    print(const_rows_copy[0][0])
+    int[] inline_copy = copy([seed + 3])
+    print(inline_copy[0])
+    int[] ints_slice_copy = copy(ints[0:1])
+    ints_slice_copy[0] = 99
+    print(ints[0])
+    print(ints_slice_copy[0])
+    int[] call_copy = make_ints(seed + 4).copy()
+    print(call_copy[0])
+    int[] empty_ints = []
+    int[] empty_copy = copy(empty_ints)
+    print(empty_copy.length())
+    int[] replaced = [1]
+    replaced = replaced.copy()
+    print(replaced[0])
+    int[] returned = return_copy(ints)
+    returned[1] = 92
+    print(ints[1])
+    print(returned[1])
+    copy(ints)
+
+    bool[] flags = [true, seed > 0]
+    bool[] flags_copy = flags.copy()
+    flags_copy[0] = false
+    print(flags[0])
+    print(flags_copy[0])
+    const bool[] const_flags = [true, seed > 0]
+    bool[] const_flags_copy = copy(const_flags)
+    const_flags_copy[0] = false
+    print(const_flags[0])
+    print(const_flags_copy[0])
+    bool[] flags_slice_copy = copy(flags[0:1])
+    flags_slice_copy[0] = false
+    print(flags[0])
+    const bool[] empty_flags = []
+    bool[] empty_flags_copy = copy(empty_flags)
+    print(empty_flags_copy.length())
+
+    string[] words = ['source', 'runtime-' + seed.to_string()]
+    string[] words_copy = copy(words)
+    words_copy[0] = 'changed'
+    print(words[0])
+    print(words_copy[0])
+    const string[] const_words = ['const-' + seed.to_string()]
+    string[] const_words_copy = const_words.copy()
+    const_words_copy[0] = 'const-copy'
+    print(const_words[0])
+    print(const_words_copy[0])
+    string[] words_slice_copy = copy(words[0:1])
+    words_slice_copy[0] = 'slice-copy'
+    print(words[0])
+    print(words_slice_copy[0])
+    string[] empty_words = []
+    string[] empty_words_copy = empty_words.copy()
+    print(empty_words_copy.length())
+
+    int[][] rows = [[seed], [seed + 1]]
+    int[][] rows_copy = copy(rows)
+    rows_copy[0][0] = 93
+    print(rows[0][0])
+    print(rows_copy[0][0])
+    const int[][] const_rows_again = [[seed + 3]]
+    int[][] const_rows_again_copy = const_rows_again.copy()
+    const_rows_again_copy[0][0] = 98
+    print(const_rows_again[0][0])
+    print(const_rows_again_copy[0][0])
+    int[][] nested_copy = rows.copy().copy()
+    nested_copy[1][0] = 94
+    print(rows[1][0])
+    int[][] empty_rows = []
+    int[][] empty_rows_copy = copy(empty_rows)
+    print(empty_rows_copy.length())
+
+    string[][] nested_words = return_words_copy(seed + 5)
+    string[][] nested_words_copy = copy(nested_words)
+    nested_words_copy[0][0] = 'changed-nested'
+    print(nested_words[0][0])
+    print(nested_words_copy[0][0])
+    const string[][] const_nested_words = [['const-nested-' + seed.to_string()]]
+    string[][] const_nested_words_copy = copy(const_nested_words)
+    const_nested_words_copy[0][0] = 'const-nested-copy'
+    print(const_nested_words[0][0])
+    print(const_nested_words_copy[0][0])
+    string[][] nested_words_twice = nested_words.copy().copy()
+    nested_words_twice[0][1] = 'changed-shared-slot'
+    print(nested_words[0][1])
+    print(nested_words_twice[0][1])
+    string[][] inline_words_copy = copy([['inline-' + seed.to_string()]])
+    print(inline_words_copy[0][0])
+    string[][] empty_nested_words = []
+    string[][] empty_nested_copy = empty_nested_words.copy()
+    print(empty_nested_copy.length())
+
+    Snapshot saved = Snapshot(ints, nested_words)
+    Snapshot copied_snapshot = Snapshot(saved.values.copy(), saved.words.copy())
+    copied_snapshot.values[0] = 95
+    copied_snapshot.words[0][0] = 'record-copy'
+    print(saved.values[0])
+    print(saved.words[0][0])
+    print(copied_snapshot.values[0])
+    print(copied_snapshot.words[0][0])
+    saved.values = copy(ints)
+    saved.values[0] = 96
+    print(ints[0])
+    print(saved.values[0])
+    return 0

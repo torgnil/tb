@@ -213,11 +213,12 @@ int main(string[] args):
 - Function-local `bool[]` declarations and reassignment also copy borrowed arrays, including const arrays, parameters, globals, and record fields. Mutating the copy leaves its source unchanged. Owned array literals and call results transfer into the local binding.
 - Function-local `string[][]` declarations and reassignment copy borrowed arrays by cloning the outer array and its child `string[]` arrays. Strings remain shared immutable values. Owned literals and call results transfer into the local binding.
 - Returning `string[][]` snapshots a borrowed parameter, global, or record field before local cleanup. Returning an owned local transfers it to the caller; nested array structure is independent while immutable strings are shared.
+- `copy(array)` and `array.copy()` return an independent mutable snapshot for `int[]`, `bool[]`, `string[]`, `int[][]`, and `string[][]`. Nested copies clone both array structure levels; immutable strings remain shared. Const sources are accepted, and the result can be mutated independently.
 - Runtime arrays are heap-backed when mutation or runtime flow requires it. Helpers: `push`, `pop`, `insert`, `remove_at`, `clear`, `sort`, `map_to`, `filter`, and `flat_map`.
 - Cleanup of inline owned array temporaries used as borrowed call arguments or method receivers is incomplete. Bind an array result to a local variable before querying it when cleanup matters.
 - `filter` keeps the elements whose predicate returns `true` and returns a new array of the same item type.
 - `prio_q<T>` is supported for runtime element types such as `int`, `bool`, `string`, enums, records, and arrays. Create one with `create_prio_q(values, comparator)` or UFCS form `values.create_prio_q(comparator)`, mutate it with `pq.push(value)`, test with `is_empty(pq)` or `pq.is_empty()`, and remove the highest-priority item with `pop(pq)` or `pq.pop()`. The queue copies the source array, so later mutations of the original array do not affect the queue.
-- There are currently no built-in fill/copy helpers for arrays; initialize or clone arrays explicitly with loops or helper functions when needed.
+- There is currently no built-in fill helper for arrays; initialize them explicitly with loops or helper functions when needed.
 - There is currently no stdlib disjoint-set / union-find helper.
 - `sort` is in-place and mutates the target array. It accepts either a named comparator function `int compare(T a, T b)` or an inline comparator lambda `(T a, T b) -> ...`, where negative means left-first, zero means equal, and positive means right-first.
 - `map_to` transforms each element with a single-parameter lambda and returns a new array of the lambda result type. Prefer it over hand-written “create result, loop, push” helpers when one array maps directly to another.
@@ -385,6 +386,10 @@ Array helpers
 - insert(arr: T[], index: int, value: T) -> void
 
 - remove_at(arr: T[], index: int) -> T
+
+- copy(arr: int[] | bool[] | string[] | int[][] | string[][]) -> same array type
+  - Return an independent mutable snapshot. Also available as `arr.copy()`.
+  - Nested arrays copy their rows as well as the outer array; immutable strings may be shared.
 
 - clear(arr: T[]) -> void
   - For `string[]`, clear releases owned strings in live slots and keeps the array storage available for reuse. Also available as `arr.clear()`.
