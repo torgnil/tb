@@ -571,19 +571,60 @@ tb_thread_pool* tb_thread_pool_new(int64_t thread_count) {
         fputs("thread_pool requires a thread count from 1 to 2147483647\n", stderr);
         exit(1);
     }
+    bool mutex_initialized = false;
+    bool cond_initialized = false;
+    int started_workers = 0;
     tb_thread_pool* pool = (tb_thread_pool*)malloc(sizeof(tb_thread_pool));
-    pthread_mutex_init(&pool->mutex, NULL);
-    pthread_cond_init(&pool->cond, NULL);
+    if (pool == NULL) {
+        goto startup_failed;
+    }
+    pool->workers = (pthread_t*)malloc(sizeof(pthread_t) * (size_t)thread_count);
+    if (pool->workers == NULL) {
+        goto startup_failed;
+    }
+    if (pthread_mutex_init(&pool->mutex, NULL) != 0) {
+        goto startup_failed;
+    }
+    mutex_initialized = true;
+    if (pthread_cond_init(&pool->cond, NULL) != 0) {
+        goto startup_failed;
+    }
+    cond_initialized = true;
     pool->refcount = 1;
     pool->worker_count = (int)thread_count;
     pool->stop = false;
     pool->head = NULL;
     pool->tail = NULL;
-    pool->workers = (pthread_t*)malloc(sizeof(pthread_t) * (size_t)pool->worker_count);
     for (int index = 0; index < pool->worker_count; index += 1) {
-        pthread_create(&pool->workers[index], NULL, tb_thread_pool_worker, pool);
+        if (pthread_create(&pool->workers[index], NULL, tb_thread_pool_worker, pool) != 0) {
+            goto startup_failed;
+        }
+        started_workers += 1;
     }
     return pool;
+
+startup_failed:
+    if (started_workers > 0) {
+        pthread_mutex_lock(&pool->mutex);
+        pool->stop = true;
+        pthread_cond_broadcast(&pool->cond);
+        pthread_mutex_unlock(&pool->mutex);
+        for (int index = 0; index < started_workers; index += 1) {
+            pthread_join(pool->workers[index], NULL);
+        }
+    }
+    if (cond_initialized) {
+        pthread_cond_destroy(&pool->cond);
+    }
+    if (mutex_initialized) {
+        pthread_mutex_destroy(&pool->mutex);
+    }
+    if (pool != NULL) {
+        free(pool->workers);
+        free(pool);
+    }
+    fputs("thread_pool startup failed\n", stderr);
+    exit(1);
 }
 
 tb_thread_pool* tb_thread_pool_retain(tb_thread_pool* pool) {
