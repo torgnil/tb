@@ -44,7 +44,7 @@ Build and invocation details are documented in the repository or release `README
 - Integers: sequences of digits, e.g. `123` (64-bit `int`).
 - Num literals: represented internally as `value` + `scale` (fixed-point style); syntax uses decimal form like `12.34` where supported.
 - Identifiers: letters, digits and `_`, not starting with a digit.
-- Comments: `#` line comments and `/* ... */` block comments.
+- Comments: `#` line comments and `/* ... */` block comments. Delimiters and quotes after `#` are comment text and do not affect strings or block comments; `#` inside a string or block comment remains part of that content.
 - Every token carries `type`, `value`, `line`, and `column`; lexer errors report exact line/column.
 
 3. Program structure and entry point
