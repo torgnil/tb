@@ -1798,6 +1798,8 @@ bool const_method_mutates_type(string method, string type_name):
         return value_type.starts_with('set<')
     if (method == 'push' || method == 'pop'):
         return const_type_is_array(value_type) || value_type.starts_with('prio_q<')
+    if (method == 'fill'):
+        return value_type == 'int[]' || value_type == 'bool[]'
     if (method == 'insert' || method == 'remove_at' || method == 'clear' || method == 'sort'):
         return const_type_is_array(value_type)
     return false
@@ -1839,7 +1841,13 @@ bool const_method_mutates_receiver(string method, Node receiver, BindingIR[] bin
     return const_method_mutates_type(method, const_type_of_expression(receiver, bindings, record_nodes))
 
 bool const_function_mutates_first_arg(string name):
-    return name == 'push' || name == 'pop' || name == 'insert' || name == 'remove_at' || name == 'clear' || name == 'sort' || name == 'add'
+    return name == 'push' || name == 'pop' || name == 'insert' || name == 'remove_at' || name == 'clear' || name == 'sort' || name == 'add' || name == 'fill'
+
+bool const_record_name_exists(Node[] record_nodes, string name):
+    for (Node record_node : record_nodes):
+        if (record_node.value == name):
+            return true
+    return false
 
 void const_reject_mutation(BindingIR[] bindings, string root, bool assignment):
     if (root == ''):
@@ -1867,7 +1875,12 @@ void validate_const_expression(Node node, BindingIR[] bindings, string[] functio
             validate_const_expression(node.children[0], inner, function_names, record_nodes)
         return
     if (node.kind == 'Call'):
-        if (!(node.value in function_names) && const_function_mutates_first_arg(node.value) && node.children.length() > 0):
+        if (node.value == 'fill'):
+            if (!(node.value in function_names) && !const_record_name_exists(record_nodes, node.value) && node.children.length() > 0):
+                string root = const_target_root(node.children[0])
+                if (const_method_mutates_receiver(node.value, node.children[0], bindings, record_nodes)):
+                    const_reject_mutation(bindings, root, false)
+        else if (!(node.value in function_names) && const_function_mutates_first_arg(node.value) && node.children.length() > 0):
             string root = const_target_root(node.children[0])
             if (const_method_mutates_receiver(node.value, node.children[0], bindings, record_nodes)):
                 const_reject_mutation(bindings, root, false)
@@ -1876,9 +1889,14 @@ void validate_const_expression(Node node, BindingIR[] bindings, string[] functio
         return
     if (node.kind == 'MethodCall'):
         if (node.children.length() > 0):
-            string root = const_target_root(node.children[0])
-            if (const_method_mutates_receiver(node.value, node.children[0], bindings, record_nodes)):
-                const_reject_mutation(bindings, root, false)
+            if (node.value == 'fill'):
+                if (!(node.value in function_names) && !const_record_name_exists(record_nodes, node.value) && const_method_mutates_receiver(node.value, node.children[0], bindings, record_nodes)):
+                    string root = const_target_root(node.children[0])
+                    const_reject_mutation(bindings, root, false)
+            else:
+                string root = const_target_root(node.children[0])
+                if (const_method_mutates_receiver(node.value, node.children[0], bindings, record_nodes)):
+                    const_reject_mutation(bindings, root, false)
         for (Node child : node.children):
             validate_const_expression(child, bindings, function_names, record_nodes)
         return

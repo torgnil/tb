@@ -218,7 +218,7 @@ int main(string[] args):
 - Cleanup of inline owned array temporaries used as borrowed call arguments or method receivers is incomplete. Bind an array result to a local variable before querying it when cleanup matters.
 - `filter` keeps the elements whose predicate returns `true` and returns a new array of the same item type.
 - `prio_q<T>` is supported for runtime element types such as `int`, `bool`, `string`, enums, records, and arrays. Create one with `create_prio_q(values, comparator)` or UFCS form `values.create_prio_q(comparator)`, mutate it with `pq.push(value)`, test with `is_empty(pq)` or `pq.is_empty()`, and remove the highest-priority item with `pop(pq)` or `pq.pop()`. The queue copies the source array, so later mutations of the original array do not affect the queue.
-- There is currently no built-in fill helper for arrays; initialize them explicitly with loops or helper functions when needed.
+- `fill(array, value)` and `array.fill(value)` replace every element in a mutable `int[]` or `bool[]`, preserve the array length, and return `void`. Empty arrays are unchanged. The value may be a constant or runtime `int` / `bool` matching the array element type. A user-defined function named `fill` takes precedence.
 - There is currently no stdlib disjoint-set / union-find helper.
 - `sort` is in-place and mutates the target array. It accepts either a named comparator function `int compare(T a, T b)` or an inline comparator lambda `(T a, T b) -> ...`, where negative means left-first, zero means equal, and positive means right-first.
 - `map_to` transforms each element with a single-parameter lambda and returns a new array of the lambda result type. Prefer it over hand-written “create result, loop, push” helpers when one array maps directly to another.
@@ -386,6 +386,9 @@ Array helpers
 - insert(arr: T[], index: int, value: T) -> void
 
 - remove_at(arr: T[], index: int) -> T
+
+- fill(arr: int[] | bool[], value: int | bool) -> void
+  - Replace every existing element with `value`, preserving length. The value type must match the array element type. Also available as `arr.fill(value)`.
 
 - copy(arr: int[] | bool[] | string[] | int[][] | string[][]) -> same array type
   - Return an independent mutable snapshot. Also available as `arr.copy()`.

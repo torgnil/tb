@@ -124,6 +124,21 @@ entry:
   store i64 %value, ptr %slot
   ret void
 }
+define private void @tb_bootstrap_int_array_fill(ptr %array, i64 %value) {
+entry:
+  %len = call i32 @tb_bootstrap_int_array_length(ptr %array)
+  br label %loop.cond
+loop.cond:
+  %index = phi i32 [ 0, %entry ], [ %next.index, %loop.body ]
+  %keep.loop = icmp slt i32 %index, %len
+  br i1 %keep.loop, label %loop.body, label %done
+loop.body:
+  call void @tb_bootstrap_int_array_set(ptr %array, i32 %index, i64 %value)
+  %next.index = add i32 %index, 1
+  br label %loop.cond
+done:
+  ret void
+}
 define private i32 @tb_bootstrap_cmp_int_desc(ptr %left.ptr, ptr %right.ptr) {
 entry:
   %left = load i64, ptr %left.ptr

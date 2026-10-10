@@ -971,13 +971,23 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
         if (op.args.is_empty()):
             return op
         string result_type = infer_call_type_cached(op.args[0], functions, TYPE_IR_FUNCTION_TYPE_CACHE_NAMES, TYPE_IR_FUNCTION_TYPE_CACHE_VALUES)
-        if (op.args[0] == 'copy' && lookup_function_return_type(functions, 'copy') == 'unknown' && !record_type_exists(record_fields, 'copy')):
-            if (op.args.length() != 2):
-                throw 'copy requires exactly one array argument'
-            string copy_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
-            if (!is_array_copy_type(copy_type)):
-                throw 'copy requires int[], bool[], string[], int[][], or string[][]; got ' + copy_type
-            result_type = copy_type
+        if (op.args[0] == 'copy'):
+            if (lookup_function_return_type(functions, 'copy') == 'unknown' && !record_type_exists(record_fields, 'copy')):
+                if (op.args.length() != 2):
+                    throw 'copy requires exactly one array argument'
+                string copy_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+                if (!is_array_copy_type(copy_type)):
+                    throw 'copy requires int[], bool[], string[], int[][], or string[][]; got ' + copy_type
+                result_type = copy_type
+        if (op.args[0] == 'fill'):
+            if (lookup_function_return_type(functions, 'fill') == 'unknown' && !record_type_exists(record_fields, 'fill')):
+                if (op.args.length() != 3):
+                    throw 'fill requires exactly an array and a value'
+                string fill_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+                string value_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2]))
+                if (!((fill_type == 'int[]' && value_type == 'int') || (fill_type == 'bool[]' && value_type == 'bool'))):
+                    throw 'fill requires int[] with int or bool[] with bool; got ' + fill_type + ' and ' + value_type
+                result_type = 'void'
         if (op.args[0] == 'sum' && op.args.length() >= 2):
             string sum_arg_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
             if (sum_arg_type == 'int[]' || sum_arg_type == 'bool[]'):
@@ -1025,13 +1035,23 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             return op
         string method_name = op.args[0]
         string base_type = lookup_temp_type_slot(temp_types, op.args[1])
-        if (method_name == 'copy' && lookup_function_return_type(functions, 'copy') == 'unknown' && !record_type_exists(record_fields, 'copy')):
-            if (op.args.length() != 2):
-                throw 'copy requires exactly one array argument'
-            string copy_type = normalize_llvm_type_name(base_type)
-            if (!is_array_copy_type(copy_type)):
-                throw 'copy requires int[], bool[], string[], int[][], or string[][]; got ' + copy_type
-            return LinearInstruction(op.kind.substring(0), op.lhs.substring(0), copy_type.substring(0), 'owned', 'call', ['copy', op.args[1]])
+        if (method_name == 'fill'):
+            if (lookup_function_return_type(functions, 'fill') == 'unknown' && !record_type_exists(record_fields, 'fill')):
+                if (op.args.length() != 3):
+                    throw 'fill requires exactly one value'
+                string fill_type = normalize_llvm_type_name(base_type)
+                string value_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2]))
+                if (!((fill_type == 'int[]' && value_type == 'int') || (fill_type == 'bool[]' && value_type == 'bool'))):
+                    throw 'fill requires int[] with int or bool[] with bool; got ' + fill_type + ' and ' + value_type
+                return LinearInstruction(op.kind.substring(0), op.lhs.substring(0), 'void', 'plain', 'call', ['fill', op.args[1], op.args[2]])
+        if (method_name == 'copy'):
+            if (lookup_function_return_type(functions, 'copy') == 'unknown' && !record_type_exists(record_fields, 'copy')):
+                if (op.args.length() != 2):
+                    throw 'copy requires exactly one array argument'
+                string copy_type = normalize_llvm_type_name(base_type)
+                if (!is_array_copy_type(copy_type)):
+                    throw 'copy requires int[], bool[], string[], int[][], or string[][]; got ' + copy_type
+                return LinearInstruction(op.kind.substring(0), op.lhs.substring(0), copy_type.substring(0), 'owned', 'call', ['copy', op.args[1]])
         if (base_type.starts_with('const ')):
             string canonical_base_type = normalize_llvm_type_name(base_type)
             if (is_thread_pool_type(canonical_base_type) || is_future_type(canonical_base_type) || canonical_base_type.starts_with('map<') || ((method_name == 'sum') && (canonical_base_type == 'int[]' || canonical_base_type == 'bool[]'))):

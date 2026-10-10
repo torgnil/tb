@@ -4485,6 +4485,26 @@ string emit_call_value_instruction_core(ProgramIR program, ParsedFunction functi
             if (temp_needs_backend_free(function_ir, op.args[1]) && !temp_is_moved(function_ir, op.args[1])):
                 copy_lines.push(emit_backend_release_ptr(call_arg1_type, temp_ref(op.args[1])))
             return emit_tracked_builtin_call_line(join_llvm_strings(copy_lines, '\n'))
+    if (call_name == 'fill'):
+        int fill_meta_index = lookup_call_meta_index(call_name)
+        RecordDeclIR fill_record = lookup_record_decl(program, call_name)
+        if (fill_meta_index < 0 && fill_record.header == ''):
+            if (op.args.length() != 3):
+                throw 'unsupported llvm fill arity'
+            string value_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[2]))
+            string helper_name = ''
+            if (call_arg1_type == 'int[]' && value_type == 'int'):
+                helper_name = '@tb_bootstrap_int_array_fill'
+            else if (call_arg1_type == 'bool[]' && value_type == 'bool'):
+                helper_name = '@tb_bootstrap_bool_array_fill'
+            if (helper_name == ''):
+                throw 'unsupported llvm fill arg types: ' + call_arg1_type + ' ' + value_type
+            if (function_uses_temp(function_ir, op.lhs)):
+                throw 'fill result cannot be used as a value'
+            string[] fill_lines = ['  call void ' + helper_name + '(ptr ' + temp_ref(op.args[1]) + ', ' + llvm_type(value_type) + ' ' + temp_ref(op.args[2]) + ')']
+            if (temp_needs_backend_free(function_ir, op.args[1]) && !temp_is_moved(function_ir, op.args[1])):
+                fill_lines.push(emit_backend_release_ptr(call_arg1_type, temp_ref(op.args[1])))
+            return emit_tracked_builtin_call_line(join_llvm_strings(fill_lines, '\n'))
     if (call_name == 'print'):
         if (op.args.length() != 2):
             throw 'unsupported llvm print arity'

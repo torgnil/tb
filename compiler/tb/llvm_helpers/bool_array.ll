@@ -99,6 +99,21 @@ entry:
   store i8 %value.byte, ptr %slot
   ret void
 }
+define private void @tb_bootstrap_bool_array_fill(ptr %array, i1 %value) {
+entry:
+  %len = call i32 @tb_bootstrap_bool_array_length(ptr %array)
+  br label %loop.cond
+loop.cond:
+  %index = phi i32 [ 0, %entry ], [ %next.index, %loop.body ]
+  %keep.loop = icmp slt i32 %index, %len
+  br i1 %keep.loop, label %loop.body, label %done
+loop.body:
+  call void @tb_bootstrap_bool_array_set(ptr %array, i32 %index, i1 %value)
+  %next.index = add i32 %index, 1
+  br label %loop.cond
+done:
+  ret void
+}
 define private i1 @tb_bootstrap_bool_array_contains(ptr %array, i1 %needle) {
 entry:
   %len = call i32 @tb_bootstrap_bool_array_length(ptr %array)
