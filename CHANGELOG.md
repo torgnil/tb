@@ -18,7 +18,7 @@ All notable changes to tb will be documented in this file.
 - Native cached functions synchronize memo-table access for the supported key
   types. Simultaneous misses may evaluate the function more than once; a full
   table returns an uncached result.
-- A standalone macOS arm64 compiler bundle and source-tree release verifier.
+- A standalone macOS arm64 compiler bundle.
 
 ### Limitations
 - Records, maps, sets, priority queues, files, pools, futures, and closures are
@@ -47,8 +47,7 @@ All notable changes to tb will be documented in this file.
   `TB_RAYLIB_ROOT` to a raylib installation when compiling a program that
   imports it.
 
-See [README.md](README.md) for bundle requirements and use, and
-[docs/tb.md](docs/tb.md) for the detailed thread-pool language reference.
+See [docs/tb.md](docs/tb.md) for the detailed thread-pool language reference.
 
 ## [0.1.0] - 2026-06-20
 
