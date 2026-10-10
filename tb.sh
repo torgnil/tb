@@ -26,6 +26,8 @@ shift
 
 script_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 repo_root=$(CDPATH= cd -- "$script_dir" && pwd)
+TB_RESOURCE_ROOT=${TB_RESOURCE_ROOT:-$repo_root}
+export TB_RESOURCE_ROOT
 compiler_bin="$repo_root/bin/tb"
 input_name=$(basename "$input_path")
 program_name=${input_name%.tb}
@@ -35,7 +37,10 @@ llvm_output="$build_dir/${program_name}.ll"
 if [ "$input_dir" = "." ]; then
     program_output="$repo_root/${program_name}"
 else
-    program_output="$repo_root/${input_dir}/${program_name}"
+    case "$input_path" in
+        /*) program_output="${input_dir}/${program_name}" ;;
+        *) program_output="$repo_root/${input_dir}/${program_name}" ;;
+    esac
 fi
 linkflags_file="${llvm_output}.linkflags"
 cflags_file="${llvm_output}.cflags"
@@ -46,7 +51,6 @@ if [ "$platform_os" = "darwin" ]; then
     platform_os="macos"
 fi
 platform_suffix="${platform_os}_${platform_arch}"
-objects=""
 linkflags=""
 cflags=""
 
@@ -57,11 +61,22 @@ if [ ! -x "$compiler_bin" ]; then
 fi
 
 mkdir -p "$build_dir"
+runtime_object_dir=$(mktemp -d "$build_dir/runtime.XXXXXX")
+trap 'rm -f "$runtime_object_dir"/*.o; rmdir "$runtime_object_dir"' 0
+trap 'exit 1' HUP INT TERM
 if [ "$input_dir" != "." ]; then
-    mkdir -p "$repo_root/$input_dir"
+    case "$input_path" in
+        /*) ;;
+        *) mkdir -p "$repo_root/$input_dir" ;;
+    esac
 fi
 
-"$compiler_bin" "$repo_root/$input_path" "$llvm_output"
+case "$input_path" in
+    /*) source_path=$input_path ;;
+    *) source_path="$repo_root/$input_path" ;;
+esac
+
+"$compiler_bin" "$source_path" "$llvm_output"
 
 if [ -f "$linkflags_file" ]; then
     linkflags=$(tr '\n' ' ' < "$linkflags_file")
@@ -72,9 +87,13 @@ if [ -f "$cflags_file" ]; then
 fi
 
 if [ -f "$csources_file" ]; then
+    object_index=0
     while IFS= read -r c_source; do
         [ -n "$c_source" ] || continue
-        resolved_c_source="$repo_root/$c_source"
+        case "$c_source" in
+            /*) resolved_c_source=$c_source ;;
+            *) resolved_c_source="$repo_root/$c_source" ;;
+        esac
         if [ ! -f "$resolved_c_source" ] && [ -f "$repo_root/bindings/tb/$c_source" ]; then
             resolved_c_source="$repo_root/bindings/tb/$c_source"
         fi
@@ -82,17 +101,14 @@ if [ -f "$csources_file" ]; then
             echo "Missing foreign C source: $c_source" >&2
             exit 1
         fi
-        object_dir="$(dirname "$resolved_c_source")/lib"
-        mkdir -p "$object_dir"
-        object_output="$object_dir/$(basename "${resolved_c_source%.*}")_${platform_suffix}.o"
-        if [ ! -f "$object_output" ]; then
-            clang -c $cflags "$resolved_c_source" -o "$object_output"
-        fi
-        objects="$objects $object_output"
+        object_output="$runtime_object_dir/${object_index}_$(basename "${resolved_c_source%.*}")_${platform_suffix}.o"
+        clang -c $cflags "$resolved_c_source" -o "$object_output"
+        set -- "$@" "$object_output"
+        object_index=$((object_index + 1))
     done < "$csources_file"
 fi
 
-clang "$llvm_output" $objects -o "$program_output" $linkflags "$@"
+clang "$llvm_output" "$@" -o "$program_output" $linkflags
 
 echo "Built tb program: $program_output"
 echo "LLVM output: $llvm_output"

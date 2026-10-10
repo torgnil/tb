@@ -28,6 +28,20 @@ Compile a tb program with the self-hosted compiler:
 ./tb.sh path/to/program.tb
 ```
 
+`bin/tb` loads LLVM helper templates and thread runtime sources from the
+checkout-relative paths under `compiler/tb`. Set `TB_RESOURCE_ROOT` when those
+resources live elsewhere; the directory must contain the same `compiler/tb`
+subdirectories. `tb.sh` sets this to the checkout by default and accepts an
+override:
+
+```bash
+TB_RESOURCE_ROOT="/path/to/resource tree" ./tb.sh /path/to/program.tb
+```
+
+For direct `bin/tb` calls, the resource setting does not change compiler input,
+import, or output path handling. When `TB_RESOURCE_ROOT` is unset or empty, the
+self-hosted compiler keeps its historical relative-resource lookup behavior.
+
 Bootstrap path using the Python compiler:
 
 ```bash

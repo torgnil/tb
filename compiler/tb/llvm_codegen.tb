@@ -446,13 +446,19 @@ void reset_runtime_build_metadata():
     LLVM_RUNTIME_C_FLAGS = []
     LLVM_RUNTIME_C_SOURCES = []
 
+string llvm_resource_path(string relative_path):
+    string root = getenv('TB_RESOURCE_ROOT')
+    if (root == ''):
+        return relative_path
+    return root + '/' + relative_path
+
 void configure_runtime_build_metadata(bool needs_thread_pool):
     reset_runtime_build_metadata()
     if (needs_thread_pool):
         LLVM_RUNTIME_LINK_FLAGS.push('-pthread')
         LLVM_RUNTIME_C_FLAGS.push('-pthread')
-        LLVM_RUNTIME_C_SOURCES.push('compiler/tb/runtime/thread_pool_runtime.c')
-        LLVM_RUNTIME_C_SOURCES.push('compiler/tb/runtime/thread_pool_composite_runtime.c')
+        LLVM_RUNTIME_C_SOURCES.push(llvm_resource_path('compiler/tb/runtime/thread_pool_runtime.c'))
+        LLVM_RUNTIME_C_SOURCES.push(llvm_resource_path('compiler/tb/runtime/thread_pool_composite_runtime.c'))
 
 string[] llvm_runtime_link_flags():
     string[] result = []
@@ -7416,7 +7422,7 @@ string[] emit_record_helpers(RecordDeclIR record_decl):
             free_field_lines.push('  br label %field.skip.' + field.name)
             free_field_lines.push('field.skip.' + field.name + ':')
         index += 1
-    string[] lines = read_file('compiler/tb/llvm_helpers/record_helpers_base.ll').split_lines()
+    string[] lines = read_file(llvm_resource_path('compiler/tb/llvm_helpers/record_helpers_base.ll')).split_lines()
     lines = replace_llvm_template_lines(lines, '__RECORD__', record_name)
     lines = replace_llvm_template_lines(lines, '__RECORD_TYPE__', record_type)
     lines = replace_llvm_template_block_lines(lines, '__CLONE_FIELD_LINES__', clone_field_lines)
@@ -7424,38 +7430,38 @@ string[] emit_record_helpers(RecordDeclIR record_decl):
     return lines
 
 string[] emit_num_helpers():
-    return read_file('compiler/tb/llvm_helpers/num.ll').split_lines()
+    return read_file(llvm_resource_path('compiler/tb/llvm_helpers/num.ll')).split_lines()
 
 string[] emit_integer_shift_helpers():
-    return read_file('compiler/tb/llvm_helpers/integer_shifts.ll').split_lines()
+    return read_file(llvm_resource_path('compiler/tb/llvm_helpers/integer_shifts.ll')).split_lines()
 
 
 string[] emit_string_helpers(bool include_num_to_string):
-    string[] lines = read_file('compiler/tb/llvm_helpers/string_base.ll').split_lines()
+    string[] lines = read_file(llvm_resource_path('compiler/tb/llvm_helpers/string_base.ll')).split_lines()
     if (include_num_to_string):
-        for (string line in read_file('compiler/tb/llvm_helpers/string_num_to_string.ll').split_lines()):
+        for (string line in read_file(llvm_resource_path('compiler/tb/llvm_helpers/string_num_to_string.ll')).split_lines()):
             lines.push(line)
     return lines
 
 
 string[] emit_main_args_helpers():
-    return read_file('compiler/tb/llvm_helpers/main_args.ll').split_lines()
+    return read_file(llvm_resource_path('compiler/tb/llvm_helpers/main_args.ll')).split_lines()
 
 string[] emit_string_array_helpers():
-    return read_file('compiler/tb/llvm_helpers/string_array.ll').split_lines()
+    return read_file(llvm_resource_path('compiler/tb/llvm_helpers/string_array.ll')).split_lines()
 
 string[] emit_string_array_array_helpers():
-    return read_file('compiler/tb/llvm_helpers/string_array_array.ll').split_lines()
+    return read_file(llvm_resource_path('compiler/tb/llvm_helpers/string_array_array.ll')).split_lines()
 
 string[] emit_int_array_helpers():
-    string[] lines = read_file('compiler/tb/llvm_helpers/int_array_base.ll').split_lines()
-    for (string line in read_file('compiler/tb/llvm_helpers/int_array_map_ops.ll').split_lines()):
+    string[] lines = read_file(llvm_resource_path('compiler/tb/llvm_helpers/int_array_base.ll')).split_lines()
+    for (string line in read_file(llvm_resource_path('compiler/tb/llvm_helpers/int_array_map_ops.ll')).split_lines()):
         lines.push(line)
     return lines
 
 
 string[] emit_int_set_helpers():
-    return read_file('compiler/tb/llvm_helpers/int_set.ll').split_lines()
+    return read_file(llvm_resource_path('compiler/tb/llvm_helpers/int_set.ll')).split_lines()
 
 string[] emit_named_int_sort_helper(string comparator_name):
     string comparator_symbol = llvm_named_int_sort_comparator_symbol(comparator_name)
@@ -7527,18 +7533,18 @@ string[] emit_record_set_helpers(ProgramIR program, string record_name):
             contains_decision_lines.push('  %all.eq.' + and_index + ' = and i1 %all.eq.' + (and_index - 1) + ', %field.eq.' + fields[and_index].name)
             and_index += 1
         contains_decision_lines.push('  br i1 %all.eq.' + (fields.length() - 1) + ', label %found, label %loop.step')
-    string[] lines = read_file('compiler/tb/llvm_helpers/record_set_base.ll').split_lines()
+    string[] lines = read_file(llvm_resource_path('compiler/tb/llvm_helpers/record_set_base.ll')).split_lines()
     lines = replace_llvm_template_lines(lines, '__RECORD__', record_name)
     lines = replace_llvm_template_block_lines(lines, '__CONTAINS_FIELD_LINES__', contains_field_lines)
     lines = replace_llvm_template_block_lines(lines, '__CONTAINS_DECISION_LINES__', contains_decision_lines)
     return lines
 
 string[] emit_bool_array_helpers():
-    return read_file('compiler/tb/llvm_helpers/bool_array.ll').split_lines()
+    return read_file(llvm_resource_path('compiler/tb/llvm_helpers/bool_array.ll')).split_lines()
 
 
 string[] emit_int_array_array_helpers():
-    return read_file('compiler/tb/llvm_helpers/int_array_array.ll').split_lines()
+    return read_file(llvm_resource_path('compiler/tb/llvm_helpers/int_array_array.ll')).split_lines()
 
 
 string[] replace_llvm_template_lines(string[] template_lines, string from_text, string to_text):
@@ -7560,7 +7566,7 @@ string[] replace_llvm_template_block_lines(string[] template_lines, string marke
 
 
 string[] emit_record_array_helpers(string record_name):
-    string[] lines = replace_llvm_template_lines(read_file('compiler/tb/llvm_helpers/record_array_base.ll').split_lines(), '__RECORD__', record_name)
+    string[] lines = replace_llvm_template_lines(read_file(llvm_resource_path('compiler/tb/llvm_helpers/record_array_base.ll')).split_lines(), '__RECORD__', record_name)
     string record_array_type = llvm_record_array_type_name(record_name)
     lines.push('%tb_bootstrap_prio_q_' + record_name + ' = type { ptr, ptr }')
     lines.push('define private ptr @tb_bootstrap_record_array_sort_by_' + record_name + '(ptr %array, ptr %cmp) {')
@@ -7693,10 +7699,10 @@ string[] emit_record_array_helpers(string record_name):
     lines.push('  ret ptr %value')
     lines.push('}')
     if (record_name == 'Node'):
-        for (string line in read_file('compiler/tb/llvm_helpers/record_array_node.ll').split_lines()):
+        for (string line in read_file(llvm_resource_path('compiler/tb/llvm_helpers/record_array_node.ll')).split_lines()):
             lines.push(line)
     if (record_name == 'Edge'):
-        for (string line in read_file('compiler/tb/llvm_helpers/record_array_edge.ll').split_lines()):
+        for (string line in read_file(llvm_resource_path('compiler/tb/llvm_helpers/record_array_edge.ll')).split_lines()):
             lines.push(line)
     return lines
 
@@ -7723,7 +7729,7 @@ string[] emit_map_helpers(string type_name):
     if (key_type == 'int'):
         key_llvm_type = 'i64'
     if (key_type == 'int' && value_type == 'int'):
-        string[] lines = read_file('compiler/tb/llvm_helpers/map_int_int.ll').split_lines()
+        string[] lines = read_file(llvm_resource_path('compiler/tb/llvm_helpers/map_int_int.ll')).split_lines()
         lines = replace_llvm_template_lines(lines, '__MAP_NEW_NAME__', llvm_map_new_name(type_name))
         lines = replace_llvm_template_lines(lines, '__MAP_SET_NAME__', llvm_map_set_name(type_name))
         lines = replace_llvm_template_lines(lines, '__MAP_LENGTH_NAME__', llvm_map_length_name(type_name))
@@ -7740,9 +7746,9 @@ string[] emit_map_helpers(string type_name):
         return lines
     string[] lines = []
     if (key_type == 'string'):
-        lines = read_file('compiler/tb/llvm_helpers/map_string_key.ll').split_lines()
+        lines = read_file(llvm_resource_path('compiler/tb/llvm_helpers/map_string_key.ll')).split_lines()
     else:
-        lines = read_file('compiler/tb/llvm_helpers/map_base.ll').split_lines()
+        lines = read_file(llvm_resource_path('compiler/tb/llvm_helpers/map_base.ll')).split_lines()
     lines = replace_llvm_template_lines(lines, '__MAP_NEW_NAME__', llvm_map_new_name(type_name))
     lines = replace_llvm_template_lines(lines, '__MAP_SET_NAME__', llvm_map_set_name(type_name))
     lines = replace_llvm_template_lines(lines, '__MAP_LENGTH_NAME__', llvm_map_length_name(type_name))
