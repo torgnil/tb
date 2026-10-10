@@ -1021,8 +1021,9 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             string right_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2]))
             if (left_type == right_type && (left_type == 'int' || left_type == 'num')):
                 result_type = left_type
-        if (result_type == 'unknown' && could_be_named_type(op.args[0]) && !op.args.is_empty() && record_type_exists(record_fields, op.args[0])):
-            result_type = op.args[0]
+        if (result_type == 'unknown' && !op.args.is_empty()):
+            if (record_type_exists(record_fields, op.args[0])):
+                result_type = op.args[0]
         return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
     if (op.detail == 'call-expr'):
         return refined_value_op(op, 'unknown', op.ownership_mode)
