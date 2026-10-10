@@ -117,7 +117,9 @@ void write_build_metadata(string output_path, string[] active_modules):
         cflags.push(flag)
     string[] csources = foreign_module_c_sources(active_modules)
     for (string source in llvm_runtime_c_sources()):
-        csources.push(source)
+        string runtime_path = output_path + '.' + source
+        write_text_file(runtime_path, llvm_embedded_runtime_text(source))
+        csources.push(runtime_path)
     write_lines_file(output_path + '.linkflags', link_flags)
     write_lines_file(output_path + '.cflags', cflags)
     write_lines_file(output_path + '.csources', csources)
