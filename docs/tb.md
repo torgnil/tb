@@ -121,15 +121,16 @@ Build and invocation details are documented in the repository or release `README
 
 ### Thread pools and futures
 
-- `thread_pool(n)` creates an explicit pool with exactly `n` worker threads. `n` must be from `1` to `2147483647`. If allocation, synchronization initialization, or worker creation fails during startup, any started workers are stopped and joined, initialized resources are released, and the process exits with `thread_pool startup failed`. A partially started pool is never returned. Allocation failures during task submission are not yet handled.
+- `thread_pool(n)` creates an explicit pool with exactly `n` worker threads. `n` must be from `1` to `2147483647`. If allocation, synchronization initialization, or worker creation fails during startup, any started workers are stopped and joined, initialized resources are released, and the process exits with `thread_pool startup failed`. A partially started pool is never returned. Allocation failures are not handled uniformly, including failures during task submission.
 - `pool.submit(work)` or `pool.submit(work, value)` queues a top-level named function and returns `future<T>` immediately.
 - Const pool bindings support `submit`; const future bindings support `await`, `is_done`, and `wait_for`. Const still prevents reassignment.
 - Submitted functions may return `int`, `bool`, `string`, `int[]`, or `int[][]`; they may accept zero arguments or one `int`, `bool`, `string`, `int[]`, or `int[][]` argument.
 - `future.await()` blocks until completion and returns the task result. A task exception is rethrown by `await()` on the calling thread. The future preserves its message independently of submitted argument bindings; repeated awaits each produce a catch-owned message.
 - `future.is_done()` returns whether the task has completed without blocking.
 - `future.wait_for(milliseconds)` waits for the requested timeout using the system wall clock and returns whether the task completed; clock adjustments can affect the elapsed duration. It does not consume the result; call `await()` afterward. Nonpositive durations only check the current completion state. Avoid pool dependency deadlocks: tasks must not all block waiting for work queued to the same fixed-size pool.
-- String task arguments and results share immutable managed values safely across workers; repeated awaits preserve the result. Internal string reference counts, character caching, runtime counters, and native memoization tables for `cached` functions are synchronized. This does not synchronize user globals or mutable containers, including accesses made inside cached function bodies.
+- String task arguments and results share immutable managed values across workers; repeated awaits preserve the result. Internal string reference counts, character caching, runtime counters, and native memoization tables for `cached` functions are synchronized. The scoped audit and concurrency/lifetime checks cover these runtime paths on macOS arm64; they do not establish safety for arbitrary user code or foreign libraries. User globals and mutable containers, including accesses made inside cached function bodies, are not synchronized.
 - `int[]` and `int[][]` arguments cross the queue as deep-copy snapshots. `int[]` and `int[][]` results are retained by their futures and each `await()` returns a fresh snapshot. Records, maps, sets, priority queues, files, pools, futures, and closures cannot yet be returned or otherwise passed across a task boundary.
+- Do not start worker tasks from global initializers if they may read globals that have not finished initializing. Initialize shared state before starting tasks, preferably from `main`.
 
 ```tb
 int worker_id():
@@ -193,7 +194,7 @@ int main(string[] args):
   try, if present. Catch messages own their string snapshot, including messages
   thrown by another function or worker, and may be returned or rethrown safely.
 
-  If an exception is not caught, the program prints `Unhandled exception: ...` and exits with a non-zero status.
+  If an exception is not caught, the program prints its message and exits with a non-zero status. Missing `read_file` and `read_lines` inputs print `<helper>: <path>` and exit with status 1 when uncaught. Nonlocal exception transfer can bypass cleanup in intervening function frames, leaking managed values or other owned resources. Catch inside the function that owns resources when cleanup matters; normal return paths perform cleanup. This is not general exception-unwind safety.
 
 8. Arrays and slices
 
@@ -233,6 +234,8 @@ int main(string[] args):
   - `read_lines(path)` always reads `path` when the compiled program runs.
   - `read_file(path)` always reads `path` when the compiled program runs.
   - The compiler emits the file path string, not the file contents, into the generated LLVM.
+  - A missing input path reports the helper name and path and exits with status 1 when uncaught; inside a `try` block it can be caught as an exception.
+  - `open(path)` opens a file for writing; use `read_file` and `read_lines` to read files. Call `close(file)` when finished. File output helpers do not consistently report open, write, or close failures.
 - Const enforcement is compile-time and applies to the binding:
   - reassigning a `const` variable and direct writes through its array, map, set, or record target are rejected during compilation
   - known mutating array, set, and priority-queue operations through a `const` binding are rejected, including UFCS and free-function forms
@@ -250,7 +253,9 @@ int main(string[] args):
 
 12. Error reporting
 
-- Lexer and parser errors include exact line and column. Runtime errors raise descriptive messages.
+- Lexer and parser errors include exact line and column. Runtime errors print a diagnostic and exit non-zero when uncaught; the message format depends on the failing operation.
+- The self-hosted compiler writes generated LLVM before resolving all foreign-module build metadata. A later metadata failure can leave LLVM in the requested output path, so output preservation is not guaranteed for every compiler failure.
+- The `raylib` foreign module searches Homebrew roots under `/opt/homebrew/opt/raylib` and `/usr/local/opt/raylib`. Set `TB_RAYLIB_ROOT` to override discovery; the bundle does not include raylib or its external dependencies.
 
 13. Standard library (stdlib) reference
 
@@ -268,11 +273,14 @@ Core IO and string helpers
   - Read the entire file contents at runtime and return them as one string.
   - Return file contents as a single string.
 
-- open(path: string, mode: string = 'r') -> file
-  - Open a file handle for runtime file IO. Lowered to runtime file operations.
+- open(path: string) -> file
+  - Open a file handle for writing at runtime. Use `read_file` or `read_lines` for reads.
 
 - write_line(f: file, line: string) -> void
   - Append `line` with a newline to the file handle.
+
+- close(f: file) -> void
+  - Close a file handle after writing. Output failures from opening, writing, and closing are not consistently reported.
 
 Conversion and numeric helpers
 

@@ -23,7 +23,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent
 BUILD_TIMEOUT = 600
 PROGRAM_TIMEOUT = 60
-EXPECTED_FIXTURES = (1, 160, 161, 162)
+EXPECTED_FIXTURES = (1, 160, 161, 162, 165)
 GATE_NAMES = (
     "revision", "archive-inputs", "toolchain", "fresh-build", "native-fixtures",
     "python-fixtures", "const-bindings", "source-unchanged", "bundle-files",
@@ -606,6 +606,37 @@ class Verification:
         malformed_result = self.run("bundle-error-control-malformed-source", [str(bundle_root / "tb"), str(malformed), str(error_dir / "malformed.ll")],
                                     unrelated_b, env_overrides=env, expected_status=None)
         self.require(malformed_result.returncode != 0, "tb accepted malformed source", "error-control")
+
+        io_diagnostics: dict[str, dict[str, int | str]] = {}
+        io_source = self.source_root / "tests/fixtures/165.tb"
+        for optimization in ("-O0", "-O2"):
+            binary = error_dir / f"file io missing input {optimization[1:]}"
+            self.run(
+                f"bundle-error-control-file-io-build-{optimization}",
+                [str(bundle_root / "tb-build"), str(io_source), str(binary), optimization],
+                unrelated_b,
+                env_overrides=env,
+                timeout=PROGRAM_TIMEOUT,
+            )
+            for helper in ("read_file", "read_lines"):
+                missing_path = error_dir / f"{helper}-missing-input.in"
+                failure = self.run(
+                    f"bundle-error-control-{helper}-missing-{optimization}",
+                    [str(binary), helper, str(missing_path)],
+                    unrelated_b,
+                    expected_status=1,
+                    timeout=PROGRAM_TIMEOUT,
+                )
+                expected = f"{helper}: {missing_path}\n"
+                self.require(
+                    failure.stdout == expected and failure.stderr == "",
+                    f"{helper} missing-input diagnostic mismatch at {optimization}: {failure.stdout!r} {failure.stderr!r}",
+                    "error-control",
+                )
+                io_diagnostics[f"{helper}-{optimization}"] = {
+                    "exit_status": failure.returncode,
+                    "diagnostic": failure.stdout.rstrip("\n"),
+                }
         self.gate("error-control", "passed", diagnostic_contains="missing_function", output_sentinel_preserved=True)
 
         bool_dir = unrelated_a / "valid bool import after error control"
@@ -625,7 +656,8 @@ class Verification:
         bool_result = self.run("bundle-valid-bool-import-run-after-error", [str(bool_binary)], unrelated_b)
         self.require(bool_result.stdout == "true\n" and bool_result.stderr == "", "valid bool future failed after error control", "error-control")
         self.gate("error-control", "passed", diagnostic_contains="missing_function", output_sentinel_preserved=True,
-                  valid_imported_bool_future_after_failure=True)
+                  valid_imported_bool_future_after_failure=True, missing_file_io_diagnostics=io_diagnostics,
+                  io_missing_exit_status=1, io_stderr_empty=True)
 
         after = filesystem_fingerprints(bundle_root)
         before = self.manifest["extracted_bundle_before"]

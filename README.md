@@ -64,7 +64,9 @@ including files from the local untracked workspace:
 The archive is written to `.build/releases/`. The bundle contains the compiler,
 its LLVM helpers and thread runtime sources, the language reference, and native
 build launcher. See [release/README.md](release/README.md) for extraction,
-checksum, and use instructions. Only macOS arm64 is currently verified.
+checksum, and use instructions. The current candidate compiler targets macOS
+26.0 or newer and is verified on macOS 26.6.2 arm64; other versions and
+architectures have not been validated.
 
 To reproduce the build, test, and bundle checks from a source revision on a
 verified macOS arm64 host, run:
@@ -106,7 +108,7 @@ the known-bad controls. The source inventory and limits are documented in
 
 - Compiling tb programs to LLVM IR with the Python compiler
 - Building and using the self-hosted tb compiler
-- Native numbered fixtures through `tests/fixtures/164.tb`
+- Native numbered fixtures through `tests/fixtures/165.tb`
 - Python compiler fixtures through phase 76; this is a separate suite from the
   native numbered fixtures
 - The current AoC sample set in `examples/aoc`
@@ -126,8 +128,29 @@ the known-bad controls. The source inventory and limits are documented in
 - Stage-3 self-compile throughput is still slower than we want
 - Backend string allocation churn is still high even after the major memory improvements
 - User globals and mutable containers are not synchronized when accessed by
-  worker tasks. Broader runtime-state audits, concurrent stress, and lifetime
-  checks remain open; release readiness is not yet established.
+  worker tasks. The scoped runtime-state audit, lifecycle accounting, and
+  concurrent stress checks for supported task values are complete on macOS
+  arm64; they do not establish safety for arbitrary user code or foreign
+  libraries.
+- Only top-level named workers with the documented argument and result types
+  may cross a task boundary. Submission and general allocation failures are
+  not handled uniformly. A nonlocal exception can skip cleanup in intervening
+  function frames and leak managed values or other owned resources; catch inside
+  the function that owns resources when cleanup matters.
+- Do not start tasks from global initializers when they may read globals that
+  have not finished initializing. Initialize shared state and start work from
+  `main`.
+- Fixed-size pools can deadlock when every worker waits for more work queued to
+  the same pool. `wait_for` uses the system wall clock, which can change.
+- The self-hosted compiler does not make output generation transactional. Some
+  failures while resolving foreign-module build metadata can leave generated
+  LLVM in the requested output path. `open`, `write_line`, and `close` also do
+  not consistently report file output failures.
+- The standalone bundle is verified only on macOS arm64. Foreign modules such
+  as raylib and their external dependencies are not included; set
+  `TB_RAYLIB_ROOT` to a raylib installation when compiling programs that import
+  it. The current candidate compiler targets macOS 26.0 or newer and has been
+  tested on macOS 26.6.2 arm64.
 
 ## License
 
