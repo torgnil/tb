@@ -502,7 +502,14 @@ ParsedFunction apply_ownership_to_function(ParsedFunction function_ir, RecordFie
             if (block_index == function_ir.blocks.length() - 1):
                 if (block.terminator.kind == ''):
                     block = BlockIR(block.label, block.instructions, TerminatorIR('return', []))
-        blocks.push(apply_ownership_to_block(function_ir, cache, binding_cache, identifier_target_cache, block, initialized_managed, record_fields, record_names, enum_names, seen_sets))
+        BlockIR owned_block = apply_ownership_to_block(function_ir, cache, binding_cache, identifier_target_cache, block, initialized_managed, record_fields, record_names, enum_names, seen_sets)
+        if (block_index == function_ir.blocks.length() - 1):
+            if (function_ir.name == 'main'):
+                if (normalize_llvm_type_name(function_ir.return_type) == 'int'):
+                    if (owned_block.terminator.kind == ''):
+                        LinearInstruction[] instructions = append_instructions(owned_block.instructions, exit_cleanup_instructions(identifier_target_cache, TerminatorIR('return', []), initialized_managed))
+                        owned_block = BlockIR(owned_block.label, instructions, owned_block.terminator)
+        blocks.push(owned_block)
         block_index += 1
     return ParsedFunction(function_ir.header, function_ir.name, function_ir.return_type, function_ir.params, function_ir.locals, blocks)
 

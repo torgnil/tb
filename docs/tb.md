@@ -173,6 +173,7 @@ int main(string[] args):
 - `return;` is allowed inside `void` functions for early exit.
 - Reaching the end of a `void` function releases its managed local values just like an explicit `return;`. Borrowed parameters remain available to the caller.
 - Empty brace bodies such as `void noop(string text) {}` are allowed. Calls still evaluate their arguments, and borrowed values remain available to the caller. An empty `int main` returns `0`; other non-void functions must return a value or throw on every reachable path.
+- Reaching the end of an `int main` without an explicit return releases its managed local values before the generated entry point returns `0`, including local thread pools that must stop and join their workers. Borrowed parameters and globals remain outside that local cleanup.
 - No extra trailing return is needed when every reachable path in a non-void function returns or throws.
 - Returning a local map transfers its owned value to the caller, which keeps it alive until that value is released. Mutable and const local maps follow this rule. Returning a borrowed parameter or global map produces an independent copy.
 - Returning a function-local `int[]`, `bool[]`, `int[][]`, or `string[]` transfers that owned array to the caller, which releases it normally. Const local arrays follow the same rule. Returning a borrowed parameter or global array produces an independent copy. Returning a borrowed `bool[]` field of a record parameter also produces an independent copy.
