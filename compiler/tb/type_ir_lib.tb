@@ -971,6 +971,12 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
         if (op.args.is_empty()):
             return op
         string result_type = infer_call_type_cached(op.args[0], functions, TYPE_IR_FUNCTION_TYPE_CACHE_NAMES, TYPE_IR_FUNCTION_TYPE_CACHE_VALUES)
+        if (result_type == 'unknown' && op.args[0] == 'clear' && lookup_function_return_type(functions, 'clear') == 'unknown' && !record_type_exists(record_fields, 'clear')):
+            if (op.args.length() != 2):
+                throw 'clear requires exactly one array argument'
+            string clear_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+            if (clear_type == 'bool[]'):
+                result_type = 'void'
         if (op.args[0] == 'pop' && op.args.length() >= 2):
             string pop_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
             if (pop_type == 'bool[]'):
@@ -1045,6 +1051,10 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             return op
         string method_name = op.args[0]
         string base_type = lookup_temp_type_slot(temp_types, op.args[1])
+        if (method_name == 'clear' && normalize_llvm_type_name(base_type) == 'bool[]' && lookup_function_return_type(functions, 'clear') == 'unknown'):
+            if (op.args.length() != 2):
+                throw 'bool[] clear requires no arguments'
+            return refined_value_op(op, 'void', 'plain')
         if ((method_name == 'insert' || method_name == 'remove_at') && normalize_llvm_type_name(base_type) == 'bool[]' && lookup_function_return_type(functions, method_name) == 'unknown'):
             if (method_name == 'insert'):
                 if (op.args.length() != 4):

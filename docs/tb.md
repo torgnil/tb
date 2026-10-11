@@ -403,7 +403,7 @@ Array helpers
   - Nested arrays copy their rows as well as the outer array; immutable strings may be shared.
 
 - clear(arr: T[]) -> void
-  - For `string[]`, clear releases owned strings in live slots and keeps the array storage available for reuse. Also available as `arr.clear()`.
+  - For `string[]`, clear releases owned strings in live slots and keeps the array storage available for reuse. For `bool[]`, it sets the live length to zero and keeps the array available for reuse. Also available as `arr.clear()`.
 
 - contains(arr: T[], value: T) -> bool
   - For `int[]`, `bool[]`, and `string[]`, return `true` when the array contains `value`. Also available via UFCS (`arr.contains(value)`) and membership syntax (`value in arr`). Queries borrow the array and item, preserve the array contents and length, and require the item type to match the array element type.

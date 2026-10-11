@@ -191,6 +191,12 @@ loop.body:
 done:
   ret void
 }
+define private void @tb_bootstrap_bool_array_clear(ptr %array) {
+entry:
+  %len.ptr = getelementptr inbounds %tb_bootstrap_bool_array, ptr %array, i32 0, i32 0
+  store i32 0, ptr %len.ptr
+  ret void
+}
 define private i1 @tb_bootstrap_bool_array_contains(ptr %array, i1 %needle) {
 entry:
   %len = call i32 @tb_bootstrap_bool_array_length(ptr %array)

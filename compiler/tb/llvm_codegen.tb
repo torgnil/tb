@@ -4617,6 +4617,14 @@ string emit_call_value_instruction_core(ProgramIR program, ParsedFunction functi
                 if (op.args.length() != 2):
                     throw 'unsupported llvm bool[] pop arity'
                 return emit_tracked_builtin_call_line('  ' + lhs + ' = call i1 @tb_bootstrap_bool_array_pop(ptr ' + temp_ref(op.args[1]) + ')')
+    if (call_name == 'clear' && call_arg1_type == 'bool[]' && lookup_call_meta_index(call_name) < 0):
+        RecordDeclIR clear_record = lookup_record_decl(program, call_name)
+        if (clear_record.header == ''):
+            if (op.args.length() != 2):
+                throw 'unsupported llvm bool[] clear arity'
+            if (function_uses_temp(function_ir, op.lhs)):
+                throw 'clear result cannot be used as a value'
+            return emit_tracked_builtin_call_line('  call void @tb_bootstrap_bool_array_clear(ptr ' + temp_ref(op.args[1]) + ')')
     string builtin_query_result = emit_builtin_query_call_value_instruction(function_ir, op, call_name, call_arg1_type)
     if (builtin_query_result != ''):
         return emit_tracked_builtin_call_line(builtin_query_result)
@@ -5235,6 +5243,12 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
         if (op.args.length() != 3):
             throw 'unsupported llvm bool[] remove_at arity'
         return '  ' + lhs + ' = call i1 @tb_bootstrap_bool_array_remove_at(ptr ' + temp_ref(op.args[1]) + ', i64 ' + temp_ref(op.args[2]) + ')'
+    if (method_name == 'clear' && method_base_type == 'bool[]' && lookup_call_meta_index(method_name) < 0):
+        if (op.args.length() != 2):
+            throw 'unsupported llvm bool[] clear arity'
+        if (function_uses_temp(function_ir, op.lhs)):
+            throw 'clear result cannot be used as a value'
+        return '  call void @tb_bootstrap_bool_array_clear(ptr ' + temp_ref(op.args[1]) + ')'
     if (method_name == 'abs' && (method_base_type == 'int' || method_base_type == 'num')):
         if (op.args.length() != 2):
             throw 'unsupported llvm abs arity'
