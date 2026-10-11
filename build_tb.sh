@@ -22,8 +22,8 @@ import re
 import sys
 
 repo_root = Path(sys.argv[1])
-version = os.environ.get('TB_VERSION', '0.2.1-dev')
-if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9][A-Za-z0-9.-]*)?', version):
+version = os.environ.get('TB_VERSION', 'dev')
+if version != 'dev' and not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9][A-Za-z0-9.-]*)?', version):
     raise SystemExit(f'Invalid TB_VERSION: {version!r}')
 helpers = sorted((repo_root / 'compiler/tb/llvm_helpers').glob('*.ll'))
 if not helpers:
