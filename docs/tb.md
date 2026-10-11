@@ -213,7 +213,8 @@ int main(string[] args):
 - Function-local `int[]` declarations and reassignment copy borrowed arrays, including const arrays, parameters, globals, indexed rows, and record fields. Mutating the copy leaves its source unchanged. Owned array literals and call results transfer into the local binding. Record construction and field replacement snapshot borrowed `int[]` arrays, and record cloning copies owned `int[]` fields; owned array temporaries transfer into the field. Returning an `int[]` field from a local record snapshots it before the record is released, while returning an owned local array transfers it directly to the caller.
 - Function-local `bool[]` declarations and reassignment also copy borrowed arrays, including const arrays, parameters, globals, and record fields. Mutating the copy leaves its source unchanged. Owned array literals and call results transfer into the local binding.
 - Function-local `string[][]` declarations and reassignment copy borrowed arrays by cloning the outer array and its child `string[]` arrays. Strings remain shared immutable values. Owned literals and call results transfer into the local binding.
-- Returning `string[][]` snapshots a borrowed parameter, global, or record field before local cleanup. Returning an owned local transfers it to the caller; nested array structure is independent while immutable strings are shared.
+- Function-local `int[][]` declarations and reassignment copy borrowed arrays by cloning the outer array and its child `int[]` arrays. Owned literals and call results transfer into the local binding.
+- Returning `int[][]` or `string[][]` snapshots a borrowed parameter, global, or record field before local cleanup. Returning an owned local transfers it to the caller; nested array structure is independent while immutable strings are shared.
 - `copy(array)` and `array.copy()` return an independent mutable snapshot for `int[]`, `bool[]`, `string[]`, `int[][]`, and `string[][]`. Nested copies clone both array structure levels; immutable strings remain shared. Const sources are accepted, and the result can be mutated independently.
 - Runtime arrays are heap-backed when mutation or runtime flow requires it. Helpers: `push`, `pop`, `insert`, `remove_at`, `clear`, `sort`, `map_to`, `filter`, and `flat_map`.
 - Cleanup of inline owned array temporaries used as borrowed call arguments or method receivers is incomplete. Bind an array result to a local variable before querying it when cleanup matters.
@@ -229,7 +230,8 @@ int main(string[] args):
 
 - Access: `r.field`.
 - Field writes and reads lower to runtime heap-backed record values when needed.
-- Global record initializers support `int[]`, `bool[]`, and `string[]` fields, including nested record fields. Their runtime initializers run before `main`; globals keep process lifetime.
+- Global record initializers support `int[]`, `bool[]`, `string[]`, `int[][]`, and `string[][]` fields, including nested record fields. Their runtime initializers run before `main`; globals keep process lifetime.
+- Record construction, cloning, and field replacement snapshot borrowed `int[][]` and `string[][]` values, including when a field is assigned to itself. Nested array structure is independent; immutable strings remain shared. Owned array temporaries transfer into fields.
 - Const record bindings allow field reads, including nested record fields and array-valued fields; the binding remains protected from direct field writes.
 - Record names follow normal identifier rules, including lowercase and underscore-prefixed names.
 
@@ -251,7 +253,7 @@ int main(string[] args):
   - const maps support the same read operations as mutable maps, including indexed value reads, key membership, and `keys()` / `values()`
   - passing a const value to an arbitrary user function does not make that function's parameters const
 - When values are not known at compile time, corresponding operations lower to runtime helpers and library calls.
-- Local declarations and reassignment transfer owned `int[]`, `bool[]`, `string[]`, `int[][]`, `string[][]`, map, and record temporaries. Assigning a managed local directly to itself preserves its existing value and ownership. Borrowed values keep their existing copy behavior, and reassignment to a different value releases the previous owned local value. Record fields of type `bool[]` are independent snapshots when constructed, replaced, or cloned; returning a bool-array field from a local record also returns an independent snapshot. Returning an owned local array or slice transfers it to the caller, including a const local.
+- Local declarations and reassignment transfer owned `int[]`, `bool[]`, `string[]`, `int[][]`, `string[][]`, map, and record temporaries. Assigning a managed local directly to itself preserves its existing value and ownership. Borrowed values keep their existing copy behavior, and reassignment to a different value releases the previous owned local value. Record fields of type `bool[]`, `int[][]`, and `string[][]` are independent snapshots when constructed, replaced, or cloned. Returning a `bool[]`, `int[][]`, or `string[][]` field from a local record also returns an independent snapshot. Returning an owned local array or slice transfers it to the caller, including a const local.
 
 11. Built-in calling and printing
 

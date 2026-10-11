@@ -463,6 +463,7 @@ BlockIR apply_ownership_to_block(ParsedFunction function_ir, OwnershipTempMetaCa
         if (terminator.kind == 'return_owned'):
             bool prepare_string_return = false
             bool prepare_string_array_array_return = false
+            bool prepare_int_array_array_return = false
             bool prepare_bool_array_return = false
             bool prepare_int_array_return = false
             if (!terminator.args.is_empty()):
@@ -470,12 +471,15 @@ BlockIR apply_ownership_to_block(ParsedFunction function_ir, OwnershipTempMetaCa
                 string normalized_return_type = normalize_llvm_type_name(return_type)
                 prepare_string_return = normalized_return_type == 'string'
                 prepare_string_array_array_return = normalized_return_type == 'string[][]'
+                prepare_int_array_array_return = normalized_return_type == 'int[][]'
                 prepare_bool_array_return = normalized_return_type == 'bool[]'
                 prepare_int_array_return = normalized_return_type == 'int[]'
             if (prepare_string_return):
                 instructions.push(LinearInstruction('prepare_return_string', '', '', '', '', [terminator.args[0]]))
             if (prepare_string_array_array_return):
                 instructions.push(LinearInstruction('prepare_return_string_array_array', '', '', '', '', [terminator.args[0]]))
+            if (prepare_int_array_array_return):
+                instructions.push(LinearInstruction('prepare_return_int_array_array', '', '', '', '', [terminator.args[0]]))
             if (prepare_bool_array_return):
                 instructions.push(LinearInstruction('prepare_return_bool_array', '', '', '', '', [terminator.args[0]]))
             if (prepare_int_array_return):

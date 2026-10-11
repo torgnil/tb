@@ -4395,6 +4395,12 @@ string emit_record_value_instruction_core(ProgramIR program, ParsedFunction func
                 lines.push(line)
             if (temp_is_string_array_array(function_ir, arg_name)):
                 stored_value = emit_string_array_array_owned_value(function_ir, arg_name, record_name + '.' + field.name + '.' + op.lhs)
+        else if (field_type == 'int[][]'):
+            string[] prefix = emit_int_array_array_materialize_if_needed(function_ir, arg_name, record_name + '.' + field.name + '.' + op.lhs)
+            for (string line in prefix):
+                lines.push(line)
+            if (temp_is_int_array_array(function_ir, arg_name)):
+                stored_value = emit_int_array_array_owned_value(function_ir, arg_name, record_name + '.' + field.name + '.' + op.lhs)
         else if (field_type == 'bool[]'):
             string[] prefix = emit_bool_array_materialize_if_needed(function_ir, arg_name, record_name + '.' + field.name + '.' + op.lhs)
             for (string line in prefix):
@@ -6273,6 +6279,20 @@ string emit_assign_field_instruction(ProgramIR program, ParsedFunction function_
         lines.push(emit_record_owned_field_ptr(program, function_ir, op.args[0], op.detail, '%store.field.owned.ptr.' + temp_suffix))
         lines.push('  store i8 ' + owned_flag + ', ptr %store.field.owned.ptr.' + temp_suffix)
         return join_llvm_strings(lines, '\n')
+    if (normalize_llvm_type_name(field.type_name) == 'int[][]'):
+        string[] lines = emit_int_array_array_materialize_if_needed(function_ir, op.args[1], op.detail + '.' + temp_suffix)
+        string stored_value = temp_ref(op.args[1]).substring(0)
+        string owned_flag = '0'.substring(0)
+        if (temp_is_int_array_array(function_ir, op.args[1])):
+            stored_value = emit_int_array_array_owned_value(function_ir, op.args[1], op.detail + '.' + temp_suffix)
+            owned_flag = '1'.substring(0)
+        LinearInstruction release_op = LinearInstruction('release_field', '', '', '', op.detail, [op.args[0]])
+        lines.push(emit_release_field_instruction(program, function_ir, release_op, 'replace.' + temp_suffix))
+        lines.push(emit_record_field_ptr(program, function_ir, op.args[0], op.detail, ptr_name))
+        lines.push('  store ptr ' + stored_value + ', ptr ' + ptr_name)
+        lines.push(emit_record_owned_field_ptr(program, function_ir, op.args[0], op.detail, '%store.field.owned.ptr.' + temp_suffix))
+        lines.push('  store i8 ' + owned_flag + ', ptr %store.field.owned.ptr.' + temp_suffix)
+        return join_llvm_strings(lines, '\n')
     if (normalize_llvm_type_name(field.type_name) == 'int[]'):
         string[] lines = emit_int_array_materialize_if_needed(function_ir, op.args[1], op.detail + '.' + temp_suffix)
         string stored_value = temp_ref(op.args[1]).substring(0)
@@ -6512,6 +6532,10 @@ string emit_instruction(ProgramIR program, ParsedFunction function_ir, string bl
         if (transferable_local_binding_name(function_ir, op.args[0]) != '' && temp_is_string_array_array(function_ir, op.args[0])):
             return '  ; return string[][] local transfers directly'
         return join_llvm_strings(emit_string_array_array_materialize_if_needed(function_ir, op.args[0], 'return.' + block_label), '\n')
+    if (op.kind == 'prepare_return_int_array_array'):
+        if (transferable_local_binding_name(function_ir, op.args[0]) != '' && temp_is_int_array_array(function_ir, op.args[0])):
+            return '  ; return int[][] local transfers directly'
+        return join_llvm_strings(emit_int_array_array_materialize_if_needed(function_ir, op.args[0], 'return.' + block_label), '\n')
     if (op.kind == 'prepare_return_bool_array'):
         if (transferable_local_binding_name(function_ir, op.args[0]) != '' && temp_is_bool_array(function_ir, op.args[0])):
             return '  ; return bool[] local transfers directly'
@@ -6562,7 +6586,7 @@ string emit_instruction(ProgramIR program, ParsedFunction function_ir, string bl
         return join_llvm_strings(lines, '\n')
     if (op.kind == 'release_field'):
         BindingIR field = record_field_binding_from_temp(program, function_ir, op.args[0], op.detail)
-        if (normalize_llvm_type_name(field.type_name) == 'string[][]' || normalize_llvm_type_name(field.type_name) == 'bool[]' || normalize_llvm_type_name(field.type_name) == 'int[]'):
+        if (normalize_llvm_type_name(field.type_name) == 'string[][]' || normalize_llvm_type_name(field.type_name) == 'int[][]' || normalize_llvm_type_name(field.type_name) == 'bool[]' || normalize_llvm_type_name(field.type_name) == 'int[]'):
             return '  ; defer release_field ' + op.detail + ' until assign_field materializes the replacement'
         if (!is_backend_managed_type(field.type_name)):
             return '  ; release_field ' + op.detail + ' ' + temp_ref(op.args[0])
@@ -6757,7 +6781,15 @@ string[] emit_terminator(ParsedFunction function_ir, BlockIR block, TerminatorIR
             lines.push('  ret ptr ' + returned_value)
             return lines
         if (normalize_llvm_type_name(result_type) == 'int[][]'):
-            string[] lines = emit_int_array_array_materialize_if_needed(function_ir, terminator.args[0], 'return.' + temp_suffix)
+            bool return_int_array_array_prepared = false
+            for (LinearInstruction op in block.instructions):
+                if (op.kind == 'prepare_return_int_array_array'):
+                    if (!op.args.is_empty()):
+                        if (op.args[0] == terminator.args[0]):
+                            return_int_array_array_prepared = true
+            string[] lines = []
+            if (!return_int_array_array_prepared):
+                lines = emit_int_array_array_materialize_if_needed(function_ir, terminator.args[0], 'return.' + temp_suffix)
             string returned_value = temp_ref(terminator.args[0])
             if (temp_is_int_array_array(function_ir, terminator.args[0]) && !temp_needs_backend_free(function_ir, terminator.args[0])):
                 returned_value = emit_int_array_array_owned_value(function_ir, terminator.args[0], 'return.' + temp_suffix)
@@ -7059,7 +7091,7 @@ bool record_global_needs_runtime_init(ProgramIR program, string record_name):
         if (strip_prefix(record_decl.header, 'record ') == record_name):
             for (BindingIR field in record_field_bindings(record_decl)):
                 string field_type = normalize_llvm_type_name(field.type_name)
-                if (field_type == 'string[]' || field_type == 'int[]' || field_type == 'bool[]' || field_type.starts_with('map<')):
+                if (field_type == 'string[]' || field_type == 'int[]' || field_type == 'bool[]' || field_type == 'string[][]' || field_type == 'int[][]' || field_type.starts_with('map<')):
                     return true
                 string nested_record = record_name_from_type(field_type)
                 if (nested_record != '' && record_global_needs_runtime_init(program, nested_record)):
@@ -7547,6 +7579,17 @@ string[] emit_record_helpers(RecordDeclIR record_decl):
             clone_field_lines.push('  br i1 %field.owned.' + field.name + ', label %field.clone.owned.' + field.name + ', label %field.clone.borrowed.' + field.name)
             clone_field_lines.push('field.clone.owned.' + field.name + ':')
             clone_field_lines.push('  %field.copy.' + field.name + ' = call ptr @tb_bootstrap_string_array_array_clone(ptr %field.value.' + field.name + ')')
+            clone_field_lines.push('  br label %field.clone.done.' + field.name)
+            clone_field_lines.push('field.clone.borrowed.' + field.name + ':')
+            clone_field_lines.push('  br label %field.clone.done.' + field.name)
+            clone_field_lines.push('field.clone.done.' + field.name + ':')
+            clone_field_lines.push('  %field.clone.value.' + field.name + ' = phi ptr [%field.copy.' + field.name + ', %field.clone.owned.' + field.name + '], [%field.value.' + field.name + ', %field.clone.borrowed.' + field.name + ']')
+            stored_value = '%field.clone.value.' + field.name
+            stored_owned = '%field.owned.' + field.name
+        else if (normalize_llvm_type_name(field.type_name) == 'int[][]'):
+            clone_field_lines.push('  br i1 %field.owned.' + field.name + ', label %field.clone.owned.' + field.name + ', label %field.clone.borrowed.' + field.name)
+            clone_field_lines.push('field.clone.owned.' + field.name + ':')
+            clone_field_lines.push('  %field.copy.' + field.name + ' = call ptr @tb_bootstrap_int_array_array_clone(ptr %field.value.' + field.name + ')')
             clone_field_lines.push('  br label %field.clone.done.' + field.name)
             clone_field_lines.push('field.clone.borrowed.' + field.name + ':')
             clone_field_lines.push('  br label %field.clone.done.' + field.name)
