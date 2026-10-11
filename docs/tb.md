@@ -390,6 +390,7 @@ Array helpers
   - Return the last element. Empty arrays still follow normal runtime bounds behavior.
 
 - insert(arr: T[], index: int, value: T) -> void
+  - For native `int[]` method calls such as `arr.insert(index, value)`, insertion shifts the selected element and later values right. Negative indices clamp to the start; indices past the end append. Inserting at the last occupied index preserves that element in the new final slot.
 
 - remove_at(arr: T[], index: int) -> T
 

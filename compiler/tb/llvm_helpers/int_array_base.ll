@@ -297,7 +297,7 @@ entry:
   %index.clamped = select i1 %index.high, i32 %len, i32 %index.nonneg
   %new.len = call i32 @tb_bootstrap_int_array_push(ptr %array, i64 0)
   %old.last = sub i32 %new.len, 2
-  %need.shift = icmp sgt i32 %old.last, %index.clamped
+  %need.shift = icmp sge i32 %old.last, %index.clamped
   br label %loop.cond
 loop.cond:
   %current = phi i32 [%old.last, %entry], [%prev.current, %loop.body]
