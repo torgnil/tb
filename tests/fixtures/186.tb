@@ -1,0 +1,97 @@
+record IntBox(int[] values);
+
+int compare_high_first(int left, int right):
+    return right - left
+
+void print_ints(int[] values):
+    print(values.length())
+    for (int i : range(values.length())):
+        print(values[i])
+
+void edit_parameter(int[] values):
+    const int wide_index = 4294967296
+    const int inserted_value = 77
+    int inserted_length = values.insert(wide_index, inserted_value)
+    print(inserted_length)
+    int removed = values.remove_at(wide_index)
+    print(removed)
+    print_ints(values)
+
+int main(string[] args):
+    int argc = args.length()
+    int[] ordinary = [argc, argc + 1, argc + 2]
+    int ordinary_insert_length = ordinary.insert(1, 50)
+    print(ordinary_insert_length)
+    print_ints(ordinary)
+    int ordinary_removed = ordinary.remove_at(2)
+    print(ordinary_removed)
+    print_ints(ordinary)
+
+    int[] positive_wide = [11, 22]
+    int append_length = positive_wide.insert(4294967296, 99)
+    print(append_length)
+    print_ints(positive_wide)
+
+    int[] negative_wide = [31, 32]
+    int negative_insert_length = negative_wide.insert(-4294967297, 30)
+    print(negative_insert_length)
+    print_ints(negative_wide)
+
+    int min_i64 = -9223372036854775807 - 1
+    int max_i64 = 9223372036854775807
+    int[] extreme_indices = [41, 42]
+    int min_insert_length = extreme_indices.insert(min_i64, 40)
+    int max_insert_length = extreme_indices.insert(max_i64, 43)
+    print(min_insert_length)
+    print(max_insert_length)
+    print_ints(extreme_indices)
+    int invalid_min = extreme_indices.remove_at(min_i64)
+    int invalid_max = extreme_indices.remove_at(max_i64)
+    print(invalid_min)
+    print(invalid_max)
+    print_ints(extreme_indices)
+
+    int[] empty = []
+    int empty_insert_length = empty.insert(max_i64, 5)
+    int empty_remove = empty.remove_at(min_i64)
+    print(empty_insert_length)
+    print(empty_remove)
+    print_ints(empty)
+
+    int[] singleton = [60]
+    int singleton_removed = singleton.remove_at(0)
+    int singleton_invalid = singleton.remove_at(4294967296)
+    print(singleton_removed)
+    print(singleton_invalid)
+    print_ints(singleton)
+
+    int[] borrowed = [70, 71]
+    edit_parameter(borrowed)
+
+    IntBox box = IntBox([80, 81])
+    int field_insert_length = box.values.insert(4294967296, 82)
+    print(field_insert_length)
+    print_ints(box.values)
+    int field_invalid = box.values.remove_at(-4294967296)
+    print(field_invalid)
+    print_ints(box.values)
+
+    int[] repeated = [90, 91, 92, 93]
+    repeated.insert(4294967296, 94)
+    repeated.insert(4294967297, 95)
+    int removed_last = repeated.remove_at(repeated.length() - 1)
+    int removed_penultimate = repeated.remove_at(repeated.length() - 2)
+    print(removed_last)
+    print(removed_penultimate)
+    print_ints(repeated)
+
+    int[] queue_values = [5, 2, 4]
+    prio_q<int> queue = queue_values.create_prio_q(compare_high_first)
+    while (!queue.is_empty()):
+        print(queue.pop())
+    int[] no_values = []
+    prio_q<int> empty_queue = no_values.create_prio_q(compare_high_first)
+    print(empty_queue.is_empty())
+    print(empty_queue.pop())
+    print(empty_queue.is_empty())
+    return 0

@@ -5328,7 +5328,7 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
     if (method_name == 'insert' && method_base_type == 'int[]'):
         if (op.args.length() != 4):
             throw 'unsupported llvm int[] insert arity'
-        return '  ' + lhs + '.index32 = trunc i64 ' + temp_ref(op.args[2]) + ' to i32\n  ' + lhs + '.len32 = call i32 @tb_bootstrap_int_array_insert(ptr ' + temp_ref(op.args[1]) + ', i32 ' + temp_ref(op.lhs + '.index32') + ', i64 ' + temp_ref(op.args[3]) + ')\n  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64'
+        return '  ' + lhs + '.len32 = call i32 @tb_bootstrap_int_array_insert(ptr ' + temp_ref(op.args[1]) + ', i64 ' + temp_ref(op.args[2]) + ', i64 ' + temp_ref(op.args[3]) + ')\n  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64'
     if (method_name == 'sum' && method_base_type == 'int[]'):
         if (op.args.length() != 2):
             throw 'unsupported llvm int[] sum arity'
@@ -5344,7 +5344,7 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
     if (method_name == 'remove_at' && method_base_type == 'int[]'):
         if (op.args.length() != 3):
             throw 'unsupported llvm int[] remove_at arity'
-        return '  ' + lhs + '.index32 = trunc i64 ' + temp_ref(op.args[2]) + ' to i32\n  ' + lhs + ' = call i64 @tb_bootstrap_int_array_remove_at(ptr ' + temp_ref(op.args[1]) + ', i32 ' + temp_ref(op.lhs + '.index32') + ')'
+        return '  ' + lhs + ' = call i64 @tb_bootstrap_int_array_remove_at(ptr ' + temp_ref(op.args[1]) + ', i64 ' + temp_ref(op.args[2]) + ')'
     if (method_name == 'clear' && method_base_type == 'int[]'):
         if (op.args.length() != 2):
             throw 'unsupported llvm int[] clear arity'

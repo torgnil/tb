@@ -236,7 +236,7 @@ define private i64 @tb_bootstrap_prio_q_int_pop(ptr %pq) {
 entry:
   %array.ptr = getelementptr inbounds %tb_bootstrap_prio_q_int, ptr %pq, i32 0, i32 0
   %array = load ptr, ptr %array.ptr
-  %value = call i64 @tb_bootstrap_int_array_remove_at(ptr %array, i32 0)
+  %value = call i64 @tb_bootstrap_int_array_remove_at(ptr %array, i64 0)
   ret i64 %value
 }
 define private ptr @tb_bootstrap_int_array_clone(ptr %array) {
@@ -287,14 +287,16 @@ store:
   store i32 %next.len, ptr %len.ptr
   ret i32 %next.len
 }
-define private i32 @tb_bootstrap_int_array_insert(ptr %array, i32 %index, i64 %value) {
+define private i32 @tb_bootstrap_int_array_insert(ptr %array, i64 %index, i64 %value) {
 entry:
   %len.ptr = getelementptr inbounds %tb_bootstrap_int_array, ptr %array, i32 0, i32 0
   %len = load i32, ptr %len.ptr
-  %index.low = icmp slt i32 %index, 0
-  %index.nonneg = select i1 %index.low, i32 0, i32 %index
-  %index.high = icmp sgt i32 %index.nonneg, %len
-  %index.clamped = select i1 %index.high, i32 %len, i32 %index.nonneg
+  %len64 = sext i32 %len to i64
+  %index.low = icmp slt i64 %index, 0
+  %index.nonneg = select i1 %index.low, i64 0, i64 %index
+  %index.high = icmp sgt i64 %index.nonneg, %len64
+  %index.clamped64 = select i1 %index.high, i64 %len64, i64 %index.nonneg
+  %index.clamped = trunc i64 %index.clamped64 to i32
   %new.len = call i32 @tb_bootstrap_int_array_push(ptr %array, i64 0)
   %old.last = sub i32 %new.len, 2
   %need.shift = icmp sge i32 %old.last, %index.clamped
@@ -331,23 +333,25 @@ pop:
   store i32 %last.index, ptr %len.ptr
   ret i64 %value
 }
-define private i64 @tb_bootstrap_int_array_remove_at(ptr %array, i32 %index) {
+define private i64 @tb_bootstrap_int_array_remove_at(ptr %array, i64 %index) {
 entry:
   %len.ptr = getelementptr inbounds %tb_bootstrap_int_array, ptr %array, i32 0, i32 0
   %len = load i32, ptr %len.ptr
-  %index.low = icmp slt i32 %index, 0
-  %index.high = icmp sge i32 %index, %len
+  %len64 = sext i32 %len to i64
+  %index.low = icmp slt i64 %index, 0
+  %index.high = icmp sge i64 %index, %len64
   %bad.index = or i1 %index.low, %index.high
   br i1 %bad.index, label %empty, label %remove
 empty:
   ret i64 0
 remove:
-  %value = call i64 @tb_bootstrap_int_array_get(ptr %array, i32 %index)
+  %index32 = trunc i64 %index to i32
+  %value = call i64 @tb_bootstrap_int_array_get(ptr %array, i32 %index32)
   %last.index = sub i32 %len, 1
-  %has.tail = icmp slt i32 %index, %last.index
+  %has.tail = icmp slt i32 %index32, %last.index
   br i1 %has.tail, label %loop.cond, label %shrink
 loop.cond:
-  %current = phi i32 [%index, %remove], [%next.current, %loop.body]
+  %current = phi i32 [%index32, %remove], [%next.current, %loop.body]
   %keep.loop = icmp slt i32 %current, %last.index
   br i1 %keep.loop, label %loop.body, label %shrink
 loop.body:
