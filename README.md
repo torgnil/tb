@@ -16,7 +16,34 @@ Current highlights:
   [language reference](docs/tb.md)
 - built-in foreign module support for `raylib`
 
-## Build
+## Installation
+
+Install on macOS with [Homebrew](https://brew.sh):
+
+```bash
+brew install torgnil/tap/tb
+```
+
+Build and run a native executable:
+
+```bash
+tb path/to/program.tb -O2
+path/to/program
+```
+
+`tb` writes the executable beside the source, without the `.tb` extension.
+Use `-o` to choose an output path, for example
+`tb path/to/program.tb -o ./program -O2`. Native builds require `clang` and
+platform headers from Apple's command line developer tools. Required tb thread
+runtime sources are compiled and linked automatically.
+
+To generate LLVM IR without linking:
+
+```bash
+tb-ir path/to/program.tb output.ll
+```
+
+## Build from source
 
 Build the self-hosted compiler:
 
