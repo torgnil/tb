@@ -2,7 +2,46 @@
 
 All notable changes to tb will be documented in this file.
 
-## [0.2.0] - Unreleased
+## [0.2.1] - Unreleased
+
+### Added
+- Independent array copies with `copy(array)` and `array.copy()` for `int[]`,
+  `bool[]`, `string[]`, `int[][]`, and `string[][]`.
+- In-place `fill` for those array types, including safe string replacement and
+  independent copies of nested rows.
+- Runtime `bool[]` slices, `pop`, `insert`, `remove_at`, and `clear`.
+- Pushing rows into `string[][]`, including typed empty rows.
+- Global record initializers with array-valued fields, including nested arrays
+  and nested records.
+- Checked runtime `write_all(path, text)` and its UFCS form.
+- A TextMate syntax-highlighting bundle for IntelliJ and other compatible editors.
+- Compiler version reporting with `--version` and Homebrew installation
+  instructions (`brew install torgnil/tap/tb`).
+
+### Changed
+- Release `tb` builds a native executable, matching the repository's `tb.sh`
+  workflow. `tb-ir` emits LLVM IR; it replaces the former release `tb` command,
+  and the separate `tb-build` launcher has been removed.
+- LLVM helpers and thread runtime sources are embedded in the compiler.
+- `TB_VERSION` sets the embedded version at build time; unspecified builds
+  report `dev`. Bundle names and version metadata use the embedded version.
+
+### Fixed
+- Negative array slice bounds now count from the end before clamping.
+- Array insertion preserves the previous final element. Integer and boolean
+  positional edits validate the full signed 64-bit index before narrowing it.
+- Lowercase and underscore-prefixed record constructors infer their types
+  correctly. Record names that collide with `pop` preserve constructor and
+  builtin method dispatch, including const-array constructor arguments.
+- Unused record declarations with array fields include their required helpers.
+- Line comments ignore embedded quote and block-comment delimiters.
+- Managed locals are released when `main` falls through. Owned array slices
+  and intermediate string-concatenation operands are released on the supported
+  normal cleanup paths.
+
+See [docs/tb.md](docs/tb.md) for supported behavior and remaining limitations.
+
+## [0.2.0]
 
 ### Added
 - Explicit thread pools and futures for top-level named worker functions.

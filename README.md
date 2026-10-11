@@ -96,7 +96,7 @@ clang output.ll -o program
 
 - Compiling tb programs to LLVM IR with the Python compiler
 - Building and using the self-hosted tb compiler
-- Native numbered fixtures through `tests/fixtures/165.tb`
+- Native numbered fixtures through `tests/fixtures/188.tb`
 - Python compiler fixtures through phase 76; this is a separate suite from the
   native numbered fixtures
 - The current AoC sample set in `examples/aoc`
