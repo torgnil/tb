@@ -1,0 +1,55 @@
+record pop(bool[] flags);
+record FlagBox(bool[] flags);
+
+const bool[] global_flags = [true, false];
+
+int main(string[] args):
+    const bool[] local_flags = [true, false]
+    pop local_copy = pop(local_flags)
+    local_copy.flags[0] = false
+    print(local_flags[0])
+    print(local_copy.flags[0])
+
+    pop global_copy = pop(global_flags)
+    global_copy.flags.push(true)
+    print(global_flags.length())
+    print(global_copy.flags.length())
+
+    const FlagBox box = FlagBox([false, true])
+    pop field_copy = pop(box.flags)
+    field_copy.flags.push(false)
+    print(box.flags.length())
+    print(field_copy.flags.length())
+
+    const bool[] empty_flags = []
+    pop empty_copy = pop(empty_flags)
+    empty_copy.flags.push(true)
+    print(empty_flags.length())
+    print(empty_copy.flags[0])
+
+    if (args.length() > 1):
+        pop if_copy = pop(local_flags)
+        print(if_copy.flags[1])
+    else:
+        print('if skipped')
+
+    int index = 0
+    while (index < 1):
+        pop loop_copy = pop(local_flags)
+        print(loop_copy.flags[0])
+        index += 1
+
+    switch (args.length()):
+        case 1:
+            pop switch_copy = pop(global_flags)
+            print(switch_copy.flags[1])
+        default:
+            pop switch_copy = pop(local_flags)
+            print(switch_copy.flags[0])
+
+    try:
+        pop try_copy = pop(box.flags)
+        print(try_copy.flags[1])
+    catch (exception err):
+        print(err)
+    return 0

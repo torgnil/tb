@@ -1880,6 +1880,13 @@ void validate_const_expression(Node node, BindingIR[] bindings, string[] functio
                 string root = const_target_root(node.children[0])
                 if (const_method_mutates_receiver(node.value, node.children[0], bindings, record_nodes)):
                     const_reject_mutation(bindings, root, false)
+        else if (node.value == 'pop'):
+            if (!(node.value in function_names)):
+                if (node.children.length() > 0):
+                    if (!const_record_name_exists(record_nodes, node.value)):
+                        string root = const_target_root(node.children[0])
+                        if (const_method_mutates_receiver(node.value, node.children[0], bindings, record_nodes)):
+                            const_reject_mutation(bindings, root, false)
         else if (!(node.value in function_names) && const_function_mutates_first_arg(node.value) && node.children.length() > 0):
             string root = const_target_root(node.children[0])
             if (const_method_mutates_receiver(node.value, node.children[0], bindings, record_nodes)):
