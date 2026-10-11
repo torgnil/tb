@@ -230,6 +230,7 @@ int main(string[] args):
 
 - Access: `r.field`.
 - Field writes and reads lower to runtime heap-backed record values when needed.
+- Declared record fields support `int[]`, `bool[]`, `string[]`, `int[][]`, and `string[][]`; declaring a record emits the runtime helpers needed by those fields even when no instance is constructed.
 - Global record initializers support `int[]`, `bool[]`, `string[]`, `int[][]`, and `string[][]` fields, including nested record fields. Their runtime initializers run before `main`; globals keep process lifetime.
 - Record construction, cloning, and field replacement snapshot borrowed `int[][]` and `string[][]` values, including when a field is assigned to itself. Nested array structure is independent; immutable strings remain shared. Owned array temporaries transfer into fields.
 - Const record bindings allow field reads, including nested record fields and array-valued fields; the binding remains protected from direct field writes.

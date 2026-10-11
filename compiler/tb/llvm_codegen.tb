@@ -2639,6 +2639,22 @@ void analyze_program_features(ProgramIR program, string[] map_types):
                 if (!op.args.is_empty()):
                     if (op.args[0] == '<<' || op.args[0] == '>>'):
                         needs_integer_shifts = true
+    for (RecordDeclIR record_decl in program.records):
+        for (BindingIR field in record_field_bindings(record_decl)):
+            string field_type = normalize_llvm_type_name(field.type_name)
+            if (field_type == 'string[]'):
+                needs_runtime_string_copy = true
+                needs_string_array = true
+            if (field_type == 'string[][]'):
+                needs_runtime_string_copy = true
+                needs_string_array = true
+                needs_string_array_array = true
+            if (field_type == 'int[]'):
+                needs_int_array = true
+            if (field_type == 'int[][]'):
+                needs_int_array_array = true
+            if (field_type == 'bool[]'):
+                needs_bool_array = true
     for (ParsedFunction function_ir in program.functions):
         if (function_ir.name == 'edges_for_point'):
             has_edges_for_point = true
