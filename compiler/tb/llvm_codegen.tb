@@ -7031,16 +7031,16 @@ string globals_init_function_symbol():
     return '@__tb_init_globals'
 
 bool record_global_needs_runtime_init(ProgramIR program, string record_name):
-    RecordDeclIR record_decl = lookup_record_decl(program, record_name)
-    if (record_decl.header == ''):
-        return false
-    for (BindingIR field in record_field_bindings(record_decl)):
-        string field_type = normalize_llvm_type_name(field.type_name)
-        if (field_type == 'string[]' || field_type.starts_with('map<')):
-            return true
-        string nested_record = record_name_from_type(field_type)
-        if (nested_record != '' && record_global_needs_runtime_init(program, nested_record)):
-            return true
+    for (RecordDeclIR record_decl in program.records):
+        if (strip_prefix(record_decl.header, 'record ') == record_name):
+            for (BindingIR field in record_field_bindings(record_decl)):
+                string field_type = normalize_llvm_type_name(field.type_name)
+                if (field_type == 'string[]' || field_type == 'int[]' || field_type == 'bool[]' || field_type.starts_with('map<')):
+                    return true
+                string nested_record = record_name_from_type(field_type)
+                if (nested_record != '' && record_global_needs_runtime_init(program, nested_record)):
+                    return true
+            return false
     return false
 
 bool global_has_static_initializer(ProgramIR program, GlobalDeclIR global_decl):
