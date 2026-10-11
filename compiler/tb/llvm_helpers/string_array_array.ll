@@ -106,6 +106,14 @@ store.ready:
   store i8 %owned.byte, ptr %owned.slot
   ret void
 }
+define private i32 @tb_bootstrap_string_array_array_push(ptr %array, ptr %value, i1 %is_owned) {
+entry:
+  %len.ptr = getelementptr inbounds %tb_bootstrap_string_array_array, ptr %array, i32 0, i32 0
+  %len = load i32, ptr %len.ptr
+  call void @tb_bootstrap_string_array_array_set_owned(ptr %array, i32 %len, ptr %value, i1 %is_owned)
+  %next.len = add i32 %len, 1
+  ret i32 %next.len
+}
 define private ptr @tb_bootstrap_string_array_array_clone(ptr %array) {
 entry:
   %is.null = icmp eq ptr %array, null

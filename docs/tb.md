@@ -380,7 +380,7 @@ Array helpers
 
 - push(arr: T[], value: T) -> void
   - Append `value` to `arr` (may cause runtime heap-backed array representation).
-  - Works for nested arrays too, for example `int[][] rows = []; rows.push([1, 2]);`.
+  - Works for nested `int[][]` and `string[][]` arrays, for example `int[][] rows = []; rows.push([1, 2]);` or `string[][] rows = []; string[] row = []; rows.push(row);`. Typed empty rows are supported. Pushing a borrowed row stores an independent row snapshot; an owned row literal or call result transfers into the outer array.
 
 - pop(arr: T[]) -> T
   - Remove and return the last element. For `bool[]`, `pop(flags)` and `flags.pop()` return the last boolean and reduce the array length by one. Popping an empty `bool[]` returns `false` and leaves it empty. A user-defined function named `pop` takes precedence for `bool[]` calls.

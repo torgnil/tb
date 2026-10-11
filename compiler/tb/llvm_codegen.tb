@@ -4838,6 +4838,9 @@ string emit_string_method_call_value_instruction(ProgramIR program, ParsedFuncti
     if (method_name == 'push' && method_base_type == 'string[][]'):
         if (op.args.length() != 3):
             throw 'unsupported llvm string[][] push arity'
+        string row_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[2]))
+        if (row_type != 'string[]'):
+            throw 'unsupported llvm string[][] push item type: ' + row_type
         string[] lines = emit_string_array_materialize_if_needed(function_ir, op.args[2], op.lhs + '.push')
         string stored_value = temp_ref(op.args[2])
         string owned_flag = 'false'
