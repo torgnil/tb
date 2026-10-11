@@ -5654,6 +5654,8 @@ string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, Lin
                     left_value = '%string.left.' + op.lhs
                     emitted = '  ' + left_value + ' = call ptr @tb_bootstrap_int_to_string(i64 ' + left_ref + ')'
                     free_left = true
+                else if (left_type_normalized == 'string'):
+                    free_left = temp_needs_backend_free(function_ir, op.args[1])
                 else if (left_type_normalized != 'string'):
                     throw 'unsupported llvm string concat left type: ' + left_type
                 if (right_type_normalized == 'int'):
@@ -5662,6 +5664,8 @@ string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, Lin
                         emitted += '\n'
                     emitted += '  ' + right_value + ' = call ptr @tb_bootstrap_int_to_string(i64 ' + right_ref + ')'
                     free_right = true
+                else if (right_type_normalized == 'string'):
+                    free_right = temp_needs_backend_free(function_ir, op.args[2])
                 else if (right_type_normalized != 'string'):
                     throw 'unsupported llvm string concat right type: ' + right_type
                 if (emitted != ''):
