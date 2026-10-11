@@ -390,9 +390,10 @@ Array helpers
   - Return the last element. Empty arrays still follow normal runtime bounds behavior.
 
 - insert(arr: T[], index: int, value: T) -> void
-  - For native `int[]` method calls such as `arr.insert(index, value)`, insertion shifts the selected element and later values right. Negative indices clamp to the start; indices past the end append. Inserting at the last occupied index preserves that element in the new final slot.
+  - For native `int[]` and `bool[]` method calls such as `arr.insert(index, value)`, insertion shifts the selected element and later values right. Negative indices clamp to the start; indices past the end append. Inserting at the last occupied index preserves that element in the new final slot.
 
 - remove_at(arr: T[], index: int) -> T
+  - For native `bool[]` method calls such as `flags.remove_at(index)`, remove the selected flag, shift later flags left, and return the removed value. Negative and past-end indices return `false` without changing the array.
 
 - fill(arr, value) -> void for matching pairs: `int[]`/`int`, `bool[]`/`bool`, `string[]`/`string`, `int[][]`/`int[]`, or `string[][]`/`string[]`.
   - Replace every existing element with `value`, preserving length. The value type must match the array element type. Also available as `arr.fill(value)`.

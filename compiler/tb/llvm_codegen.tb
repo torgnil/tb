@@ -5225,6 +5225,16 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
         if (op.args.length() != 2):
             throw 'unsupported llvm bool[] pop arity'
         return '  ' + lhs + ' = call i1 @tb_bootstrap_bool_array_pop(ptr ' + temp_ref(op.args[1]) + ')'
+    if (method_name == 'insert' && method_base_type == 'bool[]' && lookup_call_meta_index(method_name) < 0):
+        if (op.args.length() != 4):
+            throw 'unsupported llvm bool[] insert arity'
+        if (function_uses_temp(function_ir, op.lhs)):
+            throw 'insert result cannot be used as a value'
+        return '  call void @tb_bootstrap_bool_array_insert(ptr ' + temp_ref(op.args[1]) + ', i64 ' + temp_ref(op.args[2]) + ', i1 ' + temp_ref(op.args[3]) + ')'
+    if (method_name == 'remove_at' && method_base_type == 'bool[]' && lookup_call_meta_index(method_name) < 0):
+        if (op.args.length() != 3):
+            throw 'unsupported llvm bool[] remove_at arity'
+        return '  ' + lhs + ' = call i1 @tb_bootstrap_bool_array_remove_at(ptr ' + temp_ref(op.args[1]) + ', i64 ' + temp_ref(op.args[2]) + ')'
     if (method_name == 'abs' && (method_base_type == 'int' || method_base_type == 'num')):
         if (op.args.length() != 2):
             throw 'unsupported llvm abs arity'

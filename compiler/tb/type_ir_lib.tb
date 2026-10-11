@@ -1045,6 +1045,21 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             return op
         string method_name = op.args[0]
         string base_type = lookup_temp_type_slot(temp_types, op.args[1])
+        if ((method_name == 'insert' || method_name == 'remove_at') && normalize_llvm_type_name(base_type) == 'bool[]' && lookup_function_return_type(functions, method_name) == 'unknown'):
+            if (method_name == 'insert'):
+                if (op.args.length() != 4):
+                    throw 'bool[] insert requires an index and a bool value'
+                string index_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2]))
+                string value_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[3]))
+                if (index_type != 'int' || value_type != 'bool'):
+                    throw 'bool[] insert requires an int index and bool value; got ' + index_type + ' and ' + value_type
+                return refined_value_op(op, 'void', 'plain')
+            if (op.args.length() != 3):
+                throw 'bool[] remove_at requires exactly one index'
+            string remove_index_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2]))
+            if (remove_index_type != 'int'):
+                throw 'bool[] remove_at requires an int index; got ' + remove_index_type
+            return refined_value_op(op, 'bool', 'plain')
         if (method_name == 'pop'):
             string pop_type = normalize_llvm_type_name(base_type)
             if (pop_type == 'bool[]'):
