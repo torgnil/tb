@@ -2,7 +2,7 @@
 
 All notable changes to tb will be documented in this file.
 
-## [0.2.1] - Unreleased
+## [0.2.1] - 2026-10-11
 
 ### Added
 - Independent array copies with `copy(array)` and `array.copy()` for `int[]`,
