@@ -1,0 +1,60 @@
+record packet(int[] values, bool[] flags, int[] empty_values, bool[] empty_flags);
+record _envelope(packet payload, int marker);
+
+int GLOBAL_INIT_COUNT = 0;
+int[] make_global_values():
+    GLOBAL_INIT_COUNT = GLOBAL_INIT_COUNT + 1
+    return [40, 41]
+
+packet SOURCE = packet(make_global_values(), [true, false], [], []);
+packet GLOBAL_PACKET = packet(SOURCE.values, SOURCE.flags, [], []);
+const packet FIXED_PACKET = packet(SOURCE.values, SOURCE.flags, [], []);
+_envelope GLOBAL_WRAPPED = _envelope(packet(SOURCE.values, SOURCE.flags, [], []), 17);
+
+packet clone_global_packet():
+    packet local = GLOBAL_PACKET
+    return local
+
+int main(string[] args):
+    print(GLOBAL_INIT_COUNT)
+    print(GLOBAL_PACKET.values[0])
+    print(GLOBAL_PACKET.flags[0])
+    print(FIXED_PACKET.values[1])
+    print(FIXED_PACKET.flags[1])
+
+    SOURCE.values[0] = 50
+    SOURCE.flags[0] = false
+    print(GLOBAL_PACKET.values[0])
+    print(GLOBAL_PACKET.flags[0])
+
+    GLOBAL_PACKET.empty_values.push(args.length() + 7)
+    GLOBAL_PACKET.empty_flags.push(true)
+    print(GLOBAL_PACKET.empty_values[0])
+    print(GLOBAL_PACKET.empty_flags[0])
+
+    packet local = clone_global_packet()
+    local.values[0] = 60
+    local.flags[0] = false
+    print(GLOBAL_PACKET.values[0])
+    print(local.values[0])
+    print(GLOBAL_PACKET.flags[0])
+    print(local.flags[0])
+
+    _envelope wrapped = GLOBAL_WRAPPED
+    wrapped.marker = args.length() + 9
+    wrapped.payload.values[1] = 70
+    wrapped.payload.flags[1] = true
+    print(GLOBAL_PACKET.values[1])
+    print(wrapped.payload.values[1])
+    print(GLOBAL_PACKET.flags[1])
+    print(wrapped.payload.flags[1])
+    print(wrapped.marker)
+    print(GLOBAL_WRAPPED.payload.values[1])
+    print(GLOBAL_WRAPPED.payload.flags[1])
+    print(GLOBAL_WRAPPED.marker)
+
+    GLOBAL_PACKET.values = SOURCE.values
+    SOURCE.values[0] = 80
+    print(GLOBAL_PACKET.values[0])
+    print(SOURCE.values[0])
+    return 0

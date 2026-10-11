@@ -1,0 +1,114 @@
+record StringFillBox(string[] values);
+
+int fill_effect = 0
+
+string[] fill_receiver_once():
+    fill_effect = fill_effect * 10 + 1
+    return ['old', 'old']
+
+string fill_value_once():
+    fill_effect = fill_effect * 10 + 2
+    return 'once'
+
+string[] make_fill_receiver():
+    return ['temporary', 'temporary']
+
+void fill_parameter(string[] values, string value):
+    fill(values, value)
+
+int main(string[] args):
+    const string constant_value = 'constant'
+    string[] words = ['first', 'second']
+    words.fill(constant_value)
+    print(words[0])
+    print(words[1])
+    print(words.length())
+
+    string[] copied = words.copy()
+    fill(copied, 'copy')
+    print(words[0])
+    print(copied[1])
+    copied[0] = 'changed'
+    print(words[0])
+    print(copied[0])
+
+    string[] literals = ['literal', 'other']
+    string[] from_literal = ['before', 'before']
+    fill(from_literal, literals[0])
+    print(from_literal[0])
+    print(from_literal[1])
+    print(literals[0])
+
+    string[] aliases = ['alias', 'replace']
+    fill(aliases, aliases[0])
+    print(aliases[0])
+    print(aliases[1])
+
+    string runtime_alias_value = args.length() + ' runtime'
+    string[] runtime_alias = [runtime_alias_value, 'slot']
+    fill(runtime_alias, runtime_alias[0])
+    runtime_alias_value = 'released'
+    runtime_alias[0] = 'replaced'
+    print(runtime_alias[1])
+
+    string[] clear_source = ['keep', 'drop']
+    string[] clear_copy = clear_source.copy()
+    clear_source.clear()
+    print(clear_copy[0])
+    print(clear_copy[1])
+    print(clear_source.length())
+
+    string[] empty = []
+    empty.fill('unused')
+    print(empty.length())
+    empty.push('after')
+    fill(empty, 'filled')
+    print(empty[0])
+    print(empty.length())
+
+    string[] parameter_values = ['parameter', 'old']
+    fill_parameter(parameter_values, 'borrowed')
+    print(parameter_values[0])
+    print(parameter_values[1])
+
+    StringFillBox box = StringFillBox(['field', 'old'])
+    box.values.fill('record')
+    print(box.values[0])
+    print(box.values[1])
+
+    if (args.length() > 0):
+        words.fill('branch')
+    else:
+        fill(words, 'alternate')
+    int index = 0
+    while (index < 2):
+        words.fill('loop')
+        index += 1
+    switch (index):
+        case 2:
+            fill(words, 'switch')
+        default:
+            words.fill('default')
+    try:
+        fill(words, 'try')
+    catch (exception err):
+        words.fill('catch')
+    print(words[0])
+
+    fill(fill_receiver_once(), fill_value_once())
+    print(fill_effect)
+
+    string[] temporary_receiver = make_fill_receiver()
+    fill(temporary_receiver, 'receiver')
+    print(temporary_receiver[0])
+    print(temporary_receiver[1])
+
+    fill(words, args.length() + ' owned')
+    print(words[0])
+    fill(words, args.length().to_string())
+    print(words[0])
+
+    string[] empty_discarded = []
+    fill(empty_discarded, args.length() + ' discarded')
+    print(empty_discarded.length())
+    return 0

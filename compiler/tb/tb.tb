@@ -117,13 +117,18 @@ void write_build_metadata(string output_path, string[] active_modules):
         cflags.push(flag)
     string[] csources = foreign_module_c_sources(active_modules)
     for (string source in llvm_runtime_c_sources()):
-        csources.push(source)
+        string runtime_path = output_path + '.' + source
+        write_text_file(runtime_path, llvm_embedded_runtime_text(source))
+        csources.push(runtime_path)
     write_lines_file(output_path + '.linkflags', link_flags)
     write_lines_file(output_path + '.cflags', cflags)
     write_lines_file(output_path + '.csources', csources)
 
 void print_ms(string label, int start_ms, int end_ms):
     print(label + '_ms=' + (end_ms - start_ms))
+
+string compiler_usage():
+    return 'usage: tb [--profile-phases] <file> [output.ll]\n       tb --version'
 
 CompileOptions parse_compile_options(string[] args):
     string source_path = ''
@@ -139,10 +144,10 @@ CompileOptions parse_compile_options(string[] args):
         else if (output_path == ''):
             output_path = arg
         else:
-            throw 'usage: tb.tb [--profile-phases] <file> [output.ll]'
+            throw compiler_usage()
         index += 1
     if (source_path == ''):
-        throw 'usage: tb.tb [--profile-phases] <file> [output.ll]'
+        throw compiler_usage()
     if (profile_phases && output_path == ''):
         throw '--profile-phases requires an output.ll path'
     return CompileOptions(source_path, output_path, profile_phases)
@@ -227,8 +232,14 @@ int run_compiler(CompileOptions options):
 
 int main(string[] args):
     if (args.length() < 2):
-        print('usage: tb.tb [--profile-phases] <file> [output.ll]')
+        print(compiler_usage())
         return 1
+    if (args[1] == '--version'):
+        if (args.length() != 2):
+            print(compiler_usage())
+            return 1
+        print('tb ' + tb_compiler_version())
+        return 0
 
     int exit_code = 0
     try:

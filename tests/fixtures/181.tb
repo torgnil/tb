@@ -1,0 +1,196 @@
+record IntRows(int[][] values);
+record StringRows(string[][] values);
+record RowsBundle(IntRows numbers, StringRows labels);
+
+int GLOBAL_INIT_COUNT = 0;
+
+int[][] make_global_int_rows():
+    GLOBAL_INIT_COUNT += 1
+    return [[40], []]
+
+string[][] make_global_string_rows():
+    GLOBAL_INIT_COUNT += 1
+    string label = 'global-' + GLOBAL_INIT_COUNT.to_string()
+    return [[label], []]
+
+RowsBundle make_global_bundle():
+    int[][] numbers = [[], [7]]
+    string[][] labels = [[], ['wrapped']]
+    return RowsBundle(IntRows(numbers), StringRows(labels))
+
+int[][] make_empty_int_rows():
+    int[][] rows = []
+    return rows
+
+string[][] make_empty_string_rows():
+    string[][] rows = []
+    return rows
+
+int[][] make_local_int_rows(int value):
+    return [[value], []]
+
+string[][] make_local_string_rows(int value):
+    string label = 'local-' + value.to_string()
+    return [[label], []]
+
+IntRows return_int_rows(int value):
+    IntRows rows = IntRows(make_local_int_rows(value))
+    return rows
+
+StringRows return_string_rows(int value):
+    StringRows rows = StringRows(make_local_string_rows(value))
+    return rows
+
+int[][] return_int_rows_field(IntRows rows):
+    return rows.values
+
+string[][] return_string_rows_field(StringRows rows):
+    return rows.values
+
+int[][] return_owned_int_rows_field(int value):
+    int[][] values = [[value]]
+    IntRows rows = IntRows(values)
+    return rows.values
+
+string[][] return_owned_string_rows_field(int value):
+    string[][] values = [[value.to_string()]]
+    StringRows rows = StringRows(values)
+    return rows.values
+
+int[][] return_const_owned_int_rows_field(int value):
+    const int[][] values = [[value]]
+    const IntRows rows = IntRows(values)
+    return rows.values
+
+int[][] return_owned_int_rows_branch(int value):
+    int[][] values = [[value]]
+    IntRows rows = IntRows(values)
+    if (value > 0):
+        return rows.values
+    else:
+        return rows.values
+
+int[][] return_owned_int_rows_try(int value):
+    int[][] values = [[value]]
+    IntRows rows = IntRows(values)
+    try:
+        if (value < 0):
+            throw 'negative'
+        return rows.values
+    catch (exception err):
+        return rows.values
+
+int[][] return_owned_int_rows_direct(int value):
+    int[][] values = [[value]]
+    return values
+
+IntRows GLOBAL_NUMBERS = IntRows(make_global_int_rows())
+const StringRows FIXED_LABELS = StringRows(make_global_string_rows())
+RowsBundle GLOBAL_BUNDLE = make_global_bundle()
+IntRows GLOBAL_EMPTY_NUMBERS = IntRows(make_empty_int_rows())
+StringRows GLOBAL_EMPTY_LABELS = StringRows(make_empty_string_rows())
+
+int main(string[] args):
+    print(GLOBAL_INIT_COUNT)
+    print(GLOBAL_NUMBERS.values[0][0])
+    print(FIXED_LABELS.values[0][0])
+    print(GLOBAL_BUNDLE.numbers.values[1][0])
+    print(GLOBAL_BUNDLE.labels.values[1][0])
+    print(GLOBAL_EMPTY_NUMBERS.values.length())
+    print(GLOBAL_EMPTY_LABELS.values.length())
+    int[][] populated_global_numbers = [[], [91]]
+    string[][] populated_global_labels = [[], ['runtime-empty-row']]
+    GLOBAL_EMPTY_NUMBERS.values = populated_global_numbers
+    GLOBAL_EMPTY_LABELS.values = populated_global_labels
+    print(GLOBAL_EMPTY_NUMBERS.values[0].length())
+    print(GLOBAL_EMPTY_NUMBERS.values[1][0])
+    print(GLOBAL_EMPTY_LABELS.values[0].length())
+    print(GLOBAL_EMPTY_LABELS.values[1][0])
+
+    int[][] source_numbers = make_local_int_rows(args.length() + 10)
+    IntRows number_snapshot = IntRows(source_numbers)
+    source_numbers[0][0] = 70
+    print(number_snapshot.values[0][0])
+    print(source_numbers[0][0])
+
+    string[][] source_labels = make_local_string_rows(args.length() + 20)
+    StringRows label_snapshot = StringRows(source_labels)
+    source_labels[0][0] = 'changed-source'
+    print(label_snapshot.values[0][0])
+    print(source_labels[0][0])
+
+    IntRows cloned_numbers = GLOBAL_NUMBERS
+    cloned_numbers.values[0][0] = 80
+    print(GLOBAL_NUMBERS.values[0][0])
+    print(cloned_numbers.values[0][0])
+
+    StringRows cloned_labels = FIXED_LABELS
+    cloned_labels.values[0][0] = 'clone-label'
+    print(FIXED_LABELS.values[0][0])
+    print(cloned_labels.values[0][0])
+
+    int[][] empty_numbers = []
+    IntRows empty_number_rows = IntRows(empty_numbers)
+    print(empty_number_rows.values.length())
+
+    string[][] empty_labels = []
+    StringRows empty_label_rows = StringRows(empty_labels)
+    print(empty_label_rows.values.length())
+
+    int[][] replacement_numbers = [[100], []]
+    GLOBAL_NUMBERS.values = replacement_numbers
+    print(GLOBAL_NUMBERS.values[0][0])
+    GLOBAL_NUMBERS.values = GLOBAL_NUMBERS.values
+    print(GLOBAL_NUMBERS.values[0][0])
+    GLOBAL_NUMBERS.values[0][0] = 101
+    print(GLOBAL_NUMBERS.values[0][0])
+
+    string[][] replacement_labels = [['replaced-' + args.length().to_string()], []]
+    cloned_labels.values = replacement_labels
+    print(cloned_labels.values[0][0])
+    cloned_labels.values = cloned_labels.values
+    print(cloned_labels.values[0][0])
+    cloned_labels.values[0][0] = 'after-self'
+    print(cloned_labels.values[0][0])
+
+    IntRows returned_numbers = return_int_rows(110)
+    StringRows returned_labels = return_string_rows(120)
+    returned_numbers.values[0][0] += 1
+    returned_labels.values[0][0] = returned_labels.values[0][0] + '-returned'
+    print(returned_numbers.values[0][0])
+    print(returned_labels.values[0][0])
+
+    int[][] returned_number_field = return_int_rows_field(number_snapshot)
+    string[][] returned_label_field = return_string_rows_field(label_snapshot)
+    returned_number_field[0][0] = 130
+    returned_label_field[0][0] = 'returned-field'
+    print(number_snapshot.values[0][0])
+    print(returned_number_field[0][0])
+    print(label_snapshot.values[0][0])
+    print(returned_label_field[0][0])
+
+    int[][] returned_owned_numbers = return_owned_int_rows_field(args.length() + 140)
+    string[][] returned_owned_labels = return_owned_string_rows_field(args.length() + 150)
+    returned_owned_numbers[0][0] += 1
+    returned_owned_labels[0][0] = returned_owned_labels[0][0] + '-owned'
+    print(returned_owned_numbers[0][0])
+    print(returned_owned_labels[0][0])
+
+    int[][] const_returned_numbers = return_const_owned_int_rows_field(args.length() + 160)
+    int[][] branch_returned_numbers = return_owned_int_rows_branch(args.length() + 170)
+    int[][] try_returned_numbers = return_owned_int_rows_try(args.length() - 2)
+    int[][] direct_returned_numbers = return_owned_int_rows_direct(args.length() + 180)
+    const_returned_numbers[0][0] += 1
+    branch_returned_numbers[0][0] += 1
+    try_returned_numbers[0][0] += 1
+    direct_returned_numbers[0][0] += 1
+    print(const_returned_numbers[0][0])
+    print(branch_returned_numbers[0][0])
+    print(try_returned_numbers[0][0])
+    print(direct_returned_numbers[0][0])
+
+    int[][] returned_global_numbers = GLOBAL_NUMBERS.values
+    returned_global_numbers[0][0] = 190
+    print(GLOBAL_NUMBERS.values[0][0])
+    print(returned_global_numbers[0][0])
+    return 0

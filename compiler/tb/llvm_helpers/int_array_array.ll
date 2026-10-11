@@ -255,3 +255,24 @@ loop.done:
 done:
   ret void
 }
+define private void @tb_bootstrap_int_array_array_fill(ptr %array, ptr %value) {
+entry:
+  %hold = call ptr @tb_bootstrap_int_array_clone(ptr %value)
+  %len = call i32 @tb_bootstrap_int_array_array_length(ptr %array)
+  br label %fill.cond
+fill.cond:
+  %index = phi i32 [0, %entry], [%next.index, %fill.step]
+  %keep.loop = icmp slt i32 %index, %len
+  br i1 %keep.loop, label %fill.body, label %fill.done
+fill.body:
+  %copy = call ptr @tb_bootstrap_int_array_clone(ptr %hold)
+  call void @tb_bootstrap_int_array_array_release_slot(ptr %array, i32 %index)
+  call void @tb_bootstrap_int_array_array_set_owned(ptr %array, i32 %index, ptr %copy, i1 true)
+  br label %fill.step
+fill.step:
+  %next.index = add i32 %index, 1
+  br label %fill.cond
+fill.done:
+  call void @tb_bootstrap_int_array_free(ptr %hold)
+  ret void
+}

@@ -44,7 +44,7 @@ Build and invocation details are documented in the repository or release `README
 - Integers: sequences of digits, e.g. `123` (64-bit `int`).
 - Num literals: represented internally as `value` + `scale` (fixed-point style); syntax uses decimal form like `12.34` where supported.
 - Identifiers: letters, digits and `_`, not starting with a digit.
-- Comments: `#` line comments and `/* ... */` block comments.
+- Comments: `#` line comments and `/* ... */` block comments. Delimiters and quotes after `#` are comment text and do not affect strings or block comments; `#` inside a string or block comment remains part of that content.
 - Every token carries `type`, `value`, `line`, and `column`; lexer errors report exact line/column.
 
 3. Program structure and entry point
@@ -84,6 +84,7 @@ Build and invocation details are documented in the repository or release `README
   `const string greeting = 'hello';`
 
   `const` bindings are compile-time enforced. Reassignment such as `answer = 7;` fails at compile time. Direct mutation through a const array, set, or record binding such as `nums.push(3);`, `nums[0] = 1;`, or `point.x = 2;` also fails at compile time. Const controls mutation permission, not ownership: runtime-managed const locals are released with other function locals on normal function exit, and returning a const string preserves its value before that cleanup.
+  A record constructor may share a name with a mutating builtin, such as `record pop(bool[] flags);`; passing a const array to that constructor is accepted and the record receives its normal array snapshot. The collision does not affect UFCS dispatch: `flags.pop()` still removes and returns the last boolean, while `pop(flags)` constructs the record. A user-defined function named `pop` keeps its normal precedence.
   By convention, fixed configuration values and named constants use `UPPER_CASE`.
 
 - Record declaration (example):
@@ -173,6 +174,7 @@ int main(string[] args):
 - `return;` is allowed inside `void` functions for early exit.
 - Reaching the end of a `void` function releases its managed local values just like an explicit `return;`. Borrowed parameters remain available to the caller.
 - Empty brace bodies such as `void noop(string text) {}` are allowed. Calls still evaluate their arguments, and borrowed values remain available to the caller. An empty `int main` returns `0`; other non-void functions must return a value or throw on every reachable path.
+- Reaching the end of an `int main` without an explicit return releases its managed local values before the generated entry point returns `0`, including local thread pools that must stop and join their workers. Borrowed parameters and globals remain outside that local cleanup.
 - No extra trailing return is needed when every reachable path in a non-void function returns or throws.
 - Returning a local map transfers its owned value to the caller, which keeps it alive until that value is released. Mutable and const local maps follow this rule. Returning a borrowed parameter or global map produces an independent copy.
 - Returning a function-local `int[]`, `bool[]`, `int[][]`, or `string[]` transfers that owned array to the caller, which releases it normally. Const local arrays follow the same rule. Returning a borrowed parameter or global array produces an independent copy. Returning a borrowed `bool[]` field of a record parameter also produces an independent copy.
@@ -203,17 +205,22 @@ int main(string[] args):
 - Empty rows in a typed nested array literal use the row element type, for example `int[][] rows = [[1], []];` creates an empty `int[]` row.
 - Indexing: `arr[0]`, with negative indexing like `arr[-1]` (last element) supported for arrays and strings. For arrays, negative indices count from the end for both reads and writes: `arr[-length(arr)]` refers to the first element.
 - Slice notation with `[]` is supported for both arrays and strings. For example, `nums[1:3]` gives a subarray, and `text[2:5]` gives a substring. Open-ended, omitted-start, and negative-end slices are supported, e.g. `arr[1:]`, `text[:3]`, `text[:-1]`.
-  - Negative end bounds follow Python-style exclusive semantics, so `text[:-1]` drops the last character and `nums[0:-1]` drops the last element.
-  - Example (array): `int[] nums = [1, 2, 3, 4]; int[] mid = nums[1:3];  // [2, 3]`
+  - Negative start and end bounds count from the end before being clamped, following Python-style exclusive semantics. For example, `nums[-3:-1]` selects the middle two elements, and `nums[:-1]` drops the last element.
+  - Example (array): `int[] nums = [1, 2, 3, 4]; int[] mid = nums[-3:-1];  // [2, 3]`
+  - Runtime slices of `bool[]` also return independent mutable arrays, including when the source is const; changing either array leaves the other unchanged.
+  - Runtime slices of `int[]` and `string[]` are owned independent arrays. Discarded slices release their storage, while returning a slice or storing it in a record transfers ownership without an extra snapshot. String elements retain their normal shared immutable values.
   - Example (string): `string s = 'hello'; string sub = s[1:4];  // 'ell'`
 - Function-local `int[]` declarations and reassignment copy borrowed arrays, including const arrays, parameters, globals, indexed rows, and record fields. Mutating the copy leaves its source unchanged. Owned array literals and call results transfer into the local binding. Record construction and field replacement snapshot borrowed `int[]` arrays, and record cloning copies owned `int[]` fields; owned array temporaries transfer into the field. Returning an `int[]` field from a local record snapshots it before the record is released, while returning an owned local array transfers it directly to the caller.
 - Function-local `bool[]` declarations and reassignment also copy borrowed arrays, including const arrays, parameters, globals, and record fields. Mutating the copy leaves its source unchanged. Owned array literals and call results transfer into the local binding.
 - Function-local `string[][]` declarations and reassignment copy borrowed arrays by cloning the outer array and its child `string[]` arrays. Strings remain shared immutable values. Owned literals and call results transfer into the local binding.
-- Returning `string[][]` snapshots a borrowed parameter, global, or record field before local cleanup. Returning an owned local transfers it to the caller; nested array structure is independent while immutable strings are shared.
+- Function-local `int[][]` declarations and reassignment copy borrowed arrays by cloning the outer array and its child `int[]` arrays. Owned literals and call results transfer into the local binding.
+- Returning `int[][]` or `string[][]` snapshots a borrowed parameter, global, or record field before local cleanup. Returning an owned local transfers it to the caller; nested array structure is independent while immutable strings are shared.
+- `copy(array)` and `array.copy()` return an independent mutable snapshot for `int[]`, `bool[]`, `string[]`, `int[][]`, and `string[][]`. Nested copies clone both array structure levels; immutable strings remain shared. Const sources are accepted, and the result can be mutated independently.
 - Runtime arrays are heap-backed when mutation or runtime flow requires it. Helpers: `push`, `pop`, `insert`, `remove_at`, `clear`, `sort`, `map_to`, `filter`, and `flat_map`.
+- Cleanup of inline owned array temporaries used as borrowed call arguments or method receivers is incomplete. Bind an array result to a local variable before querying it when cleanup matters.
 - `filter` keeps the elements whose predicate returns `true` and returns a new array of the same item type.
 - `prio_q<T>` is supported for runtime element types such as `int`, `bool`, `string`, enums, records, and arrays. Create one with `create_prio_q(values, comparator)` or UFCS form `values.create_prio_q(comparator)`, mutate it with `pq.push(value)`, test with `is_empty(pq)` or `pq.is_empty()`, and remove the highest-priority item with `pop(pq)` or `pq.pop()`. The queue copies the source array, so later mutations of the original array do not affect the queue.
-- There are currently no built-in fill/copy helpers for arrays; initialize or clone arrays explicitly with loops or helper functions when needed.
+- `fill(array, value)` and `array.fill(value)` replace every element in a mutable `int[]`, `bool[]`, or `string[]`, preserve the array length, and return `void`. For mutable `int[][]` and `string[][]`, the value is an `int[]` or `string[]` copied independently into every row; later row or source changes do not affect the others. Empty outer arrays are unchanged, and typed empty rows are supported. Const scalar and row values are accepted, while const array receivers cannot be mutated. String values retain their immutable text safely, including when the value aliases an array element being replaced. A user-defined function named `fill` takes precedence.
 - There is currently no stdlib disjoint-set / union-find helper.
 - `sort` is in-place and mutates the target array. It accepts either a named comparator function `int compare(T a, T b)` or an inline comparator lambda `(T a, T b) -> ...`, where negative means left-first, zero means equal, and positive means right-first.
 - `map_to` transforms each element with a single-parameter lambda and returns a new array of the lambda result type. Prefer it over hand-written “create result, loop, push” helpers when one array maps directly to another.
@@ -223,7 +230,11 @@ int main(string[] args):
 
 - Access: `r.field`.
 - Field writes and reads lower to runtime heap-backed record values when needed.
+- Declared record fields support `int[]`, `bool[]`, `string[]`, `int[][]`, and `string[][]`; declaring a record emits the runtime helpers needed by those fields even when no instance is constructed.
+- Global record initializers support `int[]`, `bool[]`, `string[]`, `int[][]`, and `string[][]` fields, including nested record fields. Their runtime initializers run before `main`; globals keep process lifetime.
+- Record construction, cloning, and field replacement snapshot borrowed `int[][]` and `string[][]` values, including when a field is assigned to itself. Nested array structure is independent; immutable strings remain shared. Owned array temporaries transfer into fields.
 - Const record bindings allow field reads, including nested record fields and array-valued fields; the binding remains protected from direct field writes.
+- Record names follow normal identifier rules, including lowercase and underscore-prefixed names.
 
 10. Compile-time vs runtime evaluation
 
@@ -233,23 +244,24 @@ int main(string[] args):
 - File IO is always runtime:
   - `read_lines(path)` always reads `path` when the compiled program runs.
   - `read_file(path)` always reads `path` when the compiled program runs.
+  - `write_all(path, text)` always opens `path` with mode `w` and writes `text` without adding a newline.
   - The compiler emits the file path string, not the file contents, into the generated LLVM.
-  - A missing input path reports the helper name and path and exits with status 1 when uncaught; inside a `try` block it can be caught as an exception.
-  - `open(path)` opens a file for writing; use `read_file` and `read_lines` to read files. Call `close(file)` when finished. File output helpers do not consistently report open, write, or close failures.
+  - Missing `read_file` and `read_lines` inputs report the helper name and path and exit with status 1 when uncaught; inside a `try` block they can be caught as an exception. `write_all` raises the path when opening, writing, or closing fails, and an uncaught failure prints `write_all: <path>` and exits with status 1. After a successful open it closes the file once, including when writing fails.
+  - `open(path)` opens a file for writing; use `read_file` and `read_lines` to read files. Call `close(file)` when finished. The `open`, `write_line`, `write_lines`, and `close` helpers do not consistently report open, write, or close failures.
 - Const enforcement is compile-time and applies to the binding:
   - reassigning a `const` variable and direct writes through its array, map, set, or record target are rejected during compilation
   - known mutating array, set, and priority-queue operations through a `const` binding are rejected, including UFCS and free-function forms
   - const maps support the same read operations as mutable maps, including indexed value reads, key membership, and `keys()` / `values()`
   - passing a const value to an arbitrary user function does not make that function's parameters const
 - When values are not known at compile time, corresponding operations lower to runtime helpers and library calls.
-- Local declarations and reassignment transfer owned `int[]`, `bool[]`, `string[]`, `int[][]`, `string[][]`, map, and record temporaries. Assigning a managed local directly to itself preserves its existing value and ownership. Borrowed values keep their existing copy behavior, and reassignment to a different value releases the previous owned local value. Record fields of type `bool[]` are independent snapshots when constructed, replaced, or cloned; returning a bool-array field from a local record also returns an independent snapshot. Returning an owned local array transfers it to the caller, including a const local.
+- Local declarations and reassignment transfer owned `int[]`, `bool[]`, `string[]`, `int[][]`, `string[][]`, map, and record temporaries. Assigning a managed local directly to itself preserves its existing value and ownership. Borrowed values keep their existing copy behavior, and reassignment to a different value releases the previous owned local value. Record fields of type `bool[]`, `int[][]`, and `string[][]` are independent snapshots when constructed, replaced, or cloned. Returning a `bool[]`, `int[][]`, or `string[][]` field from a local record also returns an independent snapshot. Returning an owned local array or slice transfers it to the caller, including a const local.
 
 11. Built-in calling and printing
 
 - `print(...)` is provided by the standard library (resolved via `compiler/python/stdlib.py`), not a keyword.
 - Integer printing uses `printf` with `%lld\n` via an emitted LLVM format string.
 - Runtime string concatenation with `int` and `num` values is supported; the compiler automatically converts numeric values to strings when concatenating or printing. Explicit `to_string()` is also available for supported types.
-- A runtime string concatenation produces an owned string value. Returning it transfers that value to the caller, while an unused result is released when its expression is dropped.
+- A runtime string concatenation produces an owned string value. The compiler releases owned string operands after copying their text into the independent result; borrowed operands remain available to their owners. Returning the result transfers it to the caller, while an unused result is released when its expression is dropped.
 
 12. Error reporting
 
@@ -259,7 +271,7 @@ int main(string[] args):
 
 13. Standard library (stdlib) reference
 
-All stdlib functions are defined in `compiler/python/stdlib.py`. The reference below describes their behavior and typical signatures.
+The reference below lists supported standard library behavior and typical signatures.
 
 Core IO and string helpers
 
@@ -272,6 +284,14 @@ Core IO and string helpers
 - read_file(path: string) -> string
   - Read the entire file contents at runtime and return them as one string.
   - Return file contents as a single string.
+
+- split_lines(text: string) -> string[]
+  - Split text efficiently at newline characters.
+
+- write_all(path: string, text: string) -> void
+  - The self-hosted compiler supports this helper. It overwrites or creates `path` at runtime, writing `text` exactly without adding a newline. Empty text creates or truncates the file to zero bytes.
+  - Opening, writing, or closing failures raise `path`; an uncaught failure prints `write_all: <path>` and exits with status 1.
+  - It borrows both strings, accepts const string bindings, and supports UFCS as `path.write_all(text)`. A user-defined function named `write_all` takes precedence over the builtin.
 
 - open(path: string) -> file
   - Open a file handle for writing at runtime. Use `read_file` or `read_lines` for reads.
@@ -361,20 +381,29 @@ Array helpers
 
 - push(arr: T[], value: T) -> void
   - Append `value` to `arr` (may cause runtime heap-backed array representation).
-  - Works for nested arrays too, for example `int[][] rows = []; rows.push([1, 2]);`.
+  - Works for nested `int[][]` and `string[][]` arrays, for example `int[][] rows = []; rows.push([1, 2]);` or `string[][] rows = []; string[] row = []; rows.push(row);`. Typed empty rows are supported. Pushing a borrowed row stores an independent row snapshot; an owned row literal or call result transfers into the outer array.
 
 - pop(arr: T[]) -> T
-  - Remove and return last element.
+  - Remove and return the last element. For `bool[]`, `pop(flags)` and `flags.pop()` return the last boolean and reduce the array length by one. Popping an empty `bool[]` returns `false` and leaves it empty. A user-defined function named `pop` takes precedence for `bool[]` calls.
 
 - last(arr: T[]) -> T
   - Return the last element. Empty arrays still follow normal runtime bounds behavior.
 
 - insert(arr: T[], index: int, value: T) -> void
+  - For native `int[]` and `bool[]` method calls such as `arr.insert(index, value)`, insertion shifts the selected element and later values right. The full signed 64-bit index is used: negative indices clamp to the start, and indices past the end append. Inserting at the last occupied index preserves that element in the new final slot.
 
 - remove_at(arr: T[], index: int) -> T
+  - For native `int[]` and `bool[]` method calls, the full signed 64-bit index is used. Remove the selected value, shift later values left, and return the removed value. Negative and past-end indices return `0` for `int[]` or `false` for `bool[]` without changing the array.
+
+- fill(arr, value) -> void for matching pairs: `int[]`/`int`, `bool[]`/`bool`, `string[]`/`string`, `int[][]`/`int[]`, or `string[][]`/`string[]`.
+  - Replace every existing element with `value`, preserving length. The value type must match the array element type. Also available as `arr.fill(value)`.
+
+- copy(arr: int[] | bool[] | string[] | int[][] | string[][]) -> same array type
+  - Return an independent mutable snapshot. Also available as `arr.copy()`.
+  - Nested arrays copy their rows as well as the outer array; immutable strings may be shared.
 
 - clear(arr: T[]) -> void
-  - For `string[]`, clear releases owned strings in live slots and keeps the array storage available for reuse. Also available as `arr.clear()`.
+  - For `string[]`, clear releases owned strings in live slots and keeps the array storage available for reuse. For `bool[]`, it sets the live length to zero and keeps the array available for reuse. Also available as `arr.clear()`.
 
 - contains(arr: T[], value: T) -> bool
   - For `int[]`, `bool[]`, and `string[]`, return `true` when the array contains `value`. Also available via UFCS (`arr.contains(value)`) and membership syntax (`value in arr`). Queries borrow the array and item, preserve the array contents and length, and require the item type to match the array element type.
@@ -436,14 +465,6 @@ Hashing, misc
 
 - range(start, end) -> int[]
   - Yields `start`..`end-1`.
-
-File and IO advanced
-
-- split_lines(s: string) -> string[]
-  - Efficient split by newlines.
-
-- write_all(path: string, s: string) -> void
-  - Convenience to overwrite file contents.
 
 14. Examples
 

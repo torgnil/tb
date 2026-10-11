@@ -282,6 +282,8 @@ bool string_literal_continues(string line):
         if (in_string && ch == '\\'):
             index += 2
             continue
+        if (!in_string && ch == '#'):
+            return false
         if (ch == '\''):
             in_string = !in_string
         index += 1
@@ -443,6 +445,12 @@ StripLineResult strip_block_comments_from_line(string line, bool in_block_commen
                 in_string = false
             index += 1
             continue
+
+        if (ch == '#'):
+            string comment_text = lexer_substring(line, index, line.length())
+            result += comment_text
+            lexer_stat_append(comment_text.length())
+            return StripLineResult(result, false, false)
 
         if (line.starts_with_at('/*', index)):
             in_block_comment = true

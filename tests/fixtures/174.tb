@@ -1,0 +1,78 @@
+record BoolPopBox(bool[] flags);
+
+int pop_receiver_count = 0
+
+bool[] bool_pop_receiver_once():
+    pop_receiver_count += 1
+    return [false, true]
+
+bool bool_pop_parameter(bool[] values):
+    return pop(values)
+
+bool bool_pop_record_field(BoolPopBox box):
+    return box.flags.pop()
+
+bool bool_pop_return(bool[] values):
+    bool value = values.pop()
+    return value
+
+int main(string[] args):
+    bool runtime_value = args.length() > 0
+    bool[] runtime_values = [runtime_value]
+    bool popped_runtime_value = runtime_values.pop()
+    print(popped_runtime_value == runtime_value)
+
+    bool[] values = [false, true, true]
+    print(values.pop())
+    print(values.length())
+    print(pop(values))
+    print(values.length())
+    print(values.pop())
+    print(values.length())
+
+    bool[] empty_values = []
+    print(pop(empty_values))
+    print(empty_values.length())
+    print(empty_values.pop())
+    print(empty_values.length())
+    print(pop(empty_values))
+
+    bool[] pushed = [true]
+    print(pushed.pop())
+    pushed.push(false)
+    pushed.push(true)
+    print(pushed.length())
+    print(pushed.pop())
+    print(pushed.pop())
+    print(pushed.length())
+
+    bool[] discarded = [true, false]
+    discarded.pop()
+    print(discarded.length())
+
+    bool[] conditions = [false, true]
+    if (conditions.pop()):
+        print('true branch')
+    else:
+        print('false branch')
+    print(bool_pop_return(conditions))
+    print(conditions.length())
+
+    bool[] parameter_values = [true, false]
+    print(bool_pop_parameter(parameter_values))
+    print(parameter_values.length())
+
+    BoolPopBox box = BoolPopBox([false, true])
+    print(bool_pop_record_field(box))
+    print(box.flags.length())
+
+    bool receiver_value = bool_pop_receiver_once().pop()
+    print(receiver_value)
+    print(pop_receiver_count)
+
+    bool[] fill_values = [true, false, true]
+    bool last_value = fill_values.pop()
+    fill_values.fill(last_value)
+    print(fill_values[0])
+    print(fill_values.length())
+    return 0

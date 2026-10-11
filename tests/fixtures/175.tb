@@ -1,0 +1,62 @@
+record packet(int[] values, bool[] flags, int[] empty_values, bool[] empty_flags);
+record _envelope(packet payload, int marker);
+
+packet make_packet(int seed):
+    int[] borrowed = [seed, seed + 1]
+    bool[] flags = [seed > 0, false]
+    return packet(borrowed, flags, [], [])
+
+packet return_packet_field(int seed):
+    const packet local = make_packet(seed)
+    return local
+
+int[] return_packet_values(int seed):
+    packet local = make_packet(seed)
+    return local.values
+
+int main(string[] args):
+    int seed = args.length()
+    int[] borrowed = [seed, seed + 1]
+    packet first = packet(borrowed, [seed > 0, false], [], [])
+    borrowed[0] = 70
+    print(first.values[0])
+    print(first.flags[0])
+    print(first.empty_values.length())
+    print(first.empty_flags.length())
+    first.empty_values.push(seed + 3)
+    first.empty_flags.push(true)
+    print(first.empty_values[0])
+    print(first.empty_flags[0])
+
+    packet second = first
+    second.values[0] = 80
+    second.flags[0] = false
+    second = second
+    print(first.values[0])
+    print(second.values[0])
+    print(first.flags[0])
+    print(second.flags[0])
+
+    second.values = [seed + 9]
+    second.values = second.values
+    print(second.values[0])
+    print(second.values.length())
+
+    _envelope wrapped = _envelope(first, seed)
+    wrapped.payload.values[1] = 90
+    print(first.values[1])
+    print(wrapped.payload.values[1])
+    print(wrapped.marker)
+
+    const packet frozen = make_packet(seed + 2)
+    print(frozen.values[0])
+    print(frozen.flags[0])
+
+    packet from_call = return_packet_field(seed + 3)
+    print(from_call.values[0])
+    int[] returned_values = return_packet_values(seed + 4)
+    returned_values[0] = 100
+    print(returned_values[0])
+
+    packet([seed + 5], [true], [], [])
+    return 0

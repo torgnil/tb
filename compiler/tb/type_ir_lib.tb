@@ -659,6 +659,8 @@ string infer_call_type(string name, FunctionSigIR[] functions):
         return 'string[]'
     if (name == 'read_file'):
         return 'string'
+    if (name == 'write_all'):
+        return 'void'
     if (name == 'time_ms'):
         return 'int'
     if (name == 'has_flag'):
@@ -716,6 +718,11 @@ string lookup_cached_field_type(string[] keys, string[] types, string record_nam
     return lookup_cached_name_type(keys, types, record_name + '.' + field_name)
 
 string infer_call_type_cached(string name, FunctionSigIR[] functions, string[] cache_names, string[] cache_types):
+    if (name == 'write_all'):
+        string user_result_type = lookup_function_return_type(functions, name)
+        if (user_result_type != 'unknown'):
+            return user_result_type
+        return 'void'
     FunctionSigIR[] empty_functions = []
     string result_type = infer_call_type(name, empty_functions)
     if (result_type != 'unknown'):
@@ -802,6 +809,11 @@ string infer_method_call_type(string method_name, string base_type, FunctionSigI
     return lookup_function_return_type(functions, method_name)
 
 string infer_method_call_type_cached(string method_name, string base_type, FunctionSigIR[] functions, string[] cache_names, string[] cache_types):
+    if (method_name == 'write_all'):
+        string user_result_type = lookup_function_return_type(functions, method_name)
+        if (user_result_type != 'unknown'):
+            return user_result_type
+        return 'void'
     FunctionSigIR[] empty_functions = []
     string result_type = infer_method_call_type(method_name, base_type, empty_functions)
     if (result_type != 'unknown'):
@@ -832,6 +844,10 @@ bool is_managed_ir_type(string type_name):
 
 bool ownership_is_owned_mode(string ownership_mode):
     return ownership_mode == 'owned' || ownership_mode == 'managed'
+
+bool is_array_copy_type(string type_name):
+    type_name = normalize_llvm_type_name(type_name)
+    return type_name == 'int[]' || type_name == 'bool[]' || type_name == 'string[]' || type_name == 'int[][]' || type_name == 'string[][]'
 
 string refine_ownership_mode(LinearInstruction op, string result_type):
     if (result_type == 'int' || result_type == 'bool' || result_type == 'num'):
@@ -955,6 +971,38 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
         if (op.args.is_empty()):
             return op
         string result_type = infer_call_type_cached(op.args[0], functions, TYPE_IR_FUNCTION_TYPE_CACHE_NAMES, TYPE_IR_FUNCTION_TYPE_CACHE_VALUES)
+        if (result_type == 'unknown' && op.args[0] == 'clear' && lookup_function_return_type(functions, 'clear') == 'unknown' && !record_type_exists(record_fields, 'clear')):
+            if (op.args.length() != 2):
+                throw 'clear requires exactly one array argument'
+            string clear_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+            if (clear_type == 'bool[]'):
+                result_type = 'void'
+        if (op.args[0] == 'pop' && op.args.length() >= 2):
+            string pop_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+            if (pop_type == 'bool[]'):
+                if (lookup_function_return_type(functions, 'pop') == 'unknown'):
+                    if (!record_type_exists(record_fields, 'pop')):
+                        if (op.args.length() != 2):
+                            throw 'pop requires exactly one bool[] argument'
+                        result_type = 'bool'
+                        return refined_value_op(op, result_type, 'plain')
+        if (op.args[0] == 'copy'):
+            if (lookup_function_return_type(functions, 'copy') == 'unknown' && !record_type_exists(record_fields, 'copy')):
+                if (op.args.length() != 2):
+                    throw 'copy requires exactly one array argument'
+                string copy_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+                if (!is_array_copy_type(copy_type)):
+                    throw 'copy requires int[], bool[], string[], int[][], or string[][]; got ' + copy_type
+                result_type = copy_type
+        if (op.args[0] == 'fill'):
+            if (lookup_function_return_type(functions, 'fill') == 'unknown' && !record_type_exists(record_fields, 'fill')):
+                if (op.args.length() != 3):
+                    throw 'fill requires exactly an array and a value'
+                string fill_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+                string value_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2]))
+                if (!((fill_type == 'int[]' && value_type == 'int') || (fill_type == 'bool[]' && value_type == 'bool') || (fill_type == 'string[]' && value_type == 'string') || (fill_type == 'int[][]' && value_type == 'int[]') || (fill_type == 'string[][]' && value_type == 'string[]'))):
+                    throw 'fill requires int[] with int, bool[] with bool, string[] with string, int[][] with int[], or string[][] with string[]; got ' + fill_type + ' and ' + value_type
+                result_type = 'void'
         if (op.args[0] == 'sum' && op.args.length() >= 2):
             string sum_arg_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
             if (sum_arg_type == 'int[]' || sum_arg_type == 'bool[]'):
@@ -979,8 +1027,9 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             string right_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2]))
             if (left_type == right_type && (left_type == 'int' || left_type == 'num')):
                 result_type = left_type
-        if (result_type == 'unknown' && could_be_named_type(op.args[0]) && !op.args.is_empty() && record_type_exists(record_fields, op.args[0])):
-            result_type = op.args[0]
+        if (result_type == 'unknown' && !op.args.is_empty()):
+            if (record_type_exists(record_fields, op.args[0])):
+                result_type = op.args[0]
         return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
     if (op.detail == 'call-expr'):
         return refined_value_op(op, 'unknown', op.ownership_mode)
@@ -1002,6 +1051,53 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             return op
         string method_name = op.args[0]
         string base_type = lookup_temp_type_slot(temp_types, op.args[1])
+        if (method_name == 'clear' && normalize_llvm_type_name(base_type) == 'bool[]' && lookup_function_return_type(functions, 'clear') == 'unknown'):
+            if (op.args.length() != 2):
+                throw 'bool[] clear requires no arguments'
+            return refined_value_op(op, 'void', 'plain')
+        if ((method_name == 'insert' || method_name == 'remove_at') && normalize_llvm_type_name(base_type) == 'bool[]' && lookup_function_return_type(functions, method_name) == 'unknown'):
+            if (method_name == 'insert'):
+                if (op.args.length() != 4):
+                    throw 'bool[] insert requires an index and a bool value'
+                string index_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2]))
+                string value_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[3]))
+                if (index_type != 'int' || value_type != 'bool'):
+                    throw 'bool[] insert requires an int index and bool value; got ' + index_type + ' and ' + value_type
+                return refined_value_op(op, 'void', 'plain')
+            if (op.args.length() != 3):
+                throw 'bool[] remove_at requires exactly one index'
+            string remove_index_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2]))
+            if (remove_index_type != 'int'):
+                throw 'bool[] remove_at requires an int index; got ' + remove_index_type
+            return refined_value_op(op, 'bool', 'plain')
+        if (method_name == 'pop'):
+            string pop_type = normalize_llvm_type_name(base_type)
+            if (pop_type == 'bool[]'):
+                if (lookup_function_return_type(functions, 'pop') == 'unknown'):
+                    if (record_type_exists(record_fields, 'pop')):
+                        if (op.args.length() != 2):
+                            throw 'pop requires exactly one bool[] receiver'
+                        return refined_value_op(op, 'bool', 'plain')
+                    if (op.args.length() != 2):
+                        throw 'pop requires exactly one bool[] receiver'
+                    return LinearInstruction(op.kind.substring(0), op.lhs.substring(0), 'bool', 'plain', 'call', ['pop', op.args[1]])
+        if (method_name == 'fill'):
+            if (lookup_function_return_type(functions, 'fill') == 'unknown' && !record_type_exists(record_fields, 'fill')):
+                if (op.args.length() != 3):
+                    throw 'fill requires exactly one value'
+                string fill_type = normalize_llvm_type_name(base_type)
+                string value_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2]))
+                if (!((fill_type == 'int[]' && value_type == 'int') || (fill_type == 'bool[]' && value_type == 'bool') || (fill_type == 'string[]' && value_type == 'string') || (fill_type == 'int[][]' && value_type == 'int[]') || (fill_type == 'string[][]' && value_type == 'string[]'))):
+                    throw 'fill requires int[] with int, bool[] with bool, string[] with string, int[][] with int[], or string[][] with string[]; got ' + fill_type + ' and ' + value_type
+                return LinearInstruction(op.kind.substring(0), op.lhs.substring(0), 'void', 'plain', 'call', ['fill', op.args[1], op.args[2]])
+        if (method_name == 'copy'):
+            if (lookup_function_return_type(functions, 'copy') == 'unknown' && !record_type_exists(record_fields, 'copy')):
+                if (op.args.length() != 2):
+                    throw 'copy requires exactly one array argument'
+                string copy_type = normalize_llvm_type_name(base_type)
+                if (!is_array_copy_type(copy_type)):
+                    throw 'copy requires int[], bool[], string[], int[][], or string[][]; got ' + copy_type
+                return LinearInstruction(op.kind.substring(0), op.lhs.substring(0), copy_type.substring(0), 'owned', 'call', ['copy', op.args[1]])
         if (base_type.starts_with('const ')):
             string canonical_base_type = normalize_llvm_type_name(base_type)
             if (is_thread_pool_type(canonical_base_type) || is_future_type(canonical_base_type) || canonical_base_type.starts_with('map<') || ((method_name == 'sum') && (canonical_base_type == 'int[]' || canonical_base_type == 'bool[]'))):
@@ -1090,13 +1186,15 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
     if (op.detail == 'slice'):
         if (op.args.is_empty()):
             return op
-        string base_type = lookup_temp_type_slot(temp_types, op.args[0])
+        string base_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[0]))
         if (base_type == 'string'):
             return refined_value_op(op, 'string', 'managed')
         if (base_type == 'string[]'):
             return refined_value_op(op, 'string[]', 'owned')
         if (base_type == 'int[]'):
             return refined_value_op(op, 'int[]', 'owned')
+        if (base_type == 'bool[]'):
+            return refined_value_op(op, 'bool[]', 'owned')
         return op
     if (op.detail == 'array'):
         string[] item_types = []

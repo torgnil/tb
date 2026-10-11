@@ -1,0 +1,80 @@
+record RowBox(string[] value);
+record NestedBox(string[][] values);
+
+string[] make_row(int value):
+    string[] row = [value.to_string()]
+    return row
+
+void append_row(string[][] rows, string[] row):
+    rows.push(row)
+
+string[][] rows_with_row(string[] row):
+    string[][] rows = []
+    rows.push(row)
+    return rows
+
+string[][] return_from_owner(string[] row):
+    NestedBox owner = NestedBox([])
+    owner.values.push(row)
+    return owner.values
+
+int main(string[] args):
+    string[][] rows = []
+    print(rows.length())
+
+    string[] empty_row = []
+    print(rows.push(empty_row))
+    print(rows[0].length())
+
+    string count_text = args.length().to_string()
+    string dynamic_text = 'dynamic-' + count_text
+    string[] borrowed_row = [dynamic_text]
+    print(rows.push(borrowed_row))
+    borrowed_row[0] = 'source-changed'
+    print(rows[1][0])
+
+    const string[] const_row = ['const-row']
+    append_row(rows, const_row)
+    print(rows[2][0])
+    print(rows.push(['literal-row']))
+    print(rows[3][0])
+
+    string[] factory_row = make_row(args.length() + 40)
+    print(rows.push(factory_row))
+    print(rows[4][0])
+    print(rows.push(make_row(args.length() + 45)))
+    print(rows[5][0])
+
+    RowBox box = RowBox(['field-row'])
+    print(rows.push(box.value))
+    print(rows[6][0])
+
+    string[][] returned_rows = rows_with_row(borrowed_row)
+    print(rows.push(returned_rows[0]))
+    returned_rows[0][0] = 'returned-source-changed'
+    print(rows[7][0])
+
+    string[] owner_row = ['owner-row']
+    string[][] owner_rows = return_from_owner(owner_row)
+    print(rows.push(owner_rows[0]))
+    owner_rows[0][0] = 'owner-mutated'
+    print(rows[8][0])
+
+    int index = 0
+    while (index < 5):
+        string count_for_growth = args.length().to_string()
+        string index_text = index.to_string()
+        string prefix = 'growth-' + count_for_growth
+        string text = prefix + index_text
+        rows.push([text])
+        index += 1
+    print(rows.length())
+    print(rows[11][0])
+
+    print(rows.push(rows[1]))
+    rows[1][0] = 'original-mutated'
+    print(rows[1][0])
+    print(rows[14][0])
+    rows[14][0] = 'duplicate-mutated'
+    print(rows[1][0])
+    print(rows[14][0])

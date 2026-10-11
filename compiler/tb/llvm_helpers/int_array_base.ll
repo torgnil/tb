@@ -32,14 +32,20 @@ define private ptr @tb_bootstrap_int_array_slice(ptr %array, i64 %start, i64 %en
 entry:
   %len32 = call i32 @tb_bootstrap_int_array_length(ptr %array)
   %len = sext i32 %len32 to i64
-  %start.neg = icmp slt i64 %start, 0
-  %start.low = select i1 %start.neg, i64 0, i64 %start
-  %start.high = icmp sgt i64 %start.low, %len
-  %start.clamped = select i1 %start.high, i64 %len, i64 %start.low
-  %end.neg = icmp slt i64 %end, 0
-  %end.low = select i1 %end.neg, i64 0, i64 %end
-  %end.high = icmp sgt i64 %end.low, %len
-  %end.clamped.high = select i1 %end.high, i64 %len, i64 %end.low
+  %start.negative = icmp slt i64 %start, 0
+  %start.from.end = add i64 %len, %start
+  %start.adjusted = select i1 %start.negative, i64 %start.from.end, i64 %start
+  %start.before.zero = icmp slt i64 %start.adjusted, 0
+  %start.clamped.low = select i1 %start.before.zero, i64 0, i64 %start.adjusted
+  %start.past.end = icmp sgt i64 %start.clamped.low, %len
+  %start.clamped = select i1 %start.past.end, i64 %len, i64 %start.clamped.low
+  %end.negative = icmp slt i64 %end, 0
+  %end.from.end = add i64 %len, %end
+  %end.adjusted = select i1 %end.negative, i64 %end.from.end, i64 %end
+  %end.before.zero = icmp slt i64 %end.adjusted, 0
+  %end.clamped.low = select i1 %end.before.zero, i64 0, i64 %end.adjusted
+  %end.past.end = icmp sgt i64 %end.clamped.low, %len
+  %end.clamped.high = select i1 %end.past.end, i64 %len, i64 %end.clamped.low
   %end.before.start = icmp slt i64 %end.clamped.high, %start.clamped
   %end.clamped = select i1 %end.before.start, i64 %start.clamped, i64 %end.clamped.high
   %slice.len64 = sub i64 %end.clamped, %start.clamped
@@ -116,6 +122,21 @@ entry:
   %data = load ptr, ptr %data.ptr
   %slot = getelementptr inbounds i64, ptr %data, i32 %index
   store i64 %value, ptr %slot
+  ret void
+}
+define private void @tb_bootstrap_int_array_fill(ptr %array, i64 %value) {
+entry:
+  %len = call i32 @tb_bootstrap_int_array_length(ptr %array)
+  br label %loop.cond
+loop.cond:
+  %index = phi i32 [ 0, %entry ], [ %next.index, %loop.body ]
+  %keep.loop = icmp slt i32 %index, %len
+  br i1 %keep.loop, label %loop.body, label %done
+loop.body:
+  call void @tb_bootstrap_int_array_set(ptr %array, i32 %index, i64 %value)
+  %next.index = add i32 %index, 1
+  br label %loop.cond
+done:
   ret void
 }
 define private i32 @tb_bootstrap_cmp_int_desc(ptr %left.ptr, ptr %right.ptr) {
@@ -215,7 +236,7 @@ define private i64 @tb_bootstrap_prio_q_int_pop(ptr %pq) {
 entry:
   %array.ptr = getelementptr inbounds %tb_bootstrap_prio_q_int, ptr %pq, i32 0, i32 0
   %array = load ptr, ptr %array.ptr
-  %value = call i64 @tb_bootstrap_int_array_remove_at(ptr %array, i32 0)
+  %value = call i64 @tb_bootstrap_int_array_remove_at(ptr %array, i64 0)
   ret i64 %value
 }
 define private ptr @tb_bootstrap_int_array_clone(ptr %array) {
@@ -266,17 +287,19 @@ store:
   store i32 %next.len, ptr %len.ptr
   ret i32 %next.len
 }
-define private i32 @tb_bootstrap_int_array_insert(ptr %array, i32 %index, i64 %value) {
+define private i32 @tb_bootstrap_int_array_insert(ptr %array, i64 %index, i64 %value) {
 entry:
   %len.ptr = getelementptr inbounds %tb_bootstrap_int_array, ptr %array, i32 0, i32 0
   %len = load i32, ptr %len.ptr
-  %index.low = icmp slt i32 %index, 0
-  %index.nonneg = select i1 %index.low, i32 0, i32 %index
-  %index.high = icmp sgt i32 %index.nonneg, %len
-  %index.clamped = select i1 %index.high, i32 %len, i32 %index.nonneg
+  %len64 = sext i32 %len to i64
+  %index.low = icmp slt i64 %index, 0
+  %index.nonneg = select i1 %index.low, i64 0, i64 %index
+  %index.high = icmp sgt i64 %index.nonneg, %len64
+  %index.clamped64 = select i1 %index.high, i64 %len64, i64 %index.nonneg
+  %index.clamped = trunc i64 %index.clamped64 to i32
   %new.len = call i32 @tb_bootstrap_int_array_push(ptr %array, i64 0)
   %old.last = sub i32 %new.len, 2
-  %need.shift = icmp sgt i32 %old.last, %index.clamped
+  %need.shift = icmp sge i32 %old.last, %index.clamped
   br label %loop.cond
 loop.cond:
   %current = phi i32 [%old.last, %entry], [%prev.current, %loop.body]
@@ -310,23 +333,25 @@ pop:
   store i32 %last.index, ptr %len.ptr
   ret i64 %value
 }
-define private i64 @tb_bootstrap_int_array_remove_at(ptr %array, i32 %index) {
+define private i64 @tb_bootstrap_int_array_remove_at(ptr %array, i64 %index) {
 entry:
   %len.ptr = getelementptr inbounds %tb_bootstrap_int_array, ptr %array, i32 0, i32 0
   %len = load i32, ptr %len.ptr
-  %index.low = icmp slt i32 %index, 0
-  %index.high = icmp sge i32 %index, %len
+  %len64 = sext i32 %len to i64
+  %index.low = icmp slt i64 %index, 0
+  %index.high = icmp sge i64 %index, %len64
   %bad.index = or i1 %index.low, %index.high
   br i1 %bad.index, label %empty, label %remove
 empty:
   ret i64 0
 remove:
-  %value = call i64 @tb_bootstrap_int_array_get(ptr %array, i32 %index)
+  %index32 = trunc i64 %index to i32
+  %value = call i64 @tb_bootstrap_int_array_get(ptr %array, i32 %index32)
   %last.index = sub i32 %len, 1
-  %has.tail = icmp slt i32 %index, %last.index
+  %has.tail = icmp slt i32 %index32, %last.index
   br i1 %has.tail, label %loop.cond, label %shrink
 loop.cond:
-  %current = phi i32 [%index, %remove], [%next.current, %loop.body]
+  %current = phi i32 [%index32, %remove], [%next.current, %loop.body]
   %keep.loop = icmp slt i32 %current, %last.index
   br i1 %keep.loop, label %loop.body, label %shrink
 loop.body:

@@ -1,0 +1,143 @@
+record StringRows(string[][] values);
+
+int fill_effect = 0
+
+int[][] fill_int_receiver_once():
+    fill_effect = fill_effect * 10 + 1
+    return [[0], [1]]
+
+int[] fill_int_value_once():
+    fill_effect = fill_effect * 10 + 2
+    return [8, 9]
+
+void fill_int_parameter(int[][] rows, int[] value):
+    fill(rows, value)
+
+string[][] fill_string_receiver_once():
+    fill_effect = fill_effect * 10 + 3
+    return [['old'], ['old']]
+
+string[] fill_string_value_once():
+    fill_effect = fill_effect * 10 + 4
+    return ['once', 'shared']
+
+int[][] filled_int_rows(int[] value):
+    int[][] rows = [[1], []]
+    rows.fill(value)
+    return rows
+
+string[][] filled_string_rows(string[] value):
+    string[][] rows = [['old'], []]
+    fill(rows, value)
+    return rows
+
+int main(string[] args):
+    const int[] const_int_row = [7, 8]
+    int[][] numbers = [[0], [1], []]
+    fill(numbers, const_int_row)
+    print(numbers[0][0])
+    print(numbers[2][1])
+    print(numbers.length())
+    numbers[0][0] = 70
+    print(numbers[1][0])
+    print(const_int_row[0])
+
+    int[][] int_alias = [[3, 4], [5]]
+    fill(int_alias, int_alias[0])
+    int_alias[0][0] = 30
+    int_alias[0].clear()
+    print(int_alias[1][0])
+    print(int_alias[1].length())
+
+    int[][] int_snapshot = int_alias.copy()
+    int[] runtime_row = [args.length(), 11]
+    int_alias.fill(runtime_row)
+    runtime_row[0] = 99
+    print(int_snapshot[0].length())
+    print(int_alias[0][0])
+    print(int_alias[1][0])
+    fill_int_parameter(int_alias, const_int_row)
+    print(int_alias[1][1])
+
+    int[][] empty_rows = []
+    int[] empty_int_row = []
+    empty_rows.fill(empty_int_row)
+    print(empty_rows.length())
+    int[][] typed_empty_rows = [[], []]
+    typed_empty_rows.fill(empty_int_row)
+    print(typed_empty_rows.length())
+    print(typed_empty_rows[0].length())
+
+    int[][] returned_numbers = filled_int_rows(const_int_row)
+    returned_numbers[0][0] = 71
+    print(returned_numbers[1][0])
+    print(const_int_row[0])
+
+    const string[] const_string_row = ['fresh', 'row']
+    string[][] words = [['old'], ['older'], []]
+    fill(words, const_string_row)
+    print(words[0][0])
+    print(words[2][1])
+    words[0][0] = 'changed'
+    print(words[1][0])
+    print(const_string_row[0])
+
+    string[][] string_alias = [[args.length().to_string(), args.length() + ' self'], ['old']]
+    string_alias.fill(string_alias[0])
+    string_alias[0].clear()
+    print(string_alias[1][0])
+    print(string_alias[1][1])
+
+    string[][] string_snapshot = words.copy()
+    string[] runtime_string_row = [args.length() + ' runtime', args.length().to_string()]
+    fill(words, runtime_string_row)
+    runtime_string_row.clear()
+    print(string_snapshot[0][0])
+    print(words[0][0])
+    print(words[0][1])
+
+    string[][] empty_string_rows = []
+    string[] empty_string_row = []
+    empty_string_rows.fill(empty_string_row)
+    print(empty_string_rows.length())
+    string[][] typed_empty_string_rows = [[], []]
+    typed_empty_string_rows.fill(empty_string_row)
+    print(typed_empty_string_rows.length())
+    print(typed_empty_string_rows[1].length())
+
+    string[][] returned_words = filled_string_rows(const_string_row)
+    returned_words[0][0] = 'return-change'
+    print(returned_words[1][0])
+    print(const_string_row[0])
+
+    StringRows box = StringRows([['field'], ['old']])
+    box.values.fill(const_string_row)
+    box.values[0][0] = 'field-change'
+    print(box.values[1][0])
+    print(const_string_row[0])
+
+    fill(fill_int_receiver_once(), fill_int_value_once())
+    fill(fill_string_receiver_once(), fill_string_value_once())
+    print(fill_effect)
+
+    int[][] control = [[0], [1]]
+    if (args.length() > 1):
+        control.fill([2, 3])
+    else:
+        fill(control, [4, 5])
+    int index = 0
+    while (index < 1):
+        control.fill([index + 6])
+        index += 1
+    switch (index):
+        case 1:
+            fill(control, [8])
+        default:
+            control.fill([9])
+    try:
+        control.fill([10])
+    catch (exception err):
+        fill(control, [11])
+    print(control[0][0])
+    print(control[1].length())
+    return 0

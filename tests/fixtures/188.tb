@@ -1,0 +1,60 @@
+record TextBox(string value);
+
+string make_text(int value):
+    return 'value-' + value.to_string()
+
+string nested_text(int value):
+    return ('<' + make_text(value)) + (make_text(value + 1) + '>')
+
+string local_text(int value):
+    string text = make_text(value)
+    text = text + '-updated'
+    text = '[' + text + ']'
+    return text
+
+void set_array_text(string[] values, int value):
+    values[0] = 'array-' + value.to_string()
+
+void set_record_text(TextBox box, int value):
+    box.value = 'record-' + value.to_string()
+
+string borrow_item(string[] values):
+    return values[0]
+
+string borrowed_concat(string text):
+    return text + '!'
+
+int main(string[] args):
+    int count = args.length()
+    print(make_text(count))
+    print(count.to_string() + '-left-owned')
+    print('-right-owned-' + count.to_string())
+    print(nested_text(count))
+    print(local_text(count))
+
+    string[] values = ['seed-' + count.to_string()]
+    print(borrow_item(values) + borrow_item(values))
+    set_array_text(values, count + 1)
+    print(values[0])
+
+    TextBox box = TextBox('box-' + count.to_string())
+    set_record_text(box, count + 2)
+    print(box.value)
+
+    const string fixed_text = 'fixed'
+    string local_borrowed = 'local-' + count.to_string()
+    print('literal-' + '!')
+    print(borrowed_concat(fixed_text))
+    print(local_borrowed + '-still-valid')
+    print(values[0] + '-array-readable')
+    print(box.value + '-field-readable')
+
+    int index = 0
+    while (index < 3):
+        print('loop-' + (count + index).to_string())
+        index += 1
+
+    'dropped-' + count.to_string()
+    print('implicit-' + count)
+    print(count + '-implicit-right')
+    return 0

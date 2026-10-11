@@ -1,0 +1,89 @@
+record SliceBox(int[] numbers, string[] words);
+
+int[] return_int_slice(int[] source):
+    return source[1:]
+
+string[] return_string_slice(string[] source):
+    return source[1:]
+
+int[] return_const_int_slice(int value):
+    const int[] source = [value + 70, value + 80, value + 90]
+    return source[1:]
+
+string[] return_const_string_slice(int value):
+    const string[] source = ['const-left' + value, 'const-kept' + value, 'const-right' + value]
+    return source[1:2]
+
+string[] return_local_string_slice(int value):
+    string[] source = ['left' + value, 'kept' + value, 'right' + value]
+    return source[1:2]
+
+int main(string[] args):
+    int runtime_zero = args.length() - args.length()
+    int[] numbers = [10 + runtime_zero, 20 + runtime_zero, 30 + runtime_zero]
+    const int[] fixed_numbers = [40 + runtime_zero, 50 + runtime_zero, 60 + runtime_zero]
+    string[] words = ['a' + runtime_zero, 'b' + runtime_zero, 'c' + runtime_zero]
+    const string[] fixed_words = ['x' + runtime_zero, 'y' + runtime_zero, 'z' + runtime_zero]
+
+    numbers[1:]
+    fixed_numbers[:1]
+    words[1:]
+    fixed_words[:1]
+    for (int i : range(3)):
+        numbers[i:i + 1]
+        words[i:i + 1]
+
+    int[] returned_numbers = return_int_slice(numbers)
+    string[] returned_words = return_string_slice(words)
+    returned_numbers[0] = 99
+    returned_words[0] = 'changed'
+    print(numbers[1])
+    print(words[1])
+    print(returned_numbers[0])
+    print(returned_words[0])
+
+    int[] const_returned_numbers = return_const_int_slice(runtime_zero)
+    string[] const_returned_words = return_const_string_slice(runtime_zero)
+    print(const_returned_numbers[0])
+    print(const_returned_words[0])
+
+    int[] moved = numbers[1:]
+    moved = fixed_numbers[1:]
+    moved[0] = 77
+    print(numbers[1])
+    print(fixed_numbers[1])
+    print(moved[0])
+
+    string[] local_survivor = return_local_string_slice(runtime_zero)
+    print(local_survivor[0])
+
+    SliceBox box = SliceBox(numbers[1:], words[1:])
+    box.numbers[0] = 88
+    box.words[0] = 'box'
+    print(numbers[1])
+    print(words[1])
+    print(box.numbers[0])
+    print(box.words[0])
+    SliceBox copied_box = box
+    copied_box.numbers[0] = 89
+    copied_box.words[0] = 'copy'
+    print(box.numbers[0])
+    print(box.words[0])
+    box.numbers = fixed_numbers[1:]
+    box.words = fixed_words[1:]
+    print(box.numbers[0])
+    print(box.words[0])
+
+    int[] empty_numbers = []
+    const int[] fixed_empty_numbers = []
+    string[] empty_words = []
+    const string[] fixed_empty_words = []
+    int[] empty_numbers_slice = empty_numbers[:]
+    int[] fixed_empty_numbers_slice = fixed_empty_numbers[:]
+    string[] empty_words_slice = empty_words[:]
+    string[] fixed_empty_words_slice = fixed_empty_words[:]
+    print(empty_numbers_slice.length())
+    print(fixed_empty_numbers_slice.length())
+    print(empty_words_slice.length())
+    print(fixed_empty_words_slice.length())
+    return 0

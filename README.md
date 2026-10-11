@@ -16,7 +16,34 @@ Current highlights:
   [language reference](docs/tb.md)
 - built-in foreign module support for `raylib`
 
-## Build
+## Installation
+
+Install on macOS with [Homebrew](https://brew.sh):
+
+```bash
+brew install torgnil/tap/tb
+```
+
+Build and run a native executable:
+
+```bash
+tb path/to/program.tb -O2
+path/to/program
+```
+
+`tb` writes the executable beside the source, without the `.tb` extension.
+Use `-o` to choose an output path, for example
+`tb path/to/program.tb -o ./program -O2`. Native builds require `clang` and
+platform headers from Apple's command line developer tools. Required tb thread
+runtime sources are compiled and linked automatically.
+
+To generate LLVM IR without linking:
+
+```bash
+tb-ir path/to/program.tb output.ll
+```
+
+## Build from source
 
 Build the self-hosted compiler:
 
@@ -24,25 +51,30 @@ Build the self-hosted compiler:
 ./build_tb.sh
 ```
 
+Check the compiler version with `bin/tb --version`. Builds embed the version
+and default to `dev`. For a release or Homebrew source build, specify the
+version once at build time, for example `TB_VERSION=0.2.1 ./build_tb.sh`.
+
 Compile a tb program with the self-hosted compiler:
 
 ```bash
 ./tb.sh path/to/program.tb
 ```
 
-`bin/tb` loads LLVM helper templates and thread runtime sources from the
-checkout-relative paths under `compiler/tb`. Set `TB_RESOURCE_ROOT` when those
-resources live elsewhere; the directory must contain the same `compiler/tb`
-subdirectories. `tb.sh` sets this to the checkout by default and accepts an
-override:
+`build_tb.sh` embeds the LLVM helper templates and C thread runtime into `bin/tb`.
+The editable sources remain under `compiler/tb/llvm_helpers` and
+`compiler/tb/runtime`; rebuild the compiler after changing them. The generated
+`compiler/tb/llvm_helpers_generated.tb` module is an ignored build artifact.
+The resulting compiler needs no external tb runtime source files or
+`TB_RESOURCE_ROOT` setting when compiling other tb programs.
 
-```bash
-TB_RESOURCE_ROOT="/path/to/resource tree" ./tb.sh /path/to/program.tb
-```
-
-For direct `bin/tb` calls, the resource setting does not change compiler input,
-import, or output path handling. When `TB_RESOURCE_ROOT` is unset or empty, the
-self-hosted compiler keeps its historical relative-resource lookup behavior.
+When a threaded program is compiled to `output.ll`, the compiler also writes
+`output.ll.thread_pool_runtime.c` and `output.ll.thread_pool_composite_runtime.c`.
+These generated files include their required header declarations. The `.csources`,
+`.cflags`, and `.linkflags` metadata describe how to compile and link them;
+`tb.sh` handles this automatically. Clang and platform headers are still required.
+Use an explicit LLVM output path when compiling threaded programs so these files
+and the metadata are generated.
 
 Bootstrap path using the Python compiler:
 
@@ -56,6 +88,7 @@ clang output.ll -o program
 - language reference: `docs/tb.md`
 - sample programs: `examples/aoc`
 - changelog: `CHANGELOG.md`
+- editor syntax highlighting: [TextMate bundle and grammar](editors/README.md)
 
 ## Status
 
@@ -63,7 +96,7 @@ clang output.ll -o program
 
 - Compiling tb programs to LLVM IR with the Python compiler
 - Building and using the self-hosted tb compiler
-- Native numbered fixtures through `tests/fixtures/165.tb`
+- Native numbered fixtures through `tests/fixtures/188.tb`
 - Python compiler fixtures through phase 76; this is a separate suite from the
   native numbered fixtures
 - The current AoC sample set in `examples/aoc`

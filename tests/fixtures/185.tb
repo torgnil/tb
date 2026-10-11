@@ -1,0 +1,58 @@
+record FlagBox(bool[] flags);
+
+void print_flags(bool[] flags):
+    print(flags.length())
+    for (int i : range(flags.length())):
+        print(flags[i])
+
+void edit_parameter(bool[] flags):
+    flags.insert(1, true)
+    bool removed = flags.remove_at(2)
+    print(removed)
+    print_flags(flags)
+
+int main(string[] args):
+    int arg_count = args.length()
+
+    bool[] flags = [arg_count > 0, arg_count == 0]
+    flags.insert(0, true)
+    flags.insert(2, false)
+    flags.insert(999, true)
+    print_flags(flags)
+
+    bool removed_first = flags.remove_at(0)
+    print(removed_first)
+    bool removed_last = flags.remove_at(flags.length() - 1)
+    print(removed_last)
+    print_flags(flags)
+
+    bool[] singleton = [arg_count > 0]
+    bool singleton_value = singleton.remove_at(0)
+    print(singleton_value)
+    print(singleton.length())
+    bool singleton_invalid = singleton.remove_at(0)
+    print(singleton_invalid)
+
+    bool[] empty = []
+    bool empty_invalid = empty.remove_at(-1)
+    print(empty_invalid)
+    print(empty.length())
+
+    bool[] borrowed = [false, true]
+    edit_parameter(borrowed)
+
+    FlagBox box = FlagBox([true, false, arg_count > 1])
+    box.flags.insert(-10, false)
+    bool field_removed = box.flags.remove_at(1)
+    print(field_removed)
+    print_flags(box.flags)
+
+    bool[] repeated = [true, false, true]
+    repeated.insert(1, false)
+    repeated.insert(2, true)
+    bool first_repeat = repeated.remove_at(1)
+    bool second_repeat = repeated.remove_at(1)
+    print(first_repeat)
+    print(second_repeat)
+    print_flags(repeated)
+    return 0

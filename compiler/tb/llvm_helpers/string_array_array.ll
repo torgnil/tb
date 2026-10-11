@@ -106,6 +106,14 @@ store.ready:
   store i8 %owned.byte, ptr %owned.slot
   ret void
 }
+define private i32 @tb_bootstrap_string_array_array_push(ptr %array, ptr %value, i1 %is_owned) {
+entry:
+  %len.ptr = getelementptr inbounds %tb_bootstrap_string_array_array, ptr %array, i32 0, i32 0
+  %len = load i32, ptr %len.ptr
+  call void @tb_bootstrap_string_array_array_set_owned(ptr %array, i32 %len, ptr %value, i1 %is_owned)
+  %next.len = add i32 %len, 1
+  ret i32 %next.len
+}
 define private ptr @tb_bootstrap_string_array_array_clone(ptr %array) {
 entry:
   %is.null = icmp eq ptr %array, null
@@ -182,5 +190,26 @@ loop.done:
   call void @free(ptr %array)
   br label %done
 done:
+  ret void
+}
+define private void @tb_bootstrap_string_array_array_fill(ptr %array, ptr %value) {
+entry:
+  %hold = call ptr @tb_bootstrap_string_array_clone(ptr %value)
+  %len = call i32 @tb_bootstrap_string_array_array_length(ptr %array)
+  br label %fill.cond
+fill.cond:
+  %index = phi i32 [0, %entry], [%next.index, %fill.step]
+  %keep.loop = icmp slt i32 %index, %len
+  br i1 %keep.loop, label %fill.body, label %fill.done
+fill.body:
+  %copy = call ptr @tb_bootstrap_string_array_clone(ptr %hold)
+  call void @tb_bootstrap_string_array_array_release_slot(ptr %array, i32 %index)
+  call void @tb_bootstrap_string_array_array_set_owned(ptr %array, i32 %index, ptr %copy, i1 true)
+  br label %fill.step
+fill.step:
+  %next.index = add i32 %index, 1
+  br label %fill.cond
+fill.done:
+  call void @tb_bootstrap_string_array_free(ptr %hold)
   ret void
 }

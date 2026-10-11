@@ -1,0 +1,87 @@
+record FillBuffers(int[] numbers, bool[] flags);
+
+int fill_effect = 0
+
+int[] fill_receiver_once():
+    fill_effect = fill_effect * 10 + 1
+    return [1, 2]
+
+int fill_value_once():
+    fill_effect = fill_effect * 10 + 2
+    return 9
+
+void fill_parameter(int[] values, int value):
+    fill(values, value)
+
+int main(string[] args):
+    int seed = args.length()
+    const int replacement = -7
+    int[] numbers = [seed, seed + 1, seed + 2]
+    fill(numbers, replacement)
+    print(numbers[0])
+    print(numbers[2])
+    print(numbers.length())
+    numbers.fill(seed + 10)
+    print(numbers[0])
+    print(numbers[2])
+    print(numbers.length())
+
+    int[] numbers_copy = numbers.copy()
+    fill(numbers_copy, 4)
+    print(numbers[0])
+    print(numbers_copy[0])
+
+    int[] empty_numbers = []
+    fill(empty_numbers, 5)
+    print(empty_numbers.length())
+    bool[] empty_flags = []
+    empty_flags.fill(true)
+    print(empty_flags.length())
+
+    bool[] flags = [false, seed > 0, false]
+    const bool enabled = true
+    fill(flags, enabled)
+    print(flags[0])
+    print(flags[2])
+    flags.fill(false)
+    print(flags[0])
+    print(flags[2])
+    print(flags.length())
+
+    fill(fill_receiver_once(), fill_value_once())
+    print(fill_effect)
+
+    int[] parameter_values = [1, 2]
+    fill_parameter(parameter_values, seed + 20)
+    print(parameter_values[0])
+    print(parameter_values[1])
+
+    FillBuffers buffers = FillBuffers([1, 2], [false, true])
+    fill(buffers.numbers, 8)
+    buffers.flags.fill(false)
+    print(buffers.numbers[0])
+    print(buffers.numbers[1])
+    print(buffers.flags[0])
+    print(buffers.flags[1])
+
+    int[] control = [0]
+    if (seed > 0):
+        control.fill(1)
+    else:
+        fill(control, 2)
+    int index = 0
+    while (index < 2):
+        fill(control, index + 3)
+        index += 1
+    switch (seed):
+        case 1:
+            control.fill(5)
+        default:
+            fill(control, 6)
+    try:
+        fill(control, 7)
+    catch (exception err):
+        fill(control, 8)
+    print(control[0])
+    print(control.length())
+    return 0

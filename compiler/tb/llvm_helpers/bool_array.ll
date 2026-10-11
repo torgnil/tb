@@ -23,6 +23,24 @@ read:
   %len = load i32, ptr %len.ptr
   ret i32 %len
 }
+define private i1 @tb_bootstrap_bool_array_pop(ptr %array) {
+entry:
+  %len = call i32 @tb_bootstrap_bool_array_length(ptr %array)
+  %is.empty = icmp sle i32 %len, 0
+  br i1 %is.empty, label %empty, label %pop
+empty:
+  ret i1 false
+pop:
+  %last.index = sub i32 %len, 1
+  %data.ptr = getelementptr inbounds %tb_bootstrap_bool_array, ptr %array, i32 0, i32 1
+  %data = load ptr, ptr %data.ptr
+  %slot = getelementptr inbounds i8, ptr %data, i32 %last.index
+  %value.byte = load i8, ptr %slot
+  %value = icmp ne i8 %value.byte, 0
+  %len.ptr = getelementptr inbounds %tb_bootstrap_bool_array, ptr %array, i32 0, i32 0
+  store i32 %last.index, ptr %len.ptr
+  ret i1 %value
+}
 define private i32 @tb_bootstrap_bool_array_push(ptr %array, i1 %value) {
 entry:
   %len = call i32 @tb_bootstrap_bool_array_length(ptr %array)
@@ -42,6 +60,65 @@ entry:
   store i32 %new.len, ptr %len.ptr
   ret i32 %new.len
 }
+define private void @tb_bootstrap_bool_array_insert(ptr %array, i64 %index, i1 %value) {
+entry:
+  %len32 = call i32 @tb_bootstrap_bool_array_length(ptr %array)
+  %len = sext i32 %len32 to i64
+  %index.negative = icmp slt i64 %index, 0
+  %index.nonnegative = select i1 %index.negative, i64 0, i64 %index
+  %index.past.end = icmp sgt i64 %index.nonnegative, %len
+  %index.clamped = select i1 %index.past.end, i64 %len, i64 %index.nonnegative
+  %index32 = trunc i64 %index.clamped to i32
+  %new.len = add i32 %len32, 1
+  %new.len64 = sext i32 %new.len to i64
+  %new.data = call ptr @malloc(i64 %new.len64)
+  %data.ptr = getelementptr inbounds %tb_bootstrap_bool_array, ptr %array, i32 0, i32 1
+  %old.data = load ptr, ptr %data.ptr
+  call void @llvm.memcpy.p0.p0.i64(ptr %new.data, ptr %old.data, i64 %index.clamped, i1 false)
+  %insert.slot = getelementptr inbounds i8, ptr %new.data, i32 %index32
+  %value.byte = zext i1 %value to i8
+  store i8 %value.byte, ptr %insert.slot
+  %tail.count = sub i64 %len, %index.clamped
+  %tail.source = getelementptr inbounds i8, ptr %old.data, i32 %index32
+  %tail.destination.index = add i32 %index32, 1
+  %tail.destination = getelementptr inbounds i8, ptr %new.data, i32 %tail.destination.index
+  call void @llvm.memcpy.p0.p0.i64(ptr %tail.destination, ptr %tail.source, i64 %tail.count, i1 false)
+  call void @free(ptr %old.data)
+  store ptr %new.data, ptr %data.ptr
+  %len.ptr = getelementptr inbounds %tb_bootstrap_bool_array, ptr %array, i32 0, i32 0
+  store i32 %new.len, ptr %len.ptr
+  ret void
+}
+define private i1 @tb_bootstrap_bool_array_remove_at(ptr %array, i64 %index) {
+entry:
+  %len32 = call i32 @tb_bootstrap_bool_array_length(ptr %array)
+  %len = sext i32 %len32 to i64
+  %index.negative = icmp slt i64 %index, 0
+  %index.past.end = icmp sge i64 %index, %len
+  %bad.index = or i1 %index.negative, %index.past.end
+  br i1 %bad.index, label %invalid, label %remove
+invalid:
+  ret i1 false
+remove:
+  %index32 = trunc i64 %index to i32
+  %value = call i1 @tb_bootstrap_bool_array_get(ptr %array, i32 %index32)
+  %last.index = sub i32 %len32, 1
+  br label %loop.cond
+loop.cond:
+  %current = phi i32 [%index32, %remove], [%next.current, %loop.body]
+  %keep.loop = icmp slt i32 %current, %last.index
+  br i1 %keep.loop, label %loop.body, label %shrink
+loop.body:
+  %source.index = add i32 %current, 1
+  %item = call i1 @tb_bootstrap_bool_array_get(ptr %array, i32 %source.index)
+  call void @tb_bootstrap_bool_array_set(ptr %array, i32 %current, i1 %item)
+  %next.current = add i32 %current, 1
+  br label %loop.cond
+shrink:
+  %len.ptr = getelementptr inbounds %tb_bootstrap_bool_array, ptr %array, i32 0, i32 0
+  store i32 %last.index, ptr %len.ptr
+  ret i1 %value
+}
 define private i1 @tb_bootstrap_bool_array_get(ptr %array, i32 %index) {
 entry:
   %data.ptr = getelementptr inbounds %tb_bootstrap_bool_array, ptr %array, i32 0, i32 1
@@ -51,6 +128,45 @@ entry:
   %value = icmp ne i8 %value.byte, 0
   ret i1 %value
 }
+define private ptr @tb_bootstrap_bool_array_slice(ptr %array, i64 %start, i64 %end) {
+entry:
+  %len32 = call i32 @tb_bootstrap_bool_array_length(ptr %array)
+  %len = sext i32 %len32 to i64
+  %start.negative = icmp slt i64 %start, 0
+  %start.from.end = add i64 %len, %start
+  %start.adjusted = select i1 %start.negative, i64 %start.from.end, i64 %start
+  %start.before.zero = icmp slt i64 %start.adjusted, 0
+  %start.clamped.low = select i1 %start.before.zero, i64 0, i64 %start.adjusted
+  %start.past.end = icmp sgt i64 %start.clamped.low, %len
+  %start.clamped = select i1 %start.past.end, i64 %len, i64 %start.clamped.low
+  %end.negative = icmp slt i64 %end, 0
+  %end.from.end = add i64 %len, %end
+  %end.adjusted = select i1 %end.negative, i64 %end.from.end, i64 %end
+  %end.before.zero = icmp slt i64 %end.adjusted, 0
+  %end.clamped.low = select i1 %end.before.zero, i64 0, i64 %end.adjusted
+  %end.past.end = icmp sgt i64 %end.clamped.low, %len
+  %end.clamped.high = select i1 %end.past.end, i64 %len, i64 %end.clamped.low
+  %end.before.start = icmp slt i64 %end.clamped.high, %start.clamped
+  %end.clamped = select i1 %end.before.start, i64 %start.clamped, i64 %end.clamped.high
+  %slice.len64 = sub i64 %end.clamped, %start.clamped
+  %slice.len32 = trunc i64 %slice.len64 to i32
+  %result = call ptr @tb_bootstrap_bool_array_new(i32 %slice.len32)
+  br label %loop.cond
+loop.cond:
+  %index = phi i32 [0, %entry], [%next.index, %loop.body]
+  %index64 = sext i32 %index to i64
+  %keep.loop = icmp slt i64 %index64, %slice.len64
+  br i1 %keep.loop, label %loop.body, label %done
+loop.body:
+  %source.index64 = add i64 %start.clamped, %index64
+  %source.index32 = trunc i64 %source.index64 to i32
+  %value = call i1 @tb_bootstrap_bool_array_get(ptr %array, i32 %source.index32)
+  call void @tb_bootstrap_bool_array_set(ptr %result, i32 %index, i1 %value)
+  %next.index = add i32 %index, 1
+  br label %loop.cond
+done:
+  ret ptr %result
+}
 define private void @tb_bootstrap_bool_array_set(ptr %array, i32 %index, i1 %value) {
 entry:
   %data.ptr = getelementptr inbounds %tb_bootstrap_bool_array, ptr %array, i32 0, i32 1
@@ -58,6 +174,27 @@ entry:
   %slot = getelementptr inbounds i8, ptr %data, i32 %index
   %value.byte = zext i1 %value to i8
   store i8 %value.byte, ptr %slot
+  ret void
+}
+define private void @tb_bootstrap_bool_array_fill(ptr %array, i1 %value) {
+entry:
+  %len = call i32 @tb_bootstrap_bool_array_length(ptr %array)
+  br label %loop.cond
+loop.cond:
+  %index = phi i32 [ 0, %entry ], [ %next.index, %loop.body ]
+  %keep.loop = icmp slt i32 %index, %len
+  br i1 %keep.loop, label %loop.body, label %done
+loop.body:
+  call void @tb_bootstrap_bool_array_set(ptr %array, i32 %index, i1 %value)
+  %next.index = add i32 %index, 1
+  br label %loop.cond
+done:
+  ret void
+}
+define private void @tb_bootstrap_bool_array_clear(ptr %array) {
+entry:
+  %len.ptr = getelementptr inbounds %tb_bootstrap_bool_array, ptr %array, i32 0, i32 0
+  store i32 0, ptr %len.ptr
   ret void
 }
 define private i1 @tb_bootstrap_bool_array_contains(ptr %array, i1 %needle) {

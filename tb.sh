@@ -26,8 +26,6 @@ shift
 
 script_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 repo_root=$(CDPATH= cd -- "$script_dir" && pwd)
-TB_RESOURCE_ROOT=${TB_RESOURCE_ROOT:-$repo_root}
-export TB_RESOURCE_ROOT
 compiler_bin="$repo_root/bin/tb"
 input_name=$(basename "$input_path")
 program_name=${input_name%.tb}

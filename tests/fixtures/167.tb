@@ -1,0 +1,82 @@
+record FlagBox(bool[] flags);
+
+bool[] borrowed_slice(bool[] source):
+    return source[-3:-1]
+
+bool[] local_slice(bool[] source):
+    bool[] result = source[1:]
+    return result
+
+bool[] create_and_slice(bool first):
+    bool[] source = [first, false]
+    bool[] result = source[:]
+    return result
+
+int main(string[] args):
+    bool[] source = [true, false, true, false]
+    int runtime_zero = args.length() - args.length()
+    int runtime_end = runtime_zero - 1
+    bool[] middle = source[runtime_zero - 3:runtime_end]
+    print(middle.length())
+    print(middle.sum())
+    print(middle[0])
+    print(middle[1])
+    middle[0] = true
+    print(source[1])
+    source[2] = false
+    print(middle[1])
+    source[0:1]
+    print(source[:].sum())
+    print(sum(source[:]))
+
+    const bool[] fixed = [true, false, true, false]
+    bool[] const_slice = fixed[-3:-1]
+    const_slice[0] = true
+    print(fixed[1])
+    print(const_slice.sum())
+
+    bool[] from_start = source[1:]
+    bool[] to_end = source[:-1]
+    bool[] all_values = source[:]
+    bool[] negative = source[-3:-1]
+    bool[] clamped = source[-99:99]
+    bool[] reversed = source[3:1]
+    bool[] low_clamped = source[-99:-99]
+    bool[] high_clamped = source[99:99]
+    bool[] extreme = source[-9223372036854775807:9223372036854775807]
+    bool[] extreme_reversed = source[9223372036854775807:-9223372036854775807]
+    print(from_start.length())
+    print(to_end.length())
+    print(all_values.sum())
+    print(negative.sum())
+    print(clamped.length())
+    print(reversed.length())
+    print(low_clamped.length())
+    print(high_clamped.length())
+    print(extreme.sum())
+    print(extreme_reversed.length())
+
+    bool[] empty = []
+    bool[] empty_slice = empty[:]
+    print(empty_slice.length())
+    print(empty_slice.sum())
+    const bool[] fixed_empty = []
+    bool[] const_empty_slice = fixed_empty[:]
+    const_empty_slice.push(true)
+    print(const_empty_slice.sum())
+
+    bool[] returned_borrowed = borrowed_slice(source)
+    bool[] returned_local = local_slice(source)
+    bool[] returned_owned = create_and_slice(true)
+    print(returned_borrowed.sum())
+    print(returned_local.length())
+    print(returned_owned.sum())
+    returned_borrowed[0] = false
+    print(source[1])
+
+    FlagBox box = FlagBox(source[:2])
+    box.flags = source[1:3]
+    box.flags[0] = true
+    print(source[1])
+    print(box.flags.sum())
+    return 0

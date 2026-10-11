@@ -115,6 +115,25 @@ loop.done:
 done:
   ret void
 }
+define private void @tb_bootstrap_string_array_fill(ptr %array, ptr %value) {
+entry:
+  %len = call i32 @tb_bootstrap_string_array_length(ptr %array)
+  br label %loop.cond
+loop.cond:
+  %index = phi i32 [0, %entry], [%next.index, %loop.step]
+  %keep.loop = icmp slt i32 %index, %len
+  br i1 %keep.loop, label %loop.body, label %done
+loop.body:
+  %value.copy = call ptr @tb_retain(ptr %value)
+  call void @tb_bootstrap_string_array_release_slot(ptr %array, i32 %index)
+  call void @tb_bootstrap_string_array_set_owned(ptr %array, i32 %index, ptr %value.copy, i1 true)
+  br label %loop.step
+loop.step:
+  %next.index = add i32 %index, 1
+  br label %loop.cond
+done:
+  ret void
+}
 define private ptr @tb_bootstrap_string_array_get(ptr %array, i32 %index) {
 entry:
   %data.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 2
@@ -127,14 +146,20 @@ define private ptr @tb_bootstrap_string_array_slice(ptr %array, i64 %start, i64 
 entry:
   %len32 = call i32 @tb_bootstrap_string_array_length(ptr %array)
   %len = sext i32 %len32 to i64
-  %start.neg = icmp slt i64 %start, 0
-  %start.low = select i1 %start.neg, i64 0, i64 %start
-  %start.high = icmp sgt i64 %start.low, %len
-  %start.clamped = select i1 %start.high, i64 %len, i64 %start.low
-  %end.neg = icmp slt i64 %end, 0
-  %end.low = select i1 %end.neg, i64 0, i64 %end
-  %end.high = icmp sgt i64 %end.low, %len
-  %end.clamped.high = select i1 %end.high, i64 %len, i64 %end.low
+  %start.negative = icmp slt i64 %start, 0
+  %start.from.end = add i64 %len, %start
+  %start.adjusted = select i1 %start.negative, i64 %start.from.end, i64 %start
+  %start.before.zero = icmp slt i64 %start.adjusted, 0
+  %start.clamped.low = select i1 %start.before.zero, i64 0, i64 %start.adjusted
+  %start.past.end = icmp sgt i64 %start.clamped.low, %len
+  %start.clamped = select i1 %start.past.end, i64 %len, i64 %start.clamped.low
+  %end.negative = icmp slt i64 %end, 0
+  %end.from.end = add i64 %len, %end
+  %end.adjusted = select i1 %end.negative, i64 %end.from.end, i64 %end
+  %end.before.zero = icmp slt i64 %end.adjusted, 0
+  %end.clamped.low = select i1 %end.before.zero, i64 0, i64 %end.adjusted
+  %end.past.end = icmp sgt i64 %end.clamped.low, %len
+  %end.clamped.high = select i1 %end.past.end, i64 %len, i64 %end.clamped.low
   %end.before.start = icmp slt i64 %end.clamped.high, %start.clamped
   %end.clamped = select i1 %end.before.start, i64 %start.clamped, i64 %end.clamped.high
   %slice.len64 = sub i64 %end.clamped, %start.clamped
