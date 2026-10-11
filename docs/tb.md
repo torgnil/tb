@@ -415,7 +415,8 @@ Array helpers
 
 - sort(arr: T[], compare: (T, T) -> int) -> void
   - Sort the array in place using the provided comparator.
-  - Comparator can be a named function such as `compare` with signature `int compare(T a, T b)` or an inline lambda such as `(int a, int b) -> a - b`.
+  - Native `int[]` and record-array sort methods require one comparator. A named comparator must resolve to a function returning `int` with exactly two parameters matching the array element type, such as `int compare(int a, int b)`. An inline lambda such as `(int a, int b) -> a - b` is also supported.
+  - Invalid named comparators for those native array sort methods produce a compiler diagnostic. Scalar functions named `sort` keep normal method-call dispatch, for example `value.sort()` can call `int sort(int value)`.
 
 - map_to(arr: T[], item -> expr) -> U[]
   - Transform each element with a single-parameter lambda and return a new array containing the lambda results.

@@ -493,21 +493,22 @@ TempResult lower_linear_value(Node node, int next_temp):
                     lines.push(name + ' = method-call-lambda flat_map_edges_for_point ' + base.name + ' ' + node.children[1].value + ' ' + capture_points.name)
                     return TempResult(name, lines, capture_points.next_temp + 1)
         if (node.value == 'sort'):
-            if (node.children.length() == 2 && node.children[1].kind == 'Lambda2'):
-                BindingIR left_binding = ir_parse_binding_decl(lambda2_left_binding(node.children[1].value))
-                BindingIR right_binding = ir_parse_binding_decl(lambda2_right_binding(node.children[1].value))
-                string name = temp_name(base.next_temp)
-                string[] lines = base.lines
-                if (is_identifier_subtraction_lambda(node.children[1])):
-                    lines.push(name + ' = method-call-lambda sort_int_desc ' + base.name + ' ' + lambda2_left_binding(node.children[1].value) + ' ' + lambda2_right_binding(node.children[1].value))
-                    return TempResult(name, lines, base.next_temp + 1)
-                if (is_identifier_subtraction_lambda_asc(node.children[1])):
-                    lines.push(name + ' = method-call-lambda sort_int_asc ' + base.name + ' ' + lambda2_left_binding(node.children[1].value) + ' ' + lambda2_right_binding(node.children[1].value))
-                    return TempResult(name, lines, base.next_temp + 1)
-                if (is_record_field_subtraction_lambda(node.children[1])):
-                    string field_name = node.children[1].children[0].children[0].value
-                    lines.push(name + ' = method-call-lambda sort_record_field_asc ' + base.name + ' ' + lambda2_left_binding(node.children[1].value) + ' ' + lambda2_right_binding(node.children[1].value) + ' ' + field_name)
-                    return TempResult(name, lines, base.next_temp + 1)
+            if (node.children.length() == 2):
+                if (node.children[1].kind == 'Lambda2'):
+                    BindingIR left_binding = ir_parse_binding_decl(lambda2_left_binding(node.children[1].value))
+                    BindingIR right_binding = ir_parse_binding_decl(lambda2_right_binding(node.children[1].value))
+                    string name = temp_name(base.next_temp)
+                    string[] lines = base.lines
+                    if (is_identifier_subtraction_lambda(node.children[1])):
+                        lines.push(name + ' = method-call-lambda sort_int_desc ' + base.name + ' ' + lambda2_left_binding(node.children[1].value) + ' ' + lambda2_right_binding(node.children[1].value))
+                        return TempResult(name, lines, base.next_temp + 1)
+                    if (is_identifier_subtraction_lambda_asc(node.children[1])):
+                        lines.push(name + ' = method-call-lambda sort_int_asc ' + base.name + ' ' + lambda2_left_binding(node.children[1].value) + ' ' + lambda2_right_binding(node.children[1].value))
+                        return TempResult(name, lines, base.next_temp + 1)
+                    if (is_record_field_subtraction_lambda(node.children[1])):
+                        string field_name = node.children[1].children[0].children[0].value
+                        lines.push(name + ' = method-call-lambda sort_record_field_asc ' + base.name + ' ' + lambda2_left_binding(node.children[1].value) + ' ' + lambda2_right_binding(node.children[1].value) + ' ' + field_name)
+                        return TempResult(name, lines, base.next_temp + 1)
         TempListResult args = lower_linear_values(tail_nodes(node.children, 1), base.next_temp)
         string name = temp_name(args.next_temp)
         string line = name + ' = method-call ' + node.value + ' ' + base.name
@@ -722,20 +723,21 @@ TempIRResult lower_linear_value_ir(Node node, int next_temp):
                     instructions.push(LinearInstruction('value', name, 'unknown', 'unknown', 'method-call-lambda', ['flat_map_edges_for_point', base.name, node.children[1].value, capture_points.name]))
                     return TempIRResult(name, instructions, capture_points.next_temp + 1)
         if (node.value == 'sort'):
-            if (node.children.length() == 2 && node.children[1].kind == 'Lambda2'):
-                BindingIR left_binding = ir_parse_binding_decl(lambda2_left_binding(node.children[1].value))
-                BindingIR right_binding = ir_parse_binding_decl(lambda2_right_binding(node.children[1].value))
-                string name = temp_name(base.next_temp)
-                if (is_identifier_subtraction_lambda(node.children[1])):
-                    LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', name, 'unknown', 'borrowed', 'method-call-lambda', ['sort_int_desc', base.name, lambda2_left_binding(node.children[1].value), lambda2_right_binding(node.children[1].value)])])
-                    return TempIRResult(name, instructions, base.next_temp + 1)
-                if (is_identifier_subtraction_lambda_asc(node.children[1])):
-                    LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', name, 'unknown', 'borrowed', 'method-call-lambda', ['sort_int_asc', base.name, lambda2_left_binding(node.children[1].value), lambda2_right_binding(node.children[1].value)])])
-                    return TempIRResult(name, instructions, base.next_temp + 1)
-                if (is_record_field_subtraction_lambda(node.children[1])):
-                    string field_name = node.children[1].children[0].children[0].value
-                    LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', name, 'unknown', 'borrowed', 'method-call-lambda', ['sort_record_field_asc', base.name, lambda2_left_binding(node.children[1].value), lambda2_right_binding(node.children[1].value), field_name])])
-                    return TempIRResult(name, instructions, base.next_temp + 1)
+            if (node.children.length() == 2):
+                if (node.children[1].kind == 'Lambda2'):
+                    BindingIR left_binding = ir_parse_binding_decl(lambda2_left_binding(node.children[1].value))
+                    BindingIR right_binding = ir_parse_binding_decl(lambda2_right_binding(node.children[1].value))
+                    string name = temp_name(base.next_temp)
+                    if (is_identifier_subtraction_lambda(node.children[1])):
+                        LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', name, 'unknown', 'borrowed', 'method-call-lambda', ['sort_int_desc', base.name, lambda2_left_binding(node.children[1].value), lambda2_right_binding(node.children[1].value)])])
+                        return TempIRResult(name, instructions, base.next_temp + 1)
+                    if (is_identifier_subtraction_lambda_asc(node.children[1])):
+                        LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', name, 'unknown', 'borrowed', 'method-call-lambda', ['sort_int_asc', base.name, lambda2_left_binding(node.children[1].value), lambda2_right_binding(node.children[1].value)])])
+                        return TempIRResult(name, instructions, base.next_temp + 1)
+                    if (is_record_field_subtraction_lambda(node.children[1])):
+                        string field_name = node.children[1].children[0].children[0].value
+                        LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', name, 'unknown', 'borrowed', 'method-call-lambda', ['sort_record_field_asc', base.name, lambda2_left_binding(node.children[1].value), lambda2_right_binding(node.children[1].value), field_name])])
+                        return TempIRResult(name, instructions, base.next_temp + 1)
         TempIRListResult args = lower_linear_values_ir(tail_nodes(node.children, 1), base.next_temp)
         string name = temp_name(args.next_temp)
         string[] call_args = [node.value, base.name]

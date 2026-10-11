@@ -1523,6 +1523,30 @@ bool is_named_int_order_comparator(ProgramIR program, string comparator_name, bo
         return return_left == left_name && return_right == right_name
     return return_left == right_name && return_right == left_name
 
+string validate_named_sort_comparator(ProgramIR program, ParsedFunction function_ir, string comparator_temp, string expected_type):
+    LinearInstruction comparator = lookup_temp_instruction(function_ir, comparator_temp)
+    if (comparator.kind != 'value' || comparator.detail != 'identifier'):
+        throw 'sort comparator must be a named function'
+    if (comparator.args.length() != 1):
+        throw 'sort comparator must be a named function'
+    string comparator_name = comparator.args[0]
+    BindingIR local_binding = lookup_named_binding(function_ir, comparator_name)
+    if (local_binding.name != ''):
+        throw 'sort comparator must be a named function, got value: ' + comparator_name
+    BindingIR global_binding = lookup_named_global(program, comparator_name)
+    if (global_binding.name != ''):
+        throw 'sort comparator must be a named function, got value: ' + comparator_name
+    ParsedFunction comparator_function = lookup_named_function_decl(program, comparator_name)
+    if (comparator_function.header == ''):
+        throw 'unknown sort comparator function: ' + comparator_name
+    if (normalize_llvm_type_name(comparator_function.return_type) != 'int'):
+        throw 'sort comparator must return int: ' + comparator_name
+    if (comparator_function.params.length() != 2):
+        throw 'sort comparator must have signature int ' + comparator_name + '(' + expected_type + ', ' + expected_type + ')'
+    if (normalize_llvm_type_name(comparator_function.params[0].type_name) != expected_type || normalize_llvm_type_name(comparator_function.params[1].type_name) != expected_type):
+        throw 'sort comparator must have signature int ' + comparator_name + '(' + expected_type + ', ' + expected_type + ')'
+    return comparator_name
+
 bool function_name_exists(ProgramIR program, string name):
     int name_length = name.length()
     int index = LLVM_PROGRAM_CACHE_FUNCTION_NAMES.length() - 1
@@ -5340,17 +5364,14 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
         return set_result
     if (method_name == 'sort' && method_base_type == 'int[]'):
         if (op.args.length() != 3):
-            throw 'unsupported llvm int[] sort arity'
-        LinearInstruction comparator = lookup_temp_instruction(function_ir, op.args[2])
-        if (comparator.kind == 'value' && comparator.detail == 'identifier'):
-            if (is_named_int_order_comparator(program, comparator.args[0], true)):
-                return '  ' + lhs + ' = call ptr @tb_bootstrap_int_array_sort_asc(ptr ' + temp_ref(op.args[1]) + ')'
-            if (is_named_int_order_comparator(program, comparator.args[0], false)):
-                return '  ' + lhs + ' = call ptr @tb_bootstrap_int_array_sort_desc(ptr ' + temp_ref(op.args[1]) + ')'
-        if (comparator.kind == 'value' && comparator.detail == 'identifier'):
-            register_named_int_sort_comparator(comparator.args[0])
-            return '  ' + lhs + ' = call ptr @tb_bootstrap_int_array_sort_by(ptr ' + temp_ref(op.args[1]) + ', ptr ' + llvm_named_int_sort_comparator_symbol(comparator.args[0]) + ')'
-        throw 'unsupported llvm int[] sort comparator'
+            throw 'sort requires exactly one comparator argument'
+        string comparator_name = validate_named_sort_comparator(program, function_ir, op.args[2], 'int')
+        if (is_named_int_order_comparator(program, comparator_name, true)):
+            return '  ' + lhs + ' = call ptr @tb_bootstrap_int_array_sort_asc(ptr ' + temp_ref(op.args[1]) + ')'
+        if (is_named_int_order_comparator(program, comparator_name, false)):
+            return '  ' + lhs + ' = call ptr @tb_bootstrap_int_array_sort_desc(ptr ' + temp_ref(op.args[1]) + ')'
+        register_named_int_sort_comparator(comparator_name)
+        return '  ' + lhs + ' = call ptr @tb_bootstrap_int_array_sort_by(ptr ' + temp_ref(op.args[1]) + ', ptr ' + llvm_named_int_sort_comparator_symbol(comparator_name) + ')'
     if (method_name == 'create_prio_q' && method_base_type == 'int[]'):
         if (op.args.length() != 3):
             throw 'unsupported llvm int[] create_prio_q arity'
@@ -5363,15 +5384,14 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
         throw 'unsupported llvm int[] create_prio_q comparator'
     if (method_name == 'sort' && method_base_type.ends_with('[]') && record_name_from_type(array_item_type(method_base_type)) != ''):
         if (op.args.length() != 3):
-            throw 'unsupported llvm record[] sort arity'
+            throw 'sort requires exactly one comparator argument'
         string record_name = record_name_from_type(array_item_type(method_base_type))
-        LinearInstruction comparator = lookup_temp_instruction(function_ir, op.args[2])
-        if (comparator.kind == 'value' && comparator.detail == 'identifier' && comparator.args[0] == 'compare_edges' && record_name == 'Edge'):
+        string element_type = normalize_llvm_type_name(array_item_type(method_base_type))
+        string comparator_name = validate_named_sort_comparator(program, function_ir, op.args[2], element_type)
+        if (comparator_name == 'compare_edges' && record_name == 'Edge'):
             return '  ' + lhs + ' = call ptr @tb_bootstrap_record_array_sort_Edge_compare_edges(ptr ' + temp_ref(op.args[1]) + ')'
-        if (comparator.kind == 'value' && comparator.detail == 'identifier'):
-            register_named_record_sort_comparator(record_name, comparator.args[0])
-            return '  ' + lhs + ' = call ptr @tb_bootstrap_record_array_sort_by_' + record_name + '(ptr ' + temp_ref(op.args[1]) + ', ptr ' + llvm_named_record_sort_comparator_symbol(record_name, comparator.args[0]) + ')'
-        throw 'unsupported llvm record[] sort comparator'
+        register_named_record_sort_comparator(record_name, comparator_name)
+        return '  ' + lhs + ' = call ptr @tb_bootstrap_record_array_sort_by_' + record_name + '(ptr ' + temp_ref(op.args[1]) + ', ptr ' + llvm_named_record_sort_comparator_symbol(record_name, comparator_name) + ')'
     if (method_name == 'create_prio_q' && method_base_type.ends_with('[]') && record_name_from_type(array_item_type(method_base_type)) != ''):
         if (op.args.length() != 3):
             throw 'unsupported llvm record[] create_prio_q arity'
