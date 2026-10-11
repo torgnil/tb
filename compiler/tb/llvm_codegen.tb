@@ -1743,6 +1743,34 @@ string emit_backend_release_ptr(string type_name, string ptr_name):
         return emit_record_release_ptr(record_name_from_type(type_name), ptr_name)
     return '  ; release_ptr ' + type_name + ' ' + ptr_name
 
+string emit_user_call_array_argument_releases(ProgramIR program, ParsedFunction function_ir, string call_name, string[] call_args, int first_arg_index):
+    int call_meta_index = lookup_call_meta_index(call_name)
+    if (call_meta_index < 0 || call_meta_index >= program.functions.length()):
+        return ''
+    string[] released_temps = []
+    string[] lines = []
+    int index = first_arg_index
+    while (index < call_args.length()):
+        string temp_name = call_args[index]
+        bool already_released = false
+        for (string released_temp in released_temps):
+            if (released_temp == temp_name):
+                already_released = true
+        if (!already_released):
+            string arg_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, temp_name))
+            bool supported_array = arg_type == 'int[]' || arg_type == 'bool[]' || arg_type == 'string[]' || arg_type == 'int[][]' || arg_type == 'string[][]'
+            if (supported_array && temp_needs_backend_free(function_ir, temp_name)):
+                lines.push(emit_backend_release_ptr(arg_type, temp_ref(temp_name)))
+                released_temps.push(temp_name)
+        index += 1
+    return join_llvm_strings(lines, '\n')
+
+string append_user_call_array_argument_releases(ProgramIR program, ParsedFunction function_ir, string call_name, string[] call_args, int first_arg_index, string call_line):
+    string releases = emit_user_call_array_argument_releases(program, function_ir, call_name, call_args, first_arg_index)
+    if (releases == ''):
+        return call_line
+    return call_line + '\n' + releases
+
 bool temp_is_thread_pool(ParsedFunction function_ir, string temp_name):
     return is_thread_pool_type_name(lookup_temp_llvm_type(function_ir, temp_name))
 
@@ -4814,7 +4842,7 @@ string emit_call_value_instruction_core(ProgramIR program, ParsedFunction functi
         if (LLVM_USER_CALL_STATS_ACTIVE != 0):
             LLVM_USER_CALL_VOID_LINE_BYTES += line.length()
         record_llvm_user_call_stats(op.args.length() - 1, param_count, true, false, line.length())
-        return line
+        return append_user_call_array_argument_releases(program, function_ir, call_name, op.args, 1, line)
     if (LLVM_USER_CALL_STATS_ACTIVE != 0):
         LLVM_USER_CALL_TEMP_REF_CALLS += 1
         LLVM_USER_CALL_NONVOID_LHS_TEMP_REF_CALLS += 1
@@ -4823,7 +4851,7 @@ string emit_call_value_instruction_core(ProgramIR program, ParsedFunction functi
     if (LLVM_USER_CALL_STATS_ACTIVE != 0):
         LLVM_USER_CALL_NONVOID_LINE_BYTES += line.length()
     record_llvm_user_call_stats(op.args.length() - 1, param_count, false, false, line.length())
-    return line
+    return append_user_call_array_argument_releases(program, function_ir, call_name, op.args, 1, line)
 
 string emit_call_value_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op):
     if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
@@ -5491,8 +5519,10 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
         args.push(llvm_type(arg_type) + ' ' + temp_ref(op.args[index]))
         index += 1
     if (normalize_llvm_type_name(result_type) == 'void'):
-        return '  call void @' + op.args[0] + '(' + join_llvm_strings(args, ', ') + ')'
-    return '  ' + lhs + ' = call ' + llvm_type(result_type) + ' @' + op.args[0] + '(' + join_llvm_strings(args, ', ') + ')'
+        string void_line = '  call void @' + op.args[0] + '(' + join_llvm_strings(args, ', ') + ')'
+        return append_user_call_array_argument_releases(program, function_ir, op.args[0], op.args, 1, void_line)
+    string call_line = '  ' + lhs + ' = call ' + llvm_type(result_type) + ' @' + op.args[0] + '(' + join_llvm_strings(args, ', ') + ')'
+    return append_user_call_array_argument_releases(program, function_ir, op.args[0], op.args, 1, call_line)
 
 string emit_method_call_value_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op):
     if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
