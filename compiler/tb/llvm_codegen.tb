@@ -6532,6 +6532,7 @@ string emit_assign_index_instruction(ProgramIR program, ParsedFunction function_
             else:
                 stored_value = emit_string_array_owned_value(function_ir, op.args[2], 'index.' + temp_suffix)
                 owned_flag = 'true'.substring(0)
+        lines.push('  call void @tb_bootstrap_string_array_array_release_slot(ptr ' + temp_ref(op.args[0]) + ', i32 ' + index_name + ')')
         lines.push('  call void @tb_bootstrap_string_array_array_set_owned(ptr ' + temp_ref(op.args[0]) + ', i32 ' + index_name + ', ptr ' + stored_value + ', i1 ' + owned_flag + ')')
         return join_llvm_strings(lines, '\n')
     if (base_type == 'int[][]'):
@@ -6546,6 +6547,7 @@ string emit_assign_index_instruction(ProgramIR program, ParsedFunction function_
             else:
                 stored_value = emit_int_array_owned_value(function_ir, op.args[2], 'index.' + temp_suffix)
                 owned_flag = 'true'.substring(0)
+        lines.push('  call void @tb_bootstrap_int_array_array_release_slot(ptr ' + temp_ref(op.args[0]) + ', i32 ' + index_name + ')')
         lines.push('  call void @tb_bootstrap_int_array_array_set_owned(ptr ' + temp_ref(op.args[0]) + ', i32 ' + index_name + ', ptr ' + stored_value + ', i1 ' + owned_flag + ')')
         return join_llvm_strings(lines, '\n')
     if (base_type.ends_with('[]') && record_name_from_type(array_item_type(base_type)) != ''):
@@ -6733,6 +6735,9 @@ string emit_instruction(ProgramIR program, ParsedFunction function_ir, string bl
             return line
         return emit_assign_field_instruction(program, function_ir, op, temp_suffix)
     if (op.kind == 'release_index'):
+        string base_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0]))
+        if (base_type == 'int[][]' || base_type == 'string[][]'):
+            return '  ; defer release_index ' + temp_ref(op.args[0]) + ' ' + temp_ref(op.args[1]) + ' until assign_index materializes the replacement'
         return emit_release_index_instruction(program, function_ir, op, temp_suffix)
     if (op.kind == 'assign_index'):
         if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
