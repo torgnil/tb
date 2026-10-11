@@ -994,8 +994,8 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
                     throw 'fill requires exactly an array and a value'
                 string fill_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
                 string value_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2]))
-                if (!((fill_type == 'int[]' && value_type == 'int') || (fill_type == 'bool[]' && value_type == 'bool') || (fill_type == 'string[]' && value_type == 'string'))):
-                    throw 'fill requires int[] with int, bool[] with bool, or string[] with string; got ' + fill_type + ' and ' + value_type
+                if (!((fill_type == 'int[]' && value_type == 'int') || (fill_type == 'bool[]' && value_type == 'bool') || (fill_type == 'string[]' && value_type == 'string') || (fill_type == 'int[][]' && value_type == 'int[]') || (fill_type == 'string[][]' && value_type == 'string[]'))):
+                    throw 'fill requires int[] with int, bool[] with bool, string[] with string, int[][] with int[], or string[][] with string[]; got ' + fill_type + ' and ' + value_type
                 result_type = 'void'
         if (op.args[0] == 'sum' && op.args.length() >= 2):
             string sum_arg_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
@@ -1059,8 +1059,8 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
                     throw 'fill requires exactly one value'
                 string fill_type = normalize_llvm_type_name(base_type)
                 string value_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2]))
-                if (!((fill_type == 'int[]' && value_type == 'int') || (fill_type == 'bool[]' && value_type == 'bool') || (fill_type == 'string[]' && value_type == 'string'))):
-                    throw 'fill requires int[] with int, bool[] with bool, or string[] with string; got ' + fill_type + ' and ' + value_type
+                if (!((fill_type == 'int[]' && value_type == 'int') || (fill_type == 'bool[]' && value_type == 'bool') || (fill_type == 'string[]' && value_type == 'string') || (fill_type == 'int[][]' && value_type == 'int[]') || (fill_type == 'string[][]' && value_type == 'string[]'))):
+                    throw 'fill requires int[] with int, bool[] with bool, string[] with string, int[][] with int[], or string[][] with string[]; got ' + fill_type + ' and ' + value_type
                 return LinearInstruction(op.kind.substring(0), op.lhs.substring(0), 'void', 'plain', 'call', ['fill', op.args[1], op.args[2]])
         if (method_name == 'copy'):
             if (lookup_function_return_type(functions, 'copy') == 'unknown' && !record_type_exists(record_fields, 'copy')):

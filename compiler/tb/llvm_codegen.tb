@@ -4499,12 +4499,20 @@ string emit_call_value_instruction_core(ProgramIR program, ParsedFunction functi
                 helper_name = '@tb_bootstrap_bool_array_fill'
             else if (call_arg1_type == 'string[]' && value_type == 'string'):
                 helper_name = '@tb_bootstrap_string_array_fill'
+            else if (call_arg1_type == 'int[][]' && value_type == 'int[]'):
+                helper_name = '@tb_bootstrap_int_array_array_fill'
+            else if (call_arg1_type == 'string[][]' && value_type == 'string[]'):
+                helper_name = '@tb_bootstrap_string_array_array_fill'
             if (helper_name == ''):
                 throw 'unsupported llvm fill arg types: ' + call_arg1_type + ' ' + value_type
             if (function_uses_temp(function_ir, op.lhs)):
                 throw 'fill result cannot be used as a value'
             string[] fill_lines = []
-            if (call_arg1_type == 'string[]'):
+            if (call_arg1_type == 'int[][]' || call_arg1_type == 'string[][]'):
+                fill_lines.push('  call void ' + helper_name + '(ptr ' + temp_ref(op.args[1]) + ', ptr ' + temp_ref(op.args[2]) + ')')
+                if (temp_needs_backend_free(function_ir, op.args[2]) && !temp_is_moved(function_ir, op.args[2])):
+                    fill_lines.push(emit_backend_release_ptr(value_type, temp_ref(op.args[2])))
+            else if (call_arg1_type == 'string[]'):
                 string fill_value = temp_ref(op.args[2])
                 bool fill_value_owned = temp_needs_backend_free(function_ir, op.args[2]) && !temp_is_moved(function_ir, op.args[2])
                 if (!fill_value_owned):
