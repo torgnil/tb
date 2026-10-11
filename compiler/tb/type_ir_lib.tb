@@ -926,6 +926,14 @@ GlobalDeclIR clone_global_decl_ir(GlobalDeclIR global_decl):
 LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bindings, FunctionSigIR[] functions, RecordFieldIR[] record_fields, EnumTypeIR[] enum_types, string[] temp_types):
     if (op.kind != 'value'):
         return op
+    if (op.detail == 'method-call'):
+        if (op.args.length() >= 2):
+            if (op.args[0] == 'sort'):
+                string sort_receiver_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+                if (sort_receiver_type == 'int[]'):
+                    if (op.args.length() != 3):
+                        throw 'int[] sort requires exactly one comparator'
+                    return refined_value_op(op, 'int[]', 'borrowed')
     if (op.result_type != 'unknown' && op.detail != 'array' && op.detail != 'set' && op.detail != 'map'):
         return refined_value_op(op, op.result_type, refine_ownership_mode(op, op.result_type))
     if (op.detail == 'identifier'):

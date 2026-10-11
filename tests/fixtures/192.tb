@@ -1,0 +1,82 @@
+record IntSortBox(int[] values);
+
+int[] sort(int[] values, int ignored):
+    return values
+
+int compare_ascending(int left, int right):
+    return left - right
+
+int compare_descending(int left, int right):
+    return right - left
+
+int consume_values(int[] values):
+    return values.sum()
+
+void sort_borrowed_parameter(int[] values):
+    values = values.sort(compare_descending)
+
+void sort_chained_local(int n):
+    int[] values = [n + 7, n + 5, n + 6]
+    values = values.sort(compare_descending).sort(compare_ascending)
+    print(values)
+
+int[] returned_sorted_values(int n):
+    int[] values = [n + 2, n, n + 1]
+    return values.sort(compare_ascending)
+
+IntSortBox returned_sorted_box(int n):
+    int[] values = [n + 2, n, n + 1]
+    return IntSortBox(values.sort(compare_ascending))
+
+int main(string[] args):
+    int n = args.length()
+
+    int[] values = [n + 2, n, n + 1]
+    int[] sorted = values.sort(compare_ascending)
+    print(values)
+    print(sorted)
+    sorted[0] = 99
+    print(values)
+    print(sorted)
+
+    int[] reassigned = [n + 5, n + 3, n + 4]
+    reassigned = reassigned.sort(compare_descending)
+    print(reassigned)
+    sort_chained_local(n)
+    int[] parameter_source = [n + 10, n + 8, n + 9]
+    sort_borrowed_parameter(parameter_source)
+    print(parameter_source)
+
+    int[] descending = [n + 2, n, n + 1]
+    int[] descending_sorted = descending.sort(compare_descending)
+    print(descending)
+    print(descending_sorted)
+
+    int[] empty_values = []
+    int[] empty_sorted = empty_values.sort(compare_ascending)
+    print(empty_sorted.length())
+
+    IntSortBox box = IntSortBox(values.sort(compare_ascending))
+    box.values[0] = 77
+    print(values)
+    print(box.values)
+    box.values = values.sort(compare_descending)
+    box.values[0] = 88
+    print(values)
+    print(box.values)
+
+    int consumed = consume_values(values.sort(compare_ascending))
+    print(consumed)
+    print(values)
+    values.sort(compare_descending)
+    print(values)
+
+    int[] returned = returned_sorted_values(n)
+    print(returned)
+    IntSortBox returned_box = returned_sorted_box(n)
+    print(returned_box.values)
+
+    int[] lambda_values = [n + 2, n, n + 1]
+    lambda_values.sort((int left, int right) -> right - left)
+    print(lambda_values)
+    return 0

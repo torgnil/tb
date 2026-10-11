@@ -285,6 +285,24 @@ string identifier_target_binding_cached(OwnershipIdentifierTargetCache cache, st
         index -= 1
     return ''
 
+string borrowed_int_array_named_sort_receiver_binding(ParsedFunction function_ir, OwnershipTempMetaCache cache, OwnershipIdentifierTargetCache identifier_target_cache, string temp_name):
+    if (normalize_llvm_type_name(lookup_temp_result_type_cached(cache, temp_name)) != 'int[]'):
+        return ''
+    if (lookup_temp_ownership_mode_cached(cache, temp_name) != 'borrowed'):
+        return ''
+    for (BlockIR block in function_ir.blocks):
+        for (LinearInstruction op in block.instructions):
+            if (op.lhs == temp_name && op.kind == 'value' && op.detail == 'method-call'):
+                if (op.args.length() >= 2):
+                    if (op.args[0] == 'sort'):
+                        if (op.args.length() == 3):
+                            if (normalize_llvm_type_name(lookup_temp_result_type_cached(cache, op.args[1])) == 'int[]'):
+                                string receiver_binding = identifier_target_binding_cached(identifier_target_cache, op.args[1])
+                                if (receiver_binding != ''):
+                                    return receiver_binding
+                                return borrowed_int_array_named_sort_receiver_binding(function_ir, cache, identifier_target_cache, op.args[1])
+    return ''
+
 string named_binding_decl(ParsedFunction function_ir, string name):
     if (OWNERSHIP_PROFILE_ACTIVE != 0):
         OWNERSHIP_NAMED_BINDING_DECL_CALLS += 1
@@ -372,6 +390,9 @@ LinearInstruction[] apply_ownership_to_instructions(ParsedFunction function_ir, 
                 string source_binding_decl = identifier_target_binding_cached(identifier_target_cache, op.args[0])
                 if (binding_decl != '' && binding_is_managed_cached(binding_decl, record_names, enum_names)):
                     if (source_binding_decl == binding_decl):
+                        continue
+                    string sort_receiver_binding_decl = borrowed_int_array_named_sort_receiver_binding(function_ir, cache, identifier_target_cache, op.args[0])
+                    if (sort_receiver_binding_decl == binding_decl):
                         continue
             if (binding_decl != '' && binding_is_managed_cached(binding_decl, record_names, enum_names)):
                 result.push(LinearInstruction('release_local', '', '', '', binding_decl, []))
