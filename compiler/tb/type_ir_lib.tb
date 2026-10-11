@@ -977,15 +977,16 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             string clear_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
             if (clear_type == 'bool[]'):
                 result_type = 'void'
-        if (op.args[0] == 'pop' && op.args.length() >= 2):
+        if (op.args[0] == 'pop' && lookup_function_return_type(functions, 'pop') == 'unknown' && !record_type_exists(record_fields, 'pop')):
+            if (op.args.length() != 2):
+                throw 'pop requires exactly one array argument'
             string pop_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
             if (pop_type == 'bool[]'):
-                if (lookup_function_return_type(functions, 'pop') == 'unknown'):
-                    if (!record_type_exists(record_fields, 'pop')):
-                        if (op.args.length() != 2):
-                            throw 'pop requires exactly one bool[] argument'
-                        result_type = 'bool'
-                        return refined_value_op(op, result_type, 'plain')
+                result_type = 'bool'
+                return refined_value_op(op, result_type, 'plain')
+            if (pop_type == 'string[]'):
+                result_type = 'string'
+                return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
         if (op.args[0] == 'copy'):
             if (lookup_function_return_type(functions, 'copy') == 'unknown' && !record_type_exists(record_fields, 'copy')):
                 if (op.args.length() != 2):
@@ -1050,6 +1051,8 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
         if (op.args.length() < 2):
             return op
         string method_name = op.args[0]
+        if (method_name == 'pop' && lookup_function_return_type(functions, 'pop') == 'unknown' && op.args.length() != 2):
+            throw 'pop requires exactly one array receiver'
         string base_type = lookup_temp_type_slot(temp_types, op.args[1])
         if (method_name == 'clear' && normalize_llvm_type_name(base_type) == 'bool[]' && lookup_function_return_type(functions, 'clear') == 'unknown'):
             if (op.args.length() != 2):
@@ -1072,15 +1075,19 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             return refined_value_op(op, 'bool', 'plain')
         if (method_name == 'pop'):
             string pop_type = normalize_llvm_type_name(base_type)
-            if (pop_type == 'bool[]'):
+            if (pop_type == 'bool[]' || pop_type == 'string[]'):
                 if (lookup_function_return_type(functions, 'pop') == 'unknown'):
                     if (record_type_exists(record_fields, 'pop')):
                         if (op.args.length() != 2):
-                            throw 'pop requires exactly one bool[] receiver'
-                        return refined_value_op(op, 'bool', 'plain')
+                            throw 'pop requires exactly one array receiver'
+                        if (pop_type == 'bool[]'):
+                            return refined_value_op(op, 'bool', 'plain')
+                        return refined_value_op(op, 'string', refine_ownership_mode(op, 'string'))
                     if (op.args.length() != 2):
-                        throw 'pop requires exactly one bool[] receiver'
-                    return LinearInstruction(op.kind.substring(0), op.lhs.substring(0), 'bool', 'plain', 'call', ['pop', op.args[1]])
+                        throw 'pop requires exactly one array receiver'
+                    if (pop_type == 'bool[]'):
+                        return LinearInstruction(op.kind.substring(0), op.lhs.substring(0), 'bool', 'plain', 'call', ['pop', op.args[1]])
+                    return LinearInstruction(op.kind.substring(0), op.lhs.substring(0), 'string', refine_ownership_mode(op, 'string'), 'call', ['pop', op.args[1]])
         if (method_name == 'fill'):
             if (lookup_function_return_type(functions, 'fill') == 'unknown' && !record_type_exists(record_fields, 'fill')):
                 if (op.args.length() != 3):

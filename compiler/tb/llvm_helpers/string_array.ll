@@ -450,6 +450,39 @@ loop.done:
 done:
   ret void
 }
+define private ptr @tb_bootstrap_string_array_pop(ptr %array) {
+entry:
+  %len = call i32 @tb_bootstrap_string_array_length(ptr %array)
+  %is.empty = icmp sle i32 %len, 0
+  br i1 %is.empty, label %empty, label %pop
+empty:
+  %empty.value = call ptr @tb_string_new(i64 0)
+  ret ptr %empty.value
+pop:
+  %last.index = sub i32 %len, 1
+  %data.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 2
+  %data = load ptr, ptr %data.ptr
+  %slot = getelementptr inbounds ptr, ptr %data, i32 %last.index
+  %value = load ptr, ptr %slot
+  %owned.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 3
+  %owned = load ptr, ptr %owned.ptr
+  %owned.slot = getelementptr inbounds i8, ptr %owned, i32 %last.index
+  %owned.byte = load i8, ptr %owned.slot
+  %is.owned = icmp ne i8 %owned.byte, 0
+  br i1 %is.owned, label %transfer, label %copy
+transfer:
+  br label %finish
+copy:
+  %copy.value = call ptr @tb_bootstrap_string_copy(ptr %value)
+  br label %finish
+finish:
+  %result = phi ptr [ %value, %transfer ], [ %copy.value, %copy ]
+  store ptr null, ptr %slot
+  store i8 0, ptr %owned.slot
+  %len.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 0
+  store i32 %last.index, ptr %len.ptr
+  ret ptr %result
+}
 define private ptr @tb_bootstrap_split_chars(ptr %src) {
 entry:
   %len64 = call i64 @strlen(ptr %src)

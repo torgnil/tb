@@ -1,0 +1,62 @@
+record StringPopBox(string[] values);
+
+string pop_from_local(int count):
+    string[] local_values = ['returned-' + count.to_string()]
+    return local_values.pop()
+
+string pop_parameter(string[] values):
+    return pop(values)
+
+int main(string[] args):
+    int process_args = args.length()
+    string[] words = ['head-' + process_args.to_string(), 'tail-' + process_args.to_string()]
+    string first = pop(words)
+    print(first)
+    print(words.length())
+    words.clear()
+    words.push('replacement-' + process_args.to_string())
+    words[0] = 'replaced-' + process_args.to_string()
+    print(first)
+    print(words.pop())
+    print(words.pop())
+    words.push('reused-' + process_args.to_string())
+    print(words.pop())
+
+    string[] method_words = ['method-head-' + process_args.to_string(), 'method-tail-' + process_args.to_string()]
+    string method_result = method_words.pop()
+    print(method_result)
+    print(method_words.length())
+
+    string[] empty_words = []
+    print(pop(empty_words))
+    print(empty_words.pop())
+    print(empty_words.length())
+    empty_words.push('after-empty-' + process_args.to_string())
+    print(empty_words.pop())
+
+    print(pop_from_local(process_args))
+
+    string[] returned_values = ['array-' + process_args.to_string()]
+    string[] held_values = []
+    held_values.push(pop_parameter(returned_values))
+    print(held_values[0])
+    print(returned_values.length())
+
+    StringPopBox box = StringPopBox(['field-' + process_args.to_string()])
+    string field_value = box.values.pop()
+    box.values.clear()
+    print(field_value)
+
+    StringPopBox transferred_box = StringPopBox([])
+    transferred_box.values.push(pop_from_local(process_args + 1))
+    print(transferred_box.values[0])
+
+    string[] discarded = ['discarded-' + process_args.to_string()]
+    discarded.pop()
+    print(discarded.length())
+
+    string[] drained = ['loop-a-' + process_args.to_string(), 'loop-b-' + process_args.to_string()]
+    while (drained.length() > 0):
+        print(drained.pop())
+    print(drained.length())
+    return 0

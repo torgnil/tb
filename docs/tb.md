@@ -84,7 +84,7 @@ Build and invocation details are documented in the repository or release `README
   `const string greeting = 'hello';`
 
   `const` bindings are compile-time enforced. Reassignment such as `answer = 7;` fails at compile time. Direct mutation through a const array, set, or record binding such as `nums.push(3);`, `nums[0] = 1;`, or `point.x = 2;` also fails at compile time. Const controls mutation permission, not ownership: runtime-managed const locals are released with other function locals on normal function exit, and returning a const string preserves its value before that cleanup.
-  A record constructor may share a name with a mutating builtin, such as `record pop(bool[] flags);`; passing a const array to that constructor is accepted and the record receives its normal array snapshot. The collision does not affect UFCS dispatch: `flags.pop()` still removes and returns the last boolean, while `pop(flags)` constructs the record. A user-defined function named `pop` keeps its normal precedence.
+  A record constructor may share a name with a mutating builtin, such as `record pop(bool[] flags);`; passing a const array to that constructor is accepted and the record receives its normal array snapshot. The collision does not affect UFCS dispatch: `flags.pop()` and `words.pop()` still remove and return the last boolean or string, while `pop(flags)` constructs the record. A user-defined function named `pop` keeps its normal precedence.
   By convention, fixed configuration values and named constants use `UPPER_CASE`.
 
 - Record declaration (example):
@@ -385,7 +385,7 @@ Array helpers
   - Works for nested `int[][]` and `string[][]` arrays, for example `int[][] rows = []; rows.push([1, 2]);` or `string[][] rows = []; string[] row = []; rows.push(row);`. Typed empty rows are supported. Pushing a borrowed row stores an independent row snapshot; an owned row literal or call result transfers into the outer array.
 
 - pop(arr: T[]) -> T
-  - Remove and return the last element. For `bool[]`, `pop(flags)` and `flags.pop()` return the last boolean and reduce the array length by one. Popping an empty `bool[]` returns `false` and leaves it empty. A user-defined function named `pop` takes precedence for `bool[]` calls.
+  - Remove and return the last element. For `bool[]`, `pop(flags)` and `flags.pop()` return the last boolean and reduce the array length by one. Popping an empty `bool[]` returns `false` and leaves it empty. For `string[]`, both forms return the last string; popping an empty array returns an empty string. The popped value remains valid after the array is cleared or reused. A user-defined function named `pop` takes precedence for direct and UFCS calls. A lowercase `pop` record constructor takes precedence for `pop(words)` while `words.pop()` still invokes the builtin.
 
 - last(arr: T[]) -> T
   - Return the last element. Empty arrays still follow normal runtime bounds behavior.
