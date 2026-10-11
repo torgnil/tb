@@ -5196,6 +5196,10 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
     if (op.args.length() < 2):
         throw 'unsupported llvm method-call arity: ' + method_name
     string method_base_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[1]))
+    if (method_name == 'pop' && method_base_type == 'bool[]' && lookup_call_meta_index(method_name) < 0):
+        if (op.args.length() != 2):
+            throw 'unsupported llvm bool[] pop arity'
+        return '  ' + lhs + ' = call i1 @tb_bootstrap_bool_array_pop(ptr ' + temp_ref(op.args[1]) + ')'
     if (method_name == 'abs' && (method_base_type == 'int' || method_base_type == 'num')):
         if (op.args.length() != 2):
             throw 'unsupported llvm abs arity'

@@ -1049,10 +1049,13 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             string pop_type = normalize_llvm_type_name(base_type)
             if (pop_type == 'bool[]'):
                 if (lookup_function_return_type(functions, 'pop') == 'unknown'):
-                    if (!record_type_exists(record_fields, 'pop')):
+                    if (record_type_exists(record_fields, 'pop')):
                         if (op.args.length() != 2):
                             throw 'pop requires exactly one bool[] receiver'
-                        return LinearInstruction(op.kind.substring(0), op.lhs.substring(0), 'bool', 'plain', 'call', ['pop', op.args[1]])
+                        return refined_value_op(op, 'bool', 'plain')
+                    if (op.args.length() != 2):
+                        throw 'pop requires exactly one bool[] receiver'
+                    return LinearInstruction(op.kind.substring(0), op.lhs.substring(0), 'bool', 'plain', 'call', ['pop', op.args[1]])
         if (method_name == 'fill'):
             if (lookup_function_return_type(functions, 'fill') == 'unknown' && !record_type_exists(record_fields, 'fill')):
                 if (op.args.length() != 3):

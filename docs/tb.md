@@ -84,7 +84,7 @@ Build and invocation details are documented in the repository or release `README
   `const string greeting = 'hello';`
 
   `const` bindings are compile-time enforced. Reassignment such as `answer = 7;` fails at compile time. Direct mutation through a const array, set, or record binding such as `nums.push(3);`, `nums[0] = 1;`, or `point.x = 2;` also fails at compile time. Const controls mutation permission, not ownership: runtime-managed const locals are released with other function locals on normal function exit, and returning a const string preserves its value before that cleanup.
-  A record constructor may share a name with a mutating builtin, such as `record pop(bool[] flags);`; passing a const array to that constructor is accepted and the record receives its normal array snapshot.
+  A record constructor may share a name with a mutating builtin, such as `record pop(bool[] flags);`; passing a const array to that constructor is accepted and the record receives its normal array snapshot. The collision does not affect UFCS dispatch: `flags.pop()` still removes and returns the last boolean, while `pop(flags)` constructs the record. A user-defined function named `pop` keeps its normal precedence.
   By convention, fixed configuration values and named constants use `UPPER_CASE`.
 
 - Record declaration (example):
