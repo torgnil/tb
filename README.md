@@ -24,6 +24,10 @@ Build the self-hosted compiler:
 ./build_tb.sh
 ```
 
+Check the compiler version with `bin/tb --version`. Builds embed the version
+and default to `0.2.1-dev`. For a release or Homebrew source build, set the exact
+package version when building, for example `TB_VERSION=0.2.1 ./build_tb.sh`.
+
 Compile a tb program with the self-hosted compiler:
 
 ```bash
