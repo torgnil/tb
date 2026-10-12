@@ -205,6 +205,7 @@ int main(string[] args):
 - Empty rows in a typed nested array literal use the row element type, for example `int[][] rows = [[1], []];` creates an empty `int[]` row.
 - Indexing: `arr[0]`, with negative indexing like `arr[-1]` (last element) supported for arrays and strings. For arrays, negative indices count from the end for both reads and writes: `arr[-length(arr)]` refers to the first element.
 - Slice notation with `[]` is supported for both arrays and strings. For example, `nums[1:3]` gives a subarray, and `text[2:5]` gives a substring. Open-ended, omitted-start, and negative-end slices are supported, e.g. `arr[1:]`, `text[:3]`, `text[:-1]`.
+  - Runtime slices of `int[][]` and `string[][]` copy the selected outer range and each row into an independent mutable result. This also works with const sources, so changing a selected row does not change the source. String values in copied rows may be shared because strings are immutable.
   - Negative start and end bounds count from the end before being clamped, following Python-style exclusive semantics. For example, `nums[-3:-1]` selects the middle two elements, and `nums[:-1]` drops the last element.
   - Example (array): `int[] nums = [1, 2, 3, 4]; int[] mid = nums[-3:-1];  // [2, 3]`
   - Runtime slices of `bool[]` also return independent mutable arrays, including when the source is const; changing either array leaves the other unchanged.
