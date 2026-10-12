@@ -390,6 +390,7 @@ Array helpers
 
 - last(arr: T[]) -> T
   - For native `int[]` and `bool[]`, return the last element without changing the array. For `string[]`, return an independent string copy of the last element without changing the array; the copy remains valid after the source slot is popped or the array is cleared or destroyed. Also available as `arr.last()`, including for const arrays. Calling either form on an empty array aborts before reading an element.
+  - For `int[][]` and `string[][]`, return an independent mutable copy of the last row. The outer array is unchanged, and an empty selected row is valid. Calling either form on an empty outer array aborts before reading an element; immutable strings in a copied `string[]` row may be shared.
 
 - insert(arr: T[], index: int, value: T) -> void
   - For native `int[]` and `bool[]` method calls such as `arr.insert(index, value)`, insertion shifts the selected element and later values right. The full signed 64-bit index is used: negative indices clamp to the start, and indices past the end append. Inserting at the last occupied index preserves that element in the new final slot.

@@ -1,0 +1,83 @@
+record RowHolder(int[] numbers, string[] words);
+
+int[] returned_int_row(int value):
+    int[][] rows = [[value + 1], [value + 2, value + 3]]
+    return rows.last()
+
+string[] returned_string_row(int value):
+    string[][] rows = [['left-' + value.to_string()], ['right-' + value.to_string(), 'tail-' + value.to_string()]]
+    return last(rows)
+
+int consume_int_row(int[] row):
+    return row.sum()
+
+string consume_string_row(string[] row):
+    return row[0]
+
+int main(string[] args):
+    int count = args.length()
+
+    int[][] numbers = [[count + 10], [count + 20, count + 30]]
+    int[] direct = last(numbers)
+    direct[0] = 91
+    print(numbers[1][0])
+    print(direct[0])
+
+    int[] method = numbers.last()
+    method[1] = 92
+    print(numbers[1][1])
+    print(method[1])
+
+    const int[][] fixed_numbers = [[count + 40], [count + 50, count + 60]]
+    int[] fixed_tail = fixed_numbers.last()
+    fixed_tail[0] = 93
+    print(fixed_numbers[1][0])
+    print(fixed_tail[0])
+
+    string[][] words = [['left-' + count.to_string()], ['right-' + count.to_string(), 'tail-' + count.to_string()]]
+    string[] direct_words = last(words)
+    direct_words[0] = 'changed-direct-' + count.to_string()
+    print(words[1][0])
+    print(direct_words[0])
+
+    string[] method_words = words.last()
+    method_words[1] = 'changed-method-' + count.to_string()
+    print(words[1][1])
+    print(method_words[1])
+
+    const string[][] fixed_words = [['fixed-left-' + count.to_string()], ['fixed-right-' + count.to_string()]]
+    string[] fixed_word_tail = fixed_words.last()
+    fixed_word_tail[0] = 'changed-fixed-' + count.to_string()
+    print(fixed_words[1][0])
+    print(fixed_word_tail[0])
+
+    int[][] empty_number_tail = [[count + 70], []]
+    int[] empty_number_row = empty_number_tail.last()
+    print(empty_number_row.length())
+    string[][] empty_word_tail = [['before-' + count.to_string()], []]
+    string[] empty_word_row = last(empty_word_tail)
+    print(empty_word_row.length())
+
+    int[] transferred_numbers = returned_int_row(count)
+    print(transferred_numbers[0])
+    transferred_numbers = returned_int_row(count + 1)
+    print(transferred_numbers[1])
+    string[] transferred_words = returned_string_row(count)
+    print(consume_string_row(transferred_words))
+    print(consume_string_row(returned_string_row(count + 1)))
+
+    int[][] other_numbers = [[count + 80], [count + 90]]
+    int[] replaced = numbers.last()
+    replaced = other_numbers.last()
+    print(replaced[0])
+    print(consume_int_row(numbers.last()))
+
+    RowHolder holder = RowHolder(numbers.last(), words.last())
+    holder.numbers[0] = 94
+    holder.words[0] = 'holder-' + count.to_string()
+    print(numbers[1][0])
+    print(words[1][0])
+    print(holder.numbers[0])
+    print(holder.words[0])
+
+    return 0

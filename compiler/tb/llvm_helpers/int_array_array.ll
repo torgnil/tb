@@ -155,6 +155,20 @@ loop.step:
 done:
   ret ptr %clone
 }
+define private ptr @tb_bootstrap_int_array_array_last(ptr %array) {
+entry:
+  %len = call i32 @tb_bootstrap_int_array_array_length(ptr %array)
+  %has.items = icmp sgt i32 %len, 0
+  br i1 %has.items, label %last, label %empty
+empty:
+  call void @abort()
+  unreachable
+last:
+  %index = sub i32 %len, 1
+  %row = call ptr @tb_bootstrap_int_array_array_get(ptr %array, i32 %index)
+  %clone = call ptr @tb_bootstrap_int_array_clone(ptr %row)
+  ret ptr %clone
+}
 define private ptr @tb_bootstrap_int_array_array_filter_bounds(ptr %array, i64 %r, i64 %c, i64 %width, i64 %height) {
 entry:
   %len = call i32 @tb_bootstrap_int_array_array_length(ptr %array)

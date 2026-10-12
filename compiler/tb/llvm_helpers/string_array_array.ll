@@ -155,6 +155,20 @@ loop.step:
 done:
   ret ptr %clone
 }
+define private ptr @tb_bootstrap_string_array_array_last(ptr %array) {
+entry:
+  %len = call i32 @tb_bootstrap_string_array_array_length(ptr %array)
+  %has.items = icmp sgt i32 %len, 0
+  br i1 %has.items, label %last, label %empty
+empty:
+  call void @abort()
+  unreachable
+last:
+  %index = sub i32 %len, 1
+  %row = call ptr @tb_bootstrap_string_array_array_get(ptr %array, i32 %index)
+  %clone = call ptr @tb_bootstrap_string_array_clone(ptr %row)
+  ret ptr %clone
+}
 define private void @tb_bootstrap_string_array_array_free(ptr %array) {
 entry:
   %is.null = icmp eq ptr %array, null
