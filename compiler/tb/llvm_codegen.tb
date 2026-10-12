@@ -1667,10 +1667,10 @@ bool temp_is_moved(ParsedFunction function_ir, string temp_name):
                         return true
     return false
 
-bool temp_is_owned_array_method_result(ParsedFunction function_ir, LinearInstruction op, string result_type):
+bool temp_is_owned_managed_method_result(ParsedFunction function_ir, LinearInstruction op, string result_type):
     if (op.kind != 'value' || op.detail != 'method-call' || op.args.length() < 2):
         return false
-    if (result_type != 'int[]' && result_type != 'bool[]' && result_type != 'string[]' && result_type != 'int[][]' && result_type != 'string[][]'):
+    if (result_type != 'int[]' && result_type != 'bool[]' && result_type != 'string[]' && result_type != 'int[][]' && result_type != 'string[][]' && record_name_from_type(result_type) == ''):
         return false
     string method_name = op.args[0]
     string receiver_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[1]))
@@ -1690,7 +1690,7 @@ bool temp_needs_backend_free(ParsedFunction function_ir, string temp_name):
         result_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, temp_name))
     if (!ownership_is_owned_mode(op.ownership_mode)):
         return false
-    if (temp_is_owned_array_method_result(function_ir, op, result_type)):
+    if (temp_is_owned_managed_method_result(function_ir, op, result_type)):
         return true
     if (result_type == 'string'):
         if (op.kind == 'binary'):

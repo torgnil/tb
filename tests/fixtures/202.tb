@@ -1,0 +1,66 @@
+record Inner(int value, string text, int[] values);
+record Row(int value, string text, int[] values, Inner child);
+
+Row GLOBAL_ROW = Row(70, 'global-row', [700], Inner(71, 'global-child', [710]));
+
+Row make_row(int value):
+    return Row(value, 'row-' + value.to_string(), [value, value + 1], Inner(value + 2, 'child-' + value.to_string(), [value + 2, value + 3]))
+
+Row clone_row(Row item):
+    return item
+
+Inner child_of(Row item):
+    return item.child
+
+int inspect_row(Row item):
+    return item.value + item.values.sum() + item.child.value + item.child.values.sum() + item.text.length() + item.child.text.length()
+
+string row_text(Row item):
+    return item.text
+
+int read_global(int value):
+    return GLOBAL_ROW.value + value
+
+Row borrowed_parameter(int value, Row item):
+    return item
+
+Row borrowed_global(int value):
+    return GLOBAL_ROW
+
+int main(string[] args):
+    int count = args.length()
+
+    args.length().make_row()
+
+    Row current = count.make_row()
+    print(inspect_row(current))
+    current = (count + 1).make_row()
+    print(inspect_row(current))
+
+    print(inspect_row(count.make_row()))
+    print(count.make_row().inspect_row())
+    print(row_text(count.make_row()))
+    print(count.make_row().row_text())
+
+    Row returned = count.borrowed_parameter(current)
+    print(inspect_row(returned))
+    print(inspect_row(count.borrowed_global()))
+    print(read_global(count))
+    print(GLOBAL_ROW.text)
+
+    Row holder = Row(count, 'holder', [count], Inner(count + 1, 'holder-child', [count + 1]))
+    holder.child = (count + 2).make_row().child_of()
+    print(holder.child.text)
+    holder = (count + 3).make_row()
+    print(inspect_row(holder))
+
+    const Row fixed = (count + 4).make_row()
+    print(inspect_row(fixed))
+    print(fixed.values.sum())
+
+    Row copied = count.make_row().clone_row()
+    print(inspect_row(copied))
+    copied = count.make_row().clone_row()
+    print(inspect_row(copied))
+
+    return 0
