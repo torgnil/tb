@@ -1275,6 +1275,13 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
         if (op.args.is_empty()):
             return op
         string base_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[0]))
+        if (base_type == 'string' || base_type == 'string[]' || base_type == 'int[]' || base_type == 'bool[]' || base_type == 'int[][]' || base_type == 'string[][]'):
+            int bound_index = 1
+            while (bound_index < op.args.length()):
+                string bound_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[bound_index]))
+                if (bound_type != 'int'):
+                    throw 'slice bound requires int; got ' + bound_type
+                bound_index += 1
         if (base_type == 'string'):
             return refined_value_op(op, 'string', 'managed')
         if (base_type == 'string[]'):
