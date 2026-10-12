@@ -1,0 +1,59 @@
+record inner(int value);
+record Payload(int value, string text, int[] values, bool[] flags, string[] words, int[][] rows, string[][] groups, inner child);
+record NumberBox(int value);
+
+NumberBox GLOBAL_NUMBER = NumberBox(41)
+
+Payload make_payload(int count):
+    return Payload(count, 'item-' + count.to_string(), [count, count + 1], [count > 0], ['word-' + count.to_string()], [[count, count + 1]], [['group-' + count.to_string()]], inner(count + 5))
+
+int inspect(Payload item):
+    return item.value + item.values.sum() + item.flags.sum() + item.words.length() + item.words[0].length() + item.rows.length() + item.rows[0].sum() + item.groups.length() + item.groups[0].length() + item.groups[0][0].length() + item.child.value
+
+void observe(Payload item):
+    print(item.value)
+
+int inspect_pair(Payload left, Payload right):
+    return inspect(left) + inspect(right)
+
+Payload echo_payload(Payload item):
+    return item
+
+string payload_text(Payload item):
+    return item.text
+
+int[] payload_values(Payload item):
+    return item.values
+
+int read_inner(inner item):
+    return item.value
+
+int read_number(NumberBox item):
+    return item.value
+
+int main(string[] args):
+    int count = args.length()
+    print(inspect(Payload(count, 'direct-' + count.to_string(), [count, count + 1], [true], ['first'], [[count, count + 1]], [['nested']], inner(count + 2))))
+    print(inspect_pair(make_payload(count), make_payload(count + 1)))
+    print(make_payload(count + 2).inspect())
+    observe(make_payload(count + 3))
+
+    Payload borrowed = make_payload(count + 4)
+    print(inspect(borrowed))
+    print(borrowed.value)
+    const Payload fixed = make_payload(count + 5)
+    print(inspect(fixed))
+    print(fixed.value)
+    print(read_inner(borrowed.child))
+    print(borrowed.child.value)
+    print(read_number(GLOBAL_NUMBER))
+    print(read_number(GLOBAL_NUMBER))
+
+    Payload echoed = echo_payload(make_payload(count + 6))
+    print(inspect(echoed))
+    string kept_text = payload_text(make_payload(count + 7))
+    print(kept_text)
+    int[] kept_values = payload_values(make_payload(count + 8))
+    print(kept_values.sum())
+    print(inspect(echo_payload(make_payload(count + 9))))
+    return 0
