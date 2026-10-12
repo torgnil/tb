@@ -410,6 +410,7 @@ Array helpers
 
 - clear(arr: T[]) -> void
   - For `string[]`, clear releases owned strings in live slots and keeps the array storage available for reuse. For `bool[]`, it sets the live length to zero and keeps the array available for reuse. Also available as `arr.clear()`.
+  - For `int[][]` and `string[][]`, clear releases owned live rows, preserves borrowed rows, clears the outer slots, and sets the outer length to zero while keeping its storage available for reuse. Also available as `rows.clear()`. A user-defined `clear` function takes precedence for direct and UFCS calls; a lowercase `clear` record remains a direct-call constructor while `rows.clear()` uses the builtin.
 
 - contains(arr: T[], value: T) -> bool
   - For `int[]`, `bool[]`, and `string[]`, return `true` when the array contains `value`. Also available via UFCS (`arr.contains(value)`) and membership syntax (`value in arr`). Queries borrow the array and item, preserve the array contents and length, and require the item type to match the array element type.

@@ -1884,6 +1884,18 @@ void validate_const_expression(Node node, BindingIR[] bindings, string[] functio
                 string root = const_target_root(node.children[0])
                 if (const_method_mutates_receiver(node.value, node.children[0], bindings, record_nodes)):
                     const_reject_mutation(bindings, root, false)
+        else if (node.value == 'clear'):
+            if (node.children.length() > 0):
+                string receiver_type = const_type_of_expression(node.children[0], bindings, record_nodes)
+                if (receiver_type.starts_with('const ')):
+                    receiver_type = receiver_type.substring(6)
+                if (receiver_type == 'int[][]' || receiver_type == 'string[][]'):
+                    if (!(node.value in function_names) && !const_record_name_exists(record_nodes, node.value) && const_method_mutates_receiver(node.value, node.children[0], bindings, record_nodes)):
+                        string root = const_target_root(node.children[0])
+                        const_reject_mutation(bindings, root, false)
+                else if (!(node.value in function_names) && const_function_mutates_first_arg(node.value) && const_method_mutates_receiver(node.value, node.children[0], bindings, record_nodes)):
+                    string root = const_target_root(node.children[0])
+                    const_reject_mutation(bindings, root, false)
         else if (node.value == 'pop'):
             if (!(node.value in function_names)):
                 if (node.children.length() > 0):
@@ -1921,8 +1933,9 @@ void validate_const_expression(Node node, BindingIR[] bindings, string[] functio
                     receiver_type = receiver_type.substring(6)
                 bool user_string_remove_at = node.value == 'remove_at' && receiver_type == 'string[]' && node.value in function_names
                 bool user_string_insert = node.value == 'insert' && receiver_type == 'string[]' && node.value in function_names
+                bool user_nested_clear = node.value == 'clear' && (receiver_type == 'int[][]' || receiver_type == 'string[][]') && node.value in function_names
                 string root = const_target_root(node.children[0])
-                if (!user_string_remove_at && !user_string_insert && const_method_mutates_receiver(node.value, node.children[0], bindings, record_nodes)):
+                if (!user_string_remove_at && !user_string_insert && !user_nested_clear && const_method_mutates_receiver(node.value, node.children[0], bindings, record_nodes)):
                     const_reject_mutation(bindings, root, false)
         for (Node child : node.children):
             validate_const_expression(child, bindings, function_names, record_nodes)

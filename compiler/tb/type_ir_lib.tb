@@ -1045,6 +1045,8 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             string clear_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
             if (clear_type == 'bool[]'):
                 result_type = 'void'
+            if (clear_type == 'int[][]' || clear_type == 'string[][]'):
+                result_type = 'void'
         if (op.args[0] == 'pop' && lookup_function_return_type(functions, 'pop') == 'unknown' && !record_type_exists(record_fields, 'pop')):
             if (op.args.length() != 2):
                 throw 'pop requires exactly one array argument'
@@ -1132,6 +1134,10 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
         if (op.args.length() < 2):
             return op
         string method_name = op.args[0]
+        if (method_name == 'clear' && (normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])) == 'int[][]' || normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])) == 'string[][]') && lookup_function_return_type(functions, 'clear') == 'unknown'):
+            if (op.args.length() != 2):
+                throw 'nested array clear requires no arguments'
+            return refined_value_op(op, 'void', 'plain')
         if (method_name == 'pop' && lookup_function_return_type(functions, 'pop') == 'unknown' && op.args.length() != 2):
             throw 'pop requires exactly one array receiver'
         string base_type = lookup_temp_type_slot(temp_types, op.args[1])

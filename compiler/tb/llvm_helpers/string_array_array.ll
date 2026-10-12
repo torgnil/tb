@@ -59,6 +59,38 @@ free.item:
 done:
   ret void
 }
+define private void @tb_bootstrap_string_array_array_clear(ptr %array) {
+entry:
+  %is.null = icmp eq ptr %array, null
+  br i1 %is.null, label %done, label %start
+start:
+  %len.ptr = getelementptr inbounds %tb_bootstrap_string_array_array, ptr %array, i32 0, i32 0
+  %len = load i32, ptr %len.ptr
+  br label %loop.cond
+loop.cond:
+  %index = phi i32 [0, %start], [%next.index, %loop.step]
+  %keep.loop = icmp slt i32 %index, %len
+  br i1 %keep.loop, label %loop.body, label %loop.done
+loop.body:
+  call void @tb_bootstrap_string_array_array_release_slot(ptr %array, i32 %index)
+  %data.ptr = getelementptr inbounds %tb_bootstrap_string_array_array, ptr %array, i32 0, i32 1
+  %data = load ptr, ptr %data.ptr
+  %item.slot = getelementptr inbounds ptr, ptr %data, i32 %index
+  store ptr null, ptr %item.slot
+  %owned.ptr = getelementptr inbounds %tb_bootstrap_string_array_array, ptr %array, i32 0, i32 2
+  %owned = load ptr, ptr %owned.ptr
+  %owned.slot = getelementptr inbounds i8, ptr %owned, i32 %index
+  store i8 0, ptr %owned.slot
+  br label %loop.step
+loop.step:
+  %next.index = add i32 %index, 1
+  br label %loop.cond
+loop.done:
+  store i32 0, ptr %len.ptr
+  br label %done
+done:
+  ret void
+}
 define private void @tb_bootstrap_string_array_array_set_owned(ptr %array, i32 %index, ptr %value, i1 %is_owned) {
 entry:
   %len.ptr = getelementptr inbounds %tb_bootstrap_string_array_array, ptr %array, i32 0, i32 0
