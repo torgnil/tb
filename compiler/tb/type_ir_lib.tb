@@ -1057,6 +1057,9 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             if (pop_type == 'string[]'):
                 result_type = 'string'
                 return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
+            if (pop_type == 'int[][]' || pop_type == 'string[][]'):
+                result_type = array_item_type(pop_type)
+                return refined_value_op(op, result_type, 'owned')
         if (op.args[0] == 'copy'):
             if (lookup_function_return_type(functions, 'copy') == 'unknown' && !record_type_exists(record_fields, 'copy')):
                 if (op.args.length() != 2):
@@ -1177,6 +1180,10 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             return refined_value_op(op, 'bool', 'plain')
         if (method_name == 'pop'):
             string pop_type = normalize_llvm_type_name(base_type)
+            if ((pop_type == 'int[][]' || pop_type == 'string[][]') && lookup_function_return_type(functions, 'pop') == 'unknown'):
+                if (op.args.length() != 2):
+                    throw 'pop requires exactly one array receiver'
+                return refined_value_op(op, array_item_type(pop_type), 'owned')
             if (pop_type == 'bool[]' || pop_type == 'string[]'):
                 if (lookup_function_return_type(functions, 'pop') == 'unknown'):
                     if (record_type_exists(record_fields, 'pop')):

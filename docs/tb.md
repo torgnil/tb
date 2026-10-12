@@ -389,6 +389,7 @@ Array helpers
 
 - pop(arr: T[]) -> T
   - Remove and return the last element. For `bool[]`, `pop(flags)` and `flags.pop()` return the last boolean and reduce the array length by one. Popping an empty `bool[]` returns `false` and leaves it empty. For `string[]`, both forms return the last string; popping an empty array returns an empty string. The popped value remains valid after the array is cleared or reused. A user-defined function named `pop` takes precedence for direct and UFCS calls. A lowercase `pop` record constructor takes precedence for `pop(words)` while `words.pop()` still invokes the builtin.
+  - For `int[][]` and `string[][]`, `pop(rows)` and `rows.pop()` remove and return the last mutable row. An owned row transfers to the caller; a borrowed row is copied before removal. Popping an empty outer array returns a new typed empty row and leaves the outer array empty. The returned row remains usable after the outer array is cleared or destroyed. A lowercase `pop` record remains a direct-call constructor, while `rows.pop()` invokes the array method.
 
 - last(arr: T[]) -> T
   - For native `int[]` and `bool[]`, return the last element without changing the array. For `string[]`, return an independent string copy of the last element without changing the array; the copy remains valid after the source slot is popped or the array is cleared or destroyed. Also available as `arr.last()`, including for const arrays. Calling either form on an empty array aborts before reading an element.

@@ -201,6 +201,40 @@ last:
   %clone = call ptr @tb_bootstrap_string_array_clone(ptr %row)
   ret ptr %clone
 }
+define private ptr @tb_bootstrap_string_array_array_pop(ptr %array) {
+entry:
+  %len.ptr = getelementptr inbounds %tb_bootstrap_string_array_array, ptr %array, i32 0, i32 0
+  %len = load i32, ptr %len.ptr
+  %has.items = icmp sgt i32 %len, 0
+  br i1 %has.items, label %pop, label %empty
+empty:
+  %empty.row = call ptr @tb_bootstrap_string_array_new(i32 0)
+  ret ptr %empty.row
+pop:
+  %index = sub i32 %len, 1
+  %data.ptr = getelementptr inbounds %tb_bootstrap_string_array_array, ptr %array, i32 0, i32 1
+  %data = load ptr, ptr %data.ptr
+  %row.slot = getelementptr inbounds ptr, ptr %data, i32 %index
+  %row = load ptr, ptr %row.slot
+  %owned.ptr = getelementptr inbounds %tb_bootstrap_string_array_array, ptr %array, i32 0, i32 2
+  %owned = load ptr, ptr %owned.ptr
+  %owned.slot = getelementptr inbounds i8, ptr %owned, i32 %index
+  %owned.byte = load i8, ptr %owned.slot
+  %row.owned = icmp ne i8 %owned.byte, 0
+  br i1 %row.owned, label %transfer, label %clone
+transfer:
+  br label %remove
+clone:
+  %row.clone = call ptr @tb_bootstrap_string_array_clone(ptr %row)
+  br label %remove
+remove:
+  %result = phi ptr [%row, %transfer], [%row.clone, %clone]
+  store ptr null, ptr %row.slot
+  store i8 0, ptr %owned.slot
+  %next.len = sub i32 %len, 1
+  store i32 %next.len, ptr %len.ptr
+  ret ptr %result
+}
 define private ptr @tb_bootstrap_string_array_array_slice(ptr %array, i64 %start, i64 %end) {
 entry:
   %len32 = call i32 @tb_bootstrap_string_array_array_length(ptr %array)
