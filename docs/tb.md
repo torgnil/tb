@@ -368,7 +368,7 @@ String helpers
   - Alias for `is_whitespace(ch)`.
 
 - last(s: string) -> string
-  - Return the last character as a single-character string, or `''` for the empty string.
+  - Return the last byte-character as a single-character string, or `''` for the empty string. Both `last(s)` and `s.last()` are supported for runtime and const strings; Unicode codepoint handling is not provided.
 
 - replace(s: string, old: string, new: string) -> string
   - Replace occurrences of `old` with `new`.
