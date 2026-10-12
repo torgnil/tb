@@ -1,0 +1,110 @@
+record TextBox(string text, string[] words);
+
+string GLOBAL_TEXT = 'global-borrowed';
+
+void consume_text(string value):
+    print('void:' + value)
+
+int length_of(string value):
+    return value.length()
+
+int length_user(string value):
+    return value.length()
+
+int consume_pair(string first, string second):
+    print('pair:' + first + ':' + second)
+    return first.length() + second.length()
+
+string make_text(int value):
+    return 'call-' + value.to_string()
+
+string identity(string value):
+    return value
+
+TextBox make_box(string value):
+    return TextBox(value, [value])
+
+string[] make_words(string value):
+    return [value]
+
+string read_box(TextBox value):
+    return value.text
+
+int sum_user(int[] values):
+    return values.sum()
+
+void inspect_parameter(string value):
+    consume_text(value)
+    print('parameter-owner:' + value)
+
+int main(string[] args):
+    int count = args.length()
+
+    consume_text('direct-' + count.to_string())
+    int direct_length = length_of('scalar-' + count.to_string())
+    print('scalar:' + direct_length.to_string())
+
+    string ufcs_text = 'ufcs-' + count.to_string()
+    ufcs_text.consume_text()
+    int ufcs_length = ufcs_text.length_of()
+    print('ufcs-scalar:' + ufcs_length.to_string())
+    int receiver_length = ('receiver-' + count.to_string()).length_user()
+    print('ufcs-owned-receiver:' + receiver_length.to_string())
+
+    string left = 'left-' + count.to_string()
+    string right = 'right-' + count.to_string()
+    int pair_length = consume_pair(left, right)
+    print('pair-length:' + pair_length.to_string())
+    string repeated = 'repeat-' + count.to_string()
+    int repeated_length = consume_pair(repeated, repeated)
+    print('repeat-length:' + repeated_length.to_string())
+
+    consume_text(make_text(count))
+    consume_text(identity(make_text(count + 1)))
+
+    string kept = identity('identity-' + count.to_string())
+    print('kept:' + kept)
+    TextBox box = make_box('box-' + count.to_string())
+    print('box:' + box.text + ':' + box.words[0])
+    string[] words = make_words('array-' + count.to_string())
+    print('array:' + words[0])
+    string retained_field = read_box(make_box(make_text(count + 4)))
+    print('retained-field:' + retained_field)
+
+    string local = 'local-' + count.to_string()
+    consume_text(local)
+    print('local-owner:' + local)
+    local = 'local-changed-' + count.to_string()
+    print('local-reassigned:' + local)
+    const string fixed = 'const-' + count.to_string()
+    consume_text(fixed)
+    print('const-owner:' + fixed)
+
+    inspect_parameter('parameter-' + count.to_string())
+    consume_text('literal')
+    consume_text(GLOBAL_TEXT)
+    print('global-owner:' + GLOBAL_TEXT)
+    TextBox field_box = TextBox('field-' + count.to_string(), ['field-array'])
+    consume_text(field_box.text)
+    print('field-owner:' + field_box.text)
+
+    string cached_source = 'cache-' + count.to_string()
+    string cached_last = cached_source.last()
+    consume_text(cached_last)
+    print('cache-last:' + cached_last)
+    consume_text(cached_source.last())
+    string cached_at = cached_source.char_at(1)
+    consume_text(cached_at)
+    print('cache-at:' + cached_at)
+    consume_text(cached_source.char_at(1))
+
+    int[] number_values = [count, count + 1]
+    print('sum-array:' + sum_user(number_values).to_string())
+    consume_pair(make_text(count), make_text(count + 1))
+    TextBox cleanup_box = make_box(make_text(count + 2))
+    print('record-control:' + cleanup_box.text)
+    string[] cleanup_words = make_words(make_text(count + 3))
+    print('array-control:' + cleanup_words[0])
+    print('array-arg:' + number_values[0].to_string())
+    print('sum-owned-array:' + sum_user([count + 2, count + 3]).to_string())
+    return 0
