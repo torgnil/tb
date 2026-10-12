@@ -519,6 +519,65 @@ finish:
   store i32 %last.index, ptr %len.ptr
   ret ptr %result
 }
+define private ptr @tb_bootstrap_string_array_remove_at(ptr %array, i64 %index) {
+entry:
+  %len.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 0
+  %len = load i32, ptr %len.ptr
+  %len64 = sext i32 %len to i64
+  %index.nonnegative = icmp sge i64 %index, 0
+  %index.in.range = icmp slt i64 %index, %len64
+  %index.valid = and i1 %index.nonnegative, %index.in.range
+  br i1 %index.valid, label %remove, label %invalid
+invalid:
+  %empty.value = call ptr @tb_string_new(i64 0)
+  ret ptr %empty.value
+remove:
+  %index32 = trunc i64 %index to i32
+  %data.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 2
+  %data = load ptr, ptr %data.ptr
+  %owned.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 3
+  %owned = load ptr, ptr %owned.ptr
+  %removed.slot = getelementptr inbounds ptr, ptr %data, i32 %index32
+  %removed.value = load ptr, ptr %removed.slot
+  %removed.owned.slot = getelementptr inbounds i8, ptr %owned, i32 %index32
+  %removed.owned.byte = load i8, ptr %removed.owned.slot
+  %removed.is.owned = icmp ne i8 %removed.owned.byte, 0
+  br i1 %removed.is.owned, label %transfer, label %copy
+transfer:
+  br label %selected
+copy:
+  %copy.value = call ptr @tb_bootstrap_string_copy(ptr %removed.value)
+  br label %selected
+selected:
+  %result = phi ptr [ %removed.value, %transfer ], [ %copy.value, %copy ]
+  %last.index = sub i32 %len, 1
+  br label %shift.cond
+shift.cond:
+  %dest.index = phi i32 [ %index32, %selected ], [ %next.dest.index, %shift.step ]
+  %shift.continues = icmp slt i32 %dest.index, %last.index
+  br i1 %shift.continues, label %shift.body, label %shift.done
+shift.body:
+  %src.index = add i32 %dest.index, 1
+  %src.slot = getelementptr inbounds ptr, ptr %data, i32 %src.index
+  %src.value = load ptr, ptr %src.slot
+  %dst.slot = getelementptr inbounds ptr, ptr %data, i32 %dest.index
+  store ptr %src.value, ptr %dst.slot
+  %src.owned.slot = getelementptr inbounds i8, ptr %owned, i32 %src.index
+  %src.owned.byte = load i8, ptr %src.owned.slot
+  %dst.owned.slot = getelementptr inbounds i8, ptr %owned, i32 %dest.index
+  store i8 %src.owned.byte, ptr %dst.owned.slot
+  br label %shift.step
+shift.step:
+  %next.dest.index = add i32 %dest.index, 1
+  br label %shift.cond
+shift.done:
+  %last.slot = getelementptr inbounds ptr, ptr %data, i32 %last.index
+  store ptr null, ptr %last.slot
+  %last.owned.slot = getelementptr inbounds i8, ptr %owned, i32 %last.index
+  store i8 0, ptr %last.owned.slot
+  store i32 %last.index, ptr %len.ptr
+  ret ptr %result
+}
 define private ptr @tb_bootstrap_split_chars(ptr %src) {
 entry:
   %len64 = call i64 @strlen(ptr %src)

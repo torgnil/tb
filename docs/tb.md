@@ -399,6 +399,7 @@ Array helpers
 
 - remove_at(arr: T[], index: int) -> T
   - For native `int[]` and `bool[]` method calls, the full signed 64-bit index is used. Remove the selected value, shift later values left, and return the removed value. Negative and past-end indices return `0` for `int[]` or `false` for `bool[]` without changing the array.
+  - For `string[]`, `words.remove_at(index)` removes and returns the selected string, shifting later values left. The index must be an `int`; negative and out-of-range indices, including on an empty array, return an owned empty string without changing the array. The returned string remains valid after the source is cleared or reused. Owned slots transfer their string; borrowed slots return an independent copy. A user-defined `remove_at` function takes precedence for UFCS calls, while a record named `remove_at` remains a direct-call constructor and does not replace the array method.
 
 - fill(arr, value) -> void for matching pairs: `int[]`/`int`, `bool[]`/`bool`, `string[]`/`string`, `int[][]`/`int[]`, or `string[][]`/`string[]`.
   - Replace every existing element with `value`, preserving length. The value type must match the array element type. Also available as `arr.fill(value)`.

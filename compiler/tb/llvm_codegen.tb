@@ -5398,6 +5398,10 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
         if (op.args.length() != 2):
             throw 'unsupported llvm string[] pop arity'
         return emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_string_array_pop(ptr ' + temp_ref(op.args[1]) + ')')
+    if (method_name == 'remove_at' && method_base_type == 'string[]' && lookup_call_meta_index(method_name) < 0):
+        if (op.args.length() != 3):
+            throw 'unsupported llvm string[] remove_at arity'
+        return emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_string_array_remove_at(ptr ' + temp_ref(op.args[1]) + ', i64 ' + temp_ref(op.args[2]) + ')')
     if (method_name == 'insert' && method_base_type == 'bool[]' && lookup_call_meta_index(method_name) < 0):
         if (op.args.length() != 4):
             throw 'unsupported llvm bool[] insert arity'

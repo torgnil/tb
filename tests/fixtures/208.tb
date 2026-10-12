@@ -1,0 +1,66 @@
+record StringBox(string[] values);
+record remove_at(string[] values);
+
+string remove_first(string[] values):
+    return values.remove_at(0)
+
+int main(string[] args):
+    int count = args.length()
+
+    string[] first_values = ['first-' + count, 'middle-' + count, 'last-' + count]
+    const int first_index = 0
+    string first = first_values.remove_at(first_index)
+    print(first)
+    print(first_values)
+    print(first_values.remove_at(1))
+    print(first_values)
+    print(first_values.remove_at(0))
+    print(first_values.length())
+
+    string[] collision_values = ['constructor-' + count, 'method-' + count]
+    remove_at collision = remove_at(collision_values)
+    print(collision.values)
+    print(collision_values.remove_at(0))
+
+    string[] retained_values = ['retained-' + count, 'tail-' + count]
+    string retained = retained_values.remove_at(0)
+    retained_values.clear()
+    retained_values.push('reused-' + count)
+    print(retained)
+    print(retained_values)
+
+    string borrowed_value = 'borrowed-' + count
+    string[] borrowed_values = []
+    borrowed_values.push(borrowed_value)
+    string borrowed_result = borrowed_values.remove_at(0)
+    borrowed_value = 'changed-' + count
+    print(borrowed_result)
+    print(borrowed_values.length())
+
+    string[] invalid_values = ['keep-' + count]
+    int min_index = -9223372036854775807 - 1
+    int max_index = 9223372036854775807
+    print(invalid_values.remove_at(-1))
+    print(invalid_values.remove_at(1))
+    print(invalid_values.remove_at(min_index))
+    print(invalid_values.remove_at(max_index))
+    print(invalid_values)
+    string[] empty_values = []
+    print(empty_values.remove_at(min_index))
+    print(empty_values.length())
+
+    string[] returned_values = ['return-' + count, 'return-tail-' + count]
+    string returned = remove_first(returned_values)
+    returned_values.clear()
+    print(returned)
+
+    StringBox box = StringBox(['field-' + count, 'field-tail-' + count])
+    string field_value = box.values.remove_at(0)
+    box.values.clear()
+    print(field_value)
+    print(box.values.length())
+
+    string[] discarded = ['discard-' + count]
+    discarded.remove_at(0)
+    print(discarded.length())
+    return 0
