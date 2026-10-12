@@ -5083,7 +5083,7 @@ string emit_builtin_query_call_value_instruction(ProgramIR program, ParsedFuncti
         int last_meta_index = lookup_call_meta_index(call_name)
         RecordDeclIR last_record = lookup_record_decl(program, call_name)
         if (last_meta_index < 0 && last_record.header == ''):
-            if (call_arg1_type == 'int[]' || call_arg1_type == 'bool[]'):
+            if (call_arg1_type == 'int[]' || call_arg1_type == 'bool[]' || call_arg1_type == 'string[]'):
                 if (op.args.length() != 2):
                     throw 'unsupported llvm array last arity'
                 return emit_array_last_value(op.lhs, call_arg1_type, op.args[1])
@@ -5223,6 +5223,8 @@ string emit_array_last_value(string result_name, string array_type, string array
         helper_name = '@tb_bootstrap_int_array_last'
     if (array_type == 'bool[]'):
         helper_name = '@tb_bootstrap_bool_array_last'
+    if (array_type == 'string[]'):
+        helper_name = '@tb_bootstrap_string_array_last'
     if (helper_name == ''):
         throw 'unsupported llvm array last receiver type: ' + array_type
     return '  ' + temp_ref(result_name) + ' = call ' + llvm_type(array_item_type(array_type)) + ' ' + helper_name + '(ptr ' + temp_ref(array_name) + ')'
@@ -5363,7 +5365,7 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
                 index_of_arg += 1
             LinearInstruction index_of_call = LinearInstruction('value', op.lhs, op.result_type, op.ownership_mode, 'call', index_of_call_args)
             return emit_call_value_instruction_core(program, function_ir, index_of_call)
-    if (method_name == 'last' && lookup_call_meta_index(method_name) < 0 && (method_base_type == 'int[]' || method_base_type == 'bool[]')):
+    if (method_name == 'last' && lookup_call_meta_index(method_name) < 0 && (method_base_type == 'int[]' || method_base_type == 'bool[]' || method_base_type == 'string[]')):
         RecordDeclIR last_record = lookup_record_decl(program, method_name)
         if (last_record.header != ''):
             string[] last_call_args = [method_name]
@@ -8660,7 +8662,7 @@ string[] llvm_codegen_ir(ProgramIR program):
         lines.push('declare i32 @snprintf(ptr, i64, ptr, ...)')
     if (needs_popcount):
         lines.push('declare i64 @llvm.ctpop.i64(i64)')
-    if (needs_integer_shifts || needs_int_array || needs_bool_array):
+    if (needs_integer_shifts || needs_int_array || needs_bool_array || needs_string_array_helpers):
         lines.push('declare void @abort() noreturn')
     if (needs_num):
         lines.push('declare double @llvm.sqrt.f64(double)')
@@ -8979,7 +8981,7 @@ void llvm_print_ir(ProgramIR program):
     if (needs_popcount):
         print('declare i64 @llvm.ctpop.i64(i64)')
         emitted_any_header = true
-    if (needs_integer_shifts || needs_int_array || needs_bool_array):
+    if (needs_integer_shifts || needs_int_array || needs_bool_array || needs_string_array_helpers):
         print('declare void @abort() noreturn')
         emitted_any_header = true
     if (needs_num):

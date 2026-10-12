@@ -142,6 +142,20 @@ entry:
   %value = load ptr, ptr %slot
   ret ptr %value
 }
+define private ptr @tb_bootstrap_string_array_last(ptr %array) {
+entry:
+  %len = call i32 @tb_bootstrap_string_array_length(ptr %array)
+  %is.empty = icmp sle i32 %len, 0
+  br i1 %is.empty, label %empty, label %read
+empty:
+  call void @abort()
+  unreachable
+read:
+  %last.index = sub i32 %len, 1
+  %value = call ptr @tb_bootstrap_string_array_get(ptr %array, i32 %last.index)
+  %result = call ptr @tb_bootstrap_string_copy(ptr %value)
+  ret ptr %result
+}
 define private ptr @tb_bootstrap_string_array_slice(ptr %array, i64 %start, i64 %end) {
 entry:
   %len32 = call i32 @tb_bootstrap_string_array_length(ptr %array)

@@ -1,0 +1,62 @@
+record StringBox(string[] words);
+
+string parameter_last(string[] words):
+    return words.last()
+
+string local_last(int count):
+    string[] words = ['local-left-' + count, 'local-tail-' + count]
+    return last(words)
+
+int main(string[] args):
+    int count = args.length()
+
+    string[] words = ['left-' + count, 'tail-' + count]
+    string first = last(words)
+    string second = words.last()
+    print(first)
+    print(second)
+    print(words.length())
+    print(words[1])
+    words.clear()
+    words.push('reused-' + count)
+    print(first)
+    print(second)
+    print(words[0])
+    print(words.length())
+    words[0] = 'replaced-' + count
+    print(first)
+    print(words[0])
+    string before_pop = words.last()
+    string popped = words.pop()
+    print(before_pop)
+    print(popped)
+    print(words.length())
+    words.push('reused-after-pop-' + count)
+
+    const string[] fixed = ['const-left-' + count, 'const-tail-' + count]
+    print(last(fixed))
+    print(fixed.last())
+    print(fixed.length())
+    string parameter_value = parameter_last(fixed)
+    print(parameter_value)
+
+    StringBox box = StringBox(['field-left-' + count, 'field-tail-' + count])
+    string field_value = box.words.last()
+    box.words.clear()
+    print(field_value)
+    print(box.words.length())
+
+    print(local_last(count))
+
+    string[] raw = ['raw-left', 'raw-tail']
+    print(raw.last())
+    string[] empty_item = ['']
+    print(last(empty_item))
+    string[] singleton = ['single-' + count]
+    print(singleton.last())
+
+    words.last()
+    string reassigned = words.last()
+    reassigned = 'new-' + count
+    print(reassigned)
+    return 0
