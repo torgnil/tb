@@ -250,7 +250,7 @@ int main(string[] args):
   - `write_all(path, text)` always opens `path` with mode `w` and writes `text` without adding a newline.
   - The compiler emits the file path string, not the file contents, into the generated LLVM.
   - Missing `read_file` and `read_lines` inputs report the helper name and path and exit with status 1 when uncaught; inside a `try` block they can be caught as an exception. `write_all` raises the path when opening, writing, or closing fails, and an uncaught failure prints `write_all: <path>` and exits with status 1. After a successful open it closes the file once, including when writing fails.
-  - `open(path)` opens a file for writing; use `read_file` and `read_lines` to read files. Call `close(file)` when finished. The `open`, `write_line`, `write_lines`, and `close` helpers do not consistently report open, write, or close failures.
+  - `open(path)` opens a file for writing and raises the path if opening fails; an uncaught failure prints `open: <path>` and exits with status 1. Use `read_file` and `read_lines` to read files. Call `close(file)` when finished. The `write_line`, `write_lines`, and `close` helpers do not consistently report write or close failures.
 - Const enforcement is compile-time and applies to the binding:
   - reassigning a `const` variable and direct writes through its array, map, set, or record target are rejected during compilation
   - known mutating array, set, and priority-queue operations through a `const` binding are rejected, including UFCS and free-function forms
@@ -298,13 +298,13 @@ Core IO and string helpers
   - It borrows both strings, accepts const string bindings, and supports UFCS as `path.write_all(text)`. A user-defined function named `write_all` takes precedence over the builtin.
 
 - open(path: string) -> file
-  - Open a file handle for writing at runtime. Use `read_file` or `read_lines` for reads.
+  - Open a file handle for writing at runtime. If opening fails, raise `path`; an uncaught failure prints `open: <path>` and exits with status 1. Use `read_file` or `read_lines` for reads.
 
 - write_line(f: file, line: string) -> void
   - Append `line` with a newline to the file handle.
 
 - close(f: file) -> void
-  - Close a file handle after writing. Output failures from opening, writing, and closing are not consistently reported.
+  - Close a file handle after writing. Failures from writing with `write_line` or `write_lines`, and failures from closing, are not consistently reported.
 
 Conversion and numeric helpers
 

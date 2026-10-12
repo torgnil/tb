@@ -2932,6 +2932,9 @@ void analyze_program_features(ProgramIR program, string[] map_types):
         needs_int_array = true
     needs_flat_map_edges_for_point = has_edges_for_point && uses_edges_for_point_mapper
     configure_runtime_build_metadata(needs_thread_pool)
+    if (needs_file_output):
+        needs_throw = true
+        needs_runtime_string_copy = true
     if (needs_strcmp):
         LLVM_SCAN_NEEDS_STRCMP = 1
     if (needs_string_search):
@@ -3988,10 +3991,28 @@ string[] emit_getenv_helper():
 string[] emit_file_output_helpers():
     string[] lines = []
     lines.push('@.mode.write = private unnamed_addr constant [2 x i8] c"w\\00"')
+    lines.push('@.fmt.open.error = private unnamed_addr constant [10 x i8] c"open: %s\\0A\\00"')
     lines.push('define private ptr @tb_bootstrap_open_write(ptr %path) {')
     lines.push('entry:')
     lines.push('  %mode = getelementptr inbounds [2 x i8], ptr @.mode.write, i32 0, i32 0')
     lines.push('  %file = call ptr @fopen(ptr %path, ptr %mode)')
+    lines.push('  %file.ok = icmp ne ptr %file, null')
+    lines.push('  br i1 %file.ok, label %open.success, label %open.fail')
+    lines.push('open.fail:')
+    lines.push('  %handler = load ptr, ptr ' + exception_handler_symbol())
+    lines.push('  %has.handler = icmp ne ptr %handler, null')
+    lines.push('  br i1 %has.handler, label %open.unwind, label %open.fatal')
+    lines.push('open.unwind:')
+    lines.push('  %path.copy = call ptr @tb_bootstrap_string_copy(ptr %path)')
+    lines.push('  store ptr %path.copy, ptr ' + exception_message_symbol())
+    lines.push('  call void @longjmp(ptr %handler, i32 1)')
+    lines.push('  unreachable')
+    lines.push('open.fatal:')
+    lines.push('  %fmt = getelementptr inbounds [10 x i8], ptr @.fmt.open.error, i32 0, i32 0')
+    lines.push('  %print = call i32 (ptr, ...) @printf(ptr %fmt, ptr %path)')
+    lines.push('  call void @exit(i32 1)')
+    lines.push('  unreachable')
+    lines.push('open.success:')
     lines.push('  ret ptr %file')
     lines.push('}')
     lines.push('define private void @tb_bootstrap_write_line(ptr %file, ptr %line) {')
@@ -8684,7 +8705,7 @@ string[] llvm_codegen_ir(ProgramIR program):
         lines.push('declare void @longjmp(ptr, i32) noreturn')
     if (needs_string_array_helpers || needs_string_array_array || needs_bool_array || needs_int_array || needs_int_array_array || needs_record_array || needs_backend_free || needs_records || needs_maps || needs_read_lines || needs_read_file):
         lines.push('declare void @free(ptr)')
-    if (needs_print_int || needs_print_string_array || needs_print_int_array || needs_print_num || needs_num || needs_int_array || needs_int_set || needs_string_array_helpers || needs_read_lines || needs_read_file || needs_write_all):
+    if (needs_print_int || needs_print_string_array || needs_print_int_array || needs_print_num || needs_num || needs_int_array || needs_int_set || needs_string_array_helpers || needs_read_lines || needs_read_file || needs_file_output || needs_write_all):
         lines.push('declare i32 @printf(ptr, ...)')
     if (needs_int_set):
         lines.push('declare i32 @putchar(i32)')
@@ -8996,7 +9017,7 @@ void llvm_print_ir(ProgramIR program):
     if (needs_string_array_helpers || needs_string_array_array || needs_bool_array || needs_int_array || needs_int_array_array || needs_record_array || needs_backend_free || needs_records || needs_maps || needs_read_lines || needs_read_file):
         print('declare void @free(ptr)')
         emitted_any_header = true
-    if (needs_print_int || needs_print_string_array || needs_print_int_array || needs_print_num || needs_num || needs_int_array || needs_int_set || needs_string_array_helpers || needs_read_lines || needs_read_file || needs_write_all):
+    if (needs_print_int || needs_print_string_array || needs_print_int_array || needs_print_num || needs_num || needs_int_array || needs_int_set || needs_string_array_helpers || needs_read_lines || needs_read_file || needs_file_output || needs_write_all):
         print('declare i32 @printf(ptr, ...)')
         emitted_any_header = true
     if (needs_int_set):
