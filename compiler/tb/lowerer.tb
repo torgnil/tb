@@ -420,18 +420,19 @@ TempResult lower_linear_value(Node node, int next_temp):
                 return TempResult(name, lines, needle.next_temp + 1)
         TempResult base = lower_linear_value(node.children[0], next_temp)
         if (node.value == 'create_prio_q'):
-            if (node.children.length() == 2 && node.children[1].kind == 'Lambda2'):
-                if (is_identifier_subtraction_lambda(node.children[1])):
-                    string name = temp_name(base.next_temp)
-                    string[] lines = base.lines
-                    lines.push(name + ' = method-call-lambda create_prio_q_int_desc ' + base.name + ' ' + lambda2_left_binding(node.children[1].value) + ' ' + lambda2_right_binding(node.children[1].value))
-                    return TempResult(name, lines, base.next_temp + 1)
-                if (is_record_field_desc_subtraction_lambda(node.children[1])):
-                    string name = temp_name(base.next_temp)
-                    string field_name = node.children[1].children[0].children[0].value
-                    string[] lines = base.lines
-                    lines.push(name + ' = method-call-lambda create_prio_q_record_field_desc ' + base.name + ' ' + lambda2_left_binding(node.children[1].value) + ' ' + lambda2_right_binding(node.children[1].value) + ' ' + field_name)
-                    return TempResult(name, lines, base.next_temp + 1)
+            if (node.children.length() == 2):
+                if (node.children[1].kind == 'Lambda2'):
+                    if (is_identifier_subtraction_lambda(node.children[1])):
+                        string name = temp_name(base.next_temp)
+                        string[] lines = base.lines
+                        lines.push(name + ' = method-call-lambda create_prio_q_int_desc ' + base.name + ' ' + lambda2_left_binding(node.children[1].value) + ' ' + lambda2_right_binding(node.children[1].value))
+                        return TempResult(name, lines, base.next_temp + 1)
+                    if (is_record_field_desc_subtraction_lambda(node.children[1])):
+                        string name = temp_name(base.next_temp)
+                        string field_name = node.children[1].children[0].children[0].value
+                        string[] lines = base.lines
+                        lines.push(name + ' = method-call-lambda create_prio_q_record_field_desc ' + base.name + ' ' + lambda2_left_binding(node.children[1].value) + ' ' + lambda2_right_binding(node.children[1].value) + ' ' + field_name)
+                        return TempResult(name, lines, base.next_temp + 1)
         if (node.value == 'filter'):
             if (node.children.length() == 2):
                 if (node.children[1].kind == 'Lambda' && is_filter_bounds_lambda(node.children[1])):
@@ -656,16 +657,17 @@ TempIRResult lower_linear_value_ir(Node node, int next_temp):
             instructions.push(LinearInstruction('value', name, 'unknown', 'owned', 'method-call', ['submit', base.name, node.children[1].value, arg.name]))
             return TempIRResult(name, instructions, arg.next_temp + 1)
         if (node.value == 'create_prio_q'):
-            if (node.children.length() == 2 && node.children[1].kind == 'Lambda2'):
-                if (is_identifier_subtraction_lambda(node.children[1])):
-                    string name = temp_name(base.next_temp)
-                    LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', name, 'unknown', 'owned', 'method-call-lambda', ['create_prio_q_int_desc', base.name, lambda2_left_binding(node.children[1].value), lambda2_right_binding(node.children[1].value)])])
-                    return TempIRResult(name, instructions, base.next_temp + 1)
-                if (is_record_field_desc_subtraction_lambda(node.children[1])):
-                    string name = temp_name(base.next_temp)
-                    string field_name = node.children[1].children[0].children[0].value
-                    LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', name, 'unknown', 'owned', 'method-call-lambda', ['create_prio_q_record_field_desc', base.name, lambda2_left_binding(node.children[1].value), lambda2_right_binding(node.children[1].value), field_name])])
-                    return TempIRResult(name, instructions, base.next_temp + 1)
+            if (node.children.length() == 2):
+                if (node.children[1].kind == 'Lambda2'):
+                    if (is_identifier_subtraction_lambda(node.children[1])):
+                        string name = temp_name(base.next_temp)
+                        LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', name, 'unknown', 'owned', 'method-call-lambda', ['create_prio_q_int_desc', base.name, lambda2_left_binding(node.children[1].value), lambda2_right_binding(node.children[1].value)])])
+                        return TempIRResult(name, instructions, base.next_temp + 1)
+                    if (is_record_field_desc_subtraction_lambda(node.children[1])):
+                        string name = temp_name(base.next_temp)
+                        string field_name = node.children[1].children[0].children[0].value
+                        LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', name, 'unknown', 'owned', 'method-call-lambda', ['create_prio_q_record_field_desc', base.name, lambda2_left_binding(node.children[1].value), lambda2_right_binding(node.children[1].value), field_name])])
+                        return TempIRResult(name, instructions, base.next_temp + 1)
         if (node.value == 'filter'):
             if (node.children.length() == 2):
                 if (node.children[1].kind == 'Lambda' && is_filter_bounds_lambda(node.children[1])):
