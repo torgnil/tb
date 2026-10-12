@@ -410,6 +410,9 @@ Array helpers
 - contains(arr: T[], value: T) -> bool
   - For `int[]`, `bool[]`, and `string[]`, return `true` when the array contains `value`. Also available via UFCS (`arr.contains(value)`) and membership syntax (`value in arr`). Queries borrow the array and item, preserve the array contents and length, and require the item type to match the array element type.
 
+- index_of(arr: T[], value: T) -> int
+  - For `int[]`, `bool[]`, and `string[]`, return the first matching zero-based index or `-1` when no item matches. Also available via UFCS (`arr.index_of(value)`). String items compare by content. Queries borrow the array and item, preserve the array contents and length, and require the item type to match the array element type.
+
 - is_empty(x: string | T[] | set<T> | map<K, V> | prio_q<T>) -> bool
   - Return `true` when the value has no items. UFCS sugar such as `arr.is_empty()` and `scores.is_empty()` is supported.
 

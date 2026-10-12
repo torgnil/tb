@@ -217,6 +217,27 @@ found:
 notfound:
   ret i1 false
 }
+define private i64 @tb_bootstrap_bool_array_index_of(ptr %array, i1 %needle) {
+entry:
+  %len = call i32 @tb_bootstrap_bool_array_length(ptr %array)
+  br label %loop.cond
+loop.cond:
+  %index = phi i32 [0, %entry], [%next.index, %loop.step]
+  %keep.loop = icmp slt i32 %index, %len
+  br i1 %keep.loop, label %loop.body, label %notfound
+loop.body:
+  %item = call i1 @tb_bootstrap_bool_array_get(ptr %array, i32 %index)
+  %matches = icmp eq i1 %item, %needle
+  br i1 %matches, label %found, label %loop.step
+loop.step:
+  %next.index = add i32 %index, 1
+  br label %loop.cond
+found:
+  %found.index = sext i32 %index to i64
+  ret i64 %found.index
+notfound:
+  ret i64 -1
+}
 define private i64 @tb_bootstrap_bool_array_sum(ptr %array) {
 entry:
   %len = call i32 @tb_bootstrap_bool_array_length(ptr %array)

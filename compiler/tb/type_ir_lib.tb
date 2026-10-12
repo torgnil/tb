@@ -928,6 +928,28 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
         return op
     if (op.detail == 'method-call'):
         if (op.args.length() >= 2):
+            if (op.args[0] == 'index_of'):
+                string unsupported_index_of_receiver_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+                if (unsupported_index_of_receiver_type.ends_with('[]')):
+                    if (unsupported_index_of_receiver_type != 'int[]' && unsupported_index_of_receiver_type != 'bool[]' && unsupported_index_of_receiver_type != 'string[]'):
+                        if (lookup_function_return_type(functions, 'index_of') == 'unknown'):
+                            if (!record_type_exists(record_fields, 'index_of')):
+                                throw 'array index_of requires int[], bool[], or string[]; got ' + unsupported_index_of_receiver_type
+            if (op.args[0] == 'index_of'):
+                string index_of_receiver_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+                if (index_of_receiver_type == 'int[]' || index_of_receiver_type == 'bool[]' || index_of_receiver_type == 'string[]'):
+                    string index_of_user_result = lookup_function_return_type(functions, 'index_of')
+                    if (index_of_user_result != 'unknown'):
+                        return refined_value_op(op, index_of_user_result, refine_ownership_mode(op, index_of_user_result))
+                    if (record_type_exists(record_fields, 'index_of')):
+                        return refined_value_op(op, 'index_of', refine_ownership_mode(op, 'index_of'))
+                    if (op.args.length() != 3):
+                        throw 'array index_of requires exactly one needle argument'
+                    string index_of_expected_type = array_item_type(index_of_receiver_type)
+                    string index_of_actual_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2]))
+                    if (index_of_actual_type != index_of_expected_type):
+                        throw 'array index_of requires ' + index_of_expected_type + '; got ' + index_of_actual_type
+                    return refined_value_op(op, 'int', 'plain')
             if (op.args[0] == 'sort'):
                 string sort_receiver_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
                 if (sort_receiver_type == 'int[]'):
@@ -1028,6 +1050,19 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
                     result_type = 'bool'
                 if (receiver_type == 'int[]' || receiver_type == 'bool[]' || receiver_type == 'string[]'):
                     result_type = 'bool'
+        if (result_type == 'unknown' && op.args[0] == 'index_of' && lookup_function_return_type(functions, 'index_of') == 'unknown'):
+            if (!record_type_exists(record_fields, 'index_of')):
+                if (op.args.length() != 3):
+                    throw 'array index_of requires an array and exactly one needle argument'
+                string index_of_array_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+                if (index_of_array_type == 'int[]' || index_of_array_type == 'bool[]' || index_of_array_type == 'string[]'):
+                    string index_of_expected_type = array_item_type(index_of_array_type)
+                    string index_of_actual_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2]))
+                    if (index_of_actual_type != index_of_expected_type):
+                        throw 'array index_of requires ' + index_of_expected_type + '; got ' + index_of_actual_type
+                    result_type = 'int'
+                else:
+                    throw 'array index_of requires int[], bool[], or string[]; got ' + index_of_array_type
         if (result_type == 'unknown' && op.args[0] == 'clear' && op.args.length() == 2):
             if (lookup_temp_type_slot(temp_types, op.args[1]) == 'string[]'):
                 result_type = 'void'

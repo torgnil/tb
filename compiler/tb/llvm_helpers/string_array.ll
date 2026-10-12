@@ -275,6 +275,28 @@ found:
 notfound:
   ret i1 false
 }
+define private i64 @tb_bootstrap_string_array_index_of(ptr %array, ptr %needle) {
+entry:
+  %len = call i32 @tb_bootstrap_string_array_length(ptr %array)
+  br label %loop.cond
+loop.cond:
+  %index = phi i32 [0, %entry], [%next.index, %loop.step]
+  %keep.loop = icmp slt i32 %index, %len
+  br i1 %keep.loop, label %loop.body, label %notfound
+loop.body:
+  %item = call ptr @tb_bootstrap_string_array_get(ptr %array, i32 %index)
+  %cmp = call i32 @strcmp(ptr %item, ptr %needle)
+  %matches = icmp eq i32 %cmp, 0
+  br i1 %matches, label %found, label %loop.step
+loop.step:
+  %next.index = add i32 %index, 1
+  br label %loop.cond
+found:
+  %found.index = sext i32 %index to i64
+  ret i64 %found.index
+notfound:
+  ret i64 -1
+}
 define private i32 @tb_bootstrap_print_string_array(ptr %array) {
 entry:
   %open = call i32 (ptr, ...) @printf(ptr @.fmt.str_array.open)
