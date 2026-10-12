@@ -389,7 +389,7 @@ Array helpers
   - Remove and return the last element. For `bool[]`, `pop(flags)` and `flags.pop()` return the last boolean and reduce the array length by one. Popping an empty `bool[]` returns `false` and leaves it empty. For `string[]`, both forms return the last string; popping an empty array returns an empty string. The popped value remains valid after the array is cleared or reused. A user-defined function named `pop` takes precedence for direct and UFCS calls. A lowercase `pop` record constructor takes precedence for `pop(words)` while `words.pop()` still invokes the builtin.
 
 - last(arr: T[]) -> T
-  - Return the last element. Empty arrays still follow normal runtime bounds behavior.
+  - For native `int[]` and `bool[]`, return the last element without changing the array. Also available as `arr.last()`, including for const arrays. Calling either form on an empty array aborts before reading an element.
 
 - insert(arr: T[], index: int, value: T) -> void
   - For native `int[]` and `bool[]` method calls such as `arr.insert(index, value)`, insertion shifts the selected element and later values right. The full signed 64-bit index is used: negative indices clamp to the start, and indices past the end append. Inserting at the last occupied index preserves that element in the new final slot.

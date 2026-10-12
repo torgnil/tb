@@ -96,6 +96,19 @@ entry:
   %value = load i64, ptr %slot
   ret i64 %value
 }
+define private i64 @tb_bootstrap_int_array_last(ptr %array) {
+entry:
+  %len = call i32 @tb_bootstrap_int_array_length(ptr %array)
+  %empty = icmp eq i32 %len, 0
+  br i1 %empty, label %empty.abort, label %nonempty
+empty.abort:
+  call void @abort()
+  unreachable
+nonempty:
+  %last.index = sub i32 %len, 1
+  %value = call i64 @tb_bootstrap_int_array_get(ptr %array, i32 %last.index)
+  ret i64 %value
+}
 define private i1 @tb_bootstrap_int_array_contains(ptr %array, i64 %needle) {
 entry:
   %len = call i32 @tb_bootstrap_int_array_length(ptr %array)

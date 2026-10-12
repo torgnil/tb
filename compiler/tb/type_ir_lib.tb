@@ -928,6 +928,20 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
         return op
     if (op.detail == 'method-call'):
         if (op.args.length() >= 2):
+            if (op.args[0] == 'last'):
+                string last_receiver_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+                if (last_receiver_type.ends_with('[]')):
+                    if (last_receiver_type == 'int[]' || last_receiver_type == 'bool[]'):
+                        string last_user_result = lookup_function_return_type(functions, 'last')
+                        if (last_user_result != 'unknown'):
+                            return refined_value_op(op, last_user_result, refine_ownership_mode(op, last_user_result))
+                        if (record_type_exists(record_fields, 'last')):
+                            return refined_value_op(op, 'last', refine_ownership_mode(op, 'last'))
+                        if (op.args.length() != 2):
+                            throw 'array last requires no arguments'
+                        return refined_value_op(op, array_item_type(last_receiver_type), 'plain')
+                    if (lookup_function_return_type(functions, 'last') == 'unknown' && !record_type_exists(record_fields, 'last')):
+                        throw 'array last requires int[] or bool[]; got ' + last_receiver_type
             if (op.args[0] == 'index_of'):
                 string unsupported_index_of_receiver_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
                 if (unsupported_index_of_receiver_type.ends_with('[]')):
@@ -1001,6 +1015,16 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
         if (op.args.is_empty()):
             return op
         string result_type = infer_call_type_cached(op.args[0], functions, TYPE_IR_FUNCTION_TYPE_CACHE_NAMES, TYPE_IR_FUNCTION_TYPE_CACHE_VALUES)
+        if (op.args[0] == 'last' && result_type == 'unknown' && lookup_function_return_type(functions, 'last') == 'unknown' && !record_type_exists(record_fields, 'last')):
+            if (op.args.length() < 2):
+                throw 'last requires one array argument'
+            string last_array_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+            if (last_array_type.ends_with('[]')):
+                if (last_array_type != 'int[]' && last_array_type != 'bool[]'):
+                    throw 'array last requires int[] or bool[]; got ' + last_array_type
+                if (op.args.length() != 2):
+                    throw 'array last requires exactly one array argument'
+                return refined_value_op(op, array_item_type(last_array_type), 'plain')
         if (result_type == 'unknown' && op.args[0] == 'clear' && lookup_function_return_type(functions, 'clear') == 'unknown' && !record_type_exists(record_fields, 'clear')):
             if (op.args.length() != 2):
                 throw 'clear requires exactly one array argument'
