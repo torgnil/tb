@@ -1,0 +1,47 @@
+int double_value(int value):
+    return value * 2
+
+bool invert_value(bool value):
+    return !value
+
+string suffix_value(string value):
+    return value + '!'
+
+int inspect_values(int[] values):
+    return values[0] + values[1]
+
+int[][] copy_rows(int[][] rows):
+    return rows
+
+int no_argument_value():
+    return 42
+
+int main(string[] args):
+    const thread_pool pool = thread_pool(2)
+    const int scalar = args.length() + 4
+    const bool flag = args.length() == 1
+    const string label = 'value' + args.length()
+    int[] values = [args.length() + 10, 2]
+    int[][] rows = [[args.length() + 20], [3]]
+
+    const future<int> doubled = pool.submit(double_value, scalar)
+    const future<bool> inverted = pool.submit(invert_value, flag)
+    const future<string> suffixed = pool.submit(suffix_value, label)
+    const future<int> inspected = pool.submit(inspect_values, values)
+    const future<int[][]> copied_rows = pool.submit(copy_rows, rows)
+    const future<int> no_argument = pool.submit(no_argument_value)
+
+    values[0] = 99
+    rows[0][0] = 88
+    print('args=' + args.length())
+    print('int=' + doubled.await())
+    print(inverted.await())
+    print('string=' + suffixed.await())
+    print('array_snapshot=' + inspected.await())
+    print('no_argument=' + no_argument.await())
+
+    int[][] first_rows = copied_rows.await()
+    first_rows[0][0] = 77
+    int[][] second_rows = copied_rows.await()
+    print('nested_snapshot=' + second_rows[0][0] + ',' + second_rows[1][0])
+    return 0

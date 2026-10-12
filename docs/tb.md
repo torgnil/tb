@@ -123,7 +123,7 @@ Build and invocation details are documented in the repository or release `README
 ### Thread pools and futures
 
 - `thread_pool(n)` creates an explicit pool with exactly `n` worker threads. `n` must be from `1` to `2147483647`. If allocation, synchronization initialization, or worker creation fails during startup, any started workers are stopped and joined, initialized resources are released, and the process exits with `thread_pool startup failed`. A partially started pool is never returned. Allocation failures are not handled uniformly, including failures during task submission.
-- `pool.submit(work)` or `pool.submit(work, value)` queues a top-level named function and returns `future<T>` immediately.
+- `pool.submit(work)` or `pool.submit(work, value)` queues a top-level named function and returns `future<T>` immediately. When a value is supplied, its type must match the worker's single parameter type. Passing a `const` binding uses its underlying value type.
 - Const pool bindings support `submit`; const future bindings support `await`, `is_done`, and `wait_for`. Const still prevents reassignment.
 - Submitted functions may return `int`, `bool`, `string`, `int[]`, or `int[][]`; they may accept zero arguments or one `int`, `bool`, `string`, `int[]`, or `int[][]` argument.
 - `future.await()` blocks until completion and returns the task result. A task exception is rethrown by `await()` on the calling thread. The future preserves its message independently of submitted argument bindings; repeated awaits each produce a catch-owned message.

@@ -1245,6 +1245,12 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
                 return refined_value_op(op, left_type, refine_ownership_mode(op, left_type))
         if (method_name == 'submit' && base_type == 'thread_pool' && (op.args.length() == 3 || op.args.length() == 4)):
             string future_type = thread_pool_submit_result_type(functions, op.args[2], op.args.length() - 3)
+            if (op.args.length() == 4):
+                FunctionSigIR worker_sig = lookup_function_sig(functions, op.args[2])
+                string expected_type = normalize_llvm_type_name(worker_sig.param_types[0])
+                string actual_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[3]))
+                if (expected_type != actual_type):
+                    throw 'thread_pool.submit argument for ' + op.args[2] + ' requires ' + expected_type + '; got ' + actual_type
             return refined_value_op(op, future_type, refine_ownership_mode(op, future_type))
         if (method_name == 'length' || method_name == 'index_of' || method_name == 'hash'):
             string result_type = infer_method_call_type(method_name, 'unknown', functions)
