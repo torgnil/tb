@@ -5402,6 +5402,22 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
         if (op.args.length() != 3):
             throw 'unsupported llvm string[] remove_at arity'
         return emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_string_array_remove_at(ptr ' + temp_ref(op.args[1]) + ', i64 ' + temp_ref(op.args[2]) + ')')
+    if (method_name == 'insert' && method_base_type == 'string[]' && lookup_call_meta_index(method_name) < 0):
+        if (op.args.length() != 4):
+            throw 'unsupported llvm string[] insert arity'
+        if (function_uses_temp(function_ir, op.lhs)):
+            throw 'insert result cannot be used as a value'
+        string[] lines = emit_string_materialize_if_needed(function_ir, op.args[3], op.lhs + '.insert')
+        string stored_value = temp_ref(op.args[3])
+        string owned_flag = 'false'
+        if (temp_is_string(function_ir, op.args[3])):
+            if (temp_needs_backend_free(function_ir, op.args[3])):
+                owned_flag = 'true'
+            else:
+                stored_value = emit_string_owned_value(function_ir, op.args[3], op.lhs + '.insert')
+                owned_flag = 'true'
+        lines.push('  call void @tb_bootstrap_string_array_insert(ptr ' + temp_ref(op.args[1]) + ', i64 ' + temp_ref(op.args[2]) + ', ptr ' + stored_value + ', i1 ' + owned_flag + ')')
+        return join_llvm_strings(lines, '\n')
     if (method_name == 'insert' && method_base_type == 'bool[]' && lookup_call_meta_index(method_name) < 0):
         if (op.args.length() != 4):
             throw 'unsupported llvm bool[] insert arity'

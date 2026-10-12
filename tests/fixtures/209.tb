@@ -1,0 +1,51 @@
+record insert(string[] values);
+
+void print_words(string[] words):
+    print(words.length())
+    for (int i : range(words.length())):
+        print(words[i])
+
+string make_word(int value):
+    return 'owned-' + value.to_string()
+
+int main(string[] args):
+    int count = args.length()
+    const int middle_index = 1
+    const string middle_value = 'middle-' + count
+    string[] words = ['left-' + count, 'right-' + count]
+    words.insert(middle_index, middle_value)
+    print_words(words)
+    words.insert(words.length() - 1, 'before-last-' + count)
+    words.insert(-9223372036854775807 - 1, 'first-' + count)
+    words.insert(9223372036854775807, 'last-' + count)
+    print_words(words)
+
+    string[] empty = []
+    empty.insert(9223372036854775807, 'empty-end-' + count)
+    empty.insert(-9223372036854775807 - 1, make_word(count))
+    print_words(empty)
+    string removed = empty.remove_at(0)
+    empty.clear()
+    empty.insert(0, removed)
+    print_words(empty)
+
+    string[] self_alias_growth = ['growth-' + count, 'tail-' + count]
+    self_alias_growth.insert(0, self_alias_growth[self_alias_growth.length() - 1])
+    print_words(self_alias_growth)
+
+    string[] self_alias_capacity = ['capacity-' + count, 'kept-' + count]
+    self_alias_capacity.remove_at(0)
+    self_alias_capacity.insert(0, self_alias_capacity[0])
+    print_words(self_alias_capacity)
+
+    string[] owned = ['before-' + count, 'after-' + count]
+    owned.insert(1, make_word(count))
+    string owned_removed = owned.remove_at(1)
+    owned.clear()
+    print(owned_removed)
+
+    string[] constructor_values = ['constructor-' + count]
+    insert collision = insert(constructor_values)
+    print(collision.values)
+    print(constructor_values)
+    return 0

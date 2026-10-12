@@ -395,7 +395,7 @@ Array helpers
   - For `int[][]` and `string[][]`, return an independent mutable copy of the last row. The outer array is unchanged, and an empty selected row is valid. Calling either form on an empty outer array aborts before reading an element; immutable strings in a copied `string[]` row may be shared.
 
 - insert(arr: T[], index: int, value: T) -> void
-  - For native `int[]` and `bool[]` method calls such as `arr.insert(index, value)`, insertion shifts the selected element and later values right. The full signed 64-bit index is used: negative indices clamp to the start, and indices past the end append. Inserting at the last occupied index preserves that element in the new final slot.
+  - For native `int[]` and `bool[]` method calls such as `arr.insert(index, value)`, insertion shifts the selected element and later values right. The full signed 64-bit index is used: negative indices clamp to the start, and indices past the end append. Inserting at the last occupied index preserves that element in the new final slot. For `string[]`, `words.insert(index, value)` accepts an `int` index and `string` value, returns `void`, and follows the same clamping and shifting rules. Borrowed strings are retained before mutation; owned string temporaries transfer into the array. A user-defined `insert` function takes precedence for UFCS calls, while a record named `insert` remains a direct-call constructor.
 
 - remove_at(arr: T[], index: int) -> T
   - For native `int[]` and `bool[]` method calls, the full signed 64-bit index is used. Remove the selected value, shift later values left, and return the removed value. Negative and past-end indices return `0` for `int[]` or `false` for `bool[]` without changing the array.

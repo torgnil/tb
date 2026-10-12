@@ -268,6 +268,49 @@ store.new:
   store i32 %next.len, ptr %len.ptr
   ret i32 %next.len
 }
+define private void @tb_bootstrap_string_array_insert(ptr %array, i64 %index, ptr %value, i1 %is_owned) {
+entry:
+  %len.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 0
+  %len = load i32, ptr %len.ptr
+  %len64 = sext i32 %len to i64
+  %index.negative = icmp slt i64 %index, 0
+  %index.nonnegative = select i1 %index.negative, i64 0, i64 %index
+  %index.past.end = icmp sgt i64 %index.nonnegative, %len64
+  %index.clamped = select i1 %index.past.end, i64 %len64, i64 %index.nonnegative
+  %index32 = trunc i64 %index.clamped to i32
+  %pushed = call i32 @tb_bootstrap_string_array_push(ptr %array, ptr %value, i1 %is_owned)
+  %data.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 2
+  %data = load ptr, ptr %data.ptr
+  %owned.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 3
+  %owned = load ptr, ptr %owned.ptr
+  %last.index = sub i32 %len, 1
+  br label %shift.cond
+shift.cond:
+  %src.index = phi i32 [%last.index, %entry], [%next.src.index, %shift.step]
+  %shift.continues = icmp sge i32 %src.index, %index32
+  br i1 %shift.continues, label %shift.body, label %insert.value
+shift.body:
+  %src.slot = getelementptr inbounds ptr, ptr %data, i32 %src.index
+  %src.value = load ptr, ptr %src.slot
+  %dest.index = add i32 %src.index, 1
+  %dest.slot = getelementptr inbounds ptr, ptr %data, i32 %dest.index
+  store ptr %src.value, ptr %dest.slot
+  %src.owned.slot = getelementptr inbounds i8, ptr %owned, i32 %src.index
+  %src.owned.byte = load i8, ptr %src.owned.slot
+  %dest.owned.slot = getelementptr inbounds i8, ptr %owned, i32 %dest.index
+  store i8 %src.owned.byte, ptr %dest.owned.slot
+  br label %shift.step
+shift.step:
+  %next.src.index = sub i32 %src.index, 1
+  br label %shift.cond
+insert.value:
+  %insert.slot = getelementptr inbounds ptr, ptr %data, i32 %index32
+  store ptr %value, ptr %insert.slot
+  %insert.owned.byte = zext i1 %is_owned to i8
+  %insert.owned.slot = getelementptr inbounds i8, ptr %owned, i32 %index32
+  store i8 %insert.owned.byte, ptr %insert.owned.slot
+  ret void
+}
 define private i1 @tb_bootstrap_string_array_contains(ptr %array, ptr %needle) {
 entry:
   %len = call i32 @tb_bootstrap_string_array_length(ptr %array)

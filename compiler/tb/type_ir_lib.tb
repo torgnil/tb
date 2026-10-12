@@ -1146,6 +1146,14 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             if (remove_index_type != 'int'):
                 throw 'string[] remove_at requires an int index; got ' + remove_index_type
             return refined_value_op(op, 'string', 'managed')
+        if (method_name == 'insert' && normalize_llvm_type_name(base_type) == 'string[]' && lookup_function_return_type(functions, 'insert') == 'unknown'):
+            if (op.args.length() != 4):
+                throw 'string[] insert requires an index and a string value'
+            string insert_index_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2]))
+            string insert_value_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[3]))
+            if (insert_index_type != 'int' || insert_value_type != 'string'):
+                throw 'string[] insert requires an int index and string value; got ' + insert_index_type + ' and ' + insert_value_type
+            return refined_value_op(op, 'void', 'plain')
         if ((method_name == 'insert' || method_name == 'remove_at') && normalize_llvm_type_name(base_type) == 'bool[]' && lookup_function_return_type(functions, method_name) == 'unknown'):
             if (method_name == 'insert'):
                 if (op.args.length() != 4):
