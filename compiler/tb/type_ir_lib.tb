@@ -1148,6 +1148,22 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             if (op.args.length() != 2):
                 throw 'bool[] clear requires no arguments'
             return refined_value_op(op, 'void', 'plain')
+        string normalized_base_type = normalize_llvm_type_name(base_type)
+        if ((method_name == 'insert' || method_name == 'remove_at') && normalized_base_type == 'int[]'):
+            if (method_name == 'insert'):
+                if (op.args.length() != 4):
+                    throw 'int[] insert requires an int index and int value (exactly two arguments)'
+                string insert_index_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2]))
+                string insert_value_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[3]))
+                if (insert_index_type != 'int' || insert_value_type != 'int'):
+                    throw 'int[] insert requires an int index and int value; got ' + insert_index_type + ' and ' + insert_value_type
+                return refined_value_op(op, 'int', 'plain')
+            if (op.args.length() != 3):
+                throw 'int[] remove_at requires an int index (exactly one argument)'
+            string remove_index_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2]))
+            if (remove_index_type != 'int'):
+                throw 'int[] remove_at requires an int index; got ' + remove_index_type
+            return refined_value_op(op, 'int', 'plain')
         if (method_name == 'remove_at' && normalize_llvm_type_name(base_type) == 'string[]' && lookup_function_return_type(functions, 'remove_at') == 'unknown'):
             if (op.args.length() != 3):
                 throw 'string[] remove_at requires exactly one index'
