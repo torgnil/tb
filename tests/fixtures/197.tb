@@ -1,0 +1,74 @@
+record IntRows(int[][] values);
+record StringRows(string[][] values);
+
+int next_index(int[] calls):
+    calls[0] += 1
+    return -1
+
+int[] make_int_row(int value):
+    return [value, value + 1]
+
+string[] make_string_row(string value):
+    return [value + '-owned']
+
+int replace_borrowed_int(int[][] rows, int[] row):
+    rows[0] = row
+    return rows[0][0]
+
+string replace_borrowed_string(string[][] rows, string[] row):
+    rows[0] = row
+    return rows[0][0]
+
+int main(string[] args):
+    int seed = args.length() + 10
+    int[][] rows = [[seed], [seed + 1]]
+    const int[] fixed = [seed + 2, seed + 3]
+    rows[0] = fixed
+    print(rows[0])
+    print(replace_borrowed_int(rows, fixed))
+    rows[0][0] = seed + 4
+    print(fixed[0])
+
+    rows[1] = []
+    print(rows[1].length())
+    int[] calls = [0]
+    rows[next_index(calls)] = make_int_row(seed + 5)
+    print(calls[0])
+    print(rows[1])
+
+    if (seed > 0):
+        rows[0] = []
+    for (int i = 0; i < 1; i++):
+        rows[0] = [seed + 6]
+    switch (seed):
+        case 10:
+            rows[0] = [seed + 7]
+        default:
+            rows[0] = [seed + 8]
+    try:
+        rows[0] = []
+        throw 'row-assignment'
+    catch (exception err):
+        rows[0] = [seed + 9]
+    print(rows[0])
+
+    IntRows int_box = IntRows([[seed + 10]])
+    int_box.values[0] = make_int_row(seed + 11)
+    print(int_box.values[0])
+
+    string text = 'runtime-' + seed.to_string()
+    string[][] labels = [['old-' + text]]
+    const string[] fixed_labels = ['const-' + text]
+    labels[0] = fixed_labels
+    print(replace_borrowed_string(labels, fixed_labels))
+    labels[0] = make_string_row(text)
+    print(labels[0])
+    labels[0][0] = 'changed-' + text
+    print(fixed_labels[0])
+
+    StringRows string_box = StringRows([['field-' + text]])
+    string_box.values[0] = []
+    print(string_box.values[0].length())
+    string_box.values[0] = make_string_row(text)
+    print(string_box.values[0])
+    return 0
