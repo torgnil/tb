@@ -1,0 +1,74 @@
+record MapHolder(map<string, int> counts, map<int, string> labels, map<string, int[]> rows);
+record _Nested(map<string, int> values);
+record Bundle(MapHolder holder, _Nested nested);
+record mapbox(map<int, int> items);
+
+MapHolder make_holder():
+    return MapHolder({}, {}, {})
+
+int main(string[] args):
+    int seed = args.length()
+    MapHolder first = make_holder()
+    string first_key = 'first-' + seed
+    first.counts[first_key] = seed + 2
+    first.labels[seed + 3] = 'label-' + seed
+    first.rows['row-' + seed] = [seed + 4, seed + 5]
+    print(first.counts[first_key])
+    print(first.labels[seed + 3])
+    print(first.rows['row-' + seed][1])
+
+    MapHolder copied = first
+    copied.counts['copy-' + seed] = seed + 7
+    print(first.counts.length())
+    print(copied.counts.length())
+
+    first.counts = {}
+    first.labels = {}
+    first.rows = {}
+    print(first.counts.length())
+    print(first.labels.length())
+    print(first.rows.length())
+    print(copied.counts[first_key])
+
+    const MapHolder fixed = MapHolder({'fixed-' + seed: seed + 8}, {}, {})
+    print(fixed.counts['fixed-' + seed])
+    print(fixed.labels.length())
+
+    Bundle bundle = Bundle(make_holder(), _Nested({}))
+    bundle.holder.counts['nested-' + seed] = seed + 9
+    bundle.nested.values['nested-' + seed] = seed + 10
+    bundle.nested.values = {}
+    print(bundle.holder.counts['nested-' + seed])
+    print(bundle.nested.values.length())
+
+    if (seed > 0):
+        bundle.holder.counts = {}
+        bundle.holder.counts['if-' + seed] = seed + 11
+    for (int i = 0; i < seed; i++):
+        bundle.holder.labels = {}
+        bundle.holder.labels[i] = 'loop-' + seed
+    switch (seed):
+        case 1:
+            bundle.holder.rows = {}
+            bundle.holder.rows['switch-' + seed] = [seed + 12]
+        case 3:
+            bundle.holder.rows = {}
+            bundle.holder.rows['switch-' + seed] = [seed + 12]
+        default:
+            bundle.holder.rows = {}
+            bundle.holder.rows['switch-' + seed] = [seed + 12]
+    try:
+        bundle.holder.counts = {}
+        throw 'reset-' + seed
+    catch (exception err):
+        bundle.holder.counts['catch-' + seed] = seed + 13
+        print(err)
+    print(bundle.holder.counts.length())
+    print(bundle.holder.labels[seed - 1])
+    print(bundle.holder.rows['switch-' + seed][0])
+
+    mapbox lowercase = mapbox({})
+    lowercase.items[seed] = seed + 14
+    lowercase.items = {}
+    print(lowercase.items.length())
+    return 0

@@ -1452,6 +1452,15 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                             if (lookup_temp_type_slot(temp_types, current.args[index]) == '[]' && arg_types[index - 1].ends_with('[]')):
                                 block_refined = set_temp_type(block_refined, current.args[index], arg_types[index - 1])
                                 temp_types = set_temp_type_slot(temp_types, current.args[index], arg_types[index - 1])
+                            string expected_arg_type = normalize_llvm_type_name(arg_types[index - 1])
+                            if (lookup_temp_type_slot(temp_types, current.args[index]) == 'unknown' && current.result_type == current.args[0] && lookup_function_return_type(functions, current.args[0]) == 'unknown' && expected_arg_type.starts_with('map<')):
+                                LinearInstruction candidate = lookup_instruction_pair(block_refined, prior_instructions, current.args[index])
+                                if (candidate.lhs == current.args[index]):
+                                    if (candidate.kind == 'value'):
+                                        if (candidate.detail == 'map'):
+                                            if (candidate.args.is_empty()):
+                                                block_refined = set_temp_type(block_refined, current.args[index], expected_arg_type)
+                                                temp_types = set_temp_type_slot(temp_types, current.args[index], expected_arg_type)
                             index += 1
         if (current.kind == 'set'):
             BindingIR binding = ir_parse_binding_decl(current.detail)
@@ -1497,6 +1506,14 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                                         if (candidate.args.is_empty()):
                                             block_refined = set_temp_type(block_refined, value_name, field_type)
                                             temp_types = set_temp_type_slot(temp_types, value_name, field_type)
+                    if (field_type.starts_with('map<') && lookup_temp_type_slot(temp_types, current.args[1]) == 'unknown'):
+                        LinearInstruction candidate = lookup_instruction_pair(block_refined, prior_instructions, current.args[1])
+                        if (candidate.lhs == current.args[1]):
+                            if (candidate.kind == 'value'):
+                                if (candidate.detail == 'map'):
+                                    if (candidate.args.is_empty()):
+                                        block_refined = set_temp_type(block_refined, current.args[1], field_type)
+                                        temp_types = set_temp_type_slot(temp_types, current.args[1], field_type)
                     if (is_checked_record_field_assignment_type(record_names, field_type)):
                         string actual_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[1]))
                         if (actual_type != field_type):
