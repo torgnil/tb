@@ -466,6 +466,7 @@ Set and map helpers
 - map literal syntax: `{'a': 1, 'b': 2}` in a typed context such as `map<string, int> counts = {'a': 1};`
 - empty map literal: `map<string, int> counts = {};` The declared map type supplies the key and value types for local and global declarations, including `const map<string, int> counts = {};`, and when resetting an existing mutable typed map with `counts = {};`.
 - `map<K, V>` supports cache-stringifiable keys such as `int`, `string`, arrays, and records with cache-stringifiable fields; the native backend currently supports `int` and `string` subscript keys.
+- Native maps with `int[]` values snapshot borrowed arrays when values are inserted by literal or subscript assignment, and transfer owned literals and call results into the map. Map copies clone those arrays, and replacing a stored value releases its previous owned array after preparing the replacement. `map.values()` for an `int[]` map is not implemented by the native backend yet.
 - map.keys() -> `K[]`
 - map.values() -> `V[]`
 - contains(map<K, V>, key: K) -> bool

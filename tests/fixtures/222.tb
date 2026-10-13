@@ -1,0 +1,66 @@
+record RowBox(map<string, int[]> rows);
+
+int[] make_row(int seed):
+    return [seed, seed + 1]
+
+map<string, int[]> make_rows(int seed):
+    int[] source = [seed, seed + 1]
+    map<string, int[]> rows = {}
+    rows['returned'] = source
+    source[0] = -1
+    return rows
+
+int main(string[] args):
+    int count = args.length()
+    int[] literal_source = [count, count + 1]
+    map<string, int[]> rows = {'literal': literal_source}
+    literal_source[0] = 99
+    print(rows['literal'][0])
+
+    int[] source = [count + 10, count + 11]
+    rows['borrowed'] = source
+    source[0] = 99
+    print(rows['borrowed'][0])
+
+    rows['call'] = make_row(count + 20)
+    print(rows['call'][0])
+    rows['self'] = [count + 30]
+    rows['self'] = rows['self']
+    print(rows['self'][0])
+
+    rows['alias'] = rows['borrowed']
+    source[1] = 98
+    print(rows['alias'][1])
+
+    const int[] fixed = [count + 40]
+    rows['const'] = fixed
+    print(rows['const'][0])
+    int[] empty = []
+    rows['empty'] = empty
+    print(rows['empty'].length())
+
+    rows['repeat'] = [1]
+    rows['repeat'] = [2]
+    print(rows['repeat'][0])
+
+    map<string, int[]> copied = rows
+    copied['literal'][0] = 99
+    print(rows['literal'][0])
+
+    RowBox box = RowBox(rows)
+    rows['borrowed'] = [97]
+    print(box.rows['borrowed'][0])
+    RowBox cloned = box
+    cloned.rows['call'] = [88]
+    print(box.rows['call'][0])
+
+    map<string, int[]> returned = make_rows(count + 50)
+    print(returned['returned'][0])
+    print(returned['returned'][1])
+
+    map<int, int[]> numbers = {1: [count + 60]}
+    numbers[2] = source
+    source[0] = 96
+    print(numbers[1][0])
+    print(numbers[2][0])
+    return 0

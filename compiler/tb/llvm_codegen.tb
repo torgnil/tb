@@ -2639,6 +2639,8 @@ void analyze_program_features(ProgramIR program, string[] map_types):
     for (string map_type in map_types):
         if (normalize_llvm_type_name(map_value_type(map_type)) == 'string[]'):
             needs_string_array = true
+        if (normalize_llvm_type_name(map_value_type(map_type)) == 'int[]'):
+            needs_int_array = true
     for (GlobalDeclIR global_decl in program.globals):
         BindingIR global_binding = ir_parse_binding_decl(strip_prefix(global_decl.header, 'global '))
         string global_type = normalize_llvm_type_name(global_binding.type_name)
@@ -4413,6 +4415,12 @@ string emit_map_value_instruction(ProgramIR program, ParsedFunction function_ir,
                 lines.push(line)
             if (temp_is_string_array(function_ir, value_name) && !temp_needs_backend_free(function_ir, value_name)):
                 stored_value = emit_string_array_owned_value(function_ir, value_name, value_suffix)
+            stored_owned = 'true'
+        else if (value_type == 'int[]'):
+            for (string line in emit_int_array_materialize_if_needed(function_ir, value_name, value_suffix)):
+                lines.push(line)
+            if (temp_is_int_array(function_ir, value_name) && !temp_needs_backend_free(function_ir, value_name)):
+                stored_value = emit_int_array_owned_value(function_ir, value_name, value_suffix)
             stored_owned = 'true'
         else if (value_type.starts_with('map<')):
             for (string line in emit_map_materialize_if_needed(function_ir, value_name, value_suffix)):
@@ -6779,6 +6787,12 @@ string emit_assign_index_instruction(ProgramIR program, ParsedFunction function_
             if (temp_is_string_array(function_ir, op.args[2]) && !temp_needs_backend_free(function_ir, op.args[2])):
                 stored_value = emit_string_array_owned_value(function_ir, op.args[2], 'index.' + temp_suffix)
             stored_owned = 'true'.substring(0)
+        else if (value_type == 'int[]'):
+            lines = emit_int_array_materialize_if_needed(function_ir, op.args[2], 'index.' + temp_suffix)
+            if (temp_is_int_array(function_ir, op.args[2]) && !temp_needs_backend_free(function_ir, op.args[2])):
+                stored_value = emit_int_array_owned_value(function_ir, op.args[2], 'index.' + temp_suffix)
+            stored_owned = 'true'.substring(0)
+            lines.push(emit_release_index_instruction(program, function_ir, LinearInstruction('release_index', '', '', '', '', [op.args[0], op.args[1]]), 'map.replace.' + temp_suffix))
         else if (value_type.starts_with('map<')):
             lines = emit_map_materialize_if_needed(function_ir, op.args[2], 'index.' + temp_suffix)
             if (temp_is_map(function_ir, op.args[2]) && !temp_needs_backend_free(function_ir, op.args[2])):
@@ -6938,6 +6952,8 @@ string emit_instruction(ProgramIR program, ParsedFunction function_ir, string bl
         string base_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0]))
         if (base_type == 'int[][]' || base_type == 'string[][]'):
             return '  ; defer release_index ' + temp_ref(op.args[0]) + ' ' + temp_ref(op.args[1]) + ' until assign_index materializes the replacement'
+        if (base_type.starts_with('map<') && normalize_llvm_type_name(map_value_type(base_type)) == 'int[]'):
+            return '  ; defer release_index ' + temp_ref(op.args[0]) + ' ' + temp_ref(op.args[1]) + ' until assign_index prepares the replacement'
         return emit_release_index_instruction(program, function_ir, op, temp_suffix)
     if (op.kind == 'assign_index'):
         if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
@@ -8553,6 +8569,10 @@ string[] emit_map_helpers(string type_name):
         clone_stored_owned = '%value.owned'
     else if (value_type == 'string[]'):
         clone_value_copy_lines = ['  %value.copy = call ptr @tb_bootstrap_string_array_clone(ptr %value.raw)']
+        clone_stored_value = '%value.copy'
+        clone_stored_owned = 'true'
+    else if (value_type == 'int[]'):
+        clone_value_copy_lines = ['  %value.copy = call ptr @tb_bootstrap_int_array_clone(ptr %value.raw)']
         clone_stored_value = '%value.copy'
         clone_stored_owned = 'true'
     else if (value_type.starts_with('map<')):
