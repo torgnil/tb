@@ -1970,6 +1970,17 @@ string[] emit_map_key_string_materialize_if_needed(ParsedFunction function_ir, s
         return ['  ' + key_value + ' = call ptr @tb_retain(ptr ' + temp_ref(temp_name) + ')']
     return ['  ' + key_value + ' = call ptr @tb_bootstrap_string_copy(ptr ' + temp_ref(temp_name) + ')']
 
+string emit_owned_map_target_key_release(ParsedFunction function_ir, string key_temp):
+    LinearInstruction key_instruction = lookup_temp_instruction(function_ir, key_temp)
+    if (key_instruction.kind != 'value' || key_instruction.detail != 'target-index'):
+        return ''
+    if (key_instruction.args.length() < 2):
+        return ''
+    string source_temp = key_instruction.args[1]
+    if (!temp_is_string(function_ir, source_temp) || !temp_needs_backend_free(function_ir, source_temp)):
+        return ''
+    return '  call void @tb_release(ptr ' + temp_ref(source_temp) + ')'
+
 string emit_string_array_owned_value(ParsedFunction function_ir, string temp_name, string temp_suffix):
     if (temp_needs_backend_free(function_ir, temp_name)):
         return temp_ref(temp_name)
@@ -5784,8 +5795,7 @@ string emit_index_value_instruction(ParsedFunction function_ir, LinearInstructio
         string[] lines = emit_map_key_string_materialize_if_needed(function_ir, op.args[1], 'get.' + op.lhs)
         string key_value = emit_map_key_string_value(function_ir, op.args[1], 'get.' + op.lhs)
         lines.push('  ' + lhs + ' = call ' + llvm_type(map_value_type(base_type)) + ' ' + llvm_map_get_name(base_type) + '(ptr ' + temp_ref(op.args[0]) + ', ptr ' + key_value + ')')
-        if (temp_needs_map_key_string_materialize(function_ir, op.args[1])):
-            lines.push('  call void @tb_release(ptr ' + key_value + ')')
+        lines.push('  call void @tb_release(ptr ' + key_value + ')')
         return join_llvm_strings(lines, '\n')
     throw 'unsupported llvm index base type: ' + lookup_temp_llvm_type(function_ir, op.args[0])
 
@@ -6812,8 +6822,10 @@ string emit_assign_index_instruction(ProgramIR program, ParsedFunction function_
                 lines.push(line)
             string key_value = emit_map_key_string_value(function_ir, op.args[1], 'assign.' + temp_suffix)
             lines.push('  call void ' + llvm_map_set_by_key_name(base_type) + '(ptr ' + temp_ref(op.args[0]) + ', ptr ' + key_value + ', ' + llvm_type(value_type) + ' ' + stored_value + ', i1 ' + stored_owned + ')')
-            if (temp_needs_map_key_string_materialize(function_ir, op.args[1])):
-                lines.push('  call void @tb_release(ptr ' + key_value + ')')
+            lines.push('  call void @tb_release(ptr ' + key_value + ')')
+            string source_release = emit_owned_map_target_key_release(function_ir, op.args[1])
+            if (source_release != ''):
+                lines.push(source_release)
         return join_llvm_strings(lines, '\n')
     return '  ; assign_index ' + temp_ref(op.args[0]) + ' ' + temp_ref(op.args[1]) + ' ' + temp_ref(op.args[2])
 
