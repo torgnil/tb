@@ -1546,7 +1546,15 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                         throw 'array element assignment requires ' + expected_item_type + '; got ' + actual_stored_type
                 if (base_type.starts_with('map<')):
                     string expected_value_type = normalize_llvm_type_name(map_value_type(base_type))
-                    string actual_value_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[2]))
+                    string value_name = current.args[2]
+                    string actual_value_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, value_name))
+                    if ((actual_value_type == '[]' && (expected_value_type == 'int[]' || expected_value_type == 'string[]')) || (actual_value_type == 'unknown' && expected_value_type.starts_with('map<'))):
+                        LinearInstruction candidate = lookup_instruction(block_refined, value_name)
+                        if (candidate.lhs == value_name && candidate.kind == 'value' && candidate.args.is_empty()):
+                            if ((actual_value_type == '[]' && candidate.detail == 'array' && candidate.result_type == '[]') || (actual_value_type == 'unknown' && candidate.detail == 'map' && candidate.result_type == 'unknown')):
+                                block_refined = set_temp_type(block_refined, value_name, expected_value_type)
+                                temp_types = set_temp_type_slot(temp_types, value_name, expected_value_type)
+                                actual_value_type = expected_value_type
                     if (actual_value_type != expected_value_type):
                         throw 'map element assignment requires ' + expected_value_type + '; got ' + actual_value_type
         if (current.kind == 'assign_local'):

@@ -1,0 +1,96 @@
+record Holder(map<string, int[]> rows, map<int, map<string, int>> groups);
+
+map<string, int[]> make_rows(int seed):
+    map<string, int[]> rows = {}
+    rows['returned-' + seed] = []
+    rows['returned-' + seed].push(seed + 1)
+    return rows
+
+int main(string[] args):
+    int seed = args.length()
+    map<string, int[]> rows = {}
+    rows['new-' + seed] = []
+    rows['new-' + seed].push(seed + 2)
+    print(rows['new-' + seed][0])
+
+    rows['replace-' + seed] = [seed + 3, seed + 4]
+    rows['replace-' + seed] = []
+    rows['replace-' + seed].push(seed + 5)
+    print(rows['replace-' + seed][0])
+    rows['independent-' + seed] = []
+    rows['independent-' + seed].push(seed + 6)
+    print(rows['new-' + seed][0])
+    print(rows['independent-' + seed][0])
+
+    const int[] borrowed_empty = []
+    rows['borrowed-' + seed] = borrowed_empty
+    print(rows['borrowed-' + seed].length())
+
+    map<string, int[]> copied = rows
+    copied['new-' + seed] = []
+    copied['new-' + seed].push(seed + 7)
+    print(rows['new-' + seed][0])
+    print(copied['new-' + seed][0])
+
+    map<int, string[]> words = {}
+    words[seed] = []
+    words[seed].push('word-' + seed)
+    print(words[seed][0])
+    words[seed + 1] = ['old-' + seed]
+    words[seed + 1] = []
+    words[seed + 1].push('reset-' + seed)
+    print(words[seed + 1][0])
+
+    map<int, map<string, int>> groups = {}
+    groups[seed] = {}
+    groups[seed]['nested-' + seed] = seed + 8
+    print(groups[seed]['nested-' + seed])
+    groups[seed] = {}
+    groups[seed]['again-' + seed] = seed + 9
+    print(groups[seed]['again-' + seed])
+
+    map<int, map<string, int[]>> deep = {}
+    deep[seed] = {}
+    deep[seed]['values-' + seed] = []
+    deep[seed]['values-' + seed].push(seed + 10)
+    print(deep[seed]['values-' + seed][0])
+
+    Holder holder = Holder({}, {})
+    holder.rows['record-' + seed] = []
+    holder.rows['record-' + seed].push(seed + 11)
+    holder.groups[seed] = {}
+    holder.groups[seed]['record-' + seed] = seed + 12
+    print(holder.rows['record-' + seed][0])
+    print(holder.groups[seed]['record-' + seed])
+
+    map<string, int[]> returned = make_rows(seed)
+    print(returned['returned-' + seed][0])
+
+    map<string, int[]> branches = {}
+    if (seed > 0):
+        branches['if-' + seed] = []
+        branches['if-' + seed].push(seed + 13)
+    for (int i = 0; i < seed; i++):
+        branches['loop-' + seed] = []
+        branches['loop-' + seed].push(seed + 14)
+    switch (seed):
+        case 1:
+            branches['switch-' + seed] = []
+            branches['switch-' + seed].push(seed + 15)
+        default:
+            branches['switch-' + seed] = []
+            branches['switch-' + seed].push(seed + 15)
+    try:
+        branches['try-' + seed] = []
+        branches['try-' + seed].push(seed + 16)
+        throw 'caught-' + seed
+    catch (exception err):
+        branches['catch-' + seed] = []
+        branches['catch-' + seed].push(seed + 17)
+        print(err)
+    print(branches['if-' + seed][0])
+    print(branches['loop-' + seed][0])
+    print(branches['switch-' + seed][0])
+    print(branches['try-' + seed][0])
+    print(branches['catch-' + seed][0])
+    return 0
