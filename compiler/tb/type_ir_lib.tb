@@ -1449,9 +1449,21 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                         string[] arg_types = record_constructor_arg_types(record_fields, current.args[0])
                         int index = 1
                         while (index < current.args.length() && index - 1 < arg_types.length()):
-                            if (lookup_temp_type_slot(temp_types, current.args[index]) == '[]' && arg_types[index - 1].ends_with('[]')):
-                                block_refined = set_temp_type(block_refined, current.args[index], arg_types[index - 1])
-                                temp_types = set_temp_type_slot(temp_types, current.args[index], arg_types[index - 1])
+                            string arg_type_name = arg_types[index - 1]
+                            string arg_val_type = lookup_temp_type_slot(temp_types, current.args[index])
+                            if (arg_val_type == '[]' && arg_type_name.ends_with('[]')):
+                                block_refined = set_temp_type(block_refined, current.args[index], arg_type_name)
+                                temp_types = set_temp_type_slot(temp_types, current.args[index], arg_type_name)
+                            else if (is_untyped_array_shape(arg_val_type) && arg_type_name.ends_with('[]')):
+                                block_refined = set_temp_type(block_refined, current.args[index], arg_type_name)
+                                temp_types = set_temp_type_slot(temp_types, current.args[index], arg_type_name)
+                                string item_type = array_item_type(arg_type_name)
+                                LinearInstruction candidate = lookup_instruction_pair(block_refined, prior_instructions, current.args[index])
+                                if (candidate.lhs == current.args[index]):
+                                    for (string arg_name in candidate.args):
+                                        if (lookup_temp_type_slot(temp_types, arg_name) == '[]' && item_type.ends_with('[]')):
+                                            block_refined = set_temp_type(block_refined, arg_name, item_type)
+                                            temp_types = set_temp_type_slot(temp_types, arg_name, item_type)
                             string expected_arg_type = normalize_llvm_type_name(arg_types[index - 1])
                             if (lookup_temp_type_slot(temp_types, current.args[index]) == 'unknown' && current.result_type == current.args[0] && lookup_function_return_type(functions, current.args[0]) == 'unknown' && expected_arg_type.starts_with('map<')):
                                 LinearInstruction candidate = lookup_instruction_pair(block_refined, prior_instructions, current.args[index])
