@@ -1463,6 +1463,11 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                     string value_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, value_name))
                     if (value_type != item_type):
                         throw 'indexed row assignment requires ' + item_type + '; got ' + value_type
+                if (base_type == 'int[]' || base_type == 'bool[]' || base_type == 'string[]' || (base_type.ends_with('[]') && record_type_exists(record_fields, array_item_type(base_type)))):
+                    string expected_item_type = array_item_type(base_type)
+                    string actual_stored_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[2]))
+                    if (actual_stored_type != expected_item_type):
+                        throw 'array element assignment requires ' + expected_item_type + '; got ' + actual_stored_type
         if (current.kind == 'assign_local'):
             string binding_type = lookup_binding_type(bindings, current.detail)
             if (current.args.length() == 1):
