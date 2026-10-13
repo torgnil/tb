@@ -1149,6 +1149,20 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
                 throw 'bool[] clear requires no arguments'
             return refined_value_op(op, 'void', 'plain')
         string normalized_base_type = normalize_llvm_type_name(base_type)
+        if (method_name == 'to_int' && normalized_base_type == 'string'):
+            return refined_value_op(op, 'int', 'plain')
+        if (method_name == 'push' && normalized_base_type.ends_with('[]')):
+            string push_item_type = array_item_type(normalized_base_type)
+            bool supported_push_type = push_item_type == 'int' || push_item_type == 'bool' || push_item_type == 'string' || push_item_type == 'int[]' || push_item_type == 'string[]'
+            if (!supported_push_type && record_name_from_type(push_item_type) != ''):
+                supported_push_type = record_type_exists(record_fields, push_item_type)
+            if (supported_push_type):
+                if (op.args.length() != 3):
+                    throw 'array push requires exactly one value'
+                string push_value_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2]))
+                if (push_value_type != push_item_type):
+                    throw 'array push requires ' + push_item_type + '; got ' + push_value_type
+                return refined_value_op(op, 'int', 'plain')
         if ((method_name == 'insert' || method_name == 'remove_at') && normalized_base_type == 'int[]'):
             if (method_name == 'insert'):
                 if (op.args.length() != 4):
