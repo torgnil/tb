@@ -1,0 +1,142 @@
+record SliceBox(int[] values, string[] words, int[][] rows);
+
+const int[] GLOBAL_VALUES = [71, 72, 73]
+const string[] GLOBAL_WORDS = ['global-a', 'global-b']
+
+int[] make_values(int seed):
+    return [seed, seed + 1, seed + 2, seed + 3]
+
+bool[] make_flags(int seed):
+    return [seed > 0, seed % 2 == 0, seed > 1]
+
+string[] make_words(int seed):
+    return ['word-' + seed, 'tail-' + seed, 'last-' + seed]
+
+int[][] make_rows(int seed):
+    return [[seed, seed + 1], [seed + 2, seed + 3]]
+
+string[][] make_groups(int seed):
+    return [['group-' + seed], ['row-' + seed]]
+
+int[] return_slice(int seed):
+    return make_values(seed)[1:]
+
+int borrowed_slice_value(int[] values):
+    int[] tail = values[values.length():]
+    return values[0] + tail.length()
+
+int main(string[] args):
+    int seed = args.length() + 4
+
+    int[] open_end = make_values(seed)[1:]
+    print(open_end[0])
+    print(open_end.length())
+
+    int[] omitted_start = make_values(seed)[:2]
+    print(omitted_start[0])
+    print(omitted_start[1])
+
+    int[] explicit = make_values(seed)[-3:-1]
+    print(explicit[0])
+    print(explicit[1])
+
+    int[] clamped = make_values(seed)[-20:20]
+    int[] reversed = make_values(seed)[3:1]
+    int[] empty = make_values(seed)[2:2]
+    print(clamped.length())
+    print(reversed.length())
+    print(empty.length())
+
+    int[] chained = make_values(seed)[:][1:3]
+    print(chained[0])
+    print(chained[1])
+
+    int[] copied = make_values(seed).copy()[1:3]
+    print(copied[0])
+    print(copied[1])
+
+    int[] literal_slice = [seed + 10, seed + 11, seed + 12][1:]
+    print(literal_slice[0])
+
+    bool[] flags = make_flags(seed)[1:]
+    print(flags[0])
+    print(flags[1])
+    bool[] explicit_flags = make_flags(seed)[0:2]
+    print(explicit_flags[0])
+    print(explicit_flags[1])
+
+    string[] words = make_words(seed)[1:]
+    print(words[0])
+    print(words[1])
+    string[] explicit_words = make_words(seed)[0:2]
+    print(explicit_words[0])
+    print(explicit_words[1])
+
+    int[][] row_slice = make_rows(seed)[0:1]
+    row_slice[0][0] += 50
+    print(row_slice[0][0])
+    print(row_slice[0][1])
+    int[][] row_open_end = make_rows(seed)[0:]
+    print(row_open_end[0][0])
+    print(row_open_end[0][1])
+
+    string[][] group_slice = make_groups(seed)[:]
+    print(group_slice[0][0])
+    print(group_slice[1][0])
+    string[][] explicit_group_slice = make_groups(seed)[0:1]
+    print(explicit_group_slice[0][0])
+
+    int[][] named_rows = make_rows(seed)
+    int[][] row_snapshot = named_rows[:]
+    row_snapshot[0][0] += 60
+    print(named_rows[0][0])
+    print(row_snapshot[0][0])
+
+    string[] churn = []
+    int churn_index = 0
+    while (churn_index < 3):
+        churn = make_words(seed + churn_index)
+        churn_index += 1
+    print(words[0])
+
+    const int[] fixed = make_values(seed + 20)
+    int[] fixed_slice = fixed[1:]
+    print(fixed[0])
+    print(fixed_slice[0])
+    print(GLOBAL_VALUES[0])
+    int[] global_slice = GLOBAL_VALUES[:]
+    print(global_slice[2])
+
+    int reused = borrowed_slice_value(named_rows[0])
+    print(reused)
+    print(named_rows[0][0])
+
+    SliceBox box = SliceBox(make_values(seed + 30)[1:], make_words(seed + 30)[1:], make_rows(seed + 30)[1:])
+    print(box.values[0])
+    print(box.words[0])
+    print(box.rows[0][0])
+    string[] box_word_slice = box.words[1:]
+    print(box_word_slice[0])
+    print(box.words[0])
+
+    int[] returned = return_slice(seed + 40)
+    print(returned[0])
+
+    int discard_index = 0
+    while (discard_index < 2):
+        if (discard_index == 0):
+            make_values(seed + discard_index)[1:]
+        else:
+            make_flags(seed + discard_index)[:]
+        discard_index += 1
+
+    try:
+        int[] in_try = make_values(seed + 50)[1:3]
+        print(in_try[0])
+        throw 'slice-try'
+    catch (exception error):
+        print(error)
+
+    print(GLOBAL_WORDS[1])
+    print(box.values[1])
+    return 0
