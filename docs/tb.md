@@ -64,8 +64,8 @@ Build and invocation details are documented in the repository or release `README
 - bool — compile-time and runtime boolean values (`true`, `false`).
 - file — runtime file handle produced by `open(...)`.
 - T[] — arrays of T (e.g. `string[]`, `int[]`, `string[][]`).
-- map<K, V> — currently implemented as `map<string, int>`. Use `{}` or `{'key': value}` in a typed context such as `map<string, int> counts = {};`.
-  - Generic maps are not implemented yet; other key/value combinations are rejected today.
+- map<K, V> — use `{}` or `{'key': value}` in a typed context such as `map<string, int> counts = {};`.
+  - The native backend supports `int` and `string` keys. Map subscript reads and writes require the key expression to match `K`; assignments require the stored expression to match `V`. Const string and integer keys and const stored values use their underlying types for matching. Const maps support reads but cannot be mutated.
 - record — user-defined record types with named fields.
 - enum — named constants.
 
@@ -463,7 +463,7 @@ Set and map helpers
 
 - map literal syntax: `{'a': 1, 'b': 2}` in a typed context such as `map<string, int> counts = {'a': 1};`
 - empty map literal: `map<string, int> counts = {};` The declared map type supplies the key and value types for local and global declarations, including `const map<string, int> counts = {};`, and when resetting an existing mutable typed map with `counts = {};`.
-- `map<K, V>` supports cache-stringifiable keys such as `int`, `string`, arrays, and records with cache-stringifiable fields.
+- `map<K, V>` supports cache-stringifiable keys such as `int`, `string`, arrays, and records with cache-stringifiable fields; the native backend currently supports `int` and `string` subscript keys.
 - map.keys() -> `K[]`
 - map.values() -> `V[]`
 - contains(map<K, V>, key: K) -> bool

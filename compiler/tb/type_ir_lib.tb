@@ -999,6 +999,12 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             return op
         string left_type = lookup_temp_type_slot(temp_types, op.args[1])
         string right_type = lookup_temp_type_slot(temp_types, op.args[2])
+        string normalized_left_type = normalize_llvm_type_name(left_type)
+        string normalized_right_type = normalize_llvm_type_name(right_type)
+        if (normalized_left_type == 'int' || normalized_left_type == 'num'):
+            left_type = normalized_left_type
+        if (normalized_right_type == 'int' || normalized_right_type == 'num'):
+            right_type = normalized_right_type
         string result_type = infer_binary_type(op.args[0], left_type, right_type)
         return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
     if (op.detail == 'ternary'):
@@ -1386,6 +1392,14 @@ void validate_sequence_index_type(string base_type, string index_type):
         if (normalized_index_type != 'int'):
             throw 'sequence index requires int; got ' + normalized_index_type
 
+void validate_map_index_type(string base_type, string index_type):
+    string normalized_base_type = normalize_llvm_type_name(base_type)
+    if (normalized_base_type.starts_with('map<')):
+        string expected_type = normalize_llvm_type_name(map_key_type(normalized_base_type))
+        string actual_type = normalize_llvm_type_name(index_type)
+        if (actual_type != expected_type):
+            throw 'map index requires ' + expected_type + '; got ' + actual_type
+
 RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, BindingIR[] globals, BindingIR[] params, BindingIR[] locals, FunctionSigIR[] functions, RecordFieldIR[] record_fields, EnumTypeIR[] enum_types, LinearInstruction[] prior_instructions, string[] temp_types):
     BindingIR[] bindings = []
     for (BindingIR binding in globals):
@@ -1400,7 +1414,10 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
     while (op_index < instructions.length()):
         LinearInstruction op = instructions[op_index]
         if (op.kind == 'value' && (op.detail == 'index' || op.detail == 'target-index') && op.args.length() >= 2):
-            validate_sequence_index_type(lookup_temp_type_slot(temp_types, op.args[0]), lookup_temp_type_slot(temp_types, op.args[1]))
+            string index_base_type = lookup_temp_type_slot(temp_types, op.args[0])
+            string index_type = lookup_temp_type_slot(temp_types, op.args[1])
+            validate_sequence_index_type(index_base_type, index_type)
+            validate_map_index_type(index_base_type, index_type)
         LinearInstruction current = refine_value_instruction(op, bindings, functions, record_fields, enum_types, temp_types)
         if (current.kind == 'value'):
             if (current.detail == 'call'):
@@ -1460,6 +1477,7 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
         if ((current.kind == 'assign_index' || current.kind == 'assign_index_add') && current.args.length() >= 3):
             string base_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[0]))
             validate_sequence_index_type(base_type, lookup_temp_type_slot(temp_types, current.args[1]))
+            validate_map_index_type(base_type, lookup_temp_type_slot(temp_types, current.args[1]))
         if (current.kind == 'assign_index'):
             if (current.args.length() >= 3):
                 string base_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[0]))
@@ -1482,6 +1500,11 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                     string actual_stored_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[2]))
                     if (actual_stored_type != expected_item_type):
                         throw 'array element assignment requires ' + expected_item_type + '; got ' + actual_stored_type
+                if (base_type.starts_with('map<')):
+                    string expected_value_type = normalize_llvm_type_name(map_value_type(base_type))
+                    string actual_value_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[2]))
+                    if (actual_value_type != expected_value_type):
+                        throw 'map element assignment requires ' + expected_value_type + '; got ' + actual_value_type
         if (current.kind == 'assign_local'):
             string binding_type = lookup_binding_type(bindings, current.detail)
             if (current.args.length() == 1):
