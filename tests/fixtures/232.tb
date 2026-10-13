@@ -1,0 +1,108 @@
+record IndexBox(int[] values, bool[] flags);
+
+const int[] GLOBAL_VALUES = [71, 72]
+const bool[] GLOBAL_FLAGS = [true, false]
+
+int[] make_values(int value):
+    return [value, value + 1]
+
+bool[] make_flags(int value):
+    return [value > 0, false]
+
+bool[] slice_flags(int value):
+    return make_flags(value)[0:2]
+
+bool[] copy_flags(int value):
+    bool[] flags = make_flags(value)
+    return flags.copy()
+
+bool[] duplicate_flags(bool[] flags):
+    return flags.copy()
+
+int[] slice_values(int value):
+    return make_values(value)[0:2]
+
+int[] copy_values(int value):
+    int[] values = make_values(value)
+    return values.copy()
+
+int[] duplicate(int[] values):
+    return values.copy()
+
+int returned_index(int value):
+    return make_values(value)[-1]
+
+int choose_index(int value):
+    return value - value
+
+int read_borrowed(int[] values, bool[] flags):
+    int first = values[0]
+    bool flag = flags[0]
+    if (flag):
+        return first + 1
+    return first
+
+int main(string[] args):
+    int seed = args.length() + 4
+
+    print(make_values(seed)[0])
+    print(make_values(seed)[-1])
+    print(make_values(seed)[choose_index(seed)])
+    print(make_flags(seed)[0])
+    print(slice_flags(seed)[0])
+    print(copy_flags(seed)[1])
+    print(make_flags(seed).duplicate_flags()[0])
+    print([seed, seed + 1][1])
+    print(slice_values(seed)[1])
+    print(copy_values(seed)[1])
+    print(make_values(seed).duplicate()[1])
+    print(returned_index(seed))
+
+    if (make_flags(seed)[0]):
+        print('condition')
+    else:
+        print('condition-false')
+
+    int loop_index = 0
+    while (loop_index < 2):
+        print(make_values(seed + loop_index)[0])
+        loop_index += 1
+
+    switch (make_values(seed)[0]):
+        case 5:
+            print('switch-five')
+        default:
+            print('switch-other')
+
+    try:
+        print(make_values(seed)[0])
+        throw 'index-try'
+    catch (exception error):
+        print(error)
+
+    int[] named_values = make_values(seed)
+    const bool[] const_flags = make_flags(seed)
+    print(named_values[0])
+    print(const_flags[0])
+    named_values[0] += 2
+    print(named_values[0])
+    print(const_flags.length())
+
+    print(read_borrowed(named_values, const_flags))
+    print(named_values[1])
+
+    print(GLOBAL_VALUES[0])
+    print(GLOBAL_VALUES[1])
+    print(GLOBAL_FLAGS[0])
+
+    IndexBox box = IndexBox([seed + 8], [true])
+    print(box.values[0])
+    print(box.flags[0])
+    print(box.values[0])
+
+    int foreach_total = 0
+    for (int item : make_values(seed)):
+        foreach_total += item
+    print(foreach_total)
+
+    return 0

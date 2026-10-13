@@ -5831,9 +5831,11 @@ string emit_index_value_instruction(ParsedFunction function_ir, LinearInstructio
     if (base_type == 'string[][]'):
         return emit_array_index_materialize(base_type, op.args[0], op.args[1], op.lhs) + '\n  ' + lhs + ' = call ptr @tb_bootstrap_string_array_array_get(ptr ' + temp_ref(op.args[0]) + ', i32 ' + llvm_i32_index_temp(op.lhs) + ')'
     if (base_type == 'bool[]'):
-        return emit_array_index_materialize(base_type, op.args[0], op.args[1], op.lhs) + '\n  ' + lhs + ' = call i1 @tb_bootstrap_bool_array_get(ptr ' + temp_ref(op.args[0]) + ', i32 ' + llvm_i32_index_temp(op.lhs) + ')'
+        string index_line = emit_array_index_materialize(base_type, op.args[0], op.args[1], op.lhs) + '\n  ' + lhs + ' = call i1 @tb_bootstrap_bool_array_get(ptr ' + temp_ref(op.args[0]) + ', i32 ' + llvm_i32_index_temp(op.lhs) + ')'
+        return emit_array_scalar_query_with_release(function_ir, op.args[0], op.lhs, index_line)
     if (base_type == 'int[]'):
-        return emit_array_index_materialize(base_type, op.args[0], op.args[1], op.lhs) + '\n  ' + lhs + ' = call i64 @tb_bootstrap_int_array_get(ptr ' + temp_ref(op.args[0]) + ', i32 ' + llvm_i32_index_temp(op.lhs) + ')'
+        string index_line = emit_array_index_materialize(base_type, op.args[0], op.args[1], op.lhs) + '\n  ' + lhs + ' = call i64 @tb_bootstrap_int_array_get(ptr ' + temp_ref(op.args[0]) + ', i32 ' + llvm_i32_index_temp(op.lhs) + ')'
+        return emit_array_scalar_query_with_release(function_ir, op.args[0], op.lhs, index_line)
     if (base_type == 'set<int>'):
         return '  ' + llvm_i32_index_temp(op.lhs) + ' = trunc i64 ' + temp_ref(op.args[1]) + ' to i32\n  ' + lhs + ' = call i64 @tb_bootstrap_int_set_get(ptr ' + temp_ref(op.args[0]) + ', i32 ' + llvm_i32_index_temp(op.lhs) + ')'
     if (base_type.starts_with('set<') && record_name_from_type(set_item_type(base_type)) != ''):
