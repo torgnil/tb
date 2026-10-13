@@ -1,0 +1,199 @@
+record QueryBox(int[] ints, bool[] flags, string[] words, int[][] rows, string[][] word_rows);
+
+int PRODUCER_CALLS = 0
+const int[] GLOBAL_INTS = [71]
+const bool[] GLOBAL_FLAGS = [true]
+const string[] GLOBAL_WORDS = ['global-word']
+const int[][] GLOBAL_ROWS = [[73]]
+const string[][] GLOBAL_WORD_ROWS = [['global-row']]
+
+int[] make_ints(int value):
+    PRODUCER_CALLS += 1
+    return [value]
+
+bool[] make_flags(int value):
+    PRODUCER_CALLS += 1
+    return [value > 0]
+
+string[] make_words(int value):
+    PRODUCER_CALLS += 1
+    return ['word-' + value]
+
+int[][] make_rows(int value):
+    PRODUCER_CALLS += 1
+    return [[value]]
+
+string[][] make_word_rows(int value):
+    PRODUCER_CALLS += 1
+    return [['row-' + value]]
+
+int[] empty_ints():
+    PRODUCER_CALLS += 1
+    return []
+
+bool[] empty_flags():
+    PRODUCER_CALLS += 1
+    return []
+
+string[] empty_words():
+    PRODUCER_CALLS += 1
+    return []
+
+int[][] empty_rows():
+    PRODUCER_CALLS += 1
+    return []
+
+string[][] empty_word_rows():
+    PRODUCER_CALLS += 1
+    return []
+
+int[] loop_ints():
+    PRODUCER_CALLS += 1
+    return [1, 2, 3]
+
+bool[] loop_flags():
+    PRODUCER_CALLS += 1
+    return [false, true, false]
+
+string[] loop_words():
+    PRODUCER_CALLS += 1
+    return ['skip', 'next', 'last']
+
+int[][] loop_rows():
+    PRODUCER_CALLS += 1
+    return [[10], [20], [30]]
+
+string[][] loop_word_rows():
+    PRODUCER_CALLS += 1
+    return [['skip'], ['next'], ['last']]
+
+int borrowed_queries(int[] ints, bool[] flags, string[] words, int[][] rows, string[][] word_rows):
+    return ints.length() + flags.length() + words.length() + rows.length() + word_rows.length()
+
+int length(int value):
+    return value + 100
+
+bool is_empty(int value):
+    return value == 0
+
+int main(string[] args):
+    int seed = args.length() + 4
+
+    print(make_ints(seed).length())
+    print(make_ints(seed).is_empty())
+    print(make_flags(seed).length())
+    print(make_flags(seed).is_empty())
+    print(make_words(seed).length())
+    print(make_words(seed).is_empty())
+    print(make_rows(seed).length())
+    print(make_rows(seed).is_empty())
+    print(make_word_rows(seed).length())
+    print(make_word_rows(seed).is_empty())
+
+    print(empty_ints().length())
+    print(empty_ints().is_empty())
+    print(empty_flags().length())
+    print(empty_flags().is_empty())
+    print(empty_words().length())
+    print(empty_words().is_empty())
+    print(empty_rows().length())
+    print(empty_rows().is_empty())
+    print(empty_word_rows().length())
+    print(empty_word_rows().is_empty())
+
+    for (int i in range(3)):
+        print(make_ints(seed + i).length())
+
+    int loop_seen = 0
+    for (int loop_int_item : loop_ints()):
+        loop_seen += 1
+        if (loop_int_item == 1):
+            continue
+        print(loop_int_item)
+        break
+    print('after int loop ' + loop_seen)
+
+    loop_seen = 0
+    for (bool loop_bool_item : loop_flags()):
+        loop_seen += 1
+        if (!loop_bool_item):
+            continue
+        print(loop_bool_item)
+        break
+    print('after bool loop ' + loop_seen)
+
+    loop_seen = 0
+    for (string loop_string_item : loop_words()):
+        loop_seen += 1
+        if (loop_string_item == 'skip'):
+            continue
+        print(loop_string_item)
+        break
+    print('after string loop ' + loop_seen)
+
+    loop_seen = 0
+    for (int[] loop_int_row : loop_rows()):
+        loop_seen += 1
+        if (loop_int_row[0] == 10):
+            continue
+        print(loop_int_row[0])
+        break
+    print('after int rows loop ' + loop_seen)
+
+    loop_seen = 0
+    for (string[] loop_word_row : loop_word_rows()):
+        loop_seen += 1
+        if (loop_word_row[0] == 'skip'):
+            continue
+        print(loop_word_row[0])
+        break
+    print('after string rows loop ' + loop_seen)
+
+    int[] local_ints = make_ints(seed + 10)
+    const int[] const_ints = make_ints(seed + 11)
+    bool[] local_flags = make_flags(seed + 10)
+    const bool[] const_flags = make_flags(seed + 11)
+    string[] local_words = make_words(seed + 10)
+    const string[] const_words = make_words(seed + 11)
+    int[][] local_rows = make_rows(seed + 10)
+    const int[][] const_rows = make_rows(seed + 11)
+    string[][] local_word_rows = make_word_rows(seed + 10)
+    const string[][] const_word_rows = make_word_rows(seed + 11)
+
+    print(borrowed_queries(local_ints, local_flags, local_words, local_rows, local_word_rows))
+    print(borrowed_queries(const_ints, const_flags, const_words, const_rows, const_word_rows))
+    print(local_ints[0])
+    print(const_ints[0])
+    print(local_flags[0])
+    print(const_flags[0])
+    print(local_words[0])
+    print(const_words[0])
+    print(local_rows[0][0])
+    print(const_rows[0][0])
+    print(local_word_rows[0][0])
+    print(const_word_rows[0][0])
+
+    print(borrowed_queries(GLOBAL_INTS, GLOBAL_FLAGS, GLOBAL_WORDS, GLOBAL_ROWS, GLOBAL_WORD_ROWS))
+    print(GLOBAL_INTS[0])
+    print(GLOBAL_WORDS[0])
+    print(GLOBAL_ROWS[0][0])
+    print(GLOBAL_WORD_ROWS[0][0])
+
+    QueryBox box = QueryBox([seed + 30], [true], ['box-' + seed], [[seed + 31]], [['box-row-' + seed]])
+    print(borrowed_queries(box.ints, box.flags, box.words, box.rows, box.word_rows))
+    print(box.ints[0])
+    print(box.words[0])
+    print(box.rows[0][0])
+    print(box.word_rows[0][0])
+
+    print(length(make_ints(seed + 40)))
+    bool direct_int_empty = is_empty(make_ints(seed + 41))
+    bool direct_word_empty = is_empty(make_words(seed + 42))
+    print(direct_int_empty)
+    print(direct_word_empty)
+    print(length(seed))
+    print(seed.length())
+    print(is_empty(0))
+    print(0.is_empty())
+    print(PRODUCER_CALLS)
+    return 0

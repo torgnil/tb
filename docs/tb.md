@@ -430,6 +430,7 @@ Array helpers
 
 - is_empty(x: string | T[] | set<T> | map<K, V> | prio_q<T>) -> bool
   - Return `true` when the value has no items. UFCS sugar such as `arr.is_empty()` and `scores.is_empty()` is supported.
+  - For native `int[]`, `bool[]`, `string[]`, `int[][]`, and `string[][]`, array `length` and `is_empty` queries borrow their receiver. A recognized owned array expression used only for the query is released after the result is computed; a named array remains available for later use.
 
 - sort(arr: T[], compare: (T, T) -> int) -> void
   - Sort the array in place using the provided comparator.
@@ -470,7 +471,7 @@ Set and map helpers
 - map literal syntax: `{'a': 1, 'b': 2}` in a typed context such as `map<string, int> counts = {'a': 1};`
 - empty map literal: `map<string, int> counts = {};` The declared map type supplies the key and value types for local and global declarations, including `const map<string, int> counts = {};`, and when resetting an existing mutable typed map with `counts = {};`.
 - `map<K, V>` supports cache-stringifiable keys such as `int`, `string`, arrays, and records with cache-stringifiable fields; the native backend currently supports `int` and `string` subscript keys.
-- Native maps with `int[]` values snapshot borrowed arrays when values are inserted by literal or subscript assignment, and transfer owned literals and call results into the map. Map copies clone those arrays, and replacing a stored value releases its previous owned array after preparing the replacement. For native `map<int, int[]>` and `map<string, int[]>`, `values()` returns an owned `int[][]` snapshot in map insertion order. Each row is an independent mutable copy, including for const maps; updating a key keeps its existing position. Empty typed maps return a valid empty `int[][]`. Bind the result before using array operations, for example `int[][] rows = counts.values(); print(rows.length());`.
+- Native maps with `int[]` values snapshot borrowed arrays when values are inserted by literal or subscript assignment, and transfer owned literals and call results into the map. Map copies clone those arrays, and replacing a stored value releases its previous owned array after preparing the replacement. For native `map<int, int[]>` and `map<string, int[]>`, `values()` returns an owned `int[][]` snapshot in map insertion order. Each row is an independent mutable copy, including for const maps; updating a key keeps its existing position. Empty typed maps return a valid empty `int[][]`. Bind the result before indexing it, for example `int[][] rows = counts.values(); print(rows[0][0]);`.
 - map.keys() -> `K[]`
 - map.values() -> `V[]`
   - For the native `map<int, int[]>` and `map<string, int[]>` forms, this returns owned `int[][]` snapshots in insertion order. The outer array and each mutable row are independent of the map and remain usable after the map is released. Other map value families keep their existing behavior.

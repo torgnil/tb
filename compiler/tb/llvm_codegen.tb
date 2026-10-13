@@ -1469,6 +1469,43 @@ bool instruction_uses_temp(LinearInstruction op, string temp_name):
         first_operand += 1
     return false
 
+bool temp_is_query_only_use_in_producing_block(ParsedFunction function_ir, string temp_name, string query_temp_name):
+    int producer_block_index = -1
+    int producer_instruction_index = -1
+    int query_block_index = -1
+    int query_instruction_index = -1
+    int block_index = 0
+    for (BlockIR block in function_ir.blocks):
+        int instruction_index = 0
+        for (LinearInstruction op in block.instructions):
+            if (op.lhs == temp_name):
+                producer_block_index = block_index
+                producer_instruction_index = instruction_index
+            if (op.lhs == query_temp_name):
+                query_block_index = block_index
+                query_instruction_index = instruction_index
+            instruction_index += 1
+        block_index += 1
+    if (producer_block_index < 0 || producer_block_index != query_block_index || producer_instruction_index >= query_instruction_index):
+        return false
+    int use_count = 0
+    bool query_is_use = false
+    for (BlockIR block in function_ir.blocks):
+        for (LinearInstruction op in block.instructions):
+            int operand_index = 0
+            while (operand_index < op.args.length()):
+                if (op.args[operand_index] == temp_name):
+                    use_count += 1
+                    if (op.lhs == query_temp_name):
+                        query_is_use = true
+                operand_index += 1
+        int term_index = 0
+        while (term_index < block.terminator.args.length()):
+            if (block.terminator.args[term_index] == temp_name):
+                use_count += 1
+            term_index += 1
+    return use_count == 1 && query_is_use
+
 bool function_uses_temp(ParsedFunction function_ir, string temp_name):
     for (BlockIR block in function_ir.blocks):
         for (LinearInstruction op in block.instructions):
@@ -4995,17 +5032,17 @@ string emit_string_method_call_value_instruction(ProgramIR program, ParsedFuncti
     if (method_name == 'is_empty' && method_base_type == 'string'):
         return emit_string_length_value(function_ir, op.args[1], temp_ref(op.lhs + '.len'), op.lhs + '.string.empty') + '\n  ' + lhs + ' = icmp eq i64 ' + temp_ref(op.lhs + '.len') + ', 0'
     if (method_name == 'length' && method_base_type == 'string[]'):
-        return '  ' + lhs + '.len32 = call i32 @tb_bootstrap_string_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64'
+        return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, '  ' + lhs + '.len32 = call i32 @tb_bootstrap_string_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64')
     if (method_name == 'is_empty' && method_base_type == 'string[]'):
-        return '  ' + lhs + '.len32 = call i32 @tb_bootstrap_string_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = icmp eq i32 ' + temp_ref(op.lhs + '.len32') + ', 0'
+        return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, '  ' + lhs + '.len32 = call i32 @tb_bootstrap_string_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = icmp eq i32 ' + temp_ref(op.lhs + '.len32') + ', 0')
     if (method_name == 'join' && method_base_type == 'string[]'):
         if (op.args.length() != 3):
             throw 'unsupported llvm string[] join arity'
         return '  ' + lhs + ' = call ptr @tb_bootstrap_join_strings(ptr ' + temp_ref(op.args[1]) + ', ptr ' + temp_ref(op.args[2]) + ')'
     if (method_name == 'length' && method_base_type == 'string[][]'):
-        return '  ' + lhs + '.len32 = call i32 @tb_bootstrap_string_array_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64'
+        return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, '  ' + lhs + '.len32 = call i32 @tb_bootstrap_string_array_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64')
     if (method_name == 'is_empty' && method_base_type == 'string[][]'):
-        return '  ' + lhs + '.len32 = call i32 @tb_bootstrap_string_array_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = icmp eq i32 ' + temp_ref(op.lhs + '.len32') + ', 0'
+        return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, '  ' + lhs + '.len32 = call i32 @tb_bootstrap_string_array_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = icmp eq i32 ' + temp_ref(op.lhs + '.len32') + ', 0')
     if (method_name == 'push' && method_base_type == 'string[][]'):
         if (op.args.length() != 3):
             throw 'unsupported llvm string[][] push arity'
@@ -5164,7 +5201,7 @@ string emit_builtin_query_call_value_instruction(ProgramIR program, ParsedFuncti
         if (op.args.length() != 2):
             throw 'unsupported llvm length arity'
         if (call_arg1_type == 'int[]'):
-            return '  ' + lhs + '.len32 = call i32 @tb_bootstrap_int_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64'
+            return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, '  ' + lhs + '.len32 = call i32 @tb_bootstrap_int_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64')
         if (call_arg1_type == 'set<int>'):
             return '  ' + lhs + '.len32 = call i32 @tb_bootstrap_int_set_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64'
         if (call_arg1_type.ends_with('[]') && record_name_from_type(array_item_type(call_arg1_type)) != ''):
@@ -5185,9 +5222,9 @@ string emit_builtin_query_call_value_instruction(ProgramIR program, ParsedFuncti
         if (call_arg1_type == 'string'):
             return emit_string_length_value(function_ir, op.args[1], temp_ref(op.lhs + '.len'), op.lhs + '.builtin.empty') + '\n  ' + lhs + ' = icmp eq i64 ' + temp_ref(op.lhs + '.len') + ', 0'
         if (call_arg1_type == 'string[]'):
-            return '  ' + lhs + '.len32 = call i32 @tb_bootstrap_string_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = icmp eq i32 ' + temp_ref(op.lhs + '.len32') + ', 0'
+            return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, '  ' + lhs + '.len32 = call i32 @tb_bootstrap_string_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = icmp eq i32 ' + temp_ref(op.lhs + '.len32') + ', 0')
         if (call_arg1_type == 'int[]'):
-            return '  ' + lhs + '.len32 = call i32 @tb_bootstrap_int_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = icmp eq i32 ' + temp_ref(op.lhs + '.len32') + ', 0'
+            return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, '  ' + lhs + '.len32 = call i32 @tb_bootstrap_int_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = icmp eq i32 ' + temp_ref(op.lhs + '.len32') + ', 0')
         if (call_arg1_type == 'set<int>'):
             return '  ' + lhs + '.len32 = call i32 @tb_bootstrap_int_set_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = icmp eq i32 ' + temp_ref(op.lhs + '.len32') + ', 0'
         if (call_arg1_type.ends_with('[]') && record_name_from_type(array_item_type(call_arg1_type)) != ''):
@@ -5305,6 +5342,14 @@ string emit_last_value(string result_name, string receiver_type, string receiver
     if (helper_name == ''):
         throw 'unsupported llvm last receiver type: ' + receiver_type
     return '  ' + temp_ref(result_name) + ' = call ' + llvm_type(array_item_type(receiver_type)) + ' ' + helper_name + '(ptr ' + temp_ref(receiver_name) + ')'
+
+string emit_array_scalar_query_with_release(ParsedFunction function_ir, string receiver_name, string query_temp_name, string query_line):
+    string receiver_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, receiver_name))
+    if (receiver_type == 'int[]' || receiver_type == 'bool[]' || receiver_type == 'string[]' || receiver_type == 'int[][]' || receiver_type == 'string[][]'):
+        if (temp_needs_backend_free(function_ir, receiver_name) && !temp_is_moved(function_ir, receiver_name)):
+            if (temp_is_query_only_use_in_producing_block(function_ir, receiver_name, query_temp_name)):
+                return query_line + '\n' + emit_backend_release_ptr(receiver_type, temp_ref(receiver_name))
+    return query_line
 
 string emit_map_method_call_value_instruction(ParsedFunction function_ir, LinearInstruction op, string method_name, string method_base_type):
     if (!method_base_type.starts_with('map<')):
@@ -5594,17 +5639,17 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
         register_named_record_sort_comparator(record_name, comparator_name)
         return '  ' + lhs + ' = call ptr @tb_bootstrap_create_prio_q_generic_' + record_name + '_by(ptr ' + temp_ref(op.args[1]) + ', ptr ' + llvm_named_record_sort_comparator_symbol(record_name, comparator_name) + ')'
     if (method_name == 'length' && method_base_type == 'bool[]'):
-        return '  ' + lhs + '.len32 = call i32 @tb_bootstrap_bool_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64'
+        return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, '  ' + lhs + '.len32 = call i32 @tb_bootstrap_bool_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64')
     if (method_name == 'is_empty' && method_base_type == 'bool[]'):
-        return '  ' + lhs + '.len32 = call i32 @tb_bootstrap_bool_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = icmp eq i32 ' + temp_ref(op.lhs + '.len32') + ', 0'
+        return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, '  ' + lhs + '.len32 = call i32 @tb_bootstrap_bool_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = icmp eq i32 ' + temp_ref(op.lhs + '.len32') + ', 0')
     if (method_name == 'push' && method_base_type == 'bool[]'):
         if (op.args.length() != 3):
             throw 'unsupported llvm bool[] push arity'
         return '  ' + lhs + '.len32 = call i32 @tb_bootstrap_bool_array_push(ptr ' + temp_ref(op.args[1]) + ', i1 ' + temp_ref(op.args[2]) + ')\n  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64'
     if (method_name == 'length' && method_base_type == 'int[]'):
-        return '  ' + lhs + '.len32 = call i32 @tb_bootstrap_int_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64'
+        return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, '  ' + lhs + '.len32 = call i32 @tb_bootstrap_int_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64')
     if (method_name == 'is_empty' && method_base_type == 'int[]'):
-        return '  ' + lhs + '.len32 = call i32 @tb_bootstrap_int_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = icmp eq i32 ' + temp_ref(op.lhs + '.len32') + ', 0'
+        return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, '  ' + lhs + '.len32 = call i32 @tb_bootstrap_int_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = icmp eq i32 ' + temp_ref(op.lhs + '.len32') + ', 0')
     if (method_name == 'push' && method_base_type == 'int[]'):
         if (op.args.length() != 3):
             throw 'unsupported llvm int[] push arity'
@@ -5711,9 +5756,9 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
             return '  ' + lhs + ' = call ptr ' + submit_name + '(ptr ' + temp_ref(op.args[1]) + ', ptr @' + op.args[2] + ')'
         return '  ' + lhs + ' = call ptr ' + submit_name + '(ptr ' + temp_ref(op.args[1]) + ', ptr @' + op.args[2] + ', ' + llvm_type(arg_type) + ' ' + temp_ref(op.args[3]) + ')'
     if (method_name == 'length' && method_base_type == 'int[][]'):
-        return '  ' + lhs + '.len32 = call i32 @tb_bootstrap_int_array_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64'
+        return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, '  ' + lhs + '.len32 = call i32 @tb_bootstrap_int_array_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64')
     if (method_name == 'is_empty' && method_base_type == 'int[][]'):
-        return '  ' + lhs + '.len32 = call i32 @tb_bootstrap_int_array_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = icmp eq i32 ' + temp_ref(op.lhs + '.len32') + ', 0'
+        return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, '  ' + lhs + '.len32 = call i32 @tb_bootstrap_int_array_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = icmp eq i32 ' + temp_ref(op.lhs + '.len32') + ', 0')
     if (method_name == 'push' && method_base_type == 'int[][]'):
         if (op.args.length() != 3):
             throw 'unsupported llvm int[][] push arity'
