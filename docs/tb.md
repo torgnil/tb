@@ -201,6 +201,8 @@ int main(string[] args):
 8. Arrays and slices
 
 - Array literal: `['a', 'b', 'c']`.
+- When an array, set, or map literal infers its type, const and mutable members with the same underlying type share one inferred type. For example, `[n, fixed]` infers `int[]` when `fixed` is `const int`, and `{key: fixed}` infers `map<string, int>` when `key` is `const string` and `fixed` is `const int`.
+- Const still prevents writes through the source binding. A newly constructed container has its normal mutability and ownership behavior.
 - Empty array literals are allowed in a typed context, for example `int[] nums = [];`, `string[] words = [];`, or `box.values = [];` when `values` is an array-valued record field. The field's declared array type determines the empty array's element type. In `int[][]` and `string[][]`, indexed row assignment also supplies that context, so `rows[0] = [];` creates an empty row of the matching element type.
 - Empty rows in a typed nested array literal use the row element type, for example `int[][] rows = [[1], []];` creates an empty `int[]` row.
 - Indexing: `arr[0]`, with negative indexing like `arr[-1]` (last element) supported for arrays and strings. Array and string subscript indices must have type `int`; const integer indices are accepted. Const strings support the same indexed reads as mutable strings; the selected character remains valid after the source binding leaves scope. For arrays, negative indices count from the end for both reads and writes: `arr[-length(arr)]` refers to the first element.

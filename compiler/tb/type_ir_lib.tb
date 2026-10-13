@@ -443,12 +443,12 @@ BindingIR[] collect_global_bindings(GlobalDeclIR[] globals):
 string infer_container_type(string[] item_types, string prefix, string suffix):
     if (item_types.is_empty()):
         return prefix + suffix
-    string first = item_types[0]
+    string first = normalize_llvm_type_name(item_types[0])
     if (first == '' || first == 'unknown'):
         return prefix + suffix
     int index = 1
     while (index < item_types.length()):
-        if (item_types[index] != first):
+        if (normalize_llvm_type_name(item_types[index]) != first):
             return prefix + suffix
         index += 1
     return prefix + first + suffix
