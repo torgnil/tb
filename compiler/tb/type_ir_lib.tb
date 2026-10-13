@@ -288,6 +288,17 @@ bool record_type_exists(RecordFieldIR[] fields, string record_name):
         index -= 1
     return false
 
+bool is_checked_record_field_assignment_type(RecordFieldIR[] fields, string type_name):
+    type_name = normalize_llvm_type_name(type_name)
+    if (type_name == 'int' || type_name == 'bool' || type_name == 'num' || type_name == 'string'):
+        return true
+    if (type_name == 'int[]' || type_name == 'bool[]' || type_name == 'string[]' || type_name == 'int[][]' || type_name == 'string[][]'):
+        return true
+    if (type_name.starts_with('map<') && type_name.ends_with('>')):
+        return true
+    string record_name = record_name_from_type(type_name)
+    return record_name != '' && record_type_exists(fields, record_name)
+
 string[] record_constructor_arg_types(RecordFieldIR[] fields, string record_name):
     if (TYPE_IR_PROFILE_ACTIVE != 0):
         TYPE_IR_RECORD_CONSTRUCTOR_ARG_TYPES_CALLS += 1
@@ -1474,6 +1485,10 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                                         if (candidate.args.is_empty()):
                                             block_refined = set_temp_type(block_refined, value_name, field_type)
                                             temp_types = set_temp_type_slot(temp_types, value_name, field_type)
+                    if (is_checked_record_field_assignment_type(record_fields, field_type)):
+                        string actual_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[1]))
+                        if (actual_type != field_type):
+                            throw 'record field assignment requires ' + field_type + '; got ' + actual_type
         if ((current.kind == 'assign_index' || current.kind == 'assign_index_add') && current.args.length() >= 3):
             string base_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[0]))
             validate_sequence_index_type(base_type, lookup_temp_type_slot(temp_types, current.args[1]))
