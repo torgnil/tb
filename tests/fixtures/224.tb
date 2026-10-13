@@ -1,0 +1,50 @@
+record KeyBox(map<string, string> names);
+
+string owned_key(int value):
+    return 'owned-' + value
+
+map<string, string> escape_names(int value):
+    string local_key = 'local-' + value
+    map<string, string> result = {local_key: local_key}
+    return result
+
+int main(string[] args):
+    int count = args.length()
+    string borrowed_key = 'borrowed-' + count
+    const string fixed_key = 'fixed-' + count
+    map<string, string> names = {borrowed_key: borrowed_key, fixed_key: fixed_key, owned_key(count): 'call-value-' + count, 'concat-' + count: 'concat-value-' + count, 'literal': 'literal-value-' + count, '': 'empty-value-' + count}
+    map<string, int> duplicates = {borrowed_key: count, borrowed_key: count + 1}
+    map<string, int> literal_keys = {'literal': count + 2, '': count + 3}
+    map<int, int> integer_keys = {count: count + 4}
+
+    print(names[borrowed_key])
+    print(names[fixed_key])
+    print(names[owned_key(count)])
+    print(names['concat-' + count])
+    print(names['literal'])
+    print(names[''])
+    print(duplicates[borrowed_key])
+    print(literal_keys['literal'])
+    print(literal_keys[''])
+    print(integer_keys[count])
+
+    map<string, string> copied = names
+    KeyBox box = KeyBox(names)
+    borrowed_key = 'changed'
+    print(names['borrowed-' + count])
+    string original_key = 'borrowed-' + count
+    names[original_key] = 'replacement'
+    print(copied[original_key])
+    print(box.names[original_key])
+    print(fixed_key)
+
+    map<string, string> returned = escape_names(count)
+    string returned_key = 'local-' + count
+    print(returned[returned_key])
+
+    int index = 0
+    while (index < 4):
+        map<string, int> temporary = {owned_key(count + index): index, 'loop-' + count + '-' + index: index + 1}
+        print(temporary.length())
+        index += 1
+    return 0

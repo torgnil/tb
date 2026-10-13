@@ -4438,6 +4438,8 @@ string emit_map_value_instruction(ProgramIR program, ParsedFunction function_ir,
             lines.push('  call void ' + llvm_map_set_name(map_type) + '(ptr ' + lhs + ', i32 ' + item_index + ', i64 ' + stored_key + ', ' + llvm_type(value_type) + ' ' + stored_value + ', i1 ' + stored_owned + ')')
         else:
             lines.push('  call void ' + llvm_map_set_name(map_type) + '(ptr ' + lhs + ', i32 ' + item_index + ', ptr ' + stored_key + ', ' + llvm_type(value_type) + ' ' + stored_value + ', i1 ' + stored_owned + ')')
+            if (key_type == 'string'):
+                lines.push('  call void @tb_release(ptr ' + stored_key + ')')
         index += 2
         item_index += 1
     return join_llvm_strings(lines, '\n')

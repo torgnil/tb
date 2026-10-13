@@ -66,6 +66,7 @@ Build and invocation details are documented in the repository or release `README
 - T[] — arrays of T (e.g. `string[]`, `int[]`, `string[][]`).
 - map<K, V> — use `{}` or `{'key': value}` in a typed context such as `map<string, int> counts = {};`.
   - The native backend supports `int` and `string` keys. Map subscript reads and writes require the key expression to match `K`; assignments require the stored expression to match `V`. Const string and integer keys and const stored values use their underlying types for matching. Const maps support reads but cannot be mutated.
+  - Native maps copy string keys on insertion, so keys remain valid if their source strings change or leave scope. A string used as both a key and a value keeps an independent map-owned reference for each role.
 - record — user-defined record types with named fields.
 - enum — named constants.
 
