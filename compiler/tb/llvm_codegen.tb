@@ -6532,6 +6532,8 @@ string emit_assign_field_instruction(ProgramIR program, ParsedFunction function_
             owned_flag = '1'.substring(0)
         else if (temp_is_string(function_ir, op.args[1])):
             owned_flag = '1'.substring(0)
+        LinearInstruction release_op = LinearInstruction('release_field', '', '', '', op.detail, [op.args[0]])
+        lines.push(emit_release_field_instruction(program, function_ir, release_op, 'replace.' + temp_suffix))
         lines.push(emit_record_field_ptr(program, function_ir, op.args[0], op.detail, ptr_name))
         lines.push('  store ptr ' + stored_value + ', ptr ' + ptr_name)
         lines.push(emit_record_owned_field_ptr(program, function_ir, op.args[0], op.detail, '%store.field.owned.ptr.' + temp_suffix))
@@ -6546,6 +6548,8 @@ string emit_assign_field_instruction(ProgramIR program, ParsedFunction function_
             owned_flag = '1'.substring(0)
         else if (temp_is_string_array(function_ir, op.args[1])):
             owned_flag = '1'.substring(0)
+        LinearInstruction release_op = LinearInstruction('release_field', '', '', '', op.detail, [op.args[0]])
+        lines.push(emit_release_field_instruction(program, function_ir, release_op, 'replace.' + temp_suffix))
         lines.push(emit_record_field_ptr(program, function_ir, op.args[0], op.detail, ptr_name))
         lines.push('  store ptr ' + stored_value + ', ptr ' + ptr_name)
         lines.push(emit_record_owned_field_ptr(program, function_ir, op.args[0], op.detail, '%store.field.owned.ptr.' + temp_suffix))
@@ -6616,6 +6620,8 @@ string emit_assign_field_instruction(ProgramIR program, ParsedFunction function_
             owned_flag = '1'.substring(0)
         else if (temp_is_map(function_ir, op.args[1])):
             owned_flag = '1'.substring(0)
+        LinearInstruction release_op = LinearInstruction('release_field', '', '', '', op.detail, [op.args[0]])
+        lines.push(emit_release_field_instruction(program, function_ir, release_op, 'replace.' + temp_suffix))
         lines.push(emit_record_field_ptr(program, function_ir, op.args[0], op.detail, ptr_name))
         lines.push('  store ptr ' + stored_value + ', ptr ' + ptr_name)
         lines.push(emit_record_owned_field_ptr(program, function_ir, op.args[0], op.detail, '%store.field.owned.ptr.' + temp_suffix))
@@ -6630,6 +6636,8 @@ string emit_assign_field_instruction(ProgramIR program, ParsedFunction function_
             owned_flag = '1'.substring(0)
         else if (temp_is_record(function_ir, op.args[1])):
             owned_flag = '1'.substring(0)
+        LinearInstruction release_op = LinearInstruction('release_field', '', '', '', op.detail, [op.args[0]])
+        lines.push(emit_release_field_instruction(program, function_ir, release_op, 'replace.' + temp_suffix))
         lines.push(emit_record_field_ptr(program, function_ir, op.args[0], op.detail, ptr_name))
         lines.push('  store ptr ' + stored_value + ', ptr ' + ptr_name)
         lines.push(emit_record_owned_field_ptr(program, function_ir, op.args[0], op.detail, '%store.field.owned.ptr.' + temp_suffix))
@@ -6888,7 +6896,8 @@ string emit_instruction(ProgramIR program, ParsedFunction function_ir, string bl
         return join_llvm_strings(lines, '\n')
     if (op.kind == 'release_field'):
         BindingIR field = record_field_binding_from_temp(program, function_ir, op.args[0], op.detail)
-        if (normalize_llvm_type_name(field.type_name) == 'string[][]' || normalize_llvm_type_name(field.type_name) == 'int[][]' || normalize_llvm_type_name(field.type_name) == 'bool[]' || normalize_llvm_type_name(field.type_name) == 'int[]'):
+        string normalized_field_type = normalize_llvm_type_name(field.type_name)
+        if (normalized_field_type == 'string' || normalized_field_type == 'string[]' || normalized_field_type == 'string[][]' || normalized_field_type == 'int[][]' || normalized_field_type == 'bool[]' || normalized_field_type == 'int[]' || normalized_field_type.starts_with('map<') || record_name_from_type(normalized_field_type) != ''):
             return '  ; defer release_field ' + op.detail + ' until assign_field materializes the replacement'
         if (!is_backend_managed_type(field.type_name)):
             return '  ; release_field ' + op.detail + ' ' + temp_ref(op.args[0])

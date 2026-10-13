@@ -1,0 +1,75 @@
+record FieldCell(string text, int[] values);
+record FieldBox(string text, string[] words, map<string, int> counts, FieldCell cell, int[] numbers, bool[] flags, int[][] rows, string[][] groups);
+
+string make_field_text(int value):
+    return 'owned-' + value
+
+string[] make_field_words(int value):
+    return ['owned-word-' + value]
+
+map<string, int> make_field_counts(int value):
+    return {'owned': value}
+
+FieldCell make_field_cell(int value):
+    return FieldCell('owned-cell-' + value, [value + 1])
+
+int main(string[] args):
+    int count = args.length()
+    string seed_key = 'seed-' + count
+    map<string, int> seed_counts = {seed_key: count}
+    FieldBox box = FieldBox('seed-' + count, ['seed-word-' + count], seed_counts, FieldCell('seed-cell-' + count, [count + 5]), [count + 10], [true], [[count + 11]], [['seed-group-' + count]])
+
+    box.text = box.text
+    box.words = box.words
+    box.counts = box.counts
+    box.cell = box.cell
+    box.numbers = box.numbers
+    box.flags = box.flags
+    box.rows = box.rows
+    box.groups = box.groups
+    print(box.text)
+    print(box.words[0])
+    print(box.counts[seed_key])
+    print(box.cell.text)
+    print(box.numbers[0])
+    print(box.flags[0])
+    print(box.rows[0][0])
+    print(box.groups[0][0])
+
+    string source_text = 'borrowed-' + count
+    string borrowed_key = 'borrowed-' + count
+    string[] source_words = ['borrowed-word-' + count]
+    map<string, int> source_counts = {borrowed_key: count + 20}
+    FieldCell source_cell = FieldCell('borrowed-cell-' + count, [count + 21])
+    box.text = source_text
+    box.words = source_words
+    box.counts = source_counts
+    box.cell = source_cell
+    source_text = 'changed'
+    source_words[0] = 'changed'
+    source_counts[borrowed_key] = -1
+    source_cell.text = 'changed'
+    source_cell.values[0] = -2
+    print(box.text)
+    print(box.words[0])
+    print(box.counts[borrowed_key])
+    print(box.cell.text)
+    print(box.cell.values[0])
+
+    box.text = make_field_text(count)
+    box.words = make_field_words(count)
+    box.counts = make_field_counts(count + 30)
+    box.cell = make_field_cell(count + 31)
+    box.cell.text = box.cell.text
+    print(box.text)
+    print(box.words[0])
+    print(box.counts['owned'])
+    print(box.cell.text)
+    print(box.cell.values[0])
+
+    box.words = []
+    box.words = box.words
+    print(box.words.length())
+    box.words = make_field_words(count + 40)
+    print(box.words[0])
+    return 0
