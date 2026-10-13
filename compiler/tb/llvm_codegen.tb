@@ -1676,6 +1676,8 @@ bool temp_is_owned_managed_method_result(ParsedFunction function_ir, LinearInstr
     string receiver_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[1]))
     if (result_type == 'string[]' && receiver_type == 'string' && (method_name == 'split' || method_name == 'split_lines')):
         return true
+    if (method_name == 'values' && result_type == 'int[][]' && receiver_type.starts_with('map<') && normalize_llvm_type_name(map_value_type(receiver_type)) == 'int[]'):
+        return true
     if (method_name == 'sort' && (receiver_type == 'int[]' || (receiver_type.ends_with('[]') && record_name_from_type(array_item_type(receiver_type)) != ''))):
         return false
     if (method_name == 'await' && receiver_type.starts_with('future<')):
@@ -2652,6 +2654,7 @@ void analyze_program_features(ProgramIR program, string[] map_types):
             needs_string_array = true
         if (normalize_llvm_type_name(map_value_type(map_type)) == 'int[]'):
             needs_int_array = true
+            needs_int_array_array = true
     for (GlobalDeclIR global_decl in program.globals):
         BindingIR global_binding = ir_parse_binding_decl(strip_prefix(global_decl.header, 'global '))
         string global_type = normalize_llvm_type_name(global_binding.type_name)
@@ -5318,6 +5321,13 @@ string emit_map_method_call_value_instruction(ParsedFunction function_ir, Linear
     if (method_name == 'keys'):
         return '  ' + lhs + ' = call ptr ' + llvm_map_keys_name(method_base_type) + '(ptr ' + temp_ref(op.args[1]) + ')'
     if (method_name == 'values'):
+        if (normalize_llvm_type_name(map_value_type(method_base_type)) == 'int[]'):
+            if (op.args.length() != 2):
+                throw 'map.values requires no arguments'
+            string result = '  ' + lhs + ' = call ptr ' + llvm_map_values_name(method_base_type) + '(ptr ' + temp_ref(op.args[1]) + ')'
+            if (temp_needs_backend_free(function_ir, op.args[1]) && !temp_is_moved(function_ir, op.args[1])):
+                result += '\n' + emit_backend_release_ptr(method_base_type, temp_ref(op.args[1]))
+            return result
         return '  ' + lhs + ' = call ptr ' + llvm_map_values_name(method_base_type) + '(ptr ' + temp_ref(op.args[1]) + ')'
     return ''
 
@@ -8483,6 +8493,42 @@ string[] emit_map_helpers(string type_name):
             '  ret ptr %result',
             '}'
         ]
+    else if (value_type == 'int[]'):
+        values_block_lines = [
+            'define private ptr ' + llvm_map_values_name(type_name) + '(ptr %map) {',
+            'entry:',
+            '  %len = call i32 ' + llvm_map_length_name(type_name) + '(ptr %map)',
+            '  %result = call ptr @tb_bootstrap_int_array_array_new(i32 %len)'
+        ]
+        if (key_type == 'string'):
+            values_block_lines.push('  %order.ptr = getelementptr inbounds ' + map_struct + ', ptr %map, i32 0, i32 6')
+            values_block_lines.push('  %order = load ptr, ptr %order.ptr')
+            values_block_lines.push('  %values.ptr = getelementptr inbounds ' + map_struct + ', ptr %map, i32 0, i32 3')
+        else:
+            values_block_lines.push('  %values.ptr = getelementptr inbounds ' + map_struct + ', ptr %map, i32 0, i32 2')
+        values_block_lines.push('  %values = load ptr, ptr %values.ptr')
+        values_block_lines.push('  br label %loop.cond')
+        values_block_lines.push('loop.cond:')
+        values_block_lines.push('  %index = phi i32 [0, %entry], [%next.index, %loop.step]')
+        values_block_lines.push('  %keep.loop = icmp slt i32 %index, %len')
+        values_block_lines.push('  br i1 %keep.loop, label %loop.body, label %done')
+        values_block_lines.push('loop.body:')
+        if (key_type == 'string'):
+            values_block_lines.push('  %order.slot = getelementptr inbounds i32, ptr %order, i32 %index')
+            values_block_lines.push('  %slot = load i32, ptr %order.slot')
+        else:
+            values_block_lines.push('  %slot = add i32 %index, 0')
+        values_block_lines.push('  %value.slot = getelementptr inbounds ' + value_llvm_type + ', ptr %values, i32 %slot')
+        values_block_lines.push('  %value.raw = load ' + value_llvm_type + ', ptr %value.slot')
+        values_block_lines.push('  %value.copy = call ptr @tb_bootstrap_int_array_clone(ptr %value.raw)')
+        values_block_lines.push('  call void @tb_bootstrap_int_array_array_set_owned(ptr %result, i32 %index, ptr %value.copy, i1 true)')
+        values_block_lines.push('  br label %loop.step')
+        values_block_lines.push('loop.step:')
+        values_block_lines.push('  %next.index = add i32 %index, 1')
+        values_block_lines.push('  br label %loop.cond')
+        values_block_lines.push('done:')
+        values_block_lines.push('  ret ptr %result')
+        values_block_lines.push('}')
     else if (value_type == 'int'):
         values_block_lines = [
             'define private ptr ' + llvm_map_values_name(type_name) + '(ptr %map) {',

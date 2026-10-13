@@ -1,0 +1,97 @@
+record SnapshotBox(int[][] rows);
+
+int values(int value):
+    return value + 1000
+
+int[][] copied_values(map<string, int[]> rows):
+    return rows.values()
+
+map<string, int[]> make_rows(int seed):
+    map<string, int[]> rows = {}
+    rows['made-' + seed] = [seed + 90]
+    return rows
+
+map<int, int[]> make_number_rows(int seed):
+    map<int, int[]> rows = {seed: [seed + 91]}
+    return rows
+
+int[] first_row(int[][] rows):
+    return rows[0]
+
+int main(string[] args):
+    int seed = args.length() + 4
+    string first_key = 'first-' + seed
+    string second_key = 'second-' + seed
+    string empty_key = 'empty-' + seed
+    int[] empty_row = []
+    map<string, int[]> strings = {first_key: [seed, seed + 1], second_key: [seed + 10, seed + 11], empty_key: empty_row}
+    int[][] string_values = strings.values()
+    print(string_values.length())
+    print(string_values[0][0])
+    print(string_values[1][0])
+    print(string_values[2].length())
+    string_values[0][0] = 901
+    print(strings[first_key][0])
+    strings[second_key][0] = 902
+    print(string_values[1][0])
+
+    int[] direct_escaped_row = first_row(strings.values())
+    strings[first_key] = [seed + 30]
+    print(direct_escaped_row[0])
+    int[][] updated_values = strings.values()
+    print(updated_values[0][0])
+    print(updated_values[1][0])
+    print(updated_values[2].length())
+    print(strings.values().length())
+    print(strings.values()[0][0])
+
+    const map<string, int[]> fixed_strings = {'fixed-' + seed: [seed + 20]}
+    int[][] fixed_values = fixed_strings.values()
+    fixed_values[0][0] = 903
+    print(fixed_strings['fixed-' + seed][0])
+
+    map<string, int[]> empty_strings = {}
+    int[][] no_string_values = empty_strings.values()
+    print(no_string_values.length())
+
+    map<int, int[]> numbers = {seed: [seed + 40], seed + 1: [seed + 50]}
+    int[][] number_values = numbers.values()
+    print(number_values.length())
+    print(number_values[0][0])
+    print(number_values[1][0])
+    numbers[seed] = [seed + 60]
+    int[][] updated_number_values = numbers.values()
+    print(updated_number_values[0][0])
+    print(updated_number_values[1][0])
+
+    const map<int, int[]> fixed_numbers = {seed + 2: [seed + 70]}
+    int[][] fixed_number_values = fixed_numbers.values()
+    print(fixed_number_values[0][0])
+    map<int, int[]> empty_numbers = {}
+    print(empty_numbers.values().length())
+
+    int[][] reassigned = strings.values()
+    reassigned = strings.values()
+    print(reassigned.length())
+    strings.values()
+
+    int[][] borrowed_rows = copied_values(strings)
+    int[] escaped_row = first_row(borrowed_rows)
+    borrowed_rows = []
+    print(escaped_row[0])
+
+    SnapshotBox box = SnapshotBox(strings.values())
+    box.rows[0][0] = 904
+    print(strings[first_key][0])
+    SnapshotBox cloned = box
+    cloned.rows[0][0] = 905
+    print(box.rows[0][0])
+    box.rows = strings.values()
+    print(box.rows[0][0])
+
+    int[][] temporary_receiver_values = make_rows(seed).values()
+    print(temporary_receiver_values[0][0])
+    int[][] temporary_number_values = make_number_rows(seed).values()
+    print(temporary_number_values[0][0])
+    print(seed.values())
+    return 0
