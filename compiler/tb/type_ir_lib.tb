@@ -1365,6 +1365,13 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
         return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
     return op
 
+void validate_sequence_index_type(string base_type, string index_type):
+    string normalized_base_type = normalize_llvm_type_name(base_type)
+    if (normalized_base_type == 'string' || normalized_base_type.ends_with('[]')):
+        string normalized_index_type = normalize_llvm_type_name(index_type)
+        if (normalized_index_type != 'int'):
+            throw 'sequence index requires int; got ' + normalized_index_type
+
 RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, BindingIR[] globals, BindingIR[] params, BindingIR[] locals, FunctionSigIR[] functions, RecordFieldIR[] record_fields, EnumTypeIR[] enum_types, LinearInstruction[] prior_instructions, string[] temp_types):
     BindingIR[] bindings = []
     for (BindingIR binding in globals):
@@ -1378,6 +1385,8 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
     int op_index = 0
     while (op_index < instructions.length()):
         LinearInstruction op = instructions[op_index]
+        if (op.kind == 'value' && (op.detail == 'index' || op.detail == 'target-index') && op.args.length() >= 2):
+            validate_sequence_index_type(lookup_temp_type_slot(temp_types, op.args[0]), lookup_temp_type_slot(temp_types, op.args[1]))
         LinearInstruction current = refine_value_instruction(op, bindings, functions, record_fields, enum_types, temp_types)
         if (current.kind == 'value'):
             if (current.detail == 'call'):
@@ -1434,6 +1443,9 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                                         if (candidate.args.is_empty()):
                                             block_refined = set_temp_type(block_refined, value_name, field_type)
                                             temp_types = set_temp_type_slot(temp_types, value_name, field_type)
+        if ((current.kind == 'assign_index' || current.kind == 'assign_index_add') && current.args.length() >= 3):
+            string base_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[0]))
+            validate_sequence_index_type(base_type, lookup_temp_type_slot(temp_types, current.args[1]))
         if (current.kind == 'assign_index'):
             if (current.args.length() >= 3):
                 string base_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[0]))
