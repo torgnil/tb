@@ -1,0 +1,61 @@
+record sum(int[] values);
+record SumEnvelope(sum value);
+
+sum GLOBAL_SUM = sum([31, 32])
+
+int[] make_values(int seed):
+    return [seed, seed + 1]
+
+sum make_sum(int seed):
+    int[] values = [seed, seed + 1]
+    return sum(values)
+
+sum round_trip(sum value):
+    return value
+
+int main(string[] args):
+    int count = args.length()
+
+    int[] borrowed = [count + 3, count + 4]
+    sum direct = sum(borrowed)
+    borrowed[0] = 99
+    print(direct.values[0])
+    print(borrowed[0])
+
+    const int[] fixed = [count + 5, count + 6]
+    sum from_const = sum(fixed)
+    print(from_const.values.sum())
+
+    sum from_literal = sum([count + 7, count + 8])
+    print(from_literal.values.sum())
+
+    sum from_owned_call = sum(make_values(count + 9))
+    print(from_owned_call.values.sum())
+
+    sum from_record_return = make_sum(count + 10)
+    print(from_record_return.values.sum())
+
+    sum empty = sum([])
+    print(empty.values.length())
+
+    sum cloned = direct
+    cloned.values[0] = 70
+    print(direct.values[0])
+    print(cloned.values[0])
+
+    SumEnvelope wrapped = SumEnvelope(direct)
+    wrapped.value.values[0] = 80
+    print(direct.values[0])
+    print(wrapped.value.values[0])
+    wrapped.value = sum([count + 11, count + 12])
+    print(wrapped.value.values.sum())
+
+    sum returned = round_trip(direct)
+    print(returned.values.sum())
+    print(GLOBAL_SUM.values.sum())
+
+    int[] native_values = [count + 13, count + 14]
+    bool[] native_flags = [count > 0, count > 2]
+    print(native_values.sum())
+    print(native_flags.sum())
+    return 0

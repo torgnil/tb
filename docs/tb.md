@@ -454,6 +454,7 @@ Array helpers
 
 - sum(arr: int[] | bool[]) -> int
   - Aggregate helper for integer and boolean arrays. `true` contributes 1 and `false` contributes 0; empty arrays sum to 0. Runtime calls borrow the array and do not modify it. Constant arrays may be folded at compile time. A recognized owned array temporary used only by a direct or UFCS sum query is released after the scalar result is computed; named or reused arrays remain available.
+  - When a lowercase record named `sum` is declared, direct `sum(value)` calls construct that record, including when `value` is an `int[]` or `bool[]`. UFCS calls such as `values.sum()` and `flags.sum()` remain native array aggregation. Without a `sum` record, direct `sum(array)` keeps native builtin precedence over a same-named user function.
 
 - abs(x: int | num) -> int | num — returns the value's magnitude and preserves a `num` value's decimal scale.
   - Runtime lowering supports both `int` and `num` values; `value.abs()` is also supported through UFCS.
