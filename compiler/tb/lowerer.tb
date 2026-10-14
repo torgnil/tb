@@ -400,24 +400,29 @@ TempResult lower_linear_value(Node node, int next_temp):
         lines.push(name + ' = slice ' + base.name + ' ' + start.name + ' ' + stop.name)
         return TempResult(name, lines, stop.next_temp + 1)
     if (node.kind == 'MethodCall'):
-        if (node.value == 'sum' && node.children.length() == 1 && node.children[0].kind == 'MethodCall'):
-            Node mapped = node.children[0]
-            if (mapped.value == 'map_to' && mapped.children.length() == 2 && mapped.children[1].kind == 'Lambda' && is_grid_eq_lambda(mapped.children[1])):
-                Node body = mapped.children[1].children[0]
-                Node outer_index = body.children[0]
-                Node row_index = outer_index.children[0]
-                TempResult base = lower_linear_value(mapped.children[0], next_temp)
-                TempResult grid = lower_linear_value(row_index.children[0], base.next_temp)
-                TempResult row = lower_linear_value(row_index.children[1].children[0], grid.next_temp)
-                TempResult col = lower_linear_value(outer_index.children[1].children[0], row.next_temp)
-                TempResult needle = lower_linear_value(body.children[1], col.next_temp)
-                string name = temp_name(needle.next_temp)
-                string[] lines = append_lines(base.lines, grid.lines)
-                lines = append_lines(lines, row.lines)
-                lines = append_lines(lines, col.lines)
-                lines = append_lines(lines, needle.lines)
-                lines.push(name + ' = method-call-lambda sum_grid_eq ' + base.name + ' ' + mapped.children[1].value + ' ' + grid.name + ' ' + row.name + ' ' + col.name + ' ' + needle.name)
-                return TempResult(name, lines, needle.next_temp + 1)
+        if (node.value == 'sum'):
+            if (node.children.length() == 1):
+                if (node.children[0].kind == 'MethodCall'):
+                    Node mapped = node.children[0]
+                    if (mapped.value == 'map_to'):
+                        if (mapped.children.length() == 2):
+                            if (mapped.children[1].kind == 'Lambda'):
+                                if (is_grid_eq_lambda(mapped.children[1])):
+                                    Node body = mapped.children[1].children[0]
+                                    Node outer_index = body.children[0]
+                                    Node row_index = outer_index.children[0]
+                                    TempResult base = lower_linear_value(mapped.children[0], next_temp)
+                                    TempResult grid = lower_linear_value(row_index.children[0], base.next_temp)
+                                    TempResult row = lower_linear_value(row_index.children[1].children[0], grid.next_temp)
+                                    TempResult col = lower_linear_value(outer_index.children[1].children[0], row.next_temp)
+                                    TempResult needle = lower_linear_value(body.children[1], col.next_temp)
+                                    string name = temp_name(needle.next_temp)
+                                    string[] lines = append_lines(base.lines, grid.lines)
+                                    lines = append_lines(lines, row.lines)
+                                    lines = append_lines(lines, col.lines)
+                                    lines = append_lines(lines, needle.lines)
+                                    lines.push(name + ' = method-call-lambda sum_grid_eq ' + base.name + ' ' + mapped.children[1].value + ' ' + grid.name + ' ' + row.name + ' ' + col.name + ' ' + needle.name)
+                                    return TempResult(name, lines, needle.next_temp + 1)
         TempResult base = lower_linear_value(node.children[0], next_temp)
         if (node.value == 'create_prio_q'):
             if (node.children.length() == 2):
@@ -623,24 +628,29 @@ TempIRResult lower_linear_value_ir(Node node, int next_temp):
         instructions.push(LinearInstruction('value', name, 'unknown', 'unknown', 'slice', [base.name, start.name, stop.name]))
         return TempIRResult(name, instructions, stop.next_temp + 1)
     if (node.kind == 'MethodCall'):
-        if (node.value == 'sum' && node.children.length() == 1 && node.children[0].kind == 'MethodCall'):
-            Node mapped = node.children[0]
-            if (mapped.value == 'map_to' && mapped.children.length() == 2 && mapped.children[1].kind == 'Lambda' && is_grid_eq_lambda(mapped.children[1])):
-                Node body = mapped.children[1].children[0]
-                Node outer_index = body.children[0]
-                Node row_index = outer_index.children[0]
-                TempIRResult base = lower_linear_value_ir(mapped.children[0], next_temp)
-                TempIRResult grid = lower_linear_value_ir(row_index.children[0], base.next_temp)
-                TempIRResult row = lower_linear_value_ir(row_index.children[1].children[0], grid.next_temp)
-                TempIRResult col = lower_linear_value_ir(outer_index.children[1].children[0], row.next_temp)
-                TempIRResult needle = lower_linear_value_ir(body.children[1], col.next_temp)
-                string name = temp_name(needle.next_temp)
-                LinearInstruction[] instructions = append_instructions(base.instructions, grid.instructions)
-                instructions = append_instructions(instructions, row.instructions)
-                instructions = append_instructions(instructions, col.instructions)
-                instructions = append_instructions(instructions, needle.instructions)
-                instructions.push(LinearInstruction('value', name, 'unknown', 'unknown', 'method-call-lambda', ['sum_grid_eq', base.name, mapped.children[1].value, grid.name, row.name, col.name, needle.name]))
-                return TempIRResult(name, instructions, needle.next_temp + 1)
+        if (node.value == 'sum'):
+            if (node.children.length() == 1):
+                if (node.children[0].kind == 'MethodCall'):
+                    Node mapped = node.children[0]
+                    if (mapped.value == 'map_to'):
+                        if (mapped.children.length() == 2):
+                            if (mapped.children[1].kind == 'Lambda'):
+                                if (is_grid_eq_lambda(mapped.children[1])):
+                                    Node body = mapped.children[1].children[0]
+                                    Node outer_index = body.children[0]
+                                    Node row_index = outer_index.children[0]
+                                    TempIRResult base = lower_linear_value_ir(mapped.children[0], next_temp)
+                                    TempIRResult grid = lower_linear_value_ir(row_index.children[0], base.next_temp)
+                                    TempIRResult row = lower_linear_value_ir(row_index.children[1].children[0], grid.next_temp)
+                                    TempIRResult col = lower_linear_value_ir(outer_index.children[1].children[0], row.next_temp)
+                                    TempIRResult needle = lower_linear_value_ir(body.children[1], col.next_temp)
+                                    string name = temp_name(needle.next_temp)
+                                    LinearInstruction[] instructions = append_instructions(base.instructions, grid.instructions)
+                                    instructions = append_instructions(instructions, row.instructions)
+                                    instructions = append_instructions(instructions, col.instructions)
+                                    instructions = append_instructions(instructions, needle.instructions)
+                                    instructions.push(LinearInstruction('value', name, 'unknown', 'unknown', 'method-call-lambda', ['sum_grid_eq', base.name, mapped.children[1].value, grid.name, row.name, col.name, needle.name]))
+                                    return TempIRResult(name, instructions, needle.next_temp + 1)
         TempIRResult base = lower_linear_value_ir(node.children[0], next_temp)
         if (node.value == 'submit'):
             if (node.children.length() != 2 && node.children.length() != 3):
