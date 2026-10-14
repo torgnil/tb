@@ -452,7 +452,7 @@ Array helpers
   - Example: `range(n).flat_map(int i -> edges_for_point(points, i))`
 
 - sum(arr: int[] | bool[]) -> int
-  - Aggregate helper for integer and boolean arrays. `true` contributes 1 and `false` contributes 0; empty arrays sum to 0. Runtime calls borrow the array and do not modify it. Constant arrays may be folded at compile time.
+  - Aggregate helper for integer and boolean arrays. `true` contributes 1 and `false` contributes 0; empty arrays sum to 0. Runtime calls borrow the array and do not modify it. Constant arrays may be folded at compile time. A recognized owned array temporary used only by a direct or UFCS sum query is released after the scalar result is computed; named or reused arrays remain available.
 
 - abs(x: int | num) -> int | num — returns the value's magnitude and preserves a `num` value's decimal scale.
   - Runtime lowering supports both `int` and `num` values; `value.abs()` is also supported through UFCS.
