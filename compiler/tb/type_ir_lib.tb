@@ -1729,8 +1729,14 @@ ParsedFunction refine_function(ParsedFunction function_ir, BindingIR[] globals, 
         if ((refined_block.terminator.kind == 'return' || refined_block.terminator.kind == 'return_owned') && refined_block.terminator.args.length() == 1 && normalized_return_type.starts_with('map<')):
             string return_temp = refined_block.terminator.args[0]
             RefineInstructionsResult contextual_map = contextualize_map_literal_rows(refined_block.instructions, temp_types, return_temp, normalized_return_type)
-            refined_block = BlockIR(refined_block.label, contextual_map.instructions, refined_block.terminator)
+            LinearInstruction[] return_instructions = contextual_map.instructions
             temp_types = contextual_map.temp_types
+            LinearInstruction return_op = lookup_instruction(return_instructions, return_temp)
+            if (return_op.lhs == return_temp):
+                if (return_op.kind == 'value' && return_op.detail == 'map' && return_op.args.is_empty()):
+                    return_instructions = set_temp_type(return_instructions, return_temp, normalized_return_type)
+                    temp_types = set_temp_type_slot(temp_types, return_temp, normalized_return_type)
+            refined_block = BlockIR(refined_block.label, return_instructions, refined_block.terminator)
         blocks.push(refined_block)
         int block_op_index = 0
         while (block_op_index < refined_block.instructions.length()):
