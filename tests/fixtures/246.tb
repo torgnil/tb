@@ -1,0 +1,52 @@
+record IntCell(int value);
+record IntBox(IntCell cell);
+record BoolCell(bool value);
+record BoolBox(BoolCell cell);
+record StringCell(string value);
+record StringBox(StringCell cell);
+
+int nested_int(int value, bool increase):
+    IntBox box = IntBox(IntCell(value));
+    box = IntBox(box.cell);
+    box = IntBox(box.cell);
+    if (increase):
+        box = IntBox(IntCell(box.cell.value + 1));
+    else:
+        box = IntBox(IntCell(box.cell.value - 1));
+    int index = 0;
+    while (index < 2):
+        box = IntBox(IntCell(box.cell.value + index));
+        index++;
+    return box.cell.value;
+
+bool nested_bool(bool value):
+    BoolBox box = BoolBox(BoolCell(value));
+    box = BoolBox(box.cell);
+    box = BoolBox(box.cell);
+    box = BoolBox(BoolCell(!box.cell.value));
+    return box.cell.value;
+
+string nested_string(string value):
+    StringBox box = StringBox(StringCell(value));
+    box = StringBox(box.cell);
+    box = StringBox(box.cell);
+    box = StringBox(StringCell(box.cell.value + '-tail'));
+    return box.cell.value;
+
+int read_box(IntBox box):
+    return box.cell.value;
+
+int main(string[] args):
+    int argc = args.length();
+    print(nested_int(argc, true));
+    print(nested_int(argc, false));
+    print(nested_bool(argc > 1));
+    print(nested_string('nested-' + argc.to_string()));
+    IntBox first = IntBox(IntCell(argc + 10));
+    IntBox second = IntBox(IntCell(argc + 20));
+    print(read_box(first));
+    print(read_box(second));
+    IntBox acyclic = IntBox(IntCell(6 * 7));
+    print(acyclic.cell.value);
+    print('acyclic-after-cycles');
+    return 0;

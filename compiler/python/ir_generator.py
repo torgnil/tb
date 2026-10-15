@@ -161,6 +161,7 @@ class IRGenerator:
         self._active_string_expression_ids: set[int] = set()
         self._active_integer_expression_ids: set[int] = set()
         self._active_boolean_expression_ids: set[int] = set()
+        self._active_record_expression_ids: set[int] = set()
         self.number_variables: dict[str, NumberValue] = {}
         self.array_variables: dict[str, ArrayValue] = {}
         self.record_types: dict[str, dict[str, str]] = {}
@@ -4604,6 +4605,16 @@ class IRGenerator:
         return RecordInstance(type_name, values)
 
     def _coerce_record_value(self, expression) -> RecordInstance:
+        expression_id = id(expression)
+        if expression_id in self._active_record_expression_ids:
+            raise TypeError("Cyclic record expression is not compile-time evaluable")
+        self._active_record_expression_ids.add(expression_id)
+        try:
+            return self._coerce_record_value_inner(expression)
+        finally:
+            self._active_record_expression_ids.remove(expression_id)
+
+    def _coerce_record_value_inner(self, expression) -> RecordInstance:
         expression_type = self._expression_type(expression)
         if expression_type not in self.record_types:
             raise TypeError(f"Expected record expression, got {expression_type}")
