@@ -1,0 +1,149 @@
+int EFFECT_COUNT = 0
+const map<int, int[]> GLOBAL_INT_ROWS = {0: [10], 0: [20], -1: []}
+const map<int, string[]> GLOBAL_TEXT_ROWS = {0: ['old-global'], 0: ['new-global'], -1: []}
+
+record RowMaps(map<int, int[]> ints, map<int, string[]> texts);
+
+int[] make_int_row(int value):
+    return [value]
+
+string[] make_text_row(int value):
+    string token = value.to_string()
+    return ['owned-' + token]
+
+map<int, int[]> make_int_rows(int seed):
+    map<int, int[]> rows = {seed: [seed], seed + 1: [], seed: [seed + 2]}
+    return rows
+
+int[][] return_int_snapshot(int seed):
+    map<int, int[]> rows = {seed: [seed + 3], seed + 1: [seed + 4]}
+    return rows.values()
+
+string[][] return_text_snapshot(int seed):
+    string token = seed.to_string()
+    map<int, string[]> rows = {seed: ['returned-' + token], seed + 1: []}
+    return rows.values()
+
+int next_effect_key():
+    EFFECT_COUNT += 1
+    return 77
+
+int[] next_effect_row():
+    EFFECT_COUNT += 1
+    return [EFFECT_COUNT]
+
+int main(string[] args):
+    int n = args.length()
+    int base = n * 100
+
+    print(GLOBAL_INT_ROWS.length())
+    print(GLOBAL_INT_ROWS[0][0])
+    print(GLOBAL_INT_ROWS[-1].length())
+    print(GLOBAL_TEXT_ROWS.length())
+    print(GLOBAL_TEXT_ROWS[0][0])
+
+    map<int, int[]> positions = {base: [1], base + 1: [2], base + 2: [3], base: [4], base + 1: [5], base + 2: [6]}
+    int[][] position_values = positions.values()
+    print(positions.length())
+    print(position_values[0][0])
+    print(position_values[1][0])
+    print(position_values[2][0])
+
+    map<int, string[]> text_positions = {base: ['first'], base + 1: [], base + 2: ['third'], base: ['last'], base + 1: ['middle'], base + 2: []}
+    string[][] text_position_values = text_positions.values()
+    print(text_positions.length())
+    print(text_position_values[0][0])
+    print(text_position_values[1][0])
+    print(text_position_values[2].length())
+
+    map<int, int[]> empty_replacements = {base: [], base + 1: [7], base: [8], base + 1: []}
+    int[][] empty_values = empty_replacements.values()
+    print(empty_replacements.length())
+    print(empty_values[0][0])
+    print(empty_values[1].length())
+
+    map<int, string[]> text_replacements = {base: ['before'], base: [], base + 1: [], base + 1: ['after']}
+    string[][] replacement_values = text_replacements.values()
+    print(replacement_values[0].length())
+    print(replacement_values[1][0])
+
+    map<int, int[]> signed_keys = {0: [1], -1: [], 0: [2]}
+    print(signed_keys.length())
+    print(signed_keys[0][0])
+    print(signed_keys[-1].length())
+
+    map<int, int[]> runtime_equal = {base + 50: [1], 50 + base: [2]}
+    print(runtime_equal.length())
+    print(runtime_equal[base + 50][0])
+
+    map<int, int[]> unique_rows = {base + 60: [3], base + 61: [4]}
+    print(unique_rows.length())
+    print(unique_rows[base + 61][0])
+
+    int[] borrowed = [base + 20, base + 21]
+    map<int, int[]> borrowed_rows = {base: borrowed, base + 1: borrowed, base: borrowed}
+    borrowed[0] = 999
+    print(borrowed_rows[base][0])
+    print(borrowed_rows[base + 1][1])
+
+    string borrowed_token = n.to_string()
+    string[] borrowed_text = ['borrowed-' + borrowed_token]
+    map<int, string[]> borrowed_text_rows = {base: borrowed_text, base + 1: borrowed_text, base: borrowed_text}
+    borrowed_text[0] = 'changed'
+    print(borrowed_text_rows[base][0])
+    print(borrowed_text_rows[base + 1][0])
+
+    map<int, int[]> owned_rows = {base: make_int_row(base + 30), base: make_int_row(base + 31)}
+    map<int, string[]> owned_text_rows = {base: make_text_row(base + 32), base: make_text_row(base + 33)}
+    print(owned_rows.length())
+    print(owned_rows[base][0])
+    print(owned_text_rows.length())
+    print(owned_text_rows[base][0])
+
+    map<int, int[]> from_call = make_int_rows(base + 40)
+    print(from_call.length())
+    print(from_call[base + 40][0])
+    int[][] returned_int_values = return_int_snapshot(base + 50)
+    print(returned_int_values[0][0])
+    print(returned_int_values[1][0])
+    string[][] returned_text_values = return_text_snapshot(base + 60)
+    print(returned_text_values[0][0])
+    print(returned_text_values[1].length())
+
+    const map<int, int[]> fixed_rows = {base + 70: [], base + 70: [base + 71]}
+    const map<int, string[]> fixed_text_rows = {base + 72: ['old-const'], base + 72: ['new-const']}
+    print(fixed_rows.length())
+    print(fixed_rows[base + 70][0])
+    print(fixed_text_rows[base + 72][0])
+
+    RowMaps box = RowMaps({base + 80: [10], base + 81: [11], base + 80: [12]}, {base + 80: ['old-box'], base + 80: ['new-box']})
+    RowMaps cloned = box
+    cloned.ints[base + 80][0] = 99
+    print(box.ints.length())
+    print(box.ints[base + 80][0])
+    print(cloned.ints[base + 80][0])
+    print(box.texts[base + 80][0])
+    box.ints = {base + 82: [13], base + 82: [14]}
+    print(box.ints.length())
+    print(box.ints[base + 82][0])
+
+    int[][] after_cleanup = return_int_snapshot(base + 90)
+    string[][] text_after_cleanup = return_text_snapshot(base + 100)
+    print(after_cleanup[0][0])
+    print(text_after_cleanup[0][0])
+
+    for (int i : range(2)):
+        map<int, int[]> loop_rows = {base + 110 + i: [i], base + 110 + i: [i + 2]}
+        print(loop_rows.length())
+        print(loop_rows[base + 110 + i][0])
+
+    if (n > 0):
+        map<int, string[]> block_rows = {base + 120: [], base + 120: ['block']}
+        print(block_rows.length())
+        print(block_rows[base + 120][0])
+
+    map<int, int[]> effect_rows = {next_effect_key(): next_effect_row(), next_effect_key(): next_effect_row()}
+    print(EFFECT_COUNT)
+    print(effect_rows.length())
+    print(effect_rows[77][0])
+    return 0
