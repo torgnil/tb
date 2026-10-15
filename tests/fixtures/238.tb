@@ -1,0 +1,110 @@
+record BoolBox(bool[] flags);
+
+map<string, bool> make_flags(int seed):
+    map<string, bool> flags = {'kept': seed > 0, 'tail': false}
+    return flags
+
+bool[] returned_flags(int seed):
+    return make_flags(seed).values()
+
+int count_flags(bool[] flags):
+    return flags.sum()
+
+bool[] return_flags(bool[] flags):
+    return flags
+
+int bool_mask(bool[] flags):
+    int mask = 0
+    for (int i : range(flags.length())):
+        if (flags[i]):
+            mask = mask + (1 << i)
+    return mask
+
+int main(string[] args):
+    int seed = args.length() - 1
+
+    map<int, bool> empty_int = {}
+    bool[] empty_int_values = empty_int.values()
+    print(empty_int_values.length())
+    print(empty_int_values.is_empty())
+
+    map<string, bool> empty_string = {}
+    print(empty_string.values().length())
+
+    map<int, bool> all_false = {-1: false, 4: false}
+    print(all_false.values().sum())
+    map<string, bool> all_true = {'yes': true, 'also': true}
+    print(all_true.values().sum())
+
+    map<int, bool> indexed = {-20: false, 7: seed > 0, 100: true}
+    bool[] indexed_values = indexed.values()
+    indexed[-20] = true
+    indexed[7] = false
+    print(indexed_values[0])
+    print(indexed_values[1])
+    print(indexed_values[2])
+    print(indexed[-20])
+    print(indexed_values.sum())
+
+    const map<int, bool> const_indexed = {-5: true, 11: seed > 0, 90: false}
+    bool[] const_values = const_indexed.values()
+    print(const_values[0])
+    print(const_values[1])
+    print(const_values[2])
+
+    map<string, bool> ordered = {'first': false, 'second': true, 'third': seed > 0}
+    ordered['first'] = true
+    bool[] ordered_values = ordered.values()
+    print(ordered_values[0])
+    print(ordered_values[1])
+    print(ordered_values[2])
+    print(ordered_values.index_of(true))
+    print(ordered_values.sum())
+
+    map<string, bool> grown = {}
+    for (int i : range(13)):
+        grown['key-' + i] = (i % 2) == (seed % 2)
+    bool[] grown_values = grown.values()
+    print(grown_values.length())
+    print(bool_mask(grown_values))
+    grown['key-0'] = false
+    print(bool_mask(grown_values))
+    print(bool_mask(grown.values()))
+    print(grown.values().sum())
+
+    const map<string, bool> const_string = {'off': false, 'on': true}
+    bool[] const_string_values = const_string.values()
+    const_string_values[0] = true
+    print(const_string_values[0])
+    print(const_string['off'])
+
+    bool[] from_owned_map = returned_flags(seed)
+    print(from_owned_map[0])
+    print(from_owned_map[1])
+    print(from_owned_map.sum())
+    print(count_flags(make_flags(seed).values()))
+    bool[] copied_argument = return_flags(make_flags(seed).values())
+    print(copied_argument[0])
+    print(copied_argument[1])
+
+    BoolBox box = BoolBox(ordered.values())
+    BoolBox clone = box
+    clone.flags[0] = false
+    print(box.flags[0])
+    print(clone.flags[0])
+    box.flags = indexed.values()
+    indexed_values[1] = true
+    print(box.flags[1])
+    print(indexed_values[1])
+
+    bool[] loop_values = []
+    for (int i : range(3)):
+        if (i == 1):
+            loop_values.push(ordered.values()[i])
+        else:
+            loop_values.push(const_indexed.values()[i])
+    print(loop_values.length())
+    print(loop_values.sum())
+    print(ordered.values().length())
+    print(indexed.values()[2])
+    return 0
