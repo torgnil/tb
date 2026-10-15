@@ -1711,6 +1711,7 @@ GlobalDeclIR refine_global(GlobalDeclIR global_decl, BindingIR[] globals, Functi
 
 ParsedFunction refine_function(ParsedFunction function_ir, BindingIR[] globals, FunctionSigIR[] functions, RecordFieldIR[] record_fields, string[] record_names, EnumTypeIR[] enum_types):
     string function_return_type = function_return_type_from_header(function_ir.header)
+    string normalized_return_type = normalize_llvm_type_name(function_return_type)
     BindingIR[] params = normalize_enum_bindings(function_ir.params, enum_types)
     BindingIR[] locals = normalize_enum_bindings(function_ir.locals, enum_types)
     BlockIR[] blocks = []
@@ -1725,6 +1726,11 @@ ParsedFunction refine_function(ParsedFunction function_ir, BindingIR[] globals, 
             string return_temp = refined_block.terminator.args[0]
             if (is_untyped_array_shape(lookup_temp_type(refined_block.instructions, return_temp))):
                 refined_block = BlockIR(refined_block.label, set_temp_type(refined_block.instructions, return_temp, function_return_type), refined_block.terminator)
+        if ((refined_block.terminator.kind == 'return' || refined_block.terminator.kind == 'return_owned') && refined_block.terminator.args.length() == 1 && normalized_return_type.starts_with('map<')):
+            string return_temp = refined_block.terminator.args[0]
+            RefineInstructionsResult contextual_map = contextualize_map_literal_rows(refined_block.instructions, temp_types, return_temp, normalized_return_type)
+            refined_block = BlockIR(refined_block.label, contextual_map.instructions, refined_block.terminator)
+            temp_types = contextual_map.temp_types
         blocks.push(refined_block)
         int block_op_index = 0
         while (block_op_index < refined_block.instructions.length()):
