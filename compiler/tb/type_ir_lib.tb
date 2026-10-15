@@ -479,7 +479,9 @@ RefineInstructionsResult contextualize_map_literal_rows(LinearInstruction[] inst
         return RefineInstructionsResult(instructions, temp_types)
     string key_type = normalize_llvm_type_name(map_key_type(normalized_expected_type))
     string row_type = normalize_llvm_type_name(map_value_type(normalized_expected_type))
-    if ((key_type != 'int' && key_type != 'string') || (row_type != 'int[]' && row_type != 'string[]')):
+    bool array_rows = row_type == 'int[]' || row_type == 'string[]'
+    bool map_rows = row_type.starts_with('map<') && row_type.ends_with('>')
+    if ((key_type != 'int' && key_type != 'string') || (!array_rows && !map_rows)):
         return RefineInstructionsResult(instructions, temp_types)
     LinearInstruction map_op = lookup_instruction(instructions, map_name)
     if (map_op.lhs != map_name || map_op.kind != 'value' || map_op.detail != 'map' || map_op.args.is_empty()):
@@ -489,7 +491,10 @@ RefineInstructionsResult contextualize_map_literal_rows(LinearInstruction[] inst
     while (index + 1 < map_op.args.length()):
         string row_name = map_op.args[index + 1]
         LinearInstruction row_op = lookup_instruction(instructions, row_name)
-        if (lookup_temp_type_slot(temp_types, row_name) == '[]' && row_op.lhs == row_name && row_op.kind == 'value' && row_op.detail == 'array' && row_op.result_type == '[]' && row_op.args.is_empty()):
+        string actual_row_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, row_name))
+        bool empty_array_literal = array_rows && actual_row_type == '[]' && row_op.lhs == row_name && row_op.kind == 'value' && row_op.detail == 'array' && row_op.result_type == '[]' && row_op.args.is_empty()
+        bool empty_map_literal = map_rows && actual_row_type == 'unknown' && row_op.lhs == row_name && row_op.kind == 'value' && row_op.detail == 'map' && row_op.result_type == 'unknown' && row_op.args.is_empty()
+        if (empty_array_literal || empty_map_literal):
             changed_row = true
         index += 2
     if (!changed_row):
@@ -503,18 +508,22 @@ RefineInstructionsResult contextualize_map_literal_rows(LinearInstruction[] inst
             throw 'map literal key requires ' + key_type + '; got ' + actual_key_type
         string actual_row_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, row_name))
         LinearInstruction row_op = lookup_instruction(instructions, row_name)
-        bool empty_row_literal = actual_row_type == '[]' && row_op.lhs == row_name && row_op.kind == 'value' && row_op.detail == 'array' && row_op.result_type == '[]' && row_op.args.is_empty()
+        bool empty_array_literal = array_rows && actual_row_type == '[]' && row_op.lhs == row_name && row_op.kind == 'value' && row_op.detail == 'array' && row_op.result_type == '[]' && row_op.args.is_empty()
+        bool empty_map_literal = map_rows && actual_row_type == 'unknown' && row_op.lhs == row_name && row_op.kind == 'value' && row_op.detail == 'map' && row_op.result_type == 'unknown' && row_op.args.is_empty()
+        bool empty_row_literal = empty_array_literal || empty_map_literal
         if (!empty_row_literal && actual_row_type != row_type):
             throw 'map literal value requires ' + row_type + '; got ' + actual_row_type
         index += 2
     index = 0
     while (index + 1 < map_op.args.length()):
         string row_name = map_op.args[index + 1]
-        if (lookup_temp_type_slot(temp_types, row_name) == '[]'):
-            LinearInstruction row_op = lookup_instruction(instructions, row_name)
-            if (row_op.lhs == row_name && row_op.kind == 'value' && row_op.detail == 'array' && row_op.result_type == '[]' && row_op.args.is_empty()):
-                instructions = set_temp_type(instructions, row_name, row_type)
-                temp_types = set_temp_type_slot(temp_types, row_name, row_type)
+        string actual_row_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, row_name))
+        LinearInstruction row_op = lookup_instruction(instructions, row_name)
+        bool empty_array_literal = array_rows && actual_row_type == '[]' && row_op.lhs == row_name && row_op.kind == 'value' && row_op.detail == 'array' && row_op.result_type == '[]' && row_op.args.is_empty()
+        bool empty_map_literal = map_rows && actual_row_type == 'unknown' && row_op.lhs == row_name && row_op.kind == 'value' && row_op.detail == 'map' && row_op.result_type == 'unknown' && row_op.args.is_empty()
+        if (empty_array_literal || empty_map_literal):
+            instructions = set_temp_type(instructions, row_name, row_type)
+            temp_types = set_temp_type_slot(temp_types, row_name, row_type)
         index += 2
     map_op = lookup_instruction(instructions, map_name)
     string[] entry_types = []
