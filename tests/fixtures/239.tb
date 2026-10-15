@@ -1,0 +1,122 @@
+record TextRows(string[][] rows);
+
+map<string, string[]> make_text_rows(int seed):
+    string token = seed.to_string()
+    return {'owned': ['owned-' + token]}
+
+string[][] return_snapshot(int seed):
+    string token = seed.to_string()
+    map<int, string[]> rows = {5: ['returned-' + token]}
+    return rows.values()
+
+int count_rows(string[][] rows):
+    return rows.length()
+
+string[][] return_rows(string[][] rows):
+    return rows
+
+int main(string[] args):
+    int seed = args.length()
+    string token = seed.to_string()
+
+    map<int, string[]> empty_int = {}
+    map<string, string[]> empty_string = {}
+    print(empty_int.values().length())
+    print(empty_string.values().length())
+
+    string[] borrowed_row = ['borrowed-' + token]
+    map<int, string[]> indexed = {9: borrowed_row, -4: ['negative-' + token]}
+    indexed[31] = []
+    borrowed_row[0] = 'source-changed-' + token
+    string[][] indexed_values = indexed.values()
+    print(indexed_values.length())
+    string[] indexed_first = indexed_values[0]
+    string[] indexed_second = indexed_values[1]
+    string[] indexed_empty = indexed_values[2]
+    print(indexed_first[0])
+    print(indexed_second[0])
+    print(indexed_empty.is_empty())
+    string[] stored_first = indexed[9]
+    print(stored_first[0])
+    indexed[9] = ['updated-' + token]
+    print(indexed_first[0])
+    string[] updated_first = indexed[9]
+    print(updated_first[0])
+    indexed_values[0][0] = 'snapshot-changed-' + token
+    string[] still_updated = indexed[9]
+    print(still_updated[0])
+    indexed_values[1] = ['snapshot-row-' + token]
+    string[] still_negative = indexed[-4]
+    print(indexed_values[1][0])
+    print(still_negative[0])
+
+    const map<int, string[]> fixed_int = {-8: ['const-int-' + token]}
+    string[][] fixed_int_values = fixed_int.values()
+    string[] fixed_int_source = fixed_int[-8]
+    string[] fixed_int_snapshot = fixed_int_values[0]
+    print(fixed_int_source[0])
+    print(fixed_int_snapshot[0])
+    fixed_int_values[0][0] = 'changed-const-int'
+    print(fixed_int_source[0])
+
+    const map<string, string[]> fixed_string = {'const-key': ['const-string-' + token]}
+    string[][] fixed_string_values = fixed_string.values()
+    string[] fixed_string_source = fixed_string['const-key']
+    string[] fixed_string_snapshot = fixed_string_values[0]
+    print(fixed_string_source[0])
+    print(fixed_string_snapshot[0])
+    fixed_string_values[0][0] = 'changed-const-string'
+    print(fixed_string_source[0])
+
+    map<string, string[]> grown = {}
+    for (int i : range(13)):
+        string key = 'key-' + i
+        string value = 'growth-' + i + '-' + token
+        grown[key] = [value]
+    grown['key-2'] = ['updated-growth-' + token]
+    string[][] grown_values = grown.values()
+    print(grown_values.length())
+    for (int i : range(grown_values.length())):
+        string[] row = grown_values[i]
+        print(row[0])
+
+    string[][] temporary_values = make_text_rows(seed).values()
+    string[] temporary_row = temporary_values[0]
+    print(temporary_row[0])
+    string[][] returned_values = return_snapshot(seed)
+    string[] returned_row = returned_values[0]
+    print(returned_row[0])
+    print(count_rows(indexed.values()))
+    string[][] echoed_values = return_rows(indexed.values())
+    string[] echoed_first = echoed_values[0]
+    print(echoed_first[0])
+
+    string[][] reused_values = indexed.values()
+    reused_values = indexed.values()
+    print(reused_values.length())
+    TextRows box = TextRows(grown_values)
+    TextRows cloned = box
+    cloned.rows[0][0] = 'cloned-' + token
+    string[] box_first = box.rows[0]
+    string[] cloned_first = cloned.rows[0]
+    print(box_first[0])
+    print(cloned_first[0])
+    box.rows = indexed.values()
+    string[] replaced_box_first = box.rows[0]
+    print(replaced_box_first[0])
+    indexed.values()
+
+    string[][] loop_values = []
+    for (int i : range(2)):
+        if (i == 0):
+            string[][] local_values = indexed.values()
+            loop_values.push(local_values[0])
+        else:
+            string[][] local_values = fixed_string.values()
+            loop_values.push(local_values[0])
+    print(loop_values.length())
+    string[] loop_first = loop_values[0]
+    string[] loop_second = loop_values[1]
+    print(loop_first[0])
+    print(loop_second[0])
+    return 0
