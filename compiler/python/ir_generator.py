@@ -159,6 +159,8 @@ class IRGenerator:
         self.variable_types: dict[str, str] = {}
         self.string_variables: dict[str, str] = {}
         self._active_string_expression_ids: set[int] = set()
+        self._active_integer_expression_ids: set[int] = set()
+        self._active_boolean_expression_ids: set[int] = set()
         self.number_variables: dict[str, NumberValue] = {}
         self.array_variables: dict[str, ArrayValue] = {}
         self.record_types: dict[str, dict[str, str]] = {}
@@ -3414,6 +3416,16 @@ class IRGenerator:
         raise TypeError(f"Unsupported file expression node: {type(expression).__name__}")
 
     def _integer_constant_value(self, expression) -> int | None:
+        expression_id = id(expression)
+        if expression_id in self._active_integer_expression_ids:
+            return None
+        self._active_integer_expression_ids.add(expression_id)
+        try:
+            return self._integer_constant_value_inner(expression)
+        finally:
+            self._active_integer_expression_ids.remove(expression_id)
+
+    def _integer_constant_value_inner(self, expression) -> int | None:
         if isinstance(expression, IntegerLiteral):
             return expression.value
         if isinstance(expression, TernaryExpression):
@@ -3567,6 +3579,16 @@ class IRGenerator:
         return None
 
     def _boolean_constant_value(self, expression) -> bool | None:
+        expression_id = id(expression)
+        if expression_id in self._active_boolean_expression_ids:
+            return None
+        self._active_boolean_expression_ids.add(expression_id)
+        try:
+            return self._boolean_constant_value_inner(expression)
+        finally:
+            self._active_boolean_expression_ids.remove(expression_id)
+
+    def _boolean_constant_value_inner(self, expression) -> bool | None:
         if isinstance(expression, BooleanLiteral):
             return expression.value
         if isinstance(expression, TernaryExpression):

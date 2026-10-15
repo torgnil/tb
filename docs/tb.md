@@ -255,6 +255,7 @@ int main(string[] args):
   - `to_int(...)`, `to_num(...)` resolve at compile time for constant string inputs.
   - `substring(...)`, `split(...)`, `trim()` may fold at compile time for constant strings.
   - Record string fields that depend on runtime values are evaluated at runtime, including repeated reconstruction such as `box = Box(box.text);`.
+  - Integer and boolean record fields that depend on their own prior runtime values, including repeated reconstruction, remain runtime values. Acyclic scalar expressions continue to fold after such values are evaluated.
 - File IO is always runtime:
   - `read_lines(path)` always reads `path` when the compiled program runs.
   - `read_file(path)` always reads `path` when the compiled program runs.
