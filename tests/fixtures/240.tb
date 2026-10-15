@@ -1,0 +1,106 @@
+const map<int, string[]> GLOBAL_ROWS = {7: [], -3: ['global']}
+
+record Rows(map<int, string[]> text, map<string, int[]> numbers);
+
+map<int, string[]> make_rows(int seed):
+    string token = seed.to_string()
+    map<int, string[]> rows = {seed: [], seed + 1: ['returned-' + token]}
+    rows[seed].push('returned-empty-' + token)
+    return rows
+
+int main(string[] args):
+    int seed = args.length()
+    string token = seed.to_string()
+
+    string[] global_row = GLOBAL_ROWS[7]
+    print(global_row.length())
+
+    map<int, string[]> all_empty = {11: [], -1: []}
+    all_empty[11].push('filled-' + token)
+    string[][] all_values = all_empty.values()
+    string[] first_all = all_values[0]
+    print(all_empty.length())
+    print(first_all[0])
+
+    map<int, string[]> mixed_int = {-4: ['mixed-' + token], 3: []}
+    mixed_int[3].push('late-' + token)
+    string[][] mixed_values = mixed_int.values()
+    string[] mixed_first = mixed_values[0]
+    string[] mixed_second = mixed_values[1]
+    print(mixed_first[0])
+    print(mixed_second[0])
+
+    map<string, int[]> all_string_empty = {'z': [], 'a': []}
+    all_string_empty['z'].push(seed + 1)
+    int[][] string_empty_values = all_string_empty.values()
+    int[] string_empty_first = string_empty_values[0]
+    print(string_empty_first[0])
+
+    map<string, int[]> mixed_string = {'empty': [], 'filled': [seed + 2]}
+    mixed_string['empty'].push(seed + 3)
+    int[][] mixed_string_values = mixed_string.values()
+    int[] mixed_string_first = mixed_string_values[0]
+    int[] mixed_string_second = mixed_string_values[1]
+    print(mixed_string_first[0])
+    print(mixed_string_second[0])
+
+    map<int, string[]> reset = {8: ['old']}
+    reset = {8: [], 9: ['new-' + token]}
+    reset[8].push('reset-' + token)
+    string[] reset_row = reset[8]
+    print(reset.length())
+    print(reset_row[0])
+
+    map<int, string[]> duplicate = {5: ['first'], 6: []}
+    duplicate[5] = ['last']
+    duplicate[6].push('six-' + token)
+    string[] duplicate_keys = duplicate.keys()
+    string[] duplicate_row = duplicate[5]
+    print(duplicate.length())
+    print(duplicate_row[0])
+    print(duplicate_keys[0])
+    print(duplicate_keys[1])
+
+    Rows box = Rows({7: [], 8: ['ctor-' + token]}, {'empty': [], 'one': [seed]})
+    box.text[7].push('ctor-empty-' + token)
+    box.numbers['empty'].push(seed + 4)
+    int[] constructor_number = box.numbers['empty']
+    string[] constructor_row = box.text[7]
+    print(constructor_row[0])
+    print(constructor_number[0])
+
+    Rows cloned = box
+    cloned.text[7] = ['clone-' + token]
+    string[] box_row_after_clone = box.text[7]
+    string[] cloned_row = cloned.text[7]
+    print(box_row_after_clone[0])
+    print(cloned_row[0])
+
+    box.text = {9: [], 10: ['field-' + token]}
+    box.text[9].push('field-empty-' + token)
+    string[] field_row = box.text[9]
+    print(field_row[0])
+
+    map<int, string[]> returned = make_rows(seed)
+    string[][] returned_values = returned.values()
+    string[] returned_first = returned_values[0]
+    print(returned_first[0])
+
+    map<int, string[]> flow = {}
+    if (seed > 0):
+        flow = {1: [], 2: ['if-' + token]}
+    for (int i = 0; i < 1; i++):
+        flow = {3: [], 4: ['loop-' + token]}
+    switch (seed):
+        case 1:
+            flow = {5: [], 6: ['switch-' + token]}
+        default:
+            flow = {5: [], 6: ['switch-' + token]}
+    try:
+        throw 'caught-' + token
+    catch (exception err):
+        flow = {7: [], 8: ['catch-' + token]}
+    flow[7].push('try-catch-' + token)
+    string[] flow_row = flow[7]
+    print(flow_row[0])
+    return 0
