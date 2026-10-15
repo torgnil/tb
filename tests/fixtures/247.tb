@@ -1,0 +1,97 @@
+int EFFECT_COUNT = 0
+
+record BoolMapBox(map<int, bool> flags);
+
+int effect_key():
+    EFFECT_COUNT += 1
+    return 77
+
+bool effect_value():
+    EFFECT_COUNT += 1
+    return (EFFECT_COUNT % 2) == 0
+
+map<int, bool> make_flags(int seed):
+    return {seed: false, seed + 1: true, seed: true}
+
+int main(string[] args):
+    int n = args.length()
+    int base = 100 + n * 10
+
+    map<int, bool> forward = {base: false, base + 1: false, base + 2: true, base: true, base + 2: false}
+    bool[] forward_values = forward.values()
+    string[] forward_keys = forward.keys()
+    print(forward.length())
+    print(forward_values.length())
+    print(forward_values[0])
+    print(forward_values[1])
+    print(forward_values[2])
+    print(forward_keys[0])
+    print(forward_keys[1])
+    print(forward_keys[2])
+
+    map<int, bool> reverse = {base + 10: true, base + 11: false, base + 10: false, base + 11: true}
+    bool[] reverse_values = reverse.values()
+    print(reverse.length())
+    print(reverse_values[0])
+    print(reverse_values[1])
+
+    map<int, bool> signed_keys = {0: false, -1: false, -2: true, 0: true, -1: true}
+    bool[] signed_values = signed_keys.values()
+    string[] signed_key_order = signed_keys.keys()
+    print(signed_keys.length())
+    print(signed_values[0])
+    print(signed_values[1])
+    print(signed_values[2])
+    print(signed_key_order[0])
+    print(signed_key_order[1])
+    print(signed_key_order[2])
+
+    map<int, bool> runtime_values = {base + 20: n > 0, base + 21: n == 0, base + 20: n == 3}
+    bool[] runtime_snapshot = runtime_values.values()
+    print(runtime_values.length())
+    print(runtime_snapshot[0])
+    print(runtime_snapshot[1])
+
+    const map<int, bool> fixed = {base + 30: false, base + 31: true, base + 30: n > 0}
+    bool[] fixed_values = fixed.values()
+    print(fixed.length())
+    print(fixed_values[0])
+    print(fixed_values[1])
+
+    map<int, bool> empty = {}
+    map<int, bool> unique = {base + 40: false, base + 41: true}
+    bool[] empty_values = empty.values()
+    bool[] unique_values = unique.values()
+    print(empty.length())
+    print(empty_values.length())
+    print(unique.length())
+    print(unique_values[0])
+    print(unique_values[1])
+
+    map<int, bool> cloned = forward
+    cloned[base] = false
+    print(forward[base])
+    print(cloned[base])
+    BoolMapBox box = BoolMapBox(forward)
+    box.flags[base] = false
+    print(forward[base])
+    print(box.flags[base])
+
+    map<int, bool> returned = make_flags(base + 50)
+    bool[] returned_values = returned.values()
+    print(returned.length())
+    print(returned_values[0])
+    print(returned_values[1])
+
+    for (int i : range(2)):
+        map<int, bool> loop_map = {base + 60 + i: true, base + 61 + i: false, base + 60 + i: false}
+        bool[] loop_values = loop_map.values()
+        print(loop_map.length())
+        print(loop_values[0])
+        print(loop_values[1])
+
+    map<int, bool> effects = {effect_key(): effect_value(), effect_key(): effect_value()}
+    print(EFFECT_COUNT)
+    print(effects.length())
+    print(effects[77])
+    return 0

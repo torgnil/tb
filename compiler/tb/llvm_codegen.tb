@@ -4454,7 +4454,8 @@ string emit_map_value_instruction(ProgramIR program, ParsedFunction function_ir,
     string lhs = temp_ref(op.lhs)
     string[] lines = ['  ' + lhs + ' = call ptr ' + llvm_map_new_name(map_type) + '(i32 ' + (op.args.length() / 2).to_string() + ')']
     bool is_int_row_map = key_type == 'int' && (value_type == 'int[]' || value_type == 'string[]')
-    if (is_int_row_map):
+    bool is_int_unique_literal_map = is_int_row_map || (key_type == 'int' && value_type == 'bool')
+    if (is_int_unique_literal_map):
         lines.push('  %map.literal.len.ptr.' + op.lhs + ' = getelementptr inbounds ' + llvm_map_type_name(map_type) + ', ptr ' + lhs + ', i32 0, i32 0')
         lines.push('  store i32 0, ptr %map.literal.len.ptr.' + op.lhs)
     int index = 0
@@ -4502,8 +4503,8 @@ string emit_map_value_instruction(ProgramIR program, ParsedFunction function_ir,
             if (temp_is_record(function_ir, value_name) && !temp_needs_backend_free(function_ir, value_name)):
                 stored_value = emit_record_owned_value(function_ir, value_name, value_suffix)
             stored_owned = 'true'
-        if (is_int_row_map):
-            lines.push('  call void ' + llvm_map_literal_insert_name(map_type) + '(ptr ' + lhs + ', i64 ' + stored_key + ', ptr ' + stored_value + ', i1 ' + stored_owned + ')')
+        if (is_int_unique_literal_map):
+            lines.push('  call void ' + llvm_map_literal_insert_name(map_type) + '(ptr ' + lhs + ', i64 ' + stored_key + ', ' + llvm_type(value_type) + ' ' + stored_value + ', i1 ' + stored_owned + ')')
         else if (key_type == 'int'):
             lines.push('  call void ' + llvm_map_set_name(map_type) + '(ptr ' + lhs + ', i32 ' + item_index + ', i64 ' + stored_key + ', ' + llvm_type(value_type) + ' ' + stored_value + ', i1 ' + stored_owned + ')')
         else:
@@ -8446,11 +8447,11 @@ string[] emit_map_helpers(string type_name):
     lines = replace_llvm_template_lines(lines, '__VALUE_LLVM_TYPE__', value_llvm_type)
     lines = replace_llvm_template_lines(lines, '__KEY_LLVM_TYPE__', key_llvm_type)
     lines = replace_llvm_template_lines(lines, '__ZERO_VALUE__', llvm_zero_value(value_type))
-    if (key_type == 'int' && (value_type == 'int[]' || value_type == 'string[]')):
+    if (key_type == 'int' && (value_type == 'int[]' || value_type == 'string[]' || value_type == 'bool')):
         string insert_name = llvm_map_literal_insert_name(type_name)
         string set_name = llvm_map_set_name(type_name)
         string release_name = llvm_map_release_by_key_name(type_name)
-        lines.push('define private void ' + insert_name + '(ptr %map, i64 %key, ptr %value, i1 %is_owned) {')
+        lines.push('define private void ' + insert_name + '(ptr %map, i64 %key, ' + value_llvm_type + ' %value, i1 %is_owned) {')
         lines.push('entry:')
         lines.push('  %len = call i32 ' + llvm_map_length_name(type_name) + '(ptr %map)')
         lines.push('  %keys.ptr = getelementptr inbounds ' + map_struct + ', ptr %map, i32 0, i32 1')
@@ -8467,13 +8468,13 @@ string[] emit_map_helpers(string type_name):
         lines.push('  br i1 %key.match, label %replace, label %loop.step')
         lines.push('replace:')
         lines.push('  call void ' + release_name + '(ptr %map, i64 %key)')
-        lines.push('  call void ' + set_name + '(ptr %map, i32 %index, i64 %key, ptr %value, i1 %is_owned)')
+        lines.push('  call void ' + set_name + '(ptr %map, i32 %index, i64 %key, ' + value_llvm_type + ' %value, i1 %is_owned)')
         lines.push('  ret void')
         lines.push('loop.step:')
         lines.push('  %next.index = add i32 %index, 1')
         lines.push('  br label %loop.cond')
         lines.push('append:')
-        lines.push('  call void ' + set_name + '(ptr %map, i32 %len, i64 %key, ptr %value, i1 %is_owned)')
+        lines.push('  call void ' + set_name + '(ptr %map, i32 %len, i64 %key, ' + value_llvm_type + ' %value, i1 %is_owned)')
         lines.push('  %next.len = add i32 %len, 1')
         lines.push('  %len.ptr = getelementptr inbounds ' + map_struct + ', ptr %map, i32 0, i32 0')
         lines.push('  store i32 %next.len, ptr %len.ptr')
