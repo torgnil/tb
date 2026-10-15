@@ -1,0 +1,163 @@
+record LastHolder(int[] numbers, string[] words, int[][] number_rows, string[][] word_rows);
+
+const int[] GLOBAL_LAST_NUMBERS = [71, 72];
+const string[] GLOBAL_LAST_WORDS = ['global-left', 'global-tail'];
+
+int[] make_last_numbers(int seed):
+    return [seed, seed + 1, seed + 2]
+
+bool[] make_last_flags(int seed):
+    return [seed > 0, seed >= 0]
+
+string[] make_last_words(int seed):
+    return ['left-' + seed.to_string(), 'tail-' + seed.to_string()]
+
+int[][] make_last_number_rows(int seed):
+    return [[seed, seed + 1], [seed + 2, seed + 3]]
+
+string[][] make_last_word_rows(int seed):
+    return [['left-' + seed.to_string()], ['right-' + seed.to_string(), 'tail-' + seed.to_string()]]
+
+int borrowed_numbers_last(int[] values):
+    return values.last()
+
+bool borrowed_flags_last(bool[] values):
+    return last(values)
+
+string borrowed_words_last(string[] values):
+    return values.last()
+
+int borrowed_number_rows_last(int[][] values):
+    return values.last()[0]
+
+string borrowed_word_rows_last(string[][] values):
+    return last(values)[0]
+
+string returned_last_word(int seed):
+    return last(make_last_words(seed))
+
+int[] returned_last_number_row(int seed):
+    return make_last_number_rows(seed).last()
+
+int main(string[] args):
+    int seed = args.length()
+
+    print(last(make_last_numbers(seed)))
+    print(make_last_numbers(seed).last())
+    print(last(make_last_flags(seed)))
+    print(make_last_flags(seed).last())
+    print(last(make_last_words(seed)))
+    print(make_last_words(seed).last())
+
+    int[] call_number_row = last(make_last_number_rows(seed))
+    print(call_number_row[0])
+    call_number_row[1] += 10
+    print(call_number_row[1])
+    string[] call_word_row = make_last_word_rows(seed).last()
+    print(call_word_row[0])
+    call_word_row[0] = 'changed-call-' + seed.to_string()
+    print(call_word_row[0])
+
+    print(last([seed, seed + 10]))
+    print([seed, seed + 11].last())
+    print(last([seed > 0, false]))
+    print([false, seed >= 0].last())
+    print(last(['literal-' + seed.to_string(), 'literal-tail-' + seed.to_string()]))
+    print(['method-' + seed.to_string(), 'method-tail-' + seed.to_string()].last())
+    int[] literal_number_row = last([[seed], [seed + 20, seed + 21]])
+    print(literal_number_row[0])
+    string[] literal_word_row = [['left-' + seed.to_string()], ['literal-row-' + seed.to_string()]].last()
+    print(literal_word_row[0])
+
+    print(last(make_last_numbers(seed)[1:]))
+    print(make_last_numbers(seed)[0:2].last())
+    print(last(make_last_flags(seed)[:]))
+    print(make_last_words(seed)[0:2].last())
+    int[] slice_number_row = make_last_number_rows(seed)[:].last()
+    print(slice_number_row[1])
+    string[] slice_word_row = last(make_last_word_rows(seed)[:])
+    print(slice_word_row[1])
+
+    print(last(make_last_numbers(seed).copy()))
+    print(make_last_flags(seed).copy().last())
+    print(last(make_last_words(seed).copy()))
+    int[] copy_number_row = make_last_number_rows(seed).copy().last()
+    print(copy_number_row[0])
+    string[] copy_word_row = make_last_word_rows(seed).copy().last()
+    print(copy_word_row[0])
+
+    int[] borrowed_numbers = make_last_numbers(seed)
+    bool[] borrowed_flags = make_last_flags(seed)
+    string[] borrowed_words = make_last_words(seed)
+    int[][] borrowed_number_rows = make_last_number_rows(seed)
+    string[][] borrowed_word_rows = make_last_word_rows(seed)
+    print(borrowed_numbers_last(borrowed_numbers))
+    print(borrowed_flags_last(borrowed_flags))
+    print(borrowed_words_last(borrowed_words))
+    print(borrowed_number_rows_last(borrowed_number_rows))
+    print(borrowed_word_rows_last(borrowed_word_rows))
+    print(borrowed_numbers.length())
+    print(borrowed_words.length())
+    print(borrowed_number_rows.length())
+    print(borrowed_word_rows.length())
+
+    const int[] fixed_numbers = make_last_numbers(seed)
+    const bool[] fixed_flags = make_last_flags(seed)
+    const string[] fixed_words = make_last_words(seed)
+    const int[][] fixed_number_rows = make_last_number_rows(seed)
+    const string[][] fixed_word_rows = make_last_word_rows(seed)
+    print(last(fixed_numbers))
+    print(fixed_flags.last())
+    print(last(fixed_words))
+    print(fixed_number_rows.last()[0])
+    print(last(fixed_word_rows)[0])
+    print(GLOBAL_LAST_NUMBERS.last())
+    print(last(GLOBAL_LAST_WORDS))
+
+    LastHolder holder = LastHolder(make_last_numbers(seed), make_last_words(seed), make_last_number_rows(seed), make_last_word_rows(seed))
+    print(holder.numbers.last())
+    print(last(holder.words))
+    print(holder.number_rows.last()[0])
+    print(last(holder.word_rows)[0])
+    LastHolder holder_copy = holder
+    holder_copy.numbers[0] = 900
+    holder_copy.words[0] = 'cloned-holder'
+    print(holder.numbers[0])
+    print(holder_copy.numbers[0])
+    print(holder.words[0])
+    print(holder_copy.words[0])
+
+    string[] stored_words = []
+    stored_words.push(last(make_last_words(seed)))
+    print(stored_words[0])
+    stored_words[0] = 'replaced-' + seed.to_string()
+    print(stored_words[0])
+    map<int, int[]> stored_rows = {1: make_last_number_rows(seed).last()}
+    print(stored_rows[1][0])
+    map<int, int[]> copied_rows = stored_rows
+    copied_rows[1][0] = 901
+    print(stored_rows[1][0])
+    print(copied_rows[1][0])
+    stored_rows[1] = make_last_number_rows(seed + 1).last()
+    print(stored_rows[1][0])
+
+    print(returned_last_word(seed))
+    int[] returned_row = returned_last_number_row(seed)
+    returned_row[0] += 30
+    print(returned_row[0])
+
+    int[] reused_numbers = make_last_numbers(seed)
+    print(reused_numbers.last())
+    reused_numbers[0] += 40
+    print(reused_numbers.last())
+    print(reused_numbers.length())
+    for (int offset : range(2)):
+        print(last(make_last_numbers(seed + offset)))
+        print(make_last_flags(seed + offset).last())
+        print(last(make_last_words(seed + offset)))
+        int[] loop_number_row = make_last_number_rows(seed + offset).last()
+        print(loop_number_row[0])
+        string[] loop_word_row = make_last_word_rows(seed + offset).last()
+        print(loop_word_row[0])
+
+    return 0
