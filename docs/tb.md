@@ -254,6 +254,7 @@ int main(string[] args):
 - Many helpers and expressions are folded at compile time when inputs are compile-time constants:
   - `to_int(...)`, `to_num(...)` resolve at compile time for constant string inputs.
   - `substring(...)`, `split(...)`, `trim()` may fold at compile time for constant strings.
+  - Record string fields that depend on runtime values are evaluated at runtime, including repeated reconstruction such as `box = Box(box.text);`.
 - File IO is always runtime:
   - `read_lines(path)` always reads `path` when the compiled program runs.
   - `read_file(path)` always reads `path` when the compiled program runs.

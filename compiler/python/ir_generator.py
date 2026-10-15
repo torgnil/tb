@@ -158,6 +158,7 @@ class IRGenerator:
         self.bool_variables: dict[str, bool] = {}
         self.variable_types: dict[str, str] = {}
         self.string_variables: dict[str, str] = {}
+        self._active_string_expression_ids: set[int] = set()
         self.number_variables: dict[str, NumberValue] = {}
         self.array_variables: dict[str, ArrayValue] = {}
         self.record_types: dict[str, dict[str, str]] = {}
@@ -3100,6 +3101,16 @@ class IRGenerator:
         raise TypeError(f"Unsupported function argument type: {arg_type}")
 
     def _evaluate_string_expression(self, expression) -> str:
+        expression_id = id(expression)
+        if expression_id in self._active_string_expression_ids:
+            raise TypeError("Cyclic string expression is not compile-time evaluable")
+        self._active_string_expression_ids.add(expression_id)
+        try:
+            return self._evaluate_string_expression_inner(expression)
+        finally:
+            self._active_string_expression_ids.remove(expression_id)
+
+    def _evaluate_string_expression_inner(self, expression) -> str:
         if isinstance(expression, StringLiteral):
             return expression.value
         if isinstance(expression, TernaryExpression):
