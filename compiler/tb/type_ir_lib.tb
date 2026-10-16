@@ -1157,6 +1157,17 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             if (pop_type == 'int[][]' || pop_type == 'string[][]'):
                 result_type = array_item_type(pop_type)
                 return refined_value_op(op, result_type, 'owned')
+        if (op.args[0] == 'push' && result_type == 'unknown' && lookup_function_return_type(functions, 'push') == 'unknown' && !record_type_exists(record_names, 'push')):
+            if (op.args.length() != 3):
+                throw 'push requires an array and one value'
+            string push_array_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+            if (push_array_type != 'int[]' && push_array_type != 'bool[]' && push_array_type != 'string[]'):
+                throw 'direct push requires int[], bool[], or string[]; got ' + push_array_type
+            string push_item_type = array_item_type(push_array_type)
+            string push_value_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2]))
+            if (push_value_type != push_item_type):
+                throw 'push requires ' + push_item_type + ' value; got ' + push_value_type
+            return refined_value_op(op, 'int', 'plain')
         if (op.args[0] == 'insert' && result_type == 'unknown' && lookup_function_return_type(functions, 'insert') == 'unknown' && !record_type_exists(record_names, 'insert')):
             if (op.args.length() != 4):
                 throw 'insert requires an array, index, and value'

@@ -397,9 +397,10 @@ Array helpers
 - length(x: T[] | string | map) -> int
   - Return length of array, string, set, or `map<string, int>`.
 
-- push(arr: T[], value: T) -> void
-  - Append `value` to `arr` (may cause runtime heap-backed array representation).
-  - Works for nested `int[][]` and `string[][]` arrays, for example `int[][] rows = []; rows.push([1, 2]);` or `string[][] rows = []; string[] row = []; rows.push(row);`. Typed empty rows are supported. Pushing a borrowed row stores an independent row snapshot; an owned row literal or call result transfers into the outer array.
+- push(arr: T[], value: T) -> int
+  - Append `value` and return the new array length. Direct calls `push(values, item)` are supported for native `int[]`, `bool[]`, and `string[]`; the item type must match the array element type. Array methods such as `values.push(item)` keep their existing support for those families and for nested `int[][]`, `string[][]`, and record arrays.
+  - Nested `int[][]` and `string[][]` methods accept typed empty rows, for example `int[][] rows = []; rows.push([1, 2]);` or `string[][] rows = []; string[] row = []; rows.push(row);`. Pushing a borrowed row stores an independent row snapshot; an owned row literal or call result transfers into the outer array.
+  - A direct call uses a declared user function or lowercase `push` record constructor before the native builtin. For native `int[]`, `bool[]`, and `string[]` receivers, the UFCS method uses the native builtin ahead of a same-named user function. A recognized sole-use owned `int[]`, `bool[]`, or `string[]` temporary passed to the direct builtin is released after the new length is read; named, borrowed, global, record-field, or reused arrays remain with their owners. Borrowed strings are retained before growth, and owned string values transfer into the array.
 
 - pop(arr: T[]) -> T
   - Remove and return the last element. For `bool[]`, `pop(flags)` and `flags.pop()` return the last boolean and reduce the array length by one. Popping an empty `bool[]` returns `false` and leaves it empty. For `string[]`, both forms return the last string; popping an empty array returns an empty string. The popped value remains valid after the array is cleared or reused. A sole-use owned inline `bool[]` or `string[]` receiver is released after `pop()` returns; named and reused receivers remain available to their owners. A user-defined function named `pop` takes precedence for direct and UFCS calls. A lowercase `pop` record constructor takes precedence for `pop(words)` while `words.pop()` still invokes the builtin.
