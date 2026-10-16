@@ -1157,6 +1157,17 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             if (pop_type == 'int[][]' || pop_type == 'string[][]'):
                 result_type = array_item_type(pop_type)
                 return refined_value_op(op, result_type, 'owned')
+        if (op.args[0] == 'remove_at' && result_type == 'unknown' && lookup_function_return_type(functions, 'remove_at') == 'unknown' && !record_type_exists(record_names, 'remove_at')):
+            if (op.args.length() != 3):
+                throw 'remove_at requires an array and exactly one index'
+            string remove_array_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+            if (remove_array_type != 'int[]' && remove_array_type != 'bool[]' && remove_array_type != 'string[]'):
+                throw 'remove_at requires int[], bool[], or string[]; got ' + remove_array_type
+            string remove_index_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2]))
+            if (remove_index_type != 'int'):
+                throw 'remove_at requires an int index; got ' + remove_index_type
+            result_type = array_item_type(remove_array_type)
+            return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
         if (op.args[0] == 'copy'):
             if (lookup_function_return_type(functions, 'copy') == 'unknown' && !record_type_exists(record_names, 'copy')):
                 if (op.args.length() != 2):
