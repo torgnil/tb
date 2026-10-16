@@ -4792,7 +4792,7 @@ string emit_call_value_instruction_core(ProgramIR program, ParsedFunction functi
             if (pop_record.header == ''):
                 if (op.args.length() != 2):
                     throw 'unsupported llvm bool[] pop arity'
-                return emit_tracked_builtin_call_line('  ' + lhs + ' = call i1 @tb_bootstrap_bool_array_pop(ptr ' + temp_ref(op.args[1]) + ')')
+                return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, emit_tracked_builtin_call_line('  ' + lhs + ' = call i1 @tb_bootstrap_bool_array_pop(ptr ' + temp_ref(op.args[1]) + ')'))
     if (call_name == 'pop' && call_arg1_type == 'string[]'):
         int pop_meta_index = lookup_call_meta_index(call_name)
         if (pop_meta_index < 0):
@@ -4800,7 +4800,7 @@ string emit_call_value_instruction_core(ProgramIR program, ParsedFunction functi
             if (pop_record.header == ''):
                 if (op.args.length() != 2):
                     throw 'unsupported llvm string[] pop arity'
-                return emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_string_array_pop(ptr ' + temp_ref(op.args[1]) + ')')
+                return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_string_array_pop(ptr ' + temp_ref(op.args[1]) + ')'))
     if (call_name == 'pop' && (call_arg1_type == 'int[][]' || call_arg1_type == 'string[][]')):
         int pop_meta_index = lookup_call_meta_index(call_name)
         if (pop_meta_index < 0):
@@ -4809,8 +4809,8 @@ string emit_call_value_instruction_core(ProgramIR program, ParsedFunction functi
                 if (op.args.length() != 2):
                     throw 'unsupported llvm nested array pop arity'
                 if (call_arg1_type == 'int[][]'):
-                    return emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_int_array_array_pop(ptr ' + temp_ref(op.args[1]) + ')')
-                return emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_string_array_array_pop(ptr ' + temp_ref(op.args[1]) + ')')
+                    return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_int_array_array_pop(ptr ' + temp_ref(op.args[1]) + ')'))
+                return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_string_array_array_pop(ptr ' + temp_ref(op.args[1]) + ')'))
     if (call_name == 'clear' && call_arg1_type == 'bool[]' && lookup_call_meta_index(call_name) < 0):
         RecordDeclIR clear_record = lookup_record_decl(program, call_name)
         if (clear_record.header == ''):
@@ -5537,17 +5537,17 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
     if (method_name == 'pop' && method_base_type == 'bool[]' && lookup_call_meta_index(method_name) < 0):
         if (op.args.length() != 2):
             throw 'unsupported llvm bool[] pop arity'
-        return '  ' + lhs + ' = call i1 @tb_bootstrap_bool_array_pop(ptr ' + temp_ref(op.args[1]) + ')'
+        return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, '  ' + lhs + ' = call i1 @tb_bootstrap_bool_array_pop(ptr ' + temp_ref(op.args[1]) + ')')
     if (method_name == 'pop' && method_base_type == 'string[]' && lookup_call_meta_index(method_name) < 0):
         if (op.args.length() != 2):
             throw 'unsupported llvm string[] pop arity'
-        return emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_string_array_pop(ptr ' + temp_ref(op.args[1]) + ')')
+        return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_string_array_pop(ptr ' + temp_ref(op.args[1]) + ')'))
     if (method_name == 'pop' && (method_base_type == 'int[][]' || method_base_type == 'string[][]') && lookup_call_meta_index(method_name) < 0):
         if (op.args.length() != 2):
             throw 'unsupported llvm nested array pop arity'
         if (method_base_type == 'int[][]'):
-            return emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_int_array_array_pop(ptr ' + temp_ref(op.args[1]) + ')')
-        return emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_string_array_array_pop(ptr ' + temp_ref(op.args[1]) + ')')
+            return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_int_array_array_pop(ptr ' + temp_ref(op.args[1]) + ')'))
+        return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_string_array_array_pop(ptr ' + temp_ref(op.args[1]) + ')'))
     if (method_name == 'remove_at' && method_base_type == 'string[]' && lookup_call_meta_index(method_name) < 0):
         if (op.args.length() != 3):
             throw 'unsupported llvm string[] remove_at arity'
