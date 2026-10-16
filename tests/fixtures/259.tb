@@ -1,0 +1,131 @@
+record InsertHolder(int[] values, bool[] flags, string[] words);
+
+int[] global_numbers = [70, 71];
+string[] global_words = ['global-left', 'global-right'];
+
+string make_insert_word(int seed):
+    return 'owned-' + seed.to_string()
+
+int[] make_insert_numbers(int seed):
+    return [seed + 60, seed + 61]
+
+bool[] make_insert_flags():
+    return [false]
+
+void print_insert_flags(bool[] flags):
+    for (int i : range(flags.length())):
+        print(flags[i])
+
+string[] make_insert_words():
+    return ['temporary-left', 'temporary-right']
+
+void insert_borrowed(int[] values, int item):
+    insert(values, 1, item)
+
+int main(string[] args):
+    int seed = args.length()
+
+    int[] numbers = [seed, seed + 2]
+    print(insert(numbers, 1, seed + 10))
+    print(numbers)
+
+    int[] empty_numbers = []
+    print(insert(empty_numbers, -9223372036854775807 - 1, seed + 20))
+    print(empty_numbers)
+
+    int[] at_start = [seed + 1, seed + 2]
+    insert(at_start, -9223372036854775807 - 1, seed + 30)
+    print(at_start)
+
+    int[] at_end = [seed + 3, seed + 4]
+    insert(at_end, 9223372036854775807, seed + 40)
+    print(at_end)
+
+    insert_borrowed(numbers, seed + 50)
+    print(numbers)
+
+    insert(global_numbers, 1, seed + 70)
+    print(global_numbers)
+
+    InsertHolder holder = InsertHolder([seed + 80], [false], ['field-left'])
+    insert(holder.values, 1, seed + 81)
+    insert(holder.flags, 0, true)
+    insert(holder.words, 1, 'field-right')
+    print(holder.values)
+    print_insert_flags(holder.flags)
+    print(holder.words)
+
+    const int[] frozen = [seed + 90, seed + 91]
+    int[] mutable_copy = copy(frozen)
+    print(insert(mutable_copy, 1, seed + 92))
+    print(mutable_copy)
+
+    int[] reused = make_insert_numbers(seed)
+    insert(reused, 1, seed + 100)
+    print(reused)
+
+    int[] branch_values = [seed]
+    if (seed > 0):
+        insert(branch_values, -1, seed + 110)
+    else:
+        insert(branch_values, 0, seed + 111)
+    print(branch_values)
+
+    int[] loop_values = []
+    int loop_total = 0
+    for (int i : range(2)):
+        loop_total += insert(loop_values, i, seed + 120 + i)
+    print(loop_total)
+    print(loop_values)
+
+    print(insert(make_insert_numbers(seed), 1, seed + 130))
+
+    bool[] flags = [true, false]
+    insert(flags, 1, true)
+    print_insert_flags(flags)
+
+    bool[] empty_flags = []
+    insert(empty_flags, 9223372036854775807, false)
+    print_insert_flags(empty_flags)
+
+    bool[] reused_flags = make_insert_flags()
+    insert(reused_flags, -1, true)
+    print_insert_flags(reused_flags)
+    insert(make_insert_flags(), 0, true)
+
+    const string borrowed_word = 'borrowed'
+    string[] words = ['left', 'right']
+    insert(words, 1, borrowed_word)
+    print(words)
+
+    string[] owned_words = ['before', 'after']
+    insert(owned_words, 1, make_insert_word(seed))
+    print(owned_words)
+
+    string[] self_alias_growth = ['grow', 'tail']
+    insert(self_alias_growth, 0, self_alias_growth[1])
+    print(self_alias_growth)
+
+    string[] self_alias_capacity = ['drop', 'kept']
+    self_alias_capacity.remove_at(0)
+    insert(self_alias_capacity, 0, self_alias_capacity[0])
+    print(self_alias_capacity)
+
+    string[] empty_words = []
+    insert(empty_words, -9223372036854775807 - 1, 'first')
+    insert(empty_words, 9223372036854775807, 'last')
+    print(empty_words)
+
+    insert(global_words, 1, 'global-middle')
+    print(global_words)
+
+    string[] copied_words = copy(['copy-left', 'copy-right'])
+    insert(copied_words, 1, 'copy-middle')
+    print(copied_words)
+
+    insert(make_insert_words(), 1, 'temporary-owned')
+    int[] method_numbers = [seed]
+    print(method_numbers.insert(0, seed + 140))
+    print(method_numbers)
+    print('direct insert complete')
+    return 0

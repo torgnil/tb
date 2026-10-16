@@ -4811,6 +4811,38 @@ string emit_call_value_instruction_core(ProgramIR program, ParsedFunction functi
         if (call_arg1_type == 'int[]'):
             return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, emit_tracked_builtin_call_line('  ' + lhs + ' = call i64 @tb_bootstrap_int_array_sum(ptr ' + temp_ref(op.args[1]) + ')'))
         return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, emit_tracked_builtin_call_line('  ' + lhs + ' = call i64 @tb_bootstrap_bool_array_sum(ptr ' + temp_ref(op.args[1]) + ')'))
+    if (call_name == 'insert' && lookup_call_meta_index(call_name) < 0 && lookup_record_decl(program, call_name).header == ''):
+        if (op.args.length() != 4):
+            throw 'unsupported llvm insert arity'
+        string insert_helper = ''
+        if (call_arg1_type == 'int[]'):
+            insert_helper = '@tb_bootstrap_int_array_insert'
+        else if (call_arg1_type == 'bool[]'):
+            insert_helper = '@tb_bootstrap_bool_array_insert'
+        else if (call_arg1_type == 'string[]'):
+            insert_helper = '@tb_bootstrap_string_array_insert'
+        if (insert_helper == ''):
+            throw 'unsupported llvm insert arg type: ' + call_arg1_type
+        if (call_arg1_type == 'int[]'):
+            string insert_call = '  ' + lhs + '.len32 = call i32 ' + insert_helper + '(ptr ' + temp_ref(op.args[1]) + ', i64 ' + temp_ref(op.args[2]) + ', i64 ' + temp_ref(op.args[3]) + ')\n  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64'
+            return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, insert_call)
+        if (function_uses_temp(function_ir, op.lhs)):
+            throw 'insert result cannot be used as a value'
+        if (call_arg1_type == 'bool[]'):
+            string bool_insert = '  call void ' + insert_helper + '(ptr ' + temp_ref(op.args[1]) + ', i64 ' + temp_ref(op.args[2]) + ', i1 ' + temp_ref(op.args[3]) + ')'
+            return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, bool_insert)
+        string[] string_insert_lines = emit_string_materialize_if_needed(function_ir, op.args[3], op.lhs + '.insert')
+        string stored_insert_value = temp_ref(op.args[3])
+        string insert_owned_flag = 'false'
+        if (temp_is_string(function_ir, op.args[3])):
+            if (temp_needs_backend_free(function_ir, op.args[3])):
+                insert_owned_flag = 'true'
+            else:
+                stored_insert_value = emit_string_owned_value(function_ir, op.args[3], op.lhs + '.insert')
+                insert_owned_flag = 'true'
+        string string_insert = emit_tracked_builtin_call_line('  call void ' + insert_helper + '(ptr ' + temp_ref(op.args[1]) + ', i64 ' + temp_ref(op.args[2]) + ', ptr ' + stored_insert_value + ', i1 ' + insert_owned_flag + ')')
+        string_insert_lines.push(string_insert)
+        return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, join_llvm_strings(string_insert_lines, '\n'))
     if (call_name == 'remove_at' && lookup_call_meta_index(call_name) < 0 && lookup_record_decl(program, call_name).header == ''):
         if (op.args.length() != 3):
             throw 'unsupported llvm remove_at arity'
