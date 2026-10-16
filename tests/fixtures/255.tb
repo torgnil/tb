@@ -1,0 +1,82 @@
+record StringBox(string[] words);
+
+int[] global_ints = [70, 71];
+string[] global_words = ['global-left', 'global-tail'];
+
+int[] make_ints(int seed):
+    return [seed, seed + 10]
+
+int[] make_empty_ints():
+    return []
+
+bool[] make_bools(int seed):
+    return [seed > 0, false]
+
+bool[] make_empty_bools():
+    return []
+
+string[] make_words(int seed):
+    return ['head-' + seed.to_string(), 'tail-' + seed.to_string()]
+
+string[] make_empty_words():
+    return []
+
+int borrowed_int_remove(int[] values, int index):
+    return values.remove_at(index)
+
+bool borrowed_bool_remove(bool[] values, int index):
+    return values.remove_at(index)
+
+string borrowed_word_remove(string[] values, int index):
+    return values.remove_at(index)
+
+int main(string[] args):
+    int argc = args.length()
+    int seed = argc + 4
+    print(argc)
+    print(make_ints(seed).remove_at(1))
+    print(make_ints(seed).remove_at(-1))
+    print(make_ints(seed).remove_at(9223372036854775807))
+    print(make_empty_ints().remove_at(0))
+    print([seed, seed + 1].remove_at(0))
+    print(range(seed, seed + 2).remove_at(1))
+    print(make_ints(seed)[0:].remove_at(1))
+    print(make_ints(seed).copy().remove_at(0))
+    int[] named_ints = make_ints(seed + 1)
+    print(named_ints.remove_at(0))
+    print(named_ints.length())
+    int[] borrowed_ints = make_ints(seed + 2)
+    print(borrowed_int_remove(borrowed_ints, 0))
+    print(borrowed_ints.length())
+    print(global_ints.remove_at(0) + global_ints.length())
+    print(make_bools(seed).remove_at(0))
+    print(make_bools(seed).remove_at(99))
+    print(make_empty_bools().remove_at(0))
+    bool[] named_bools = make_bools(seed)
+    print(named_bools.remove_at(0))
+    print(named_bools[0])
+    bool[] borrowed_bools = make_bools(seed)
+    print(borrowed_bool_remove(borrowed_bools, 0))
+    print(borrowed_bools[0])
+    string saved = make_words(seed).remove_at(1)
+    print(saved)
+    print(saved)
+    print(make_words(seed).remove_at(-1))
+    print(make_empty_words().remove_at(0))
+    print(['literal-left', 'literal-tail'].remove_at(1))
+    print(make_words(seed)[0:].remove_at(0))
+    print(make_words(seed).copy().remove_at(1))
+    string[] named_words = make_words(seed)
+    print(named_words.remove_at(0) + ':' + named_words[0])
+    string[] borrowed_words = make_words(seed)
+    print(borrowed_word_remove(borrowed_words, 0))
+    print(borrowed_words[0])
+    print(global_words.remove_at(0) + ':' + global_words[0])
+    StringBox box = StringBox(make_words(seed))
+    print(box.words.remove_at(0))
+    print(box.words.length().to_string() + ':' + box.words[0])
+    int loop_total = 0
+    for (int offset : range(2)):
+        loop_total += make_ints(seed + offset).remove_at(1)
+    print(loop_total)
+    return 0
