@@ -1,0 +1,78 @@
+record IntBox(int[] values);
+
+int[] global_values = [70, 71];
+
+int[] make_values(int seed):
+    return [seed, seed + 10]
+
+int[] make_empty_values():
+    return []
+
+int borrowed_pop(int[] values):
+    return pop(values)
+
+int main(string[] args):
+    int argc = args.length()
+    int seed = argc + 4
+    print(argc)
+
+    int[] named = make_values(seed)
+    print(pop(named))
+    print(named.length())
+    print(pop(named))
+    print(pop(named))
+    print(named.length())
+
+    int[] empty_values = make_empty_values()
+    print(pop(empty_values))
+    print(empty_values.length())
+
+    int[] literal_values = [seed + 2, seed + 3]
+    print(pop(literal_values))
+    int[] range_values = range(seed + 4, seed + 6)
+    print(pop(range_values))
+    int[] slice_values = make_values(seed + 6)[0:]
+    print(pop(slice_values))
+    int[] copy_values = make_values(seed + 8).copy()
+    print(pop(copy_values))
+
+    print(pop(make_values(seed + 10)))
+    print(pop(make_values(seed + 12)))
+    print(pop(make_empty_values()))
+
+    int[] borrowed_values = make_values(seed + 14)
+    print(borrowed_pop(borrowed_values))
+    print(borrowed_values.length())
+
+    const int[] const_values = make_values(seed + 16)
+    int[] mutable_copy = copy(const_values)
+    print(pop(mutable_copy))
+    print(const_values.length())
+    print(const_values[1])
+
+    print(pop(global_values))
+    print(global_values.length())
+
+    IntBox box = IntBox(make_values(seed + 18))
+    print(pop(box.values))
+    print(box.values.length())
+
+    int branch_value = 0
+    if (argc > 1):
+        int[] branch_values = make_values(seed + 20)
+        branch_value = pop(branch_values)
+    else:
+        int[] branch_values = make_values(seed + 22)
+        branch_value = pop(branch_values)
+    print(branch_value)
+
+    int loop_total = 0
+    for (int offset : range(2)):
+        int[] loop_values = make_values(seed + 24 + offset)
+        loop_total += pop(loop_values)
+    print(loop_total)
+
+    int[] ufcs_values = make_values(seed + 26)
+    print(ufcs_values.pop())
+    print(ufcs_values.length())
+    return 0
