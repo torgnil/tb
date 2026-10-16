@@ -1,0 +1,91 @@
+record PushHolder(int[] numbers, bool[] flags, string[] words);
+
+int[] global_push_values = [100];
+
+int[] make_empty_ints():
+    return []
+
+int[] make_ints(int seed):
+    return [seed, seed + 1]
+
+bool[] make_empty_flags():
+    return []
+
+bool[] make_flags(int seed):
+    return [seed > 0]
+
+string[] make_empty_words():
+    return []
+
+string[] make_words(int seed):
+    return ['owned-' + seed.to_string()]
+
+string make_word(int seed):
+    return 'value-' + seed.to_string()
+
+int append_borrowed(bool[] values, bool item):
+    return values.push(item)
+
+void print_flags(bool[] values):
+    for (int i : range(values.length())):
+        print(values[i])
+
+int main(string[] args):
+    int seed = args.length()
+
+    print([seed].push(seed + 1))
+    print(make_empty_ints().push(seed + 2))
+    print(make_ints(seed).push(seed + 3))
+    print(copy([seed]).push(seed + 4))
+    print(range(2).push(seed + 5))
+    int[] slice_source = [seed, seed + 1, seed + 2]
+    print(slice_source[1:3].push(seed + 6))
+
+    int total = 0
+    for (int i : range(2)):
+        total += make_ints(seed + i).push(seed + 10 + i)
+    print(total)
+    if (make_empty_ints().push(seed + 12) == 1):
+        print('int branch')
+    else:
+        print('int branch failed')
+
+    print([false].push(seed > 0))
+    const bool const_flag = true
+    print(make_empty_flags().push(const_flag))
+    print(make_flags(seed).push(false))
+    bool[] borrowed_flags = [false]
+    print(append_borrowed(borrowed_flags, true))
+    print_flags(borrowed_flags)
+
+    print(['left'].push('right'))
+    print(make_empty_words().push(make_word(seed)))
+    print(make_words(seed).push((seed + 3).to_string()))
+    const string borrowed_word = 'borrowed'
+    string[] retained_words = ['left']
+    print(retained_words.push(borrowed_word))
+    print(retained_words)
+    string[] self_alias = ['grow', 'tail']
+    print(self_alias.push(self_alias[1]))
+    print(self_alias)
+
+    print(push(make_empty_ints(), seed + 20))
+    int[] named_values = [seed]
+    print(named_values.push(seed + 21))
+    print(named_values)
+    const int[] frozen_values = [seed + 22]
+    int[] copied_values = copy(frozen_values)
+    print(copied_values.push(seed + 23))
+    print(copied_values)
+    print(frozen_values)
+    print(global_push_values.push(seed + 24))
+    print(global_push_values)
+
+    PushHolder holder = PushHolder([seed], [false], ['field'])
+    print(holder.numbers.push(seed + 25))
+    print(holder.numbers.push(seed + 26))
+    print(holder.flags.push(true))
+    print(holder.flags.push(false))
+    print(holder.words.push('item'))
+    print(holder.words.push('last'))
+    return 0
