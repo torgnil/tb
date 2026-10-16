@@ -4837,6 +4837,38 @@ string emit_call_value_instruction_core(ProgramIR program, ParsedFunction functi
             push_lines.push('  ' + lhs + '.len32 = call i32 ' + push_helper + '(ptr ' + temp_ref(op.args[1]) + ', ptr ' + stored_push_value + ', i1 ' + push_owned_flag + ')')
             push_lines.push('  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64')
             return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, join_llvm_strings(push_lines, '\n'))
+        if (call_arg1_type == 'int[][]'):
+            string row_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[2]))
+            if (row_type != 'int[]'):
+                throw 'unsupported llvm int[][] push item type: ' + row_type
+            string[] push_lines = emit_int_array_materialize_if_needed(function_ir, op.args[2], op.lhs + '.push')
+            string stored_push_value = temp_ref(op.args[2])
+            string push_owned_flag = 'false'
+            if (temp_is_int_array(function_ir, op.args[2])):
+                if (temp_needs_backend_free(function_ir, op.args[2])):
+                    push_owned_flag = 'true'
+                else:
+                    stored_push_value = emit_int_array_owned_value(function_ir, op.args[2], op.lhs + '.push')
+                    push_owned_flag = 'true'
+            push_lines.push('  ' + lhs + '.len32 = call i32 @tb_bootstrap_int_array_array_push(ptr ' + temp_ref(op.args[1]) + ', ptr ' + stored_push_value + ', i1 ' + push_owned_flag + ')')
+            push_lines.push('  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64')
+            return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, join_llvm_strings(push_lines, '\n'))
+        if (call_arg1_type == 'string[][]'):
+            string row_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[2]))
+            if (row_type != 'string[]'):
+                throw 'unsupported llvm string[][] push item type: ' + row_type
+            string[] push_lines = emit_string_array_materialize_if_needed(function_ir, op.args[2], op.lhs + '.push')
+            string stored_push_value = temp_ref(op.args[2])
+            string push_owned_flag = 'false'
+            if (temp_is_string_array(function_ir, op.args[2])):
+                if (temp_needs_backend_free(function_ir, op.args[2])):
+                    push_owned_flag = 'true'
+                else:
+                    stored_push_value = emit_string_array_owned_value(function_ir, op.args[2], op.lhs + '.push')
+                    push_owned_flag = 'true'
+            push_lines.push('  ' + lhs + '.len32 = call i32 @tb_bootstrap_string_array_array_push(ptr ' + temp_ref(op.args[1]) + ', ptr ' + stored_push_value + ', i1 ' + push_owned_flag + ')')
+            push_lines.push('  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64')
+            return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, join_llvm_strings(push_lines, '\n'))
         throw 'unsupported llvm push arg type: ' + call_arg1_type
     if (call_name == 'insert' && lookup_call_meta_index(call_name) < 0 && lookup_record_decl(program, call_name).header == ''):
         if (op.args.length() != 4):
