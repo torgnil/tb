@@ -5328,7 +5328,8 @@ string emit_array_contains_value(ParsedFunction function_ir, string result_name,
         helper_name = '@tb_bootstrap_string_array_contains'
     if (helper_name == ''):
         throw 'unsupported llvm array contains receiver type: ' + array_type
-    return '  ' + temp_ref(result_name) + ' = call i1 ' + helper_name + '(ptr ' + temp_ref(array_name) + ', ' + llvm_type(expected_item_type) + ' ' + temp_ref(item_name) + ')'
+    string query_line = '  ' + temp_ref(result_name) + ' = call i1 ' + helper_name + '(ptr ' + temp_ref(array_name) + ', ' + llvm_type(expected_item_type) + ' ' + temp_ref(item_name) + ')'
+    return emit_array_scalar_query_with_release(function_ir, array_name, result_name, query_line)
 
 string emit_array_index_of_value(ParsedFunction function_ir, string result_name, string array_type, string array_name, string item_name):
     string expected_item_type = array_item_type(array_type)
@@ -5344,7 +5345,8 @@ string emit_array_index_of_value(ParsedFunction function_ir, string result_name,
         helper_name = '@tb_bootstrap_string_array_index_of'
     if (helper_name == ''):
         throw 'unsupported llvm array index_of receiver type: ' + array_type
-    return '  ' + temp_ref(result_name) + ' = call i64 ' + helper_name + '(ptr ' + temp_ref(array_name) + ', ' + llvm_type(expected_item_type) + ' ' + temp_ref(item_name) + ')'
+    string query_line = '  ' + temp_ref(result_name) + ' = call i64 ' + helper_name + '(ptr ' + temp_ref(array_name) + ', ' + llvm_type(expected_item_type) + ' ' + temp_ref(item_name) + ')'
+    return emit_array_scalar_query_with_release(function_ir, array_name, result_name, query_line)
 
 string emit_last_value(string result_name, string receiver_type, string receiver_name):
     if (receiver_type == 'string'):
@@ -6164,25 +6166,31 @@ string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, Lin
             if (right_type_normalized.starts_with('map<')):
                 return emit_map_contains_value(function_ir, op.lhs, right_type_normalized, op.args[2], op.args[1])
             if (left_type_normalized == 'string' && right_type_normalized == 'string[]'):
-                return '  ' + lhs + ' = call i1 @tb_bootstrap_string_array_contains(ptr ' + temp_ref(op.args[2]) + ', ptr ' + temp_ref(op.args[1]) + ')'
+                string query_line = '  ' + lhs + ' = call i1 @tb_bootstrap_string_array_contains(ptr ' + temp_ref(op.args[2]) + ', ptr ' + temp_ref(op.args[1]) + ')'
+                return emit_array_scalar_query_with_release(function_ir, op.args[2], op.lhs, query_line)
             if (left_type_normalized == 'bool' && right_type_normalized == 'bool[]'):
-                return '  ' + lhs + ' = call i1 @tb_bootstrap_bool_array_contains(ptr ' + temp_ref(op.args[2]) + ', i1 ' + temp_ref(op.args[1]) + ')'
+                string query_line = '  ' + lhs + ' = call i1 @tb_bootstrap_bool_array_contains(ptr ' + temp_ref(op.args[2]) + ', i1 ' + temp_ref(op.args[1]) + ')'
+                return emit_array_scalar_query_with_release(function_ir, op.args[2], op.lhs, query_line)
             if (left_type_normalized == 'int' && right_type_normalized == 'set<int>'):
                 return '  ' + lhs + ' = call i1 @tb_bootstrap_int_set_contains(ptr ' + temp_ref(op.args[2]) + ', i64 ' + temp_ref(op.args[1]) + ')'
             if (left_type_normalized == 'int' && right_type_normalized == 'int[]'):
-                return '  ' + lhs + ' = call i1 @tb_bootstrap_int_array_contains(ptr ' + temp_ref(op.args[2]) + ', i64 ' + temp_ref(op.args[1]) + ')'
+                string query_line = '  ' + lhs + ' = call i1 @tb_bootstrap_int_array_contains(ptr ' + temp_ref(op.args[2]) + ', i64 ' + temp_ref(op.args[1]) + ')'
+                return emit_array_scalar_query_with_release(function_ir, op.args[2], op.lhs, query_line)
             throw 'unsupported llvm in operand types: ' + left_type + ' in ' + right_type
         if (op_name == 'not in'):
             if (right_type_normalized.starts_with('map<')):
                 return emit_map_contains_value(function_ir, op.lhs + '.in', right_type_normalized, op.args[2], op.args[1]) + '\n  ' + lhs + ' = xor i1 ' + temp_ref(op.lhs + '.in') + ', true'
             if (left_type_normalized == 'string' && right_type_normalized == 'string[]'):
-                return '  ' + lhs + '.in = call i1 @tb_bootstrap_string_array_contains(ptr ' + temp_ref(op.args[2]) + ', ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = xor i1 ' + temp_ref(op.lhs + '.in') + ', true'
+                string query_line = '  ' + lhs + '.in = call i1 @tb_bootstrap_string_array_contains(ptr ' + temp_ref(op.args[2]) + ', ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = xor i1 ' + temp_ref(op.lhs + '.in') + ', true'
+                return emit_array_scalar_query_with_release(function_ir, op.args[2], op.lhs, query_line)
             if (left_type_normalized == 'bool' && right_type_normalized == 'bool[]'):
-                return '  ' + lhs + '.in = call i1 @tb_bootstrap_bool_array_contains(ptr ' + temp_ref(op.args[2]) + ', i1 ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = xor i1 ' + temp_ref(op.lhs + '.in') + ', true'
+                string query_line = '  ' + lhs + '.in = call i1 @tb_bootstrap_bool_array_contains(ptr ' + temp_ref(op.args[2]) + ', i1 ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = xor i1 ' + temp_ref(op.lhs + '.in') + ', true'
+                return emit_array_scalar_query_with_release(function_ir, op.args[2], op.lhs, query_line)
             if (left_type_normalized == 'int' && right_type_normalized == 'set<int>'):
                 return '  ' + lhs + '.in = call i1 @tb_bootstrap_int_set_contains(ptr ' + temp_ref(op.args[2]) + ', i64 ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = xor i1 ' + temp_ref(op.lhs + '.in') + ', true'
             if (left_type_normalized == 'int' && right_type_normalized == 'int[]'):
-                return '  ' + lhs + '.in = call i1 @tb_bootstrap_int_array_contains(ptr ' + temp_ref(op.args[2]) + ', i64 ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = xor i1 ' + temp_ref(op.lhs + '.in') + ', true'
+                string query_line = '  ' + lhs + '.in = call i1 @tb_bootstrap_int_array_contains(ptr ' + temp_ref(op.args[2]) + ', i64 ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = xor i1 ' + temp_ref(op.lhs + '.in') + ', true'
+                return emit_array_scalar_query_with_release(function_ir, op.args[2], op.lhs, query_line)
             throw 'unsupported llvm not in operand types: ' + left_type + ' not in ' + right_type
         throw 'unsupported llvm binary op: ' + op_name
     if (op.detail == 'ternary'):
