@@ -5653,13 +5653,13 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
                 stored_value = emit_string_owned_value(function_ir, op.args[3], op.lhs + '.insert')
                 owned_flag = 'true'
         lines.push('  call void @tb_bootstrap_string_array_insert(ptr ' + temp_ref(op.args[1]) + ', i64 ' + temp_ref(op.args[2]) + ', ptr ' + stored_value + ', i1 ' + owned_flag + ')')
-        return join_llvm_strings(lines, '\n')
+        return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, join_llvm_strings(lines, '\n'))
     if (method_name == 'insert' && method_base_type == 'bool[]' && lookup_call_meta_index(method_name) < 0):
         if (op.args.length() != 4):
             throw 'unsupported llvm bool[] insert arity'
         if (function_uses_temp(function_ir, op.lhs)):
             throw 'insert result cannot be used as a value'
-        return '  call void @tb_bootstrap_bool_array_insert(ptr ' + temp_ref(op.args[1]) + ', i64 ' + temp_ref(op.args[2]) + ', i1 ' + temp_ref(op.args[3]) + ')'
+        return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, '  call void @tb_bootstrap_bool_array_insert(ptr ' + temp_ref(op.args[1]) + ', i64 ' + temp_ref(op.args[2]) + ', i1 ' + temp_ref(op.args[3]) + ')')
     if (method_name == 'remove_at' && method_base_type == 'bool[]' && lookup_call_meta_index(method_name) < 0):
         if (op.args.length() != 3):
             throw 'unsupported llvm bool[] remove_at arity'
@@ -5772,7 +5772,7 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
     if (method_name == 'insert' && method_base_type == 'int[]'):
         if (op.args.length() != 4):
             throw 'unsupported llvm int[] insert arity'
-        return '  ' + lhs + '.len32 = call i32 @tb_bootstrap_int_array_insert(ptr ' + temp_ref(op.args[1]) + ', i64 ' + temp_ref(op.args[2]) + ', i64 ' + temp_ref(op.args[3]) + ')\n  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64'
+        return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, '  ' + lhs + '.len32 = call i32 @tb_bootstrap_int_array_insert(ptr ' + temp_ref(op.args[1]) + ', i64 ' + temp_ref(op.args[2]) + ', i64 ' + temp_ref(op.args[3]) + ')\n  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64')
     if (method_name == 'sum' && method_base_type == 'int[]'):
         if (op.args.length() != 2):
             throw 'unsupported llvm int[] sum arity'

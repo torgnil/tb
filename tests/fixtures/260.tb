@@ -1,0 +1,119 @@
+record InsertMethodHolder(int[] values, bool[] flags, string[] words);
+
+int[] global_insert_method_numbers = [70, 71];
+string[] global_insert_method_words = ['global-left', 'global-right'];
+
+int[] make_insert_method_numbers(int seed):
+    return [seed + 60, seed + 61]
+
+bool[] make_insert_method_flags():
+    return [false]
+
+string make_insert_method_word(int seed):
+    return 'owned-' + seed.to_string()
+
+string[] make_insert_method_words():
+    return ['temporary-left', 'temporary-right']
+
+void print_insert_method_flags(bool[] flags):
+    for (int i : range(flags.length())):
+        print(flags[i])
+
+void insert_method_borrowed(int[] values, int item):
+    values.insert(1, item)
+
+int main(string[] args):
+    int seed = args.length()
+
+    int[] numbers = [seed, seed + 2]
+    print(numbers.insert(1, seed + 10))
+    print(numbers)
+
+    int[] empty_numbers = []
+    print(empty_numbers.insert(-9223372036854775807 - 1, seed + 20))
+    print(empty_numbers)
+
+    int[] at_end = [seed + 3, seed + 4]
+    at_end.insert(9223372036854775807, seed + 40)
+    print(at_end)
+
+    insert_method_borrowed(numbers, seed + 50)
+    print(numbers)
+
+    global_insert_method_numbers.insert(1, seed + 70)
+    print(global_insert_method_numbers)
+
+    InsertMethodHolder holder = InsertMethodHolder([seed + 80], [false], ['field-left'])
+    holder.values.insert(1, seed + 81)
+    holder.flags.insert(0, true)
+    holder.words.insert(1, 'field-right')
+    print(holder.values)
+    print_insert_method_flags(holder.flags)
+    print(holder.words)
+
+    const int[] frozen = [seed + 90, seed + 91]
+    int[] mutable_copy = copy(frozen)
+    print(mutable_copy.insert(1, seed + 92))
+    print(mutable_copy)
+
+    int[] reused = make_insert_method_numbers(seed)
+    reused.insert(1, seed + 100)
+    print(reused)
+
+    int[] branch_values = [seed]
+    if (seed > 0):
+        branch_values.insert(-1, seed + 110)
+    else:
+        branch_values.insert(0, seed + 111)
+    print(branch_values)
+
+    int loop_total = 0
+    for (int i : range(2)):
+        loop_total += make_insert_method_numbers(seed).insert(i, seed + 120 + i)
+    print(loop_total)
+    print(make_insert_method_numbers(seed).insert(1, seed + 130))
+
+    bool[] flags = [true, false]
+    flags.insert(1, true)
+    print_insert_method_flags(flags)
+
+    bool[] empty_flags = []
+    empty_flags.insert(9223372036854775807, false)
+    print_insert_method_flags(empty_flags)
+
+    bool[] reused_flags = make_insert_method_flags()
+    reused_flags.insert(-1, true)
+    print_insert_method_flags(reused_flags)
+    make_insert_method_flags().insert(0, true)
+
+    const string borrowed_word = 'borrowed'
+    string[] words = ['left', 'right']
+    words.insert(1, borrowed_word)
+    print(words)
+
+    string[] owned_words = ['before', 'after']
+    owned_words.insert(1, make_insert_method_word(seed))
+    print(owned_words)
+
+    string[] self_alias_growth = ['grow', 'tail']
+    self_alias_growth.insert(0, self_alias_growth[1])
+    print(self_alias_growth)
+
+    string[] empty_words = []
+    empty_words.insert(-9223372036854775807 - 1, 'first')
+    empty_words.insert(9223372036854775807, 'last')
+    print(empty_words)
+
+    global_insert_method_words.insert(1, 'global-middle')
+    print(global_insert_method_words)
+
+    string[] copied_words = copy(['copy-left', 'copy-right'])
+    copied_words.insert(1, 'copy-middle')
+    print(copied_words)
+
+    make_insert_method_words().insert(1, 'temporary-owned')
+    int[] method_numbers = [seed]
+    print(method_numbers.insert(0, seed + 140))
+    print(method_numbers)
+    print('method insert complete')
+    return 0
