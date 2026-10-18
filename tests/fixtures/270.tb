@@ -1,0 +1,25 @@
+int named_worker(int value):
+    return value + 5
+
+int main(string[] args):
+    int x = args.length() + 3
+    thread_pool pool = thread_pool(2)
+    future<int> first = pool.submit(int x -> x * 2 + 1, x)
+    future<int> second = pool.submit(int x -> -x + 20, x + 1)
+    const int constant = x + 2
+    future<int> third = pool.submit(int x -> (x << 1) | 1, constant)
+    future<int> named = pool.submit(named_worker, x + 3)
+
+    print(first.await())
+    print(second.await())
+    print(third.await())
+    print(named.await())
+    print(first.await())
+
+    if (x > 0):
+        future<int> branch = pool.submit(int x -> x - 1, x)
+        print(branch.await())
+    for (int i = 0; i < 2; i++):
+        future<int> each = pool.submit(int x -> x + 10, i)
+        print(each.await())
+    return 0

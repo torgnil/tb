@@ -24,6 +24,7 @@ record TempIRListResult(string[] names, LinearInstruction[] instructions, int ne
 record LinearIRBlockResult(LinearInstruction[] instructions, int next_temp);
 record LinearIRListResult(LinearInstruction[] instructions, int next_temp, int next_label);
 record LoweredFunctionDeclIR(ParsedFunction function_ir, int next_index);
+record SubmitLambdaRewrite(Node node, Node[] generated, string[] used_names, int next_index);
 
 string quote_string(string value):
     return '\'' + value + '\''
@@ -84,6 +85,113 @@ Node[] copy_nodes(Node[] nodes):
     for (Node node in nodes):
         copied.push(node)
     return copied
+
+bool contains_name(string[] names, string name):
+    for (string existing : names):
+        if (existing == name):
+            return true
+    return false
+
+string[] add_unique_name(string[] names, string name):
+    if (!contains_name(names, name)):
+        names.push(name)
+    return names
+
+string binding_name(string value):
+    return ir_parse_binding_decl(value).name
+
+string[] collect_submit_unavailable_names(Node node, string[] names):
+    names = add_unique_name(names, node.value)
+    if (node.kind == 'Param' || node.kind == 'VarDecl' || node.kind == 'ForEach' || node.kind == 'Catch' || node.kind == 'Function' || node.kind == 'CachedFunction'):
+        names = add_unique_name(names, binding_name(node.value))
+    for (Node child : node.children):
+        names = collect_submit_unavailable_names(child, names)
+    return names
+
+bool submit_lambda_expression_is_valid(Node node, string parameter_name):
+    if (node.kind == 'Int'):
+        return true
+    if (node.kind == 'Identifier'):
+        return node.value == parameter_name
+    if (node.kind == 'Unary'):
+        if (node.value != '-' || node.children.length() != 1):
+            return false
+        return submit_lambda_expression_is_valid(node.children[0], parameter_name)
+    if (node.kind == 'Binary'):
+        if (node.children.length() != 2):
+            return false
+        if (!(node.value == '+' || node.value == '-' || node.value == '*' || node.value == '/' || node.value == '%' || node.value == '&' || node.value == '|' || node.value == '^' || node.value == '<<' || node.value == '>>')):
+            return false
+        return submit_lambda_expression_is_valid(node.children[0], parameter_name) && submit_lambda_expression_is_valid(node.children[1], parameter_name)
+    return false
+
+void validate_submit_lambda(Node lambda_node):
+    if (lambda_node.kind != 'Lambda' || lambda_node.children.length() != 1):
+        throw 'thread_pool.submit lambda must have one int parameter and a pure int expression body'
+    BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+    if (parameter.type_name != 'int'):
+        throw 'thread_pool.submit lambda parameter must have type int'
+    if (!submit_lambda_expression_is_valid(lambda_node.children[0], parameter.name)):
+        throw 'thread_pool.submit lambda must return a pure int expression using only its parameter'
+
+string submit_worker_name(string[] used_names, int start_index):
+    int index = start_index
+    while (contains_name(used_names, '__tb_submit_lambda_' + index.to_string())):
+        index += 1
+    return '__tb_submit_lambda_' + index.to_string()
+
+SubmitLambdaRewrite rewrite_submit_lambdas(Node node, string[] used_names, int next_index):
+    if (node.kind == 'MethodCall'):
+        if (node.value == 'submit'):
+            if (node.children.length() > 1):
+                if (node.children[1].kind == 'Lambda' || node.children[1].kind == 'Lambda2'):
+                    if (node.children.length() != 3):
+                        throw 'thread_pool.submit lambda requires exactly one task argument'
+                    validate_submit_lambda(node.children[1])
+
+    Node[] rewritten_children = []
+    Node[] generated = []
+    string[] current_names = used_names
+    int current_index = next_index
+    for (Node child : node.children):
+        SubmitLambdaRewrite rewritten_child = rewrite_submit_lambdas(child, current_names, current_index)
+        rewritten_children.push(rewritten_child.node)
+        for (Node generated_node : rewritten_child.generated):
+            generated.push(generated_node)
+        current_names = rewritten_child.used_names
+        current_index = rewritten_child.next_index
+
+    Node rewritten = Node(node.kind, node.value, rewritten_children)
+    if (node.kind == 'MethodCall'):
+        if (node.value == 'submit'):
+            if (node.children.length() > 1):
+                if (node.children[1].kind == 'Lambda'):
+                    Node lambda_node = node.children[1]
+                    string worker_name = submit_worker_name(current_names, current_index)
+                    current_names = add_unique_name(current_names, worker_name)
+                    current_index += 1
+                    Node[] function_children = [Node('Param', lambda_node.value, []), Node('Return', '', [lambda_node.children[0]])]
+                    generated.push(Node('Function', 'int ' + worker_name, function_children))
+                    rewritten_children[1] = Node('Identifier', worker_name, [])
+                    rewritten = Node(node.kind, node.value, rewritten_children)
+    return SubmitLambdaRewrite(rewritten, generated, current_names, current_index)
+
+SubmitLambdaRewrite rewrite_submit_lambdas_in_program(Node program):
+    string[] unavailable_names = collect_submit_unavailable_names(program, [])
+    Node[] rewritten_children = []
+    Node[] generated = []
+    string[] used_names = unavailable_names
+    int next_index = 0
+    for (Node child : program.children):
+        SubmitLambdaRewrite rewritten = rewrite_submit_lambdas(child, used_names, next_index)
+        rewritten_children.push(rewritten.node)
+        for (Node generated_node : rewritten.generated):
+            generated.push(generated_node)
+        used_names = rewritten.used_names
+        next_index = rewritten.next_index
+    for (Node generated_node : generated):
+        rewritten_children.push(generated_node)
+    return SubmitLambdaRewrite(Node('Program', program.value, rewritten_children), generated, used_names, next_index)
 
 bool int_node_is(Node node, string value):
     return node.kind == 'Int' && node.value == value
@@ -2180,6 +2288,8 @@ BlockIR[] linear_instructions_to_blocks(LinearInstruction[] instructions):
     return blocks
 
 ProgramIR lower_program_ir(Node program):
+    SubmitLambdaRewrite rewritten = rewrite_submit_lambdas_in_program(program)
+    program = rewritten.node
     validate_const_bindings(program)
     ImportDeclIR[] imports = []
     GlobalDeclIR[] globals = []
@@ -2225,6 +2335,16 @@ ProgramIR lower_program_ir(Node program):
     return ProgramIR(imports, globals, records, enums, functions)
 
 ProgramIR lower_tokens_ir(Token[] tokens):
+    bool has_submit_identifier = false
+    bool has_arrow_symbol = false
+    for (Token token : tokens):
+        if (token_is(token, 'IDENTIFIER', 'submit')):
+            has_submit_identifier = true
+        if (token_is(token, 'SYMBOL', '->')):
+            has_arrow_symbol = true
+    if (has_submit_identifier && has_arrow_symbol):
+        return lower_program_ir(parse_program(tokens))
+
     bool has_const = false
     for (Token token : tokens):
         if (token_is(token, 'KEYWORD', 'const')):
