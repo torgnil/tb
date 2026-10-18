@@ -1,0 +1,40 @@
+int scalar_worker(int value):
+    return value + 1
+
+bool bool_worker(int value):
+    return value > 0
+
+string string_worker(string value):
+    return value + '!'
+
+int[] array_worker(int value):
+    return [value, value + 1]
+
+int[][] rows_worker(int value):
+    return [[value]]
+
+int first_item(int[][] rows):
+    return rows[0][0]
+
+int main(string[] args):
+    int seed = args.length()
+    thread_pool pool = thread_pool(2)
+    future<int> scalar = pool.submit(scalar_worker, seed)
+    const future<bool> flag = pool.submit(bool_worker, seed)
+    future<string> text = pool.submit(string_worker, 'ready')
+    future<int[]> values = pool.submit(array_worker, seed)
+    future<int[][]> rows = pool.submit(rows_worker, seed)
+
+    print(scalar.await())
+    print(flag.await())
+    print(text.await())
+    print(values.await())
+    print(first_item(rows.await()))
+    print(scalar.await())
+
+    scalar = pool.submit(int value -> value * 2, seed)
+    print(scalar.await())
+    if (flag.await()):
+        future<int> branch = pool.submit(scalar_worker, seed + 2)
+        print(branch.await())
+    return 0

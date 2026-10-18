@@ -1552,6 +1552,14 @@ void validate_map_index_type(string base_type, string index_type):
         if (actual_type != expected_type):
             throw 'map index requires ' + expected_type + '; got ' + actual_type
 
+void validate_future_binding_type(string binding_name, string expected_type, string actual_type):
+    string normalized_expected_type = normalize_llvm_type_name(expected_type)
+    string normalized_actual_type = normalize_llvm_type_name(actual_type)
+    if (normalized_expected_type != 'unknown' && normalized_actual_type != 'unknown'):
+        if (is_future_type(normalized_expected_type) || is_future_type(normalized_actual_type)):
+            if (normalized_actual_type != normalized_expected_type):
+                throw 'future binding ' + binding_name + ' requires ' + normalized_expected_type + '; got ' + normalized_actual_type
+
 RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, BindingIR[] globals, BindingIR[] params, BindingIR[] locals, FunctionSigIR[] functions, RecordFieldIR[] record_fields, string[] record_names, EnumTypeIR[] enum_types, LinearInstruction[] prior_instructions, string[] temp_types):
     BindingIR[] bindings = []
     for (BindingIR binding in globals):
@@ -1612,6 +1620,7 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
             BindingIR binding = ir_parse_binding_decl(current.detail)
             if (current.args.length() == 1):
                 string value_type = lookup_temp_type_slot(temp_types, current.args[0])
+                validate_future_binding_type(binding.name, binding.type_name, value_type)
                 if (value_type == 'unknown' && binding.type_name.starts_with('set<')):
                     block_refined = set_temp_type(block_refined, current.args[0], binding.type_name)
                     temp_types = set_temp_type_slot(temp_types, current.args[0], binding.type_name)
@@ -1715,6 +1724,7 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
             string binding_type = lookup_binding_type(bindings, current.detail)
             if (current.args.length() == 1):
                 string value_type = lookup_temp_type_slot(temp_types, current.args[0])
+                validate_future_binding_type(current.detail, binding_type, value_type)
                 if (value_type == 'unknown' && binding_type.starts_with('set<')):
                     block_refined = set_temp_type(block_refined, current.args[0], binding_type)
                     temp_types = set_temp_type_slot(temp_types, current.args[0], binding_type)
@@ -1764,6 +1774,7 @@ GlobalDeclIR refine_global(GlobalDeclIR global_decl, BindingIR[] globals, Functi
     LinearInstruction[] refined = refined_result.instructions
     BindingIR binding = ir_parse_binding_decl(strip_prefix(global_decl.header, 'global '))
     string value_type = lookup_temp_type(refined, global_decl.value_name)
+    validate_future_binding_type(binding.name, binding.type_name, value_type)
     if (value_type == 'unknown' && binding.type_name.starts_with('set<')):
         refined = set_temp_type(refined, global_decl.value_name, binding.type_name)
     string declared_map_type = normalize_llvm_type_name(binding.type_name)
@@ -1832,6 +1843,7 @@ ProgramIR refine_program_ir(ProgramIR program):
         GlobalDeclIR refined_global = GlobalDeclIR(global_decl.header.substring(0), refined_global_result.instructions, global_decl.value_name.substring(0))
         BindingIR binding = ir_parse_binding_decl(strip_prefix(global_decl.header, 'global '))
         string value_type = lookup_temp_type(refined_global.instructions, global_decl.value_name)
+        validate_future_binding_type(binding.name, binding.type_name, value_type)
         if (value_type == 'unknown' && binding.type_name.starts_with('set<')):
             refined_global = GlobalDeclIR(refined_global.header, set_temp_type(refined_global.instructions, global_decl.value_name, binding.type_name), refined_global.value_name)
         string declared_map_type = normalize_llvm_type_name(binding.type_name)
