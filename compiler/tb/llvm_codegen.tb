@@ -5989,6 +5989,8 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
                 owned_flag = 'true'
         lines.push('  ' + lhs + '.len32 = call i32 @tb_bootstrap_record_array_push_' + record_name + '(ptr ' + temp_ref(op.args[1]) + ', ptr ' + stored_value + ', i1 ' + owned_flag + ')')
         lines.push('  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64')
+        if (temp_needs_backend_free(function_ir, op.args[1]) && !temp_is_moved(function_ir, op.args[1]) && temp_is_query_only_use_in_producing_block(function_ir, op.args[1], op.lhs)):
+            lines.push(emit_backend_release_ptr(method_base_type, temp_ref(op.args[1])))
         return join_llvm_strings(lines, '\n')
     string result_type = lookup_temp_llvm_type(function_ir, op.lhs)
     require_backend_value_type(result_type, 'method-call result')
