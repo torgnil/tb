@@ -107,6 +107,12 @@ Build and invocation details are documented in the repository or release `README
   keep using them normally after the call. Lambda parameter syntax does not
   currently accept `const`.
 
+  At direct and UFCS calls that resolve to a named tb function, array arguments
+  must match the declared parameter array type, including element record and
+  nesting depth. Const qualifiers are ignored for this check. A typed empty
+  array variable is checked like any other array; bare empty array literals do
+  not gain a type from a function call.
+
 - Cached function declaration:
 
   `cached int fib(int n): ...`

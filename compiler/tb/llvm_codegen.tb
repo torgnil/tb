@@ -1856,6 +1856,32 @@ string emit_backend_release_ptr(string type_name, string ptr_name):
         return emit_record_release_ptr(record_name_from_type(type_name), ptr_name)
     return '  ; release_ptr ' + type_name + ' ' + ptr_name
 
+bool llvm_call_array_arg_types_compatible(string expected_type, string actual_type):
+    expected_type = normalize_llvm_type_name(expected_type)
+    actual_type = normalize_llvm_type_name(actual_type)
+    if (actual_type == 'unknown' || is_untyped_array_shape(actual_type)):
+        return true
+    bool expected_array = expected_type.ends_with('[]')
+    bool actual_array = actual_type.ends_with('[]')
+    if (!expected_array && !actual_array):
+        return true
+    return expected_type == actual_type
+
+void validate_named_user_call_array_arguments(ProgramIR program, ParsedFunction caller, string call_name, string[] call_args, int first_arg_index):
+    int call_meta_index = lookup_call_meta_index(call_name)
+    if (call_meta_index < 0 || call_meta_index >= program.functions.length()):
+        return
+    int param_count = program.functions[call_meta_index].params.length()
+    int arg_index = first_arg_index
+    int param_index = 0
+    while (arg_index < call_args.length() && param_index < param_count):
+        string expected_type = normalize_llvm_type_name(program.functions[call_meta_index].params[param_index].type_name)
+        string actual_type = normalize_llvm_type_name(lookup_temp_llvm_type(caller, call_args[arg_index]))
+        if (!llvm_call_array_arg_types_compatible(expected_type, actual_type)):
+            throw 'call ' + call_name + ' argument ' + (param_index + 1).to_string() + ' expected ' + expected_type + ', actual ' + actual_type
+        arg_index += 1
+        param_index += 1
+
 string emit_user_call_managed_argument_releases(ProgramIR program, ParsedFunction function_ir, string call_name, string[] call_args, int first_arg_index):
     int call_meta_index = lookup_call_meta_index(call_name)
     if (call_meta_index < 0 || call_meta_index >= program.functions.length()):
@@ -5134,6 +5160,7 @@ string emit_call_value_instruction_core(ProgramIR program, ParsedFunction functi
             LLVM_USER_CALL_RECORD_CTOR_EMITTED_BYTES += record_line.length()
         record_llvm_user_call_stats(op.args.length() - 1, 0, false, true, record_line.length())
         return record_line
+    validate_named_user_call_array_arguments(program, function_ir, call_name, op.args, 1)
     if (!is_backend_value_type(result_type)):
         throw 'unsupported llvm call result type: [' + result_type + '] call=' + call_name + ' lhs=' + op.lhs + ' fn=' + function_ir.header + ' meta=' + call_meta_index.to_string()
     if (result_llvm_type == ''):
@@ -6017,6 +6044,7 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
         if (temp_needs_backend_free(function_ir, op.args[1]) && !temp_is_moved(function_ir, op.args[1]) && temp_is_query_only_use_in_producing_block(function_ir, op.args[1], op.lhs)):
             lines.push(emit_backend_release_ptr(method_base_type, temp_ref(op.args[1])))
         return join_llvm_strings(lines, '\n')
+    validate_named_user_call_array_arguments(program, function_ir, method_name, op.args, 1)
     string result_type = lookup_temp_llvm_type(function_ir, op.lhs)
     require_backend_value_type(result_type, 'method-call result')
     string[] args = []
