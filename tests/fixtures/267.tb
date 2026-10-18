@@ -1,0 +1,86 @@
+record Item(int value, string label, int[] values);
+record Empty();
+record Holder(Item[] items);
+record item(int[] values);
+
+Item[] global_items = []
+
+Item make_item(int value):
+    return Item(value, 'item-' + value.to_string(), [value])
+
+Item[] make_items(int value):
+    return [make_item(value)]
+
+Item[] empty_items():
+    return []
+
+int borrowed_item_count(Item[] values):
+    return values.length()
+
+int main(string[] args):
+    int seed = args.length() + 3
+
+    print(length(make_items(seed)))
+    print(make_items(seed + 1).length())
+    print(make_items(seed + 2).is_empty())
+    print(length(empty_items()))
+    print(empty_items().length())
+    print(empty_items().is_empty())
+
+    print([make_item(seed + 3)].length())
+    print([make_item(seed + 4)].is_empty())
+
+    Holder holder = Holder([make_item(seed + 5)])
+    print(holder.items.length())
+    print(holder.items[0].value)
+    print(holder.items[0].label)
+
+    Item[] named = make_items(seed + 6)
+    print(named.length())
+    print(borrowed_item_count(named))
+    print(named[0].value)
+    print(named[0].values[0])
+
+    const Item[] fixed = make_items(seed + 7)
+    print(fixed.length())
+    print(fixed[0].value)
+    print(fixed[0].label)
+
+    global_items.push(make_item(17))
+    print(global_items.length())
+    print(global_items[0].value)
+
+    Empty[] no_records = []
+    print(no_records.length())
+    print(no_records.is_empty())
+    print([Empty()].length())
+    print([Empty()].is_empty())
+
+    item[] payloads = [item([seed])]
+    print(payloads.length())
+    print(payloads[0].values.length())
+
+    Item[] reused = make_items(seed + 8)
+    print(reused.length())
+    reused.push(make_item(seed + 9))
+    print(reused.length())
+
+    int total = 0
+    for (int i = 0; i < 3; i++):
+        total += make_items(seed + i).length()
+    print(total)
+
+    if (make_items(seed).is_empty()):
+        print(0)
+    else:
+        print(1)
+
+    int[] native_values = [seed]
+    print(native_values.length())
+    print(native_values.is_empty())
+    bool[] no_flags = []
+    print(no_flags.is_empty())
+    string[] native_words = ['native']
+    print(native_words.length())
+    print(native_words.is_empty())
+    return 0

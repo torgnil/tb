@@ -395,7 +395,8 @@ String helpers
 Array helpers
 
 - length(x: T[] | string | map) -> int
-  - Return length of array, string, set, or `map<string, int>`.
+  - Return length of array, string, set, or `map<string, int>`. For arrays of declared record types, direct `length(records)` and UFCS `records.length()` are supported.
+  - A recognized owned record-array expression used only by either query is released after the length is read; named bindings (including const bindings), borrowed, global, record-field, moved, or reused receivers remain with their owners.
 
 - push(arr: T[], value: T) -> int
   - Append `value` and return the new array length. Direct calls `push(values, item)` are supported for native `int[]`, `bool[]`, `string[]`, `int[][]`, and `string[][]`, and for arrays of declared record types, including zero-field records. The item type must match the array element type, including `int[]` rows for `int[][]` and `string[]` rows for `string[][]`. Array methods such as `values.push(item)` keep their existing support for these families and record arrays.
@@ -441,6 +442,7 @@ Array helpers
 - is_empty(x: string | T[] | set<T> | map<K, V> | prio_q<T>) -> bool
   - Return `true` when the value has no items. UFCS sugar such as `arr.is_empty()` and `scores.is_empty()` is supported.
   - For native `int[]`, `bool[]`, `string[]`, `int[][]`, and `string[][]`, array `length` and `is_empty` queries borrow their receiver. A recognized owned array expression used only for the query is released after the result is computed; a named array remains available for later use.
+  - For arrays of declared record types, UFCS `records.is_empty()` is supported. A recognized owned record-array expression used only by this query is released after the result is computed; named bindings (including const bindings), borrowed, global, record-field, moved, or reused receivers remain with their owners.
 
 - sort(arr: T[], compare: (T, T) -> int) -> void
   - Sort the array in place using the provided comparator.
