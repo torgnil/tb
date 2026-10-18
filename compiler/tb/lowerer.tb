@@ -26,6 +26,8 @@ record LinearIRListResult(LinearInstruction[] instructions, int next_temp, int n
 record LoweredFunctionDeclIR(ParsedFunction function_ir, int next_index);
 record SubmitLambdaRewrite(Node node, Node[] generated, string[] used_names, int next_index);
 record SubmitLambdaBlockCheck(string return_type, bool returns_all_paths);
+record SubmitLambdaScope(string[] names, string[] types, string[] const_names, string[] declared_names);
+record SubmitLambdaValidation(SubmitLambdaBlockCheck check, SubmitLambdaScope scope);
 
 string quote_string(string value):
     return '\'' + value + '\''
@@ -101,6 +103,29 @@ string[] add_unique_name(string[] names, string name):
 string binding_name(string value):
     return ir_parse_binding_decl(value).name
 
+int submit_lambda_name_index(string[] names, string name):
+    int index = names.length() - 1
+    while (index >= 0):
+        if (names[index] == name):
+            return index
+        index -= 1
+    return -1
+
+SubmitLambdaScope copy_submit_lambda_scope(SubmitLambdaScope scope):
+    string[] names = []
+    string[] types = []
+    string[] const_names = []
+    string[] declared_names = []
+    for (string name : scope.names):
+        names.push(name)
+    for (string type_name : scope.types):
+        types.push(type_name)
+    for (string name : scope.const_names):
+        const_names.push(name)
+    for (string name : scope.declared_names):
+        declared_names.push(name)
+    return SubmitLambdaScope(names, types, const_names, declared_names)
+
 string[] collect_submit_unavailable_names(Node node, string[] names):
     names = add_unique_name(names, node.value)
     if (node.kind == 'Param' || node.kind == 'VarDecl' || node.kind == 'ForEach' || node.kind == 'Catch' || node.kind == 'Function' || node.kind == 'CachedFunction'):
@@ -120,33 +145,34 @@ Node submit_lambda_helper(Node[] functions, string name):
         index -= 1
     return Node('', '', [])
 
-string submit_lambda_expression_type(Node node, string parameter_name, string parameter_type, Node[] functions):
+string submit_lambda_expression_type(Node node, SubmitLambdaScope scope, Node[] functions):
     if (node.kind == 'Int'):
         return 'int'
     if (node.kind == 'Bool'):
         return 'bool'
     if (node.kind == 'Identifier'):
-        if (node.value == parameter_name):
-            return parameter_type
+        int local_index = submit_lambda_name_index(scope.names, node.value)
+        if (local_index >= 0):
+            return scope.types[local_index]
         return ''
     if (node.kind == 'Unary'):
         if (node.children.length() != 1):
             return ''
         if (node.value == '-'):
-            if (submit_lambda_expression_type(node.children[0], parameter_name, parameter_type, functions) == 'int'):
+            if (submit_lambda_expression_type(node.children[0], scope, functions) == 'int'):
                 return 'int'
             return ''
         if (node.value == '!' || node.value == 'not'):
-            if (submit_lambda_expression_type(node.children[0], parameter_name, parameter_type, functions) == 'bool'):
+            if (submit_lambda_expression_type(node.children[0], scope, functions) == 'bool'):
                 return 'bool'
         return ''
     if (node.kind == 'Binary'):
         if (node.children.length() != 2):
             return ''
-        string left_type = submit_lambda_expression_type(node.children[0], parameter_name, parameter_type, functions)
+        string left_type = submit_lambda_expression_type(node.children[0], scope, functions)
         if (left_type == ''):
             return ''
-        string right_type = submit_lambda_expression_type(node.children[1], parameter_name, parameter_type, functions)
+        string right_type = submit_lambda_expression_type(node.children[1], scope, functions)
         if (right_type == ''):
             return ''
         if (node.value == '+' || node.value == '-' || node.value == '*' || node.value == '/' || node.value == '%' || node.value == '&' || node.value == '|' || node.value == '^' || node.value == '<<' || node.value == '>>'):
@@ -193,7 +219,7 @@ string submit_lambda_expression_type(Node node, string parameter_name, string pa
             string helper_decl_type = parameter.type_name
             if (helper_decl_type.starts_with('const ')):
                 helper_decl_type = helper_decl_type.substring(6)
-            string argument_type = submit_lambda_expression_type(node.children[index], parameter_name, parameter_type, functions)
+            string argument_type = submit_lambda_expression_type(node.children[index], scope, functions)
             if (argument_type == ''):
                 return ''
             if (argument_type != helper_decl_type):
@@ -211,23 +237,62 @@ string merge_submit_return_types(string left, string right):
         throw 'thread_pool.submit lambda block returns must all have the same int or bool type'
     return left
 
-SubmitLambdaBlockCheck validate_submit_lambda_block_statements(Node[] statements, string parameter_name, string parameter_type, Node[] functions):
+SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements, SubmitLambdaScope initial_scope, Node[] functions):
+    SubmitLambdaScope scope = initial_scope
     string return_type = ''
     bool previous_paths_return = false
     for (Node statement : statements):
         SubmitLambdaBlockCheck current = SubmitLambdaBlockCheck('', false)
-        if (statement.kind == 'Return'):
+        if (statement.kind == 'VarDecl'):
+            if (statement.children.length() != 1):
+                throw 'thread_pool.submit lambda local declaration requires an initializer'
+            BindingIR binding = ir_parse_binding_decl(statement.value)
+            string local_type = binding.type_name
+            bool is_const = local_type.starts_with('const ')
+            if (is_const):
+                local_type = local_type.substring(6)
+            if (!(local_type == 'int' || local_type == 'bool')):
+                throw 'thread_pool.submit lambda locals must have type int or bool'
+            if (contains_name(scope.declared_names, binding.name)):
+                throw 'thread_pool.submit lambda local names must be unique, including the parameter'
+            string initializer_type = submit_lambda_expression_type(statement.children[0], scope, functions)
+            if (initializer_type == ''):
+                throw 'thread_pool.submit lambda local initializer must use only in-scope scalar values and declared scalar helper calls'
+            if (initializer_type != local_type):
+                throw 'thread_pool.submit lambda local initializer must have type ' + local_type + '; got ' + initializer_type
+            scope.declared_names = append_lines(scope.declared_names, [binding.name])
+            scope.names = append_lines(scope.names, [binding.name])
+            scope.types = append_lines(scope.types, [local_type])
+            if (is_const):
+                scope.const_names = append_lines(scope.const_names, [binding.name])
+        else if (statement.kind == 'Assign'):
+            if (statement.children.length() != 2):
+                throw 'thread_pool.submit lambda assignments must target a mutable scalar local'
+            if (statement.children[0].kind != 'Identifier'):
+                throw 'thread_pool.submit lambda assignments must target a mutable scalar local'
+            string target_name = statement.children[0].value
+            int target_index = submit_lambda_name_index(scope.names, target_name)
+            if (target_index < 0):
+                throw 'thread_pool.submit lambda assignment target must be an in-scope scalar local'
+            if (contains_name(scope.const_names, target_name)):
+                throw 'thread_pool.submit lambda cannot assign to const local ' + target_name
+            string value_type = submit_lambda_expression_type(statement.children[1], scope, functions)
+            if (value_type == ''):
+                throw 'thread_pool.submit lambda assignment value must use only in-scope scalar values and declared scalar helper calls'
+            if (value_type != scope.types[target_index]):
+                throw 'thread_pool.submit lambda assignment must have type ' + scope.types[target_index] + '; got ' + value_type
+        else if (statement.kind == 'Return'):
             if (statement.children.length() != 1):
                 throw 'thread_pool.submit lambda block requires value returns'
-            current.return_type = submit_lambda_expression_type(statement.children[0], parameter_name, parameter_type, functions)
+            current.return_type = submit_lambda_expression_type(statement.children[0], scope, functions)
             if (!(current.return_type == 'int' || current.return_type == 'bool')):
-                throw 'thread_pool.submit lambda return must be an int or bool expression using only its parameter and declared scalar helper calls'
+                throw 'thread_pool.submit lambda return must be an int or bool expression using only in-scope scalar values and declared scalar helper calls'
             current.returns_all_paths = true
         else if (statement.kind == 'If'):
             if (statement.children.length() < 1):
                 throw 'thread_pool.submit lambda block contains an invalid if statement'
-            if (submit_lambda_expression_type(statement.children[0], parameter_name, parameter_type, functions) != 'bool'):
-                throw 'thread_pool.submit lambda condition must be a bool expression using only its parameter and declared scalar helper calls'
+            if (submit_lambda_expression_type(statement.children[0], scope, functions) != 'bool'):
+                throw 'thread_pool.submit lambda condition must be a bool expression using only in-scope scalar values and declared scalar helper calls'
             Node[] then_statements = []
             Node[] else_statements = []
             bool has_else = false
@@ -242,20 +307,27 @@ SubmitLambdaBlockCheck validate_submit_lambda_block_statements(Node[] statements
                 else:
                     then_statements.push(child)
                 child_index += 1
-            SubmitLambdaBlockCheck then_check = validate_submit_lambda_block_statements(then_statements, parameter_name, parameter_type, functions)
+            SubmitLambdaValidation then_validation = validate_submit_lambda_block_statements(then_statements, copy_submit_lambda_scope(scope), functions)
+            SubmitLambdaBlockCheck then_check = then_validation.check
             return_type = merge_submit_return_types(return_type, then_check.return_type)
             current.returns_all_paths = false
             if (has_else):
-                SubmitLambdaBlockCheck else_check = validate_submit_lambda_block_statements(else_statements, parameter_name, parameter_type, functions)
+                SubmitLambdaScope else_scope = copy_submit_lambda_scope(scope)
+                else_scope.declared_names = then_validation.scope.declared_names
+                SubmitLambdaValidation else_validation = validate_submit_lambda_block_statements(else_statements, else_scope, functions)
+                SubmitLambdaBlockCheck else_check = else_validation.check
                 return_type = merge_submit_return_types(return_type, else_check.return_type)
                 current.returns_all_paths = then_check.returns_all_paths && else_check.returns_all_paths
+                scope.declared_names = else_validation.scope.declared_names
+            else:
+                scope.declared_names = then_validation.scope.declared_names
             current.return_type = return_type
         else:
-            throw 'thread_pool.submit lambda block supports only return and if/else statements'
+            throw 'thread_pool.submit lambda block supports only scalar locals, assignments, return and if/else statements'
         return_type = merge_submit_return_types(return_type, current.return_type)
         if (!previous_paths_return):
             previous_paths_return = current.returns_all_paths
-    return SubmitLambdaBlockCheck(return_type, previous_paths_return)
+    return SubmitLambdaValidation(SubmitLambdaBlockCheck(return_type, previous_paths_return), scope)
 
 string validate_submit_lambda(Node lambda_node, Node[] functions):
     if (lambda_node.kind != 'Lambda' || lambda_node.children.length() != 1):
@@ -263,15 +335,17 @@ string validate_submit_lambda(Node lambda_node, Node[] functions):
     BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
     if (!(parameter.type_name == 'int' || parameter.type_name == 'bool')):
         throw 'thread_pool.submit lambda parameter must have type int or bool'
+    SubmitLambdaScope initial_scope = SubmitLambdaScope([parameter.name], [parameter.type_name], [], [parameter.name])
     Node body = lambda_node.children[0]
     if (body.kind == 'Block'):
-        SubmitLambdaBlockCheck block_check = validate_submit_lambda_block_statements(body.children, parameter.name, parameter.type_name, functions)
+        SubmitLambdaValidation validation = validate_submit_lambda_block_statements(body.children, initial_scope, functions)
+        SubmitLambdaBlockCheck block_check = validation.check
         if (!(block_check.return_type == 'int' || block_check.return_type == 'bool') || !block_check.returns_all_paths):
             throw 'thread_pool.submit lambda block must return a value on every path'
         return block_check.return_type
-    string result_type = submit_lambda_expression_type(body, parameter.name, parameter.type_name, functions)
+    string result_type = submit_lambda_expression_type(body, initial_scope, functions)
     if (!(result_type == 'int' || result_type == 'bool')):
-        throw 'thread_pool.submit lambda body must be an int or bool expression using only its parameter and declared scalar helper calls'
+        throw 'thread_pool.submit lambda body must be an int or bool expression using only in-scope scalar values and declared scalar helper calls'
     return result_type
 
 string submit_worker_name(string[] used_names, int start_index):
