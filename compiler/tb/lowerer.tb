@@ -108,31 +108,63 @@ string[] collect_submit_unavailable_names(Node node, string[] names):
         names = collect_submit_unavailable_names(child, names)
     return names
 
-bool submit_lambda_expression_is_valid(Node node, string parameter_name):
+string submit_lambda_expression_type(Node node, string parameter_name, string parameter_type):
     if (node.kind == 'Int'):
-        return true
+        return 'int'
+    if (node.kind == 'Bool'):
+        return 'bool'
     if (node.kind == 'Identifier'):
-        return node.value == parameter_name
+        if (node.value == parameter_name):
+            return parameter_type
+        return ''
     if (node.kind == 'Unary'):
-        if (node.value != '-' || node.children.length() != 1):
-            return false
-        return submit_lambda_expression_is_valid(node.children[0], parameter_name)
+        if (node.children.length() != 1):
+            return ''
+        if (node.value == '-'):
+            if (submit_lambda_expression_type(node.children[0], parameter_name, parameter_type) == 'int'):
+                return 'int'
+            return ''
+        if (node.value == '!' || node.value == 'not'):
+            if (submit_lambda_expression_type(node.children[0], parameter_name, parameter_type) == 'bool'):
+                return 'bool'
+        return ''
     if (node.kind == 'Binary'):
         if (node.children.length() != 2):
-            return false
-        if (!(node.value == '+' || node.value == '-' || node.value == '*' || node.value == '/' || node.value == '%' || node.value == '&' || node.value == '|' || node.value == '^' || node.value == '<<' || node.value == '>>')):
-            return false
-        return submit_lambda_expression_is_valid(node.children[0], parameter_name) && submit_lambda_expression_is_valid(node.children[1], parameter_name)
-    return false
+            return ''
+        string left_type = submit_lambda_expression_type(node.children[0], parameter_name, parameter_type)
+        if (left_type == ''):
+            return ''
+        string right_type = submit_lambda_expression_type(node.children[1], parameter_name, parameter_type)
+        if (right_type == ''):
+            return ''
+        if (node.value == '+' || node.value == '-' || node.value == '*' || node.value == '/' || node.value == '%' || node.value == '&' || node.value == '|' || node.value == '^' || node.value == '<<' || node.value == '>>'):
+            if (left_type == 'int' && right_type == 'int'):
+                return 'int'
+            return ''
+        if (node.value == '<' || node.value == '<=' || node.value == '>' || node.value == '>='):
+            if (left_type == 'int' && right_type == 'int'):
+                return 'bool'
+            return ''
+        if (node.value == '==' || node.value == '!='):
+            if (left_type == right_type && (left_type == 'int' || left_type == 'bool')):
+                return 'bool'
+            return ''
+        if (node.value == '&&' || node.value == '||' || node.value == 'and' || node.value == 'or'):
+            if (left_type == 'bool' && right_type == 'bool'):
+                return 'bool'
+        return ''
+    return ''
 
-void validate_submit_lambda(Node lambda_node):
+string validate_submit_lambda(Node lambda_node):
     if (lambda_node.kind != 'Lambda' || lambda_node.children.length() != 1):
-        throw 'thread_pool.submit lambda must have one int parameter and a pure int expression body'
+        throw 'thread_pool.submit lambda must have one int or bool parameter and a pure scalar expression body'
     BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
-    if (parameter.type_name != 'int'):
-        throw 'thread_pool.submit lambda parameter must have type int'
-    if (!submit_lambda_expression_is_valid(lambda_node.children[0], parameter.name)):
-        throw 'thread_pool.submit lambda must return a pure int expression using only its parameter'
+    if (!(parameter.type_name == 'int' || parameter.type_name == 'bool')):
+        throw 'thread_pool.submit lambda parameter must have type int or bool'
+    string result_type = submit_lambda_expression_type(lambda_node.children[0], parameter.name, parameter.type_name)
+    if (!(result_type == 'int' || result_type == 'bool')):
+        throw 'thread_pool.submit lambda body must be a pure int or bool expression using only its parameter'
+    return result_type
 
 string submit_worker_name(string[] used_names, int start_index):
     int index = start_index
@@ -167,11 +199,12 @@ SubmitLambdaRewrite rewrite_submit_lambdas(Node node, string[] used_names, int n
             if (node.children.length() > 1):
                 if (node.children[1].kind == 'Lambda'):
                     Node lambda_node = node.children[1]
+                    string worker_return_type = validate_submit_lambda(lambda_node)
                     string worker_name = submit_worker_name(current_names, current_index)
                     current_names = add_unique_name(current_names, worker_name)
                     current_index += 1
                     Node[] function_children = [Node('Param', lambda_node.value, []), Node('Return', '', [lambda_node.children[0]])]
-                    generated.push(Node('Function', 'int ' + worker_name, function_children))
+                    generated.push(Node('Function', worker_return_type + ' ' + worker_name, function_children))
                     rewritten_children[1] = Node('Identifier', worker_name, [])
                     rewritten = Node(node.kind, node.value, rewritten_children)
     return SubmitLambdaRewrite(rewritten, generated, current_names, current_index)
