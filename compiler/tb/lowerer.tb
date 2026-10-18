@@ -109,7 +109,18 @@ string[] collect_submit_unavailable_names(Node node, string[] names):
         names = collect_submit_unavailable_names(child, names)
     return names
 
-string submit_lambda_expression_type(Node node, string parameter_name, string parameter_type):
+Node submit_lambda_helper(Node[] functions, string name):
+    int index = functions.length() - 1
+    while (index >= 0):
+        Node function_node = functions[index]
+        if (function_node.kind == 'Function' || function_node.kind == 'CachedFunction'):
+            BindingIR signature = ir_parse_binding_decl(function_node.value)
+            if (signature.name == name):
+                return function_node
+        index -= 1
+    return Node('', '', [])
+
+string submit_lambda_expression_type(Node node, string parameter_name, string parameter_type, Node[] functions):
     if (node.kind == 'Int'):
         return 'int'
     if (node.kind == 'Bool'):
@@ -122,20 +133,20 @@ string submit_lambda_expression_type(Node node, string parameter_name, string pa
         if (node.children.length() != 1):
             return ''
         if (node.value == '-'):
-            if (submit_lambda_expression_type(node.children[0], parameter_name, parameter_type) == 'int'):
+            if (submit_lambda_expression_type(node.children[0], parameter_name, parameter_type, functions) == 'int'):
                 return 'int'
             return ''
         if (node.value == '!' || node.value == 'not'):
-            if (submit_lambda_expression_type(node.children[0], parameter_name, parameter_type) == 'bool'):
+            if (submit_lambda_expression_type(node.children[0], parameter_name, parameter_type, functions) == 'bool'):
                 return 'bool'
         return ''
     if (node.kind == 'Binary'):
         if (node.children.length() != 2):
             return ''
-        string left_type = submit_lambda_expression_type(node.children[0], parameter_name, parameter_type)
+        string left_type = submit_lambda_expression_type(node.children[0], parameter_name, parameter_type, functions)
         if (left_type == ''):
             return ''
-        string right_type = submit_lambda_expression_type(node.children[1], parameter_name, parameter_type)
+        string right_type = submit_lambda_expression_type(node.children[1], parameter_name, parameter_type, functions)
         if (right_type == ''):
             return ''
         if (node.value == '+' || node.value == '-' || node.value == '*' || node.value == '/' || node.value == '%' || node.value == '&' || node.value == '|' || node.value == '^' || node.value == '<<' || node.value == '>>'):
@@ -154,6 +165,35 @@ string submit_lambda_expression_type(Node node, string parameter_name, string pa
             if (left_type == 'bool' && right_type == 'bool'):
                 return 'bool'
         return ''
+    if (node.kind == 'Call'):
+        Node function_node = submit_lambda_helper(functions, node.value)
+        if (function_node.kind == ''):
+            return ''
+        BindingIR signature = ir_parse_binding_decl(function_node.value)
+        if (!(signature.type_name == 'int' || signature.type_name == 'bool')):
+            return ''
+        int parameter_count = 0
+        int index = 0
+        while (index < function_node.children.length()):
+            if (function_node.children[index].kind != 'Param'):
+                break
+            BindingIR parameter = ir_parse_binding_decl(function_node.children[index].value)
+            if (!(parameter.type_name == 'int' || parameter.type_name == 'bool')):
+                return ''
+            parameter_count += 1
+            index += 1
+        if (node.children.length() != parameter_count):
+            throw 'thread_pool.submit lambda helper ' + node.value + ' expects ' + parameter_count.to_string() + ' arguments but received ' + node.children.length().to_string()
+        index = 0
+        while (index < parameter_count):
+            BindingIR parameter = ir_parse_binding_decl(function_node.children[index].value)
+            string argument_type = submit_lambda_expression_type(node.children[index], parameter_name, parameter_type, functions)
+            if (argument_type == ''):
+                return ''
+            if (argument_type != parameter.type_name):
+                throw 'thread_pool.submit lambda helper ' + node.value + ' argument ' + (index + 1).to_string() + ' must have type ' + parameter.type_name + '; got ' + argument_type
+            index += 1
+        return signature.type_name
     return ''
 
 string merge_submit_return_types(string left, string right):
@@ -165,7 +205,7 @@ string merge_submit_return_types(string left, string right):
         throw 'thread_pool.submit lambda block returns must all have the same int or bool type'
     return left
 
-SubmitLambdaBlockCheck validate_submit_lambda_block_statements(Node[] statements, string parameter_name, string parameter_type):
+SubmitLambdaBlockCheck validate_submit_lambda_block_statements(Node[] statements, string parameter_name, string parameter_type, Node[] functions):
     string return_type = ''
     bool previous_paths_return = false
     for (Node statement : statements):
@@ -173,15 +213,15 @@ SubmitLambdaBlockCheck validate_submit_lambda_block_statements(Node[] statements
         if (statement.kind == 'Return'):
             if (statement.children.length() != 1):
                 throw 'thread_pool.submit lambda block requires value returns'
-            current.return_type = submit_lambda_expression_type(statement.children[0], parameter_name, parameter_type)
+            current.return_type = submit_lambda_expression_type(statement.children[0], parameter_name, parameter_type, functions)
             if (!(current.return_type == 'int' || current.return_type == 'bool')):
-                throw 'thread_pool.submit lambda return must be a pure int or bool expression using only its parameter'
+                throw 'thread_pool.submit lambda return must be an int or bool expression using only its parameter and declared scalar helper calls'
             current.returns_all_paths = true
         else if (statement.kind == 'If'):
             if (statement.children.length() < 1):
                 throw 'thread_pool.submit lambda block contains an invalid if statement'
-            if (submit_lambda_expression_type(statement.children[0], parameter_name, parameter_type) != 'bool'):
-                throw 'thread_pool.submit lambda condition must be a pure bool expression using only its parameter'
+            if (submit_lambda_expression_type(statement.children[0], parameter_name, parameter_type, functions) != 'bool'):
+                throw 'thread_pool.submit lambda condition must be a bool expression using only its parameter and declared scalar helper calls'
             Node[] then_statements = []
             Node[] else_statements = []
             bool has_else = false
@@ -196,11 +236,11 @@ SubmitLambdaBlockCheck validate_submit_lambda_block_statements(Node[] statements
                 else:
                     then_statements.push(child)
                 child_index += 1
-            SubmitLambdaBlockCheck then_check = validate_submit_lambda_block_statements(then_statements, parameter_name, parameter_type)
+            SubmitLambdaBlockCheck then_check = validate_submit_lambda_block_statements(then_statements, parameter_name, parameter_type, functions)
             return_type = merge_submit_return_types(return_type, then_check.return_type)
             current.returns_all_paths = false
             if (has_else):
-                SubmitLambdaBlockCheck else_check = validate_submit_lambda_block_statements(else_statements, parameter_name, parameter_type)
+                SubmitLambdaBlockCheck else_check = validate_submit_lambda_block_statements(else_statements, parameter_name, parameter_type, functions)
                 return_type = merge_submit_return_types(return_type, else_check.return_type)
                 current.returns_all_paths = then_check.returns_all_paths && else_check.returns_all_paths
             current.return_type = return_type
@@ -211,21 +251,21 @@ SubmitLambdaBlockCheck validate_submit_lambda_block_statements(Node[] statements
             previous_paths_return = current.returns_all_paths
     return SubmitLambdaBlockCheck(return_type, previous_paths_return)
 
-string validate_submit_lambda(Node lambda_node):
+string validate_submit_lambda(Node lambda_node, Node[] functions):
     if (lambda_node.kind != 'Lambda' || lambda_node.children.length() != 1):
-        throw 'thread_pool.submit lambda must have one int or bool parameter and a pure scalar body'
+        throw 'thread_pool.submit lambda must have one int or bool parameter and a scalar body'
     BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
     if (!(parameter.type_name == 'int' || parameter.type_name == 'bool')):
         throw 'thread_pool.submit lambda parameter must have type int or bool'
     Node body = lambda_node.children[0]
     if (body.kind == 'Block'):
-        SubmitLambdaBlockCheck block_check = validate_submit_lambda_block_statements(body.children, parameter.name, parameter.type_name)
+        SubmitLambdaBlockCheck block_check = validate_submit_lambda_block_statements(body.children, parameter.name, parameter.type_name, functions)
         if (!(block_check.return_type == 'int' || block_check.return_type == 'bool') || !block_check.returns_all_paths):
             throw 'thread_pool.submit lambda block must return a value on every path'
         return block_check.return_type
-    string result_type = submit_lambda_expression_type(body, parameter.name, parameter.type_name)
+    string result_type = submit_lambda_expression_type(body, parameter.name, parameter.type_name, functions)
     if (!(result_type == 'int' || result_type == 'bool')):
-        throw 'thread_pool.submit lambda body must be a pure int or bool expression using only its parameter'
+        throw 'thread_pool.submit lambda body must be an int or bool expression using only its parameter and declared scalar helper calls'
     return result_type
 
 string submit_worker_name(string[] used_names, int start_index):
@@ -234,21 +274,21 @@ string submit_worker_name(string[] used_names, int start_index):
         index += 1
     return '__tb_submit_lambda_' + index.to_string()
 
-SubmitLambdaRewrite rewrite_submit_lambdas(Node node, string[] used_names, int next_index):
+SubmitLambdaRewrite rewrite_submit_lambdas(Node node, string[] used_names, int next_index, Node[] functions):
     if (node.kind == 'MethodCall'):
         if (node.value == 'submit'):
             if (node.children.length() > 1):
                 if (node.children[1].kind == 'Lambda' || node.children[1].kind == 'Lambda2'):
                     if (node.children.length() != 3):
                         throw 'thread_pool.submit lambda requires exactly one task argument'
-                    validate_submit_lambda(node.children[1])
+                    validate_submit_lambda(node.children[1], functions)
 
     Node[] rewritten_children = []
     Node[] generated = []
     string[] current_names = used_names
     int current_index = next_index
     for (Node child : node.children):
-        SubmitLambdaRewrite rewritten_child = rewrite_submit_lambdas(child, current_names, current_index)
+        SubmitLambdaRewrite rewritten_child = rewrite_submit_lambdas(child, current_names, current_index, functions)
         rewritten_children.push(rewritten_child.node)
         for (Node generated_node : rewritten_child.generated):
             generated.push(generated_node)
@@ -261,7 +301,7 @@ SubmitLambdaRewrite rewrite_submit_lambdas(Node node, string[] used_names, int n
             if (node.children.length() > 1):
                 if (node.children[1].kind == 'Lambda'):
                     Node lambda_node = node.children[1]
-                    string worker_return_type = validate_submit_lambda(lambda_node)
+                    string worker_return_type = validate_submit_lambda(lambda_node, functions)
                     string worker_name = submit_worker_name(current_names, current_index)
                     current_names = add_unique_name(current_names, worker_name)
                     current_index += 1
@@ -279,12 +319,17 @@ SubmitLambdaRewrite rewrite_submit_lambdas(Node node, string[] used_names, int n
 
 SubmitLambdaRewrite rewrite_submit_lambdas_in_program(Node program):
     string[] unavailable_names = collect_submit_unavailable_names(program, [])
+    Node[] functions = []
+    for (Node child : program.children):
+        if (child.kind == 'Function' || child.kind == 'CachedFunction'):
+            functions.push(child)
+
     Node[] rewritten_children = []
     Node[] generated = []
     string[] used_names = unavailable_names
     int next_index = 0
     for (Node child : program.children):
-        SubmitLambdaRewrite rewritten = rewrite_submit_lambdas(child, used_names, next_index)
+        SubmitLambdaRewrite rewritten = rewrite_submit_lambdas(child, used_names, next_index, functions)
         rewritten_children.push(rewritten.node)
         for (Node generated_node : rewritten.generated):
             generated.push(generated_node)
