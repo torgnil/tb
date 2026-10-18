@@ -5407,6 +5407,19 @@ string emit_builtin_query_call_value_instruction(ProgramIR program, ParsedFuncti
     if (call_name == 'is_empty'):
         if (op.args.length() != 2):
             throw 'unsupported llvm is_empty arity'
+        if (call_arg1_type == 'bool[]' || call_arg1_type == 'int[][]' || call_arg1_type == 'string[][]'):
+            int is_empty_meta_index = lookup_call_meta_index(call_name)
+            RecordDeclIR is_empty_record = lookup_record_decl(program, call_name)
+            if (is_empty_meta_index < 0 && is_empty_record.header == ''):
+                string helper_name = ''
+                if (call_arg1_type == 'bool[]'):
+                    helper_name = '@tb_bootstrap_bool_array_length'
+                else if (call_arg1_type == 'int[][]'):
+                    helper_name = '@tb_bootstrap_int_array_array_length'
+                else:
+                    helper_name = '@tb_bootstrap_string_array_array_length'
+                string empty_line = '  ' + lhs + '.len32 = call i32 ' + helper_name + '(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = icmp eq i32 ' + temp_ref(op.lhs + '.len32') + ', 0'
+                return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, empty_line)
         if (call_arg1_type == 'string'):
             string empty_line = emit_string_length_value(function_ir, op.args[1], temp_ref(op.lhs + '.len'), op.lhs + '.builtin.empty') + '\n  ' + lhs + ' = icmp eq i64 ' + temp_ref(op.lhs + '.len') + ', 0'
             return emit_owned_string_array_index_result_release(function_ir, op.args[1], op.lhs, empty_line)

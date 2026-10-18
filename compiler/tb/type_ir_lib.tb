@@ -1123,7 +1123,9 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
                     if (is_empty_function.name == ''):
                         if (!record_type_exists(record_names, 'is_empty')):
                             string is_empty_receiver_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
-                            if (is_empty_receiver_type.ends_with('[]')):
+                            if (is_array_copy_type(is_empty_receiver_type)):
+                                result_type = 'bool'
+                            else if (is_empty_receiver_type.ends_with('[]')):
                                 string is_empty_record_name = record_name_from_type(array_item_type(is_empty_receiver_type))
                                 if (is_empty_record_name != ''):
                                     if (record_type_exists(record_names, is_empty_record_name)):
