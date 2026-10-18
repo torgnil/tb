@@ -25,6 +25,7 @@ record LinearIRBlockResult(LinearInstruction[] instructions, int next_temp);
 record LinearIRListResult(LinearInstruction[] instructions, int next_temp, int next_label);
 record LoweredFunctionDeclIR(ParsedFunction function_ir, int next_index);
 record SubmitLambdaRewrite(Node node, Node[] generated, string[] used_names, int next_index);
+record SubmitLambdaBlockCheck(string return_type, bool returns_all_paths);
 
 string quote_string(string value):
     return '\'' + value + '\''
@@ -155,13 +156,74 @@ string submit_lambda_expression_type(Node node, string parameter_name, string pa
         return ''
     return ''
 
+string merge_submit_return_types(string left, string right):
+    if (left == ''):
+        return right
+    if (right == ''):
+        return left
+    if (left != right):
+        throw 'thread_pool.submit lambda block returns must all have the same int or bool type'
+    return left
+
+SubmitLambdaBlockCheck validate_submit_lambda_block_statements(Node[] statements, string parameter_name, string parameter_type):
+    string return_type = ''
+    bool previous_paths_return = false
+    for (Node statement : statements):
+        SubmitLambdaBlockCheck current = SubmitLambdaBlockCheck('', false)
+        if (statement.kind == 'Return'):
+            if (statement.children.length() != 1):
+                throw 'thread_pool.submit lambda block requires value returns'
+            current.return_type = submit_lambda_expression_type(statement.children[0], parameter_name, parameter_type)
+            if (!(current.return_type == 'int' || current.return_type == 'bool')):
+                throw 'thread_pool.submit lambda return must be a pure int or bool expression using only its parameter'
+            current.returns_all_paths = true
+        else if (statement.kind == 'If'):
+            if (statement.children.length() < 1):
+                throw 'thread_pool.submit lambda block contains an invalid if statement'
+            if (submit_lambda_expression_type(statement.children[0], parameter_name, parameter_type) != 'bool'):
+                throw 'thread_pool.submit lambda condition must be a pure bool expression using only its parameter'
+            Node[] then_statements = []
+            Node[] else_statements = []
+            bool has_else = false
+            int child_index = 1
+            while (child_index < statement.children.length()):
+                Node child = statement.children[child_index]
+                if (child.kind == 'Else'):
+                    if (has_else || child_index + 1 != statement.children.length()):
+                        throw 'thread_pool.submit lambda block contains an invalid else branch'
+                    has_else = true
+                    else_statements = child.children
+                else:
+                    then_statements.push(child)
+                child_index += 1
+            SubmitLambdaBlockCheck then_check = validate_submit_lambda_block_statements(then_statements, parameter_name, parameter_type)
+            return_type = merge_submit_return_types(return_type, then_check.return_type)
+            current.returns_all_paths = false
+            if (has_else):
+                SubmitLambdaBlockCheck else_check = validate_submit_lambda_block_statements(else_statements, parameter_name, parameter_type)
+                return_type = merge_submit_return_types(return_type, else_check.return_type)
+                current.returns_all_paths = then_check.returns_all_paths && else_check.returns_all_paths
+            current.return_type = return_type
+        else:
+            throw 'thread_pool.submit lambda block supports only return and if/else statements'
+        return_type = merge_submit_return_types(return_type, current.return_type)
+        if (!previous_paths_return):
+            previous_paths_return = current.returns_all_paths
+    return SubmitLambdaBlockCheck(return_type, previous_paths_return)
+
 string validate_submit_lambda(Node lambda_node):
     if (lambda_node.kind != 'Lambda' || lambda_node.children.length() != 1):
-        throw 'thread_pool.submit lambda must have one int or bool parameter and a pure scalar expression body'
+        throw 'thread_pool.submit lambda must have one int or bool parameter and a pure scalar body'
     BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
     if (!(parameter.type_name == 'int' || parameter.type_name == 'bool')):
         throw 'thread_pool.submit lambda parameter must have type int or bool'
-    string result_type = submit_lambda_expression_type(lambda_node.children[0], parameter.name, parameter.type_name)
+    Node body = lambda_node.children[0]
+    if (body.kind == 'Block'):
+        SubmitLambdaBlockCheck block_check = validate_submit_lambda_block_statements(body.children, parameter.name, parameter.type_name)
+        if (!(block_check.return_type == 'int' || block_check.return_type == 'bool') || !block_check.returns_all_paths):
+            throw 'thread_pool.submit lambda block must return a value on every path'
+        return block_check.return_type
+    string result_type = submit_lambda_expression_type(body, parameter.name, parameter.type_name)
     if (!(result_type == 'int' || result_type == 'bool')):
         throw 'thread_pool.submit lambda body must be a pure int or bool expression using only its parameter'
     return result_type
@@ -203,7 +265,13 @@ SubmitLambdaRewrite rewrite_submit_lambdas(Node node, string[] used_names, int n
                     string worker_name = submit_worker_name(current_names, current_index)
                     current_names = add_unique_name(current_names, worker_name)
                     current_index += 1
-                    Node[] function_children = [Node('Param', lambda_node.value, []), Node('Return', '', [lambda_node.children[0]])]
+                    Node[] function_children = [Node('Param', lambda_node.value, [])]
+                    Node lambda_body = lambda_node.children[0]
+                    if (lambda_body.kind == 'Block'):
+                        for (Node statement : lambda_body.children):
+                            function_children.push(statement)
+                    else:
+                        function_children.push(Node('Return', '', [lambda_body]))
                     generated.push(Node('Function', worker_return_type + ' ' + worker_name, function_children))
                     rewritten_children[1] = Node('Identifier', worker_name, [])
                     rewritten = Node(node.kind, node.value, rewritten_children)

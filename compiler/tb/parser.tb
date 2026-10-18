@@ -85,6 +85,12 @@ int expect_symbol(Token[] tokens, int index, string value):
         throw parser_error(token, 'expected symbol ' + value)
     return index + 1
 
+ParseResult parse_lambda_body(Token[] tokens, int index):
+    if (token_is(token_at(tokens, index), 'SYMBOL', '{')):
+        ParseNodesResult body = parse_block(tokens, index)
+        return ParseResult(Node('Block', '', body.nodes), body.next_index)
+    return parse_expression(tokens, index)
+
 ParseResult parse_primary(Token[] tokens, int index):
     Token token = token_at(tokens, index)
 
@@ -96,7 +102,7 @@ ParseResult parse_primary(Token[] tokens, int index):
             if (binding_name.kind == 'IDENTIFIER'):
                 if (token_is(arrow, 'SYMBOL', '->')):
                     BindingParseResult binding = parse_typed_binding(tokens, index)
-                    ParseResult body = parse_expression(tokens, binding.next_index + 1)
+                    ParseResult body = parse_lambda_body(tokens, binding.next_index + 1)
                     return ParseResult(Node('Lambda', binding.binding, [body.node]), body.next_index)
     if (token.kind == 'IDENTIFIER'):
         if (index + 2 < tokens.length()):
@@ -105,7 +111,7 @@ ParseResult parse_primary(Token[] tokens, int index):
             if (next.kind == 'IDENTIFIER'):
                 if (token_is(arrow, 'SYMBOL', '->')):
                     BindingParseResult binding = parse_typed_binding(tokens, index)
-                    ParseResult body = parse_expression(tokens, binding.next_index + 1)
+                    ParseResult body = parse_lambda_body(tokens, binding.next_index + 1)
                     return ParseResult(Node('Lambda', binding.binding, [body.node]), body.next_index)
         if (index + 4 < tokens.length()):
             Token left_bracket = token_at(tokens, index + 1)
@@ -117,7 +123,7 @@ ParseResult parse_primary(Token[] tokens, int index):
                     if (binding_name.kind == 'IDENTIFIER'):
                         if (token_is(arrow, 'SYMBOL', '->')):
                             BindingParseResult binding = parse_typed_binding(tokens, index)
-                            ParseResult body = parse_expression(tokens, binding.next_index + 1)
+                            ParseResult body = parse_lambda_body(tokens, binding.next_index + 1)
                             return ParseResult(Node('Lambda', binding.binding, [body.node]), body.next_index)
 
     if (token_is(token, 'SYMBOL', '(')):

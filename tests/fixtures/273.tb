@@ -1,0 +1,83 @@
+int named_worker(int value):
+    return value + 5
+
+int __tb_submit_lambda_0(int value):
+    return value + 100
+
+int main(string[] args):
+    int seed = args.length() + 2
+    const int fixed_seed = seed
+    const bool ready = args.length() == 1
+    const thread_pool pool = thread_pool(2)
+
+    future<int> int_to_int = pool.submit(int value -> {
+        if (value > 3) {
+            return value * 2
+        } else {
+            return value + 1
+        }
+    }, fixed_seed)
+    future<int> bool_to_int = pool.submit(bool flag -> {
+        if (flag) {
+            return 7
+        } else {
+            return 9
+        }
+    }, ready)
+    future<bool> int_to_bool = pool.submit(int value -> {
+        if (value > 3) {
+            return true
+        } else if (value == 3) {
+            return false
+        } else {
+            return value > 0
+        }
+    }, seed)
+    future<bool> bool_to_bool = pool.submit(bool flag -> {
+        if (flag) {
+            return false
+        } else {
+            return true
+        }
+    }, ready)
+    future<int> fallback = pool.submit(int value -> {
+        if (value == 5) {
+            return 50
+        }
+        return value + 6
+    }, seed)
+    future<int> nested = pool.submit(int value -> {
+        if (value > 3) {
+            if (value > 4) {
+                return value + 10
+            } else {
+                return value + 8
+            }
+        } else {
+            return value + 6
+        }
+    }, seed)
+    future<int> named = pool.submit(named_worker, seed)
+    future<int> expression = pool.submit(int value -> value * 2, seed)
+
+    print(int_to_int.await())
+    print(bool_to_int.await())
+    print(int_to_bool.await())
+    print(bool_to_bool.await())
+    print(fallback.await())
+    print(nested.await())
+    print(named.await())
+    print(expression.await())
+    print(int_to_int.await())
+
+    if (ready):
+        future<int> branch = pool.submit(int value -> {
+            if (value > 3) { return value * 2; } else { return value + 1; }
+        }, seed + 1)
+        print(branch.await())
+    for (int index = 0; index < 2; index++):
+        future<int> each = pool.submit(int value -> {
+            if (value > 0) { return value; } else { return 0; }
+        }, seed + index)
+        print(each.await())
+    return 0
