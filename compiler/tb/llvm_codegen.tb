@@ -5418,7 +5418,10 @@ string emit_builtin_query_call_value_instruction(ProgramIR program, ParsedFuncti
             return '  ' + lhs + '.len32 = call i32 @tb_bootstrap_int_set_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = icmp eq i32 ' + temp_ref(op.lhs + '.len32') + ', 0'
         if (call_arg1_type.ends_with('[]') && record_name_from_type(array_item_type(call_arg1_type)) != ''):
             string record_name = record_name_from_type(array_item_type(call_arg1_type))
-            return '  ' + lhs + '.len32 = call i32 @tb_bootstrap_record_array_length_' + record_name + '(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = icmp eq i32 ' + temp_ref(op.lhs + '.len32') + ', 0'
+            string is_empty_line = '  ' + lhs + '.len32 = call i32 @tb_bootstrap_record_array_length_' + record_name + '(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = icmp eq i32 ' + temp_ref(op.lhs + '.len32') + ', 0'
+            if (temp_needs_backend_free(function_ir, op.args[1]) && !temp_is_moved(function_ir, op.args[1]) && temp_is_query_only_use_in_producing_block(function_ir, op.args[1], op.lhs)):
+                return is_empty_line + '\n' + emit_backend_release_ptr(call_arg1_type, temp_ref(op.args[1]))
+            return is_empty_line
         if (call_arg1_type.starts_with('map<')):
             return '  ' + lhs + '.len32 = call i32 ' + llvm_map_length_name(call_arg1_type) + '(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = icmp eq i32 ' + temp_ref(op.lhs + '.len32') + ', 0'
         return ''

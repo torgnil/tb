@@ -442,7 +442,7 @@ Array helpers
 - is_empty(x: string | T[] | set<T> | map<K, V> | prio_q<T>) -> bool
   - Return `true` when the value has no items. UFCS sugar such as `arr.is_empty()` and `scores.is_empty()` is supported.
   - For native `int[]`, `bool[]`, `string[]`, `int[][]`, and `string[][]`, array `length` and `is_empty` queries borrow their receiver. A recognized owned array expression used only for the query is released after the result is computed; a named array remains available for later use.
-  - For arrays of declared record types, UFCS `records.is_empty()` is supported. A recognized owned record-array expression used only by this query is released after the result is computed; named bindings (including const bindings), borrowed, global, record-field, moved, or reused receivers remain with their owners.
+  - For arrays of declared record types, both `is_empty(records)` and `records.is_empty()` return `bool` and borrow their receiver. A recognized owned record-array expression used only by the query is released after the boolean result is computed; named bindings (including const bindings), borrowed, global, record-field, moved, or reused receivers remain with their owners.
 
 - sort(arr: T[], compare: (T, T) -> int) -> void
   - Sort the array in place using the provided comparator.

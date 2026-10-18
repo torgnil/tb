@@ -1116,6 +1116,18 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
         if (op.args.is_empty()):
             return op
         string result_type = infer_call_type_cached(op.args[0], functions, TYPE_IR_FUNCTION_TYPE_CACHE_NAMES, TYPE_IR_FUNCTION_TYPE_CACHE_VALUES)
+        if (result_type == 'unknown'):
+            if (op.args[0] == 'is_empty'):
+                if (op.args.length() == 2):
+                    FunctionSigIR is_empty_function = lookup_function_sig(functions, 'is_empty')
+                    if (is_empty_function.name == ''):
+                        if (!record_type_exists(record_names, 'is_empty')):
+                            string is_empty_receiver_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+                            if (is_empty_receiver_type.ends_with('[]')):
+                                string is_empty_record_name = record_name_from_type(array_item_type(is_empty_receiver_type))
+                                if (is_empty_record_name != ''):
+                                    if (record_type_exists(record_names, is_empty_record_name)):
+                                        result_type = 'bool'
         if (op.args[0] == 'sum' && record_type_exists(record_names, 'sum')):
             return refined_value_op(op, 'sum', refine_ownership_mode(op, 'sum'))
         if (op.args[0] == 'last' && result_type == 'unknown' && lookup_function_return_type(functions, 'last') == 'unknown' && !record_type_exists(record_names, 'last')):
