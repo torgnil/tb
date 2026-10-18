@@ -174,12 +174,15 @@ class Parser:
         parameters: list[FunctionParameter] = []
         if self._current().type != "RPAREN":
             while True:
+                is_const = self._current().type == "CONST"
+                if is_const:
+                    self._advance()
                 parameter_type = self._current()
                 if parameter_type.type not in {"INT", "STRING_TYPE", "NUMBER_TYPE", "IDENTIFIER"}:
                     raise ParserError("Expected parameter type", parameter_type.line, parameter_type.column)
                 type_name = self._parse_type_name()
                 parameter_name = self._expect("IDENTIFIER", "Expected parameter name")
-                parameters.append(FunctionParameter(type_name, parameter_name.value or ""))
+                parameters.append(FunctionParameter(type_name, parameter_name.value or "", is_const))
                 if self._current().type != "COMMA":
                     break
                 self._advance()

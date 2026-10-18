@@ -154,6 +154,7 @@ class EnumDeclaration(ASTNode):
 class FunctionParameter(ASTNode):
     type_name: str
     name: str
+    is_const: bool = False
 
 
 @dataclass(slots=True)

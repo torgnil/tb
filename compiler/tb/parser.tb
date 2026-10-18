@@ -938,8 +938,14 @@ FunctionDeclParseResult parse_function_declaration_parts(Token[] tokens, int ind
     string[] params = []
     if (!token_is(token_at(tokens, current), 'SYMBOL', ')')):
         while (true):
+            bool is_const = token_is(token_at(tokens, current), 'KEYWORD', 'const')
+            if (is_const):
+                current += 1
             BindingParseResult param_binding = parse_typed_binding(tokens, current)
-            params.push(param_binding.binding)
+            string binding = param_binding.binding
+            if (is_const):
+                binding = 'const ' + binding
+            params.push(binding)
             current = param_binding.next_index
             if (token_is(token_at(tokens, current), 'SYMBOL', ',')):
                 current += 1

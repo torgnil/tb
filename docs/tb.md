@@ -99,6 +99,14 @@ Build and invocation details are documented in the repository or release `README
 
   `int add(int a, int b): return a + b`
 
+  Named function parameters may be declared `const`, for example
+  `int increment(const int value): return value + 1`. A const parameter cannot
+  be reassigned or mutated through that binding, following the same rules as a
+  const local. The qualifier applies to the parameter binding; it does not
+  make referenced values deeply immutable. Callers may pass mutable values and
+  keep using them normally after the call. Lambda parameter syntax does not
+  currently accept `const`.
+
 - Cached function declaration:
 
   `cached int fib(int n): ...`

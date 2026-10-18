@@ -611,6 +611,8 @@ class IRGenerator:
         for parameter in statement.parameters:
             self.variable_types[parameter.name] = parameter.type_name
             self.const_variables.discard(parameter.name)
+            if parameter.is_const:
+                self.const_variables.add(parameter.name)
 
         self.current_function_return_type = self.function_return_types.get(statement.name, "void")
         body_instructions = []

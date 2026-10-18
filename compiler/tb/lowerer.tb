@@ -178,7 +178,10 @@ string submit_lambda_expression_type(Node node, string parameter_name, string pa
             if (function_node.children[index].kind != 'Param'):
                 break
             BindingIR parameter = ir_parse_binding_decl(function_node.children[index].value)
-            if (!(parameter.type_name == 'int' || parameter.type_name == 'bool')):
+            string helper_decl_type = parameter.type_name
+            if (helper_decl_type.starts_with('const ')):
+                helper_decl_type = helper_decl_type.substring(6)
+            if (!(helper_decl_type == 'int' || helper_decl_type == 'bool')):
                 return ''
             parameter_count += 1
             index += 1
@@ -187,11 +190,14 @@ string submit_lambda_expression_type(Node node, string parameter_name, string pa
         index = 0
         while (index < parameter_count):
             BindingIR parameter = ir_parse_binding_decl(function_node.children[index].value)
+            string helper_decl_type = parameter.type_name
+            if (helper_decl_type.starts_with('const ')):
+                helper_decl_type = helper_decl_type.substring(6)
             string argument_type = submit_lambda_expression_type(node.children[index], parameter_name, parameter_type, functions)
             if (argument_type == ''):
                 return ''
-            if (argument_type != parameter.type_name):
-                throw 'thread_pool.submit lambda helper ' + node.value + ' argument ' + (index + 1).to_string() + ' must have type ' + parameter.type_name + '; got ' + argument_type
+            if (argument_type != helper_decl_type):
+                throw 'thread_pool.submit lambda helper ' + node.value + ' argument ' + (index + 1).to_string() + ' must have type ' + helper_decl_type + '; got ' + argument_type
             index += 1
         return signature.type_name
     return ''
