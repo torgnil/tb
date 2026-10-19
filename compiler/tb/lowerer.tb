@@ -30,6 +30,7 @@ record SubmitScopedListRewrite(Node[] nodes, Node[] generated, string[] used_nam
 record SubmitLambdaBlockCheck(string return_type, bool returns_all_paths);
 record SubmitLambdaScope(string[] names, string[] types, string[] const_names, string[] declared_names);
 record SubmitLambdaValidation(SubmitLambdaBlockCheck check, SubmitLambdaScope scope);
+record SubmitRangeListRewrite(Node[] nodes, string[] used_names, int next_index);
 
 string quote_string(string value):
     return '\'' + value + '\''
@@ -365,6 +366,35 @@ SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements
             SubmitLambdaValidation body_validation = validate_submit_lambda_block_statements(body_statements, copy_submit_lambda_scope(loop_scope), functions, loop_depth + 1)
             scope.declared_names = body_validation.scope.declared_names
             current.return_type = body_validation.check.return_type
+        else if (statement.kind == 'ForEach'):
+            if (statement.children.length() < 1):
+                throw 'thread_pool.submit lambda foreach iterable must be a direct range call'
+            if (statement.children[0].kind != 'Call' || statement.children[0].value != 'range'):
+                throw 'thread_pool.submit lambda foreach iterable must be a direct range call'
+            Node range_call = statement.children[0]
+            if (!(range_call.children.length() == 1 || range_call.children.length() == 2)):
+                throw 'thread_pool.submit lambda range requires one or two int bounds'
+            for (Node bound : range_call.children):
+                if (submit_lambda_expression_type(bound, scope, functions) != 'int'):
+                    throw 'thread_pool.submit lambda range bounds must be int expressions using only in-scope scalar values and declared scalar helper calls'
+            BindingIR iterator = ir_parse_binding_decl(statement.value)
+            string iterator_type = iterator.type_name
+            bool iterator_is_const = iterator_type.starts_with('const ')
+            if (iterator_is_const):
+                iterator_type = iterator_type.substring(6)
+            if (iterator_type != 'int'):
+                throw 'thread_pool.submit lambda range iterator must have type int'
+            if (contains_name(scope.declared_names, iterator.name)):
+                throw 'thread_pool.submit lambda local names must be unique, including the parameter'
+            SubmitLambdaScope loop_scope = copy_submit_lambda_scope(scope)
+            loop_scope.names = append_lines(loop_scope.names, [iterator.name])
+            loop_scope.types = append_lines(loop_scope.types, ['int'])
+            loop_scope.declared_names = append_lines(loop_scope.declared_names, [iterator.name])
+            if (iterator_is_const):
+                loop_scope.const_names = append_lines(loop_scope.const_names, [iterator.name])
+            SubmitLambdaValidation body_validation = validate_submit_lambda_block_statements(tail_nodes(statement.children, 1), loop_scope, functions, loop_depth + 1)
+            scope.declared_names = body_validation.scope.declared_names
+            current.return_type = body_validation.check.return_type
         else if (statement.kind == 'Switch'):
             if (statement.children.length() < 1):
                 throw 'thread_pool.submit lambda block contains an invalid switch statement'
@@ -404,7 +434,7 @@ SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements
             if (loop_depth == 0):
                 throw 'thread_pool.submit lambda continue is only supported inside a while or for loop'
         else:
-            throw 'thread_pool.submit lambda block supports only scalar locals, assignments, return, literal throw, if/else, while, for and switch statements with break/continue'
+            throw 'thread_pool.submit lambda block supports only scalar locals, assignments, return, literal throw, if/else, while, for, range foreach and switch statements with break/continue'
         return_type = merge_submit_return_types(return_type, current.return_type)
         if (!previous_paths_return):
             previous_paths_return = current.returns_all_paths
@@ -505,6 +535,92 @@ string submit_worker_name(string[] used_names, int start_index):
         index += 1
     return '__tb_submit_lambda_' + index.to_string()
 
+string submit_range_name(string[] used_names, string prefix, int index):
+    int candidate = index
+    while (contains_name(used_names, prefix + candidate.to_string())):
+        candidate += 1
+    return prefix + candidate.to_string()
+
+# Called only after validate_submit_lambda accepted the original worker AST.
+SubmitRangeListRewrite rewrite_submit_range_foreach_list(Node[] statements, string[] used_names, int next_index):
+    Node[] rewritten = []
+    string[] current_names = used_names
+    int current_index = next_index
+    for (Node statement : statements):
+        if (statement.kind == 'ForEach'):
+            Node range_call = statement.children[0]
+            Node start_expr = Node('Int', '0', [])
+            Node end_expr = range_call.children[0]
+            if (range_call.children.length() == 2):
+                start_expr = range_call.children[0]
+                end_expr = range_call.children[1]
+            string start_name = submit_range_name(current_names, '__tb_range_start_', current_index)
+            current_names = add_unique_name(current_names, start_name)
+            current_index += 1
+            string end_name = submit_range_name(current_names, '__tb_range_end_', current_index)
+            current_names = add_unique_name(current_names, end_name)
+            current_index += 1
+            string counter_name = submit_range_name(current_names, '__tb_range_counter_', current_index)
+            current_names = add_unique_name(current_names, counter_name)
+            current_index += 1
+            SubmitRangeListRewrite body = rewrite_submit_range_foreach_list(tail_nodes(statement.children, 1), current_names, current_index)
+            current_names = body.used_names
+            current_index = body.next_index
+            Node[] loop_body = [Node('VarDecl', statement.value, [Node('Identifier', counter_name, [])])]
+            loop_body = append_nodes(loop_body, body.nodes)
+            Node init = Node('VarDecl', 'int ' + counter_name, [Node('Identifier', start_name, [])])
+            Node condition = Node('Binary', '<', [Node('Identifier', counter_name, []), Node('Identifier', end_name, [])])
+            Node update = Node('Assign', '', [Node('Identifier', counter_name, []), Node('Binary', '+', [Node('Identifier', counter_name, []), Node('Int', '1', [])])])
+            rewritten.push(Node('VarDecl', 'const int ' + start_name, [start_expr]))
+            rewritten.push(Node('VarDecl', 'const int ' + end_name, [end_expr]))
+            Node[] loop_children = [init, condition, update]
+            loop_children = append_nodes(loop_children, loop_body)
+            rewritten.push(Node('For', '', loop_children))
+        else if (statement.kind == 'If' && statement.children.length() > 0):
+            SubmitRangeListRewrite then_part = rewrite_submit_range_foreach_list(if_then_nodes(statement), current_names, current_index)
+            Node[] children = [statement.children[0]]
+            children = append_nodes(children, then_part.nodes)
+            current_names = then_part.used_names
+            current_index = then_part.next_index
+            Node[] else_source = if_else_nodes(statement)
+            if (!else_source.is_empty()):
+                SubmitRangeListRewrite else_part = rewrite_submit_range_foreach_list(else_source, current_names, current_index)
+                children.push(Node('Else', '', else_part.nodes))
+                current_names = else_part.used_names
+                current_index = else_part.next_index
+            rewritten.push(Node(statement.kind, statement.value, children))
+        else if (statement.kind == 'While' && statement.children.length() > 0):
+            SubmitRangeListRewrite body = rewrite_submit_range_foreach_list(tail_nodes(statement.children, 1), current_names, current_index)
+            Node[] children = [statement.children[0]]
+            children = append_nodes(children, body.nodes)
+            rewritten.push(Node(statement.kind, statement.value, children))
+            current_names = body.used_names
+            current_index = body.next_index
+        else if (statement.kind == 'For' && statement.children.length() >= 3):
+            SubmitRangeListRewrite body = rewrite_submit_range_foreach_list(tail_nodes(statement.children, 3), current_names, current_index)
+            Node[] children = [statement.children[0], statement.children[1], statement.children[2]]
+            children = append_nodes(children, body.nodes)
+            rewritten.push(Node(statement.kind, statement.value, children))
+            current_names = body.used_names
+            current_index = body.next_index
+        else if (statement.kind == 'Switch' && statement.children.length() > 0):
+            Node[] children = [statement.children[0]]
+            for (Node branch : tail_nodes(statement.children, 1)):
+                int body_start = 0
+                if (branch.kind == 'Case'):
+                    body_start = 1
+                Node[] branch_head = []
+                if (body_start == 1):
+                    branch_head.push(branch.children[0])
+                SubmitRangeListRewrite body = rewrite_submit_range_foreach_list(tail_nodes(branch.children, body_start), current_names, current_index)
+                children.push(Node(branch.kind, branch.value, append_nodes(branch_head, body.nodes)))
+                current_names = body.used_names
+                current_index = body.next_index
+            rewritten.push(Node(statement.kind, statement.value, children))
+        else:
+            rewritten.push(statement)
+    return SubmitRangeListRewrite(rewritten, current_names, current_index)
+
 SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, int next_index, Node[] functions, BindingIR[] bindings, string[] declaration_names):
     BindingIR[] captured = []
     string worker_return_type = ''
@@ -556,8 +672,10 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
             rewritten_children.push(Node('Identifier', binding.name, []))
         Node lambda_body = lambda_node.children[0]
         if (lambda_body.kind == 'Block'):
-            for (Node statement : lambda_body.children):
-                function_children.push(statement)
+            SubmitRangeListRewrite normalized = rewrite_submit_range_foreach_list(lambda_body.children, current_names, current_index)
+            function_children = append_nodes(function_children, normalized.nodes)
+            current_names = normalized.used_names
+            current_index = normalized.next_index
         else:
             function_children.push(Node('Return', '', [lambda_body]))
         generated.push(Node('Function', worker_return_type + ' ' + worker_name, function_children))
