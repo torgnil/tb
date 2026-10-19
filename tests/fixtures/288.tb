@@ -1,0 +1,126 @@
+int bool_score(bool value):
+    if (value):
+        return 7
+    else:
+        return 0
+
+bool is_positive(int value):
+    return value > 0
+
+int add_one(int value):
+    return value + 1
+
+int __tb_submit_lambda_0():
+    return 77
+
+int capture_parameter(int amount):
+    thread_pool pool = thread_pool(1)
+    future<int> result = pool.submit(() -> amount + 3)
+    return result.await()
+
+int main(string[] args):
+    thread_pool pool = thread_pool(2)
+    int seed = args.length()
+    future<int> snapshot = pool.submit(() -> seed + 2)
+    seed = 100
+    print(snapshot.await())
+    print(snapshot.await())
+
+    const int fixed = args.length() + 3
+    bool ready = args.length() == 1
+    future<bool> flag = pool.submit(() -> ready)
+    print(flag.await())
+    future<bool> int_to_bool = pool.submit(() -> is_positive(fixed))
+    print(int_to_bool.await())
+    future<int> bool_to_int = pool.submit(() -> bool_score(ready))
+    print(bool_to_int.await())
+
+    future<int> block = pool.submit(() -> {
+        int doubled = fixed * 2
+        for (int cursor = 0; cursor < 1; cursor += 1) {
+            doubled += cursor
+        }
+        switch (fixed) {
+            case 1: {
+                return add_one(doubled)
+            }
+            default: {
+                if (doubled > 0) {
+                    return add_one(doubled)
+                } else {
+                    throw 'captured block failure'
+                }
+            }
+        }
+        return 0
+    })
+    print(block.await())
+
+    int failure_code = -1
+    future<int> failed = pool.submit(() -> {
+        if (failure_code < 0) {
+            throw 'captured failure'
+        }
+        return failure_code
+    })
+    try:
+        int ignored = failed.await()
+    catch (exception err):
+        print(err)
+
+    for (int index = 0; index < 2; index += 1) {
+        future<int> iteration = pool.submit(() -> index)
+        print(iteration.await())
+    }
+
+    int while_value = 0
+    while (while_value < 2) {
+        future<int> while_iteration = pool.submit(() -> while_value)
+        print(while_iteration.await())
+        while_value += 1
+    }
+
+    int[] values = [4, 5]
+    for (int item : values) {
+        future<int> foreach_item = pool.submit(() -> item)
+        print(foreach_item.await())
+    }
+
+    if (ready) {
+        int branch_seed = args.length() + 5
+        future<int> branch = pool.submit(() -> branch_seed)
+        print(branch.await())
+    } else {
+        int else_seed = args.length() + 6
+        future<int> else_branch = pool.submit(() -> else_seed)
+        print(else_branch.await())
+    }
+
+    int try_seed = args.length() + 10
+    try:
+        future<int> try_result = pool.submit(() -> try_seed)
+        print(try_result.await())
+    catch (exception err):
+        print(err)
+
+    switch (args.length()) {
+        case 1: {
+            int case_seed = 9
+            future<int> case_result = pool.submit(() -> case_seed)
+            print(case_result.await())
+        }
+        default: {
+            print(0)
+        }
+    }
+
+    int local_only = 1
+    future<int> local_shadow = pool.submit(() -> {
+        int local_only = 7
+        return local_only
+    })
+    print(local_shadow.await())
+    print(local_only)
+    print(capture_parameter(args.length()))
+    print(pool.submit(__tb_submit_lambda_0).await())
+    return 0
