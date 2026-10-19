@@ -349,6 +349,38 @@ SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements
             SubmitLambdaValidation body_validation = validate_submit_lambda_block_statements(body_statements, copy_submit_lambda_scope(loop_scope), functions, loop_depth + 1)
             scope.declared_names = body_validation.scope.declared_names
             current.return_type = body_validation.check.return_type
+        else if (statement.kind == 'Switch'):
+            if (statement.children.length() < 1):
+                throw 'thread_pool.submit lambda block contains an invalid switch statement'
+            if (submit_lambda_expression_type(statement.children[0], scope, functions) != 'int'):
+                throw 'thread_pool.submit lambda switch subject must be an int expression using only in-scope scalar values and declared scalar helper calls'
+            bool has_default = false
+            string[] declared_names = scope.declared_names
+            int child_index = 1
+            while (child_index < statement.children.length()):
+                Node branch = statement.children[child_index]
+                Node[] branch_statements = []
+                if (branch.kind == 'Case'):
+                    if (branch.children.length() < 1):
+                        throw 'thread_pool.submit lambda block contains an invalid switch case'
+                    if (submit_lambda_expression_type(branch.children[0], scope, functions) != 'int'):
+                        throw 'thread_pool.submit lambda switch case must be an int expression using only in-scope scalar values and declared scalar helper calls'
+                    branch_statements = tail_nodes(branch.children, 1)
+                else if (branch.kind == 'Default'):
+                    if (has_default):
+                        throw 'thread_pool.submit lambda switch can contain only one default branch'
+                    has_default = true
+                    branch_statements = branch.children
+                else:
+                    throw 'thread_pool.submit lambda block contains an invalid switch branch'
+                SubmitLambdaScope branch_scope = copy_submit_lambda_scope(scope)
+                branch_scope.declared_names = declared_names
+                SubmitLambdaValidation branch_validation = validate_submit_lambda_block_statements(branch_statements, branch_scope, functions, loop_depth)
+                return_type = merge_submit_return_types(return_type, branch_validation.check.return_type)
+                declared_names = branch_validation.scope.declared_names
+                child_index += 1
+            scope.declared_names = declared_names
+            current.return_type = return_type
         else if (statement.kind == 'Break'):
             if (loop_depth == 0):
                 throw 'thread_pool.submit lambda break is only supported inside a while or for loop'
@@ -356,7 +388,7 @@ SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements
             if (loop_depth == 0):
                 throw 'thread_pool.submit lambda continue is only supported inside a while or for loop'
         else:
-            throw 'thread_pool.submit lambda block supports only scalar locals, assignments, return, if/else, while and for statements with break/continue'
+            throw 'thread_pool.submit lambda block supports only scalar locals, assignments, return, if/else, while, for and switch statements with break/continue'
         return_type = merge_submit_return_types(return_type, current.return_type)
         if (!previous_paths_return):
             previous_paths_return = current.returns_all_paths
