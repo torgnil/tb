@@ -1,0 +1,46 @@
+record Point(int x, int y);
+record Envelope(Point point);
+record Empty();
+record SameLayout(int value);
+
+int point_sum(Point point):
+    return point.x + point.y
+
+int combine(int seed, Point point):
+    return seed + point.x + point.y
+
+void consume(Point point):
+    print(point_sum(point))
+
+cached int cached_point_sum(Point point):
+    return point.x + point.y
+
+Point copy_point(Point point):
+    return point
+
+int empty_value(Empty value):
+    return 17
+
+int nested_value(Envelope value):
+    return value.point.x + value.point.y
+
+int main(string[] args):
+    int seed = args.length() - 1
+    Point source = Point(seed + 3, seed + 4)
+    const Point fixed = Point(seed + 5, seed + 6)
+    Envelope envelope = Envelope(Point(seed + 7, seed + 8))
+    Empty empty = Empty()
+    Point copied = copy_point(source)
+
+    print(point_sum(source))
+    print(source.point_sum())
+    print(2.combine(source))
+    print(point_sum(fixed))
+    print(nested_value(envelope))
+    print(empty_value(empty))
+    print(cached_point_sum(source))
+    consume(source)
+    source.x = 30
+    print(copied.x)
+    print(copied.y)
+    return 0

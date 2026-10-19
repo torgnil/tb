@@ -125,7 +125,9 @@ Build and invocation details are documented in the repository or release `README
   `string`), their types must match exactly. Const qualifiers are ignored.
   Enum values keep their existing `string` representation for this check;
   this rule does not add nominal enum checking. Other non-scalar argument pairs
-  retain their existing behavior.
+  retain their existing behavior, except that if either side is a record, both
+  sides must name the declared record type, even when two records have identical
+  fields.
 
 - Cached function declaration:
 
