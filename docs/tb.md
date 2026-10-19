@@ -137,6 +137,12 @@ Build and invocation details are documented in the repository or release `README
   qualifiers are ignored, but maps cannot be passed where a non-map parameter
   is declared or vice versa.
 
+  Future arguments at those calls must also match exactly. If either the
+  argument or parameter is a known `future<...>` type, both must be futures
+  with the same result type, such as `future<int>` or `future<int[]>`.
+  Qualifiers are ignored. Unknown or untyped arguments keep their existing
+  handling.
+
 - Cached function declaration:
 
   `cached int fib(int n): ...`
