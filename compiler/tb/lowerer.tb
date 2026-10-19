@@ -331,14 +331,32 @@ SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements
             SubmitLambdaValidation body_validation = validate_submit_lambda_block_statements(body_statements, copy_submit_lambda_scope(scope), functions, loop_depth + 1)
             scope.declared_names = body_validation.scope.declared_names
             current.return_type = body_validation.check.return_type
+        else if (statement.kind == 'For'):
+            if (statement.children.length() < 3):
+                throw 'thread_pool.submit lambda block contains an invalid for statement'
+            Node init_statement = statement.children[0]
+            if (!(init_statement.kind == 'VarDecl' || init_statement.kind == 'Assign')):
+                throw 'thread_pool.submit lambda for initializer must be an initialized scalar declaration or assignment'
+            SubmitLambdaValidation init_validation = validate_submit_lambda_block_statements([init_statement], copy_submit_lambda_scope(scope), functions, loop_depth)
+            SubmitLambdaScope loop_scope = init_validation.scope
+            if (submit_lambda_expression_type(statement.children[1], loop_scope, functions) != 'bool'):
+                throw 'thread_pool.submit lambda for condition must be a bool expression using only in-scope scalar values and declared scalar helper calls'
+            Node update_statement = statement.children[2]
+            if (update_statement.kind != 'Assign'):
+                throw 'thread_pool.submit lambda for update must assign to a mutable scalar local'
+            SubmitLambdaValidation update_validation = validate_submit_lambda_block_statements([update_statement], copy_submit_lambda_scope(loop_scope), functions, loop_depth)
+            Node[] body_statements = tail_nodes(statement.children, 3)
+            SubmitLambdaValidation body_validation = validate_submit_lambda_block_statements(body_statements, copy_submit_lambda_scope(loop_scope), functions, loop_depth + 1)
+            scope.declared_names = body_validation.scope.declared_names
+            current.return_type = body_validation.check.return_type
         else if (statement.kind == 'Break'):
             if (loop_depth == 0):
-                throw 'thread_pool.submit lambda break is only supported inside a while loop'
+                throw 'thread_pool.submit lambda break is only supported inside a while or for loop'
         else if (statement.kind == 'Continue'):
             if (loop_depth == 0):
-                throw 'thread_pool.submit lambda continue is only supported inside a while loop'
+                throw 'thread_pool.submit lambda continue is only supported inside a while or for loop'
         else:
-            throw 'thread_pool.submit lambda block supports only scalar locals, assignments, return, if/else and while statements with break/continue'
+            throw 'thread_pool.submit lambda block supports only scalar locals, assignments, return, if/else, while and for statements with break/continue'
         return_type = merge_submit_return_types(return_type, current.return_type)
         if (!previous_paths_return):
             previous_paths_return = current.returns_all_paths
