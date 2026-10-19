@@ -1,0 +1,100 @@
+int named_worker(int value):
+    return value + 10
+
+int main(string[] args):
+    thread_pool pool = thread_pool(2)
+    future<int> empty = pool.submit(int value -> {
+        int total = 0
+        int index = 0
+        while (index < value) {
+            total += 1
+            index += 1
+        }
+        return total
+    }, args.length() - 1)
+    future<int> nested = pool.submit(int value -> {
+        if (value < 0) {
+            return -1
+        }
+        int total = 0
+        int index = 0
+        while (index < value) {
+            index += 1
+            if (index == 2) {
+                continue
+            }
+            int inner = 0
+            while (inner < 3) {
+                inner += 1
+                if (inner == 2) {
+                    continue
+                }
+                if (index > 3) {
+                    break
+                }
+                total += index + inner
+            }
+            if (index > 3) {
+                break
+            }
+        }
+        return total
+    }, args.length() + 2)
+    future<bool> has_step = pool.submit(int value -> {
+        bool found = false
+        int index = 0
+        while (index < value) {
+            index += 1
+            if (index == 2) {
+                continue
+            }
+            if (index > 3) {
+                break
+            }
+            found = true
+        }
+        return found
+    }, args.length())
+    future<bool> no_step = pool.submit(int value -> {
+        bool found = false
+        int index = 0
+        while (index < value) {
+            found = true
+            index += 1
+        }
+        return found
+    }, 0)
+    future<bool> bool_parameter = pool.submit(bool flag -> {
+        bool result = flag
+        int index = 0
+        while (index < 2) {
+            index += 1
+            if (index == 1) {
+                continue
+            }
+            result = !result
+        }
+        return result
+    }, true)
+    future<int> early = pool.submit(int value -> {
+        if (value < 0) {
+            return -1
+        }
+        while (value > 0) {
+            value -= 1
+            return 7
+        }
+        return 0
+    }, -1)
+    future<int> named = pool.submit(named_worker, 2)
+    future<int> expression = pool.submit(int value -> value * 3, 4)
+    print(empty.await())
+    print(nested.await())
+    print(nested.await())
+    print(has_step.await())
+    print(no_step.await())
+    print(bool_parameter.await())
+    print(early.await())
+    print(named.await())
+    print(expression.await())
+    return 0

@@ -237,7 +237,7 @@ string merge_submit_return_types(string left, string right):
         throw 'thread_pool.submit lambda block returns must all have the same int or bool type'
     return left
 
-SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements, SubmitLambdaScope initial_scope, Node[] functions):
+SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements, SubmitLambdaScope initial_scope, Node[] functions, int loop_depth):
     SubmitLambdaScope scope = initial_scope
     string return_type = ''
     bool previous_paths_return = false
@@ -307,14 +307,14 @@ SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements
                 else:
                     then_statements.push(child)
                 child_index += 1
-            SubmitLambdaValidation then_validation = validate_submit_lambda_block_statements(then_statements, copy_submit_lambda_scope(scope), functions)
+            SubmitLambdaValidation then_validation = validate_submit_lambda_block_statements(then_statements, copy_submit_lambda_scope(scope), functions, loop_depth)
             SubmitLambdaBlockCheck then_check = then_validation.check
             return_type = merge_submit_return_types(return_type, then_check.return_type)
             current.returns_all_paths = false
             if (has_else):
                 SubmitLambdaScope else_scope = copy_submit_lambda_scope(scope)
                 else_scope.declared_names = then_validation.scope.declared_names
-                SubmitLambdaValidation else_validation = validate_submit_lambda_block_statements(else_statements, else_scope, functions)
+                SubmitLambdaValidation else_validation = validate_submit_lambda_block_statements(else_statements, else_scope, functions, loop_depth)
                 SubmitLambdaBlockCheck else_check = else_validation.check
                 return_type = merge_submit_return_types(return_type, else_check.return_type)
                 current.returns_all_paths = then_check.returns_all_paths && else_check.returns_all_paths
@@ -322,8 +322,23 @@ SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements
             else:
                 scope.declared_names = then_validation.scope.declared_names
             current.return_type = return_type
+        else if (statement.kind == 'While'):
+            if (statement.children.length() < 1):
+                throw 'thread_pool.submit lambda block contains an invalid while statement'
+            if (submit_lambda_expression_type(statement.children[0], scope, functions) != 'bool'):
+                throw 'thread_pool.submit lambda while condition must be a bool expression using only in-scope scalar values and declared scalar helper calls'
+            Node[] body_statements = tail_nodes(statement.children, 1)
+            SubmitLambdaValidation body_validation = validate_submit_lambda_block_statements(body_statements, copy_submit_lambda_scope(scope), functions, loop_depth + 1)
+            scope.declared_names = body_validation.scope.declared_names
+            current.return_type = body_validation.check.return_type
+        else if (statement.kind == 'Break'):
+            if (loop_depth == 0):
+                throw 'thread_pool.submit lambda break is only supported inside a while loop'
+        else if (statement.kind == 'Continue'):
+            if (loop_depth == 0):
+                throw 'thread_pool.submit lambda continue is only supported inside a while loop'
         else:
-            throw 'thread_pool.submit lambda block supports only scalar locals, assignments, return and if/else statements'
+            throw 'thread_pool.submit lambda block supports only scalar locals, assignments, return, if/else and while statements with break/continue'
         return_type = merge_submit_return_types(return_type, current.return_type)
         if (!previous_paths_return):
             previous_paths_return = current.returns_all_paths
@@ -338,7 +353,7 @@ string validate_submit_lambda(Node lambda_node, Node[] functions):
     SubmitLambdaScope initial_scope = SubmitLambdaScope([parameter.name], [parameter.type_name], [], [parameter.name])
     Node body = lambda_node.children[0]
     if (body.kind == 'Block'):
-        SubmitLambdaValidation validation = validate_submit_lambda_block_statements(body.children, initial_scope, functions)
+        SubmitLambdaValidation validation = validate_submit_lambda_block_statements(body.children, initial_scope, functions, 0)
         SubmitLambdaBlockCheck block_check = validation.check
         if (!(block_check.return_type == 'int' || block_check.return_type == 'bool') || !block_check.returns_all_paths):
             throw 'thread_pool.submit lambda block must return a value on every path'
