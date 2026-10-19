@@ -1861,6 +1861,10 @@ bool llvm_named_call_arg_types_compatible(string expected_type, string actual_ty
     actual_type = normalize_llvm_type_name(actual_type)
     if (actual_type == 'unknown' || is_untyped_array_shape(actual_type)):
         return true
+    bool expected_map = expected_type.starts_with('map<')
+    bool actual_map = actual_type.starts_with('map<')
+    if (expected_map || actual_map):
+        return expected_map && actual_map && expected_type == actual_type
     bool expected_record = record_name_from_type(expected_type) != ''
     bool actual_record = record_name_from_type(actual_type) != ''
     if (expected_record || actual_record):

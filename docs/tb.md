@@ -132,7 +132,10 @@ Build and invocation details are documented in the repository or release `README
   this rule does not add nominal enum checking. Other non-scalar argument pairs
   retain their existing behavior, except that if either side is a record, both
   sides must name the declared record type, even when two records have identical
-  fields.
+  fields. If either side is a map, both sides must have the same complete
+  normalized map type, including key type and nested value type. Const
+  qualifiers are ignored, but maps cannot be passed where a non-map parameter
+  is declared or vice versa.
 
 - Cached function declaration:
 
