@@ -1,0 +1,57 @@
+int named_failure():
+    throw 'named failure'
+
+int main(string[] args):
+    thread_pool pool = thread_pool(2)
+
+    future<int> incremented = pool.submit(int value -> {
+        if (value < 0) {
+            throw 'negative value'
+        } else {
+            return value + 1
+        }
+    }, args.length())
+
+    future<bool> positive = pool.submit(int value -> {
+        if (value > 0) {
+            return true
+        } else {
+            throw 'not positive'
+        }
+    }, 1)
+
+    future<int> failed = pool.submit(int value -> {
+        throw 'lambda\n failure'
+        return value
+    }, 7)
+    future<int> empty_failure = pool.submit(int value -> {
+        throw ''
+        return value
+    }, 7)
+    future<int> named_failed = pool.submit(named_failure)
+
+    print(incremented.await())
+    print(incremented.await())
+    print(positive.await())
+    print(positive.await())
+    try:
+        int ignored = failed.await()
+    catch (exception err):
+        print(err)
+    try:
+        int ignored = failed.await()
+    catch (exception err):
+        print(err)
+    try:
+        int ignored = empty_failure.await()
+    catch (exception err):
+        print('empty:' + err)
+    try:
+        int ignored = named_failed.await()
+    catch (exception err):
+        print(err)
+    try:
+        int ignored = named_failed.await()
+    catch (exception err):
+        print(err)
+    return 0

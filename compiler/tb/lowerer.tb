@@ -288,6 +288,12 @@ SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements
             if (!(current.return_type == 'int' || current.return_type == 'bool')):
                 throw 'thread_pool.submit lambda return must be an int or bool expression using only in-scope scalar values and declared scalar helper calls'
             current.returns_all_paths = true
+        else if (statement.kind == 'Throw'):
+            if (statement.children.length() != 1):
+                throw 'thread_pool.submit lambda throw requires a string literal'
+            if (statement.children[0].kind != 'String'):
+                throw 'thread_pool.submit lambda throw requires a string literal'
+            current.returns_all_paths = true
         else if (statement.kind == 'If'):
             if (statement.children.length() < 1):
                 throw 'thread_pool.submit lambda block contains an invalid if statement'
@@ -388,7 +394,7 @@ SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements
             if (loop_depth == 0):
                 throw 'thread_pool.submit lambda continue is only supported inside a while or for loop'
         else:
-            throw 'thread_pool.submit lambda block supports only scalar locals, assignments, return, if/else, while, for and switch statements with break/continue'
+            throw 'thread_pool.submit lambda block supports only scalar locals, assignments, return, literal throw, if/else, while, for and switch statements with break/continue'
         return_type = merge_submit_return_types(return_type, current.return_type)
         if (!previous_paths_return):
             previous_paths_return = current.returns_all_paths
