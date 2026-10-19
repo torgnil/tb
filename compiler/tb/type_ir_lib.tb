@@ -219,6 +219,56 @@ bool is_untyped_array_shape(string type_name):
         current += 2
     return current == type_name.length()
 
+bool is_supported_call_array_type(string type_name):
+    string normalized_type = normalize_llvm_type_name(type_name)
+    return normalized_type == 'int[]' || normalized_type == 'bool[]' || normalized_type == 'string[]' || normalized_type == 'int[][]' || normalized_type == 'string[][]'
+
+bool can_contextualize_call_array_literal(LinearInstruction[] instructions, string[] temp_types, string array_name, string expected_type):
+    string normalized_expected_type = normalize_llvm_type_name(expected_type)
+    if (!is_supported_call_array_type(normalized_expected_type)):
+        return false
+    string actual_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, array_name))
+    if (actual_type == normalized_expected_type):
+        return true
+    if (!is_untyped_array_shape(actual_type)):
+        return false
+    LinearInstruction array_op = lookup_instruction(instructions, array_name)
+    if (array_op.lhs != array_name || array_op.kind != 'value' || array_op.detail != 'array'):
+        return false
+    string expected_item_type = array_item_type(normalized_expected_type)
+    if (!expected_item_type.ends_with('[]')):
+        return actual_type == normalized_expected_type || array_op.args.is_empty()
+    for (string row_name in array_op.args):
+        string row_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, row_name))
+        if (row_type == expected_item_type):
+            continue
+        if (!is_untyped_array_shape(row_type)):
+            return false
+        if (!can_contextualize_call_array_literal(instructions, temp_types, row_name, expected_item_type)):
+            return false
+    return true
+
+RefineInstructionsResult contextualize_call_array_literal(LinearInstruction[] instructions, string[] temp_types, string array_name, string expected_type):
+    string normalized_expected_type = normalize_llvm_type_name(expected_type)
+    string actual_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, array_name))
+    if (!is_untyped_array_shape(actual_type)):
+        return RefineInstructionsResult(instructions, temp_types)
+    if (!can_contextualize_call_array_literal(instructions, temp_types, array_name, normalized_expected_type)):
+        return RefineInstructionsResult(instructions, temp_types)
+    LinearInstruction array_op = lookup_instruction(instructions, array_name)
+    string expected_item_type = array_item_type(normalized_expected_type)
+    if (expected_item_type.ends_with('[]')):
+        for (string row_name in array_op.args):
+            string row_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, row_name))
+            if (row_type != expected_item_type):
+                RefineInstructionsResult contextual_row = contextualize_call_array_literal(instructions, temp_types, row_name, expected_item_type)
+                instructions = contextual_row.instructions
+                temp_types = contextual_row.temp_types
+    if (actual_type != normalized_expected_type):
+        instructions = set_temp_type(instructions, array_name, normalized_expected_type)
+        temp_types = set_temp_type_slot(temp_types, array_name, normalized_expected_type)
+    return RefineInstructionsResult(instructions, temp_types)
+
 bool is_same_known_type(string left, string right):
     return left != '' && left != 'unknown' && left == right
 
@@ -1616,6 +1666,21 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                                                 block_refined = set_temp_type(block_refined, current.args[index], expected_arg_type)
                                                 temp_types = set_temp_type_slot(temp_types, current.args[index], expected_arg_type)
                             index += 1
+                    else:
+                        FunctionSigIR call_sig = lookup_function_sig(functions, current.args[0])
+                        FunctionSigIR[] empty_functions = []
+                        bool builtin_call = infer_call_type(current.args[0], empty_functions) != 'unknown'
+                        bool ambiguous_direct_builtin = current.args[0] == 'print' || current.args[0] == 'sum' || current.args[0] == 'min' || current.args[0] == 'max'
+                        if (call_sig.name != '' && !builtin_call && !ambiguous_direct_builtin && current.args.length() == call_sig.param_types.length() + 1):
+                            int index = 1
+                            while (index < current.args.length()):
+                                string expected_type = normalize_llvm_type_name(call_sig.param_types[index - 1])
+                                string actual_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[index]))
+                                if (is_untyped_array_shape(actual_type) && is_supported_call_array_type(expected_type)):
+                                    RefineInstructionsResult contextual_array = contextualize_call_array_literal(block_refined, temp_types, current.args[index], expected_type)
+                                    block_refined = contextual_array.instructions
+                                    temp_types = contextual_array.temp_types
+                                index += 1
         if (current.kind == 'set'):
             BindingIR binding = ir_parse_binding_decl(current.detail)
             if (current.args.length() == 1):

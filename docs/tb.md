@@ -110,8 +110,15 @@ Build and invocation details are documented in the repository or release `README
   At direct and UFCS calls that resolve to a named tb function, array arguments
   must match the declared parameter array type, including element record and
   nesting depth. Const qualifiers are ignored for this check. A typed empty
-  array variable is checked like any other array; bare empty array literals do
-  not gain a type from a function call.
+  array variable is checked like any other array. In a direct named call, a
+  bare empty array literal such as `count_words([])` gets its type from a
+  declared `int[]`, `bool[]`, `string[]`, `int[][]`, or `string[][]` parameter,
+  including nested empty rows such as `count_rows([[]])`. Populated literals
+  still need matching element types and nesting depth. Record-array literal
+  arguments and UFCS fallback arguments do not currently receive this context;
+  builtin and record-constructor dispatch keep their existing behavior. A
+  function whose name collides with a builtin may still need a typed array
+  variable because that call keeps the builtin's existing dispatch.
 
 - Cached function declaration:
 
