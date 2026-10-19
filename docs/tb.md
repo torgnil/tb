@@ -120,6 +120,11 @@ Build and invocation details are documented in the repository or release `README
   function whose name collides with a builtin may still need a typed array
   variable because that call keeps the builtin's existing dispatch.
 
+  Resolved direct and UFCS calls to named tb functions require exactly the
+  declared number of arguments. A UFCS receiver counts as the first argument.
+  A mismatch is reported before argument type checks, for example
+  `call combine expects 2 arguments, got 1`.
+
   At those same resolved direct and UFCS calls, when both an argument and its
   parameter normalize to primitive scalar types (`int`, `bool`, `num`, or
   `string`), their types must match exactly. Const qualifiers are ignored.
