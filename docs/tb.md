@@ -120,6 +120,13 @@ Build and invocation details are documented in the repository or release `README
   function whose name collides with a builtin may still need a typed array
   variable because that call keeps the builtin's existing dispatch.
 
+  At those same resolved direct and UFCS calls, when both an argument and its
+  parameter normalize to primitive scalar types (`int`, `bool`, `num`, or
+  `string`), their types must match exactly. Const qualifiers are ignored.
+  Enum values keep their existing `string` representation for this check;
+  this rule does not add nominal enum checking. Other non-scalar argument pairs
+  retain their existing behavior.
+
 - Cached function declaration:
 
   `cached int fib(int n): ...`
