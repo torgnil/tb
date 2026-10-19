@@ -130,6 +130,12 @@ ParseResult parse_primary(Token[] tokens, int index):
         int current = index + 1
         if (current >= tokens.length()):
             throw parser_error(token, 'expected primary expression')
+        if (token_is(token_at(tokens, current), 'SYMBOL', ')')):
+            int after_close = current + 1
+            if (after_close < tokens.length()):
+                if (token_is(token_at(tokens, after_close), 'SYMBOL', '->')):
+                    ParseResult body = parse_lambda_body(tokens, after_close + 1)
+                    return ParseResult(Node('Lambda0', '', [body.node]), body.next_index)
         bool first_can_be_typed_binding = token_at(tokens, current).kind == 'KEYWORD'
         if (!first_can_be_typed_binding && token_at(tokens, current).kind == 'IDENTIFIER'):
             if (current + 1 < tokens.length()):

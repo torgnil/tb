@@ -1,0 +1,83 @@
+int shared_seed = 0
+
+int read_seed():
+    return shared_seed
+
+int twice(int value):
+    return value * 2
+
+bool is_positive(int value):
+    return value > 0
+
+int named_zero():
+    return 41
+
+int named_unary(int value):
+    return value + 1
+
+int fail_task():
+    throw 'zero-argument submit failure'
+
+int main(string[] args):
+    shared_seed = args.length()
+    const thread_pool pool = thread_pool(2)
+    const future<int> expression = pool.submit(() -> (twice(read_seed()) + 1))
+    const future<bool> expression_bool = pool.submit(() -> is_positive(read_seed()))
+    const future<int> block = pool.submit(() -> {
+        int seed = read_seed()
+        const int selected_seed = seed
+        int total = 0
+        for (int index = 0; index < selected_seed; index += 1) {
+            if (index == 0) {
+                continue
+            }
+            total += index
+        }
+        switch (selected_seed) {
+            case 1: {
+                total += 10
+            }
+            default: {
+                total += 20
+            }
+        }
+        if (total > 20) {
+            return total
+        } else {
+            return total + 3
+        }
+    })
+    const future<bool> block_bool = pool.submit(() -> {
+        const int seed = read_seed()
+        int cursor = 0
+        while (cursor < seed) {
+            cursor += 1
+        }
+        if (cursor == seed) {
+            return is_positive(seed - 1)
+        } else {
+            return false
+        }
+    })
+    const future<int> unary = pool.submit(int value -> value + 5, args.length())
+    const future<int> named = pool.submit(named_zero)
+    const future<int> named_arg = pool.submit(named_unary, args.length())
+    const future<int> failed = pool.submit(() -> fail_task())
+
+    print(expression.await())
+    print(expression_bool.await())
+    print(block.await())
+    print(block_bool.await())
+    print(unary.await())
+    print(named.await())
+    print(named_arg.await())
+    print(expression.await())
+    try:
+        int ignored = failed.await()
+    catch (exception err):
+        print(err)
+    try:
+        int ignored_again = failed.await()
+    catch (exception err):
+        print(err)
+    return 0

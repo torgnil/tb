@@ -395,12 +395,16 @@ SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements
     return SubmitLambdaValidation(SubmitLambdaBlockCheck(return_type, previous_paths_return), scope)
 
 string validate_submit_lambda(Node lambda_node, Node[] functions):
-    if (lambda_node.kind != 'Lambda' || lambda_node.children.length() != 1):
+    if (lambda_node.children.length() != 1):
         throw 'thread_pool.submit lambda must have one int or bool parameter and a scalar body'
-    BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
-    if (!(parameter.type_name == 'int' || parameter.type_name == 'bool')):
-        throw 'thread_pool.submit lambda parameter must have type int or bool'
-    SubmitLambdaScope initial_scope = SubmitLambdaScope([parameter.name], [parameter.type_name], [], [parameter.name])
+    SubmitLambdaScope initial_scope = SubmitLambdaScope([], [], [], [])
+    if (lambda_node.kind == 'Lambda'):
+        BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+        if (!(parameter.type_name == 'int' || parameter.type_name == 'bool')):
+            throw 'thread_pool.submit lambda parameter must have type int or bool'
+        initial_scope = SubmitLambdaScope([parameter.name], [parameter.type_name], [], [parameter.name])
+    else if (lambda_node.kind != 'Lambda0' || lambda_node.value != ''):
+        throw 'thread_pool.submit lambda must have one int or bool parameter and a scalar body'
     Node body = lambda_node.children[0]
     if (body.kind == 'Block'):
         SubmitLambdaValidation validation = validate_submit_lambda_block_statements(body.children, initial_scope, functions, 0)
@@ -423,7 +427,11 @@ SubmitLambdaRewrite rewrite_submit_lambdas(Node node, string[] used_names, int n
     if (node.kind == 'MethodCall'):
         if (node.value == 'submit'):
             if (node.children.length() > 1):
-                if (node.children[1].kind == 'Lambda' || node.children[1].kind == 'Lambda2'):
+                if (node.children[1].kind == 'Lambda0'):
+                    if (node.children.length() != 2):
+                        throw 'thread_pool.submit zero-argument lambda does not accept a task argument'
+                    validate_submit_lambda(node.children[1], functions)
+                else if (node.children[1].kind == 'Lambda' || node.children[1].kind == 'Lambda2'):
                     if (node.children.length() != 3):
                         throw 'thread_pool.submit lambda requires exactly one task argument'
                     validate_submit_lambda(node.children[1], functions)
@@ -444,13 +452,15 @@ SubmitLambdaRewrite rewrite_submit_lambdas(Node node, string[] used_names, int n
     if (node.kind == 'MethodCall'):
         if (node.value == 'submit'):
             if (node.children.length() > 1):
-                if (node.children[1].kind == 'Lambda'):
+                if (node.children[1].kind == 'Lambda0' || node.children[1].kind == 'Lambda'):
                     Node lambda_node = node.children[1]
                     string worker_return_type = validate_submit_lambda(lambda_node, functions)
                     string worker_name = submit_worker_name(current_names, current_index)
                     current_names = add_unique_name(current_names, worker_name)
                     current_index += 1
-                    Node[] function_children = [Node('Param', lambda_node.value, [])]
+                    Node[] function_children = []
+                    if (lambda_node.kind == 'Lambda'):
+                        function_children.push(Node('Param', lambda_node.value, []))
                     Node lambda_body = lambda_node.children[0]
                     if (lambda_body.kind == 'Block'):
                         for (Node statement : lambda_body.children):
