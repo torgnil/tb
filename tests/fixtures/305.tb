@@ -1,0 +1,61 @@
+bool positive_first(int[] values):
+    if values.length() > 0:
+        if values[0] < 0:
+            throw 'negative snapshot'
+        return values[0] > 0
+    return false
+
+void enqueue_without_await(thread_pool pool, int[] values):
+    future<bool> ignored = pool.submit(positive_first, values)
+
+int main(string[] args):
+    thread_pool pool = thread_pool(1)
+
+    int[] source = [args.length() + 7, 2]
+    future<bool> named_true = pool.submit(positive_first, source)
+    source[0] = -1
+    print(named_true.await())
+    print(named_true.await())
+
+    const int[] const_source = [0, 4]
+    future<bool> named_false = pool.submit(positive_first, const_source)
+    print(named_false.await())
+
+    int[] empty = []
+    future<bool> named_empty = pool.submit(positive_first, empty)
+    print(named_empty.await())
+
+    bool left = true
+    const bool right = true
+    future<bool> two_bools = pool.submit(() -> left and right)
+    left = false
+    print(two_bools.await())
+
+    int threshold = 5
+    bool enabled = true
+    future<bool> mixed_block = pool.submit(() -> {
+        if (enabled) {
+            return threshold > 3;
+        }
+        return false
+    })
+    threshold = 0
+    enabled = false
+    print(mixed_block.await())
+
+    int[] throwing_values = [-9]
+    future<bool> throwing = pool.submit(positive_first, throwing_values)
+    try {
+        throwing.await()
+    } catch (string message) {
+        print(message)
+    }
+    try {
+        throwing.await()
+    } catch (string message) {
+        print(message)
+    }
+
+    int[] drain_values = [1]
+    enqueue_without_await(pool, drain_values)
+    return 0

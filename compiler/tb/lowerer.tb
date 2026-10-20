@@ -679,8 +679,6 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
                 throw 'thread_pool.submit zero-argument lambda does not accept a task argument'
             captured = submit_lambda_captures(lambda_node, bindings, declaration_names)
             worker_return_type = validate_submit_lambda(lambda_node, functions, captured)
-            if (captured.length() > 1 && worker_return_type != 'int'):
-                throw 'thread_pool.submit lambda with multiple captures currently requires an int result'
             rewrite_worker = true
         else if (lambda_node.kind == 'Lambda' || lambda_node.kind == 'Lambda2'):
             if (node.children.length() != 3):
@@ -775,7 +773,7 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
             wrapper_children.push(Node('VarDecl', 'int[] ' + wrapper_environment_name, [Node('Array', '', packed_values)]))
             Node submit_call = Node('MethodCall', 'submit', [Node('Identifier', wrapper_pool_name, []), Node('Identifier', worker_name, []), Node('Identifier', wrapper_environment_name, [])])
             wrapper_children.push(Node('Return', '', [submit_call]))
-            generated.push(Node('Function', 'future<int> ' + wrapper_name, wrapper_children))
+            generated.push(Node('Function', 'future<' + worker_return_type + '> ' + wrapper_name, wrapper_children))
             Node[] wrapper_arguments = [rewritten_children[0]]
             wrapper_arguments = append_nodes(wrapper_arguments, capture_values)
             rewritten = Node('Call', wrapper_name, wrapper_arguments)
