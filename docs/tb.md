@@ -114,11 +114,12 @@ Build and invocation details are documented in the repository or release `README
   bare empty array literal such as `count_words([])` gets its type from a
   declared `int[]`, `bool[]`, `string[]`, `int[][]`, or `string[][]` parameter,
   including nested empty rows such as `count_rows([[]])`. Populated literals
-  still need matching element types and nesting depth. Record-array literal
-  arguments and UFCS fallback arguments do not currently receive this context;
-  builtin and record-constructor dispatch keep their existing behavior. A
-  function whose name collides with a builtin may still need a typed array
-  variable because that call keeps the builtin's existing dispatch.
+  still need matching element types and nesting depth. The same empty-literal
+  context is available for unambiguous UFCS calls to named tb functions, with
+  the receiver checked as the first parameter. UFCS calls whose names collide
+  with builtins do not gain this context. Record-array arguments still do not
+  receive empty-literal context; builtin and record-constructor dispatch retain
+  their existing behavior.
 
   Resolved direct and UFCS calls to named tb functions require exactly the
   declared number of arguments. A UFCS receiver counts as the first argument.

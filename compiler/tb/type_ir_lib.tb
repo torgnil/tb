@@ -269,6 +269,15 @@ RefineInstructionsResult contextualize_call_array_literal(LinearInstruction[] in
         temp_types = set_temp_type_slot(temp_types, array_name, normalized_expected_type)
     return RefineInstructionsResult(instructions, temp_types)
 
+bool is_builtin_ufcs_array_context_name(string method_name):
+    # Conservative eligibility check, not the compiler's authoritative dispatch resolver.
+    FunctionSigIR[] empty_functions = []
+    if (infer_call_type(method_name, empty_functions) != 'unknown'):
+        return true
+    if (infer_method_call_type(method_name, 'unknown', empty_functions) != 'unknown'):
+        return true
+    return method_name == 'abs' || method_name == 'add' || method_name == 'await' || method_name == 'char_at' || method_name == 'clear' || method_name == 'contains' || method_name == 'copy' || method_name == 'create_prio_q' || method_name == 'ends_with' || method_name == 'ends_with_at' || method_name == 'fill' || method_name == 'hash' || method_name == 'index_of' || method_name == 'insert' || method_name == 'is_alnum' || method_name == 'is_alpha' || method_name == 'is_digit' || method_name == 'is_done' || method_name == 'is_empty' || method_name == 'is_space' || method_name == 'is_whitespace' || method_name == 'join' || method_name == 'keys' || method_name == 'last' || method_name == 'max' || method_name == 'min' || method_name == 'pop' || method_name == 'print' || method_name == 'push' || method_name == 'remove_at' || method_name == 'replace' || method_name == 'sort' || method_name == 'starts_with' || method_name == 'starts_with_at' || method_name == 'submit' || method_name == 'sum' || method_name == 'to_int' || method_name == 'union' || method_name == 'values' || method_name == 'wait_for' || method_name == 'write_all'
+
 bool is_same_known_type(string left, string right):
     return left != '' && left != 'unknown' && left == right
 
@@ -1681,6 +1690,19 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                                     block_refined = contextual_array.instructions
                                     temp_types = contextual_array.temp_types
                                 index += 1
+            else if (current.detail == 'method-call' && current.args.length() >= 2):
+                string method_name = current.args[0]
+                FunctionSigIR method_sig = lookup_function_sig(functions, method_name)
+                if (method_sig.name != '' && !record_type_exists(record_names, method_name) && !is_builtin_ufcs_array_context_name(method_name) && current.args.length() == method_sig.param_types.length() + 1):
+                    int index = 1
+                    while (index < current.args.length()):
+                        string expected_type = normalize_llvm_type_name(method_sig.param_types[index - 1])
+                        string actual_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[index]))
+                        if (is_untyped_array_shape(actual_type) && is_supported_call_array_type(expected_type)):
+                            RefineInstructionsResult contextual_array = contextualize_call_array_literal(block_refined, temp_types, current.args[index], expected_type)
+                            block_refined = contextual_array.instructions
+                            temp_types = contextual_array.temp_types
+                        index += 1
         if (current.kind == 'set'):
             BindingIR binding = ir_parse_binding_decl(current.detail)
             if (current.args.length() == 1):
