@@ -542,9 +542,12 @@ BindingIR[] submit_unique_global_bindings(Node[] declarations):
 
 BindingIR[] submit_lambda_captures(Node lambda_node, BindingIR[] bindings, string[] declaration_names):
     BindingIR[] captured = []
-    if (lambda_node.kind != 'Lambda0' || lambda_node.children.length() != 1):
+    if (!(lambda_node.kind == 'Lambda' || lambda_node.kind == 'Lambda0') || lambda_node.children.length() != 1):
         return captured
     string[] locals = submit_lambda_local_names(lambda_node.children[0], [])
+    if (lambda_node.kind == 'Lambda'):
+        BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+        locals = add_unique_name(locals, parameter.name)
     string[] identifiers = submit_lambda_free_identifiers(lambda_node.children[0], locals, [])
     for (string name : identifiers):
         BindingIR binding = const_lookup_binding(bindings, name)
@@ -683,6 +686,8 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
         else if (lambda_node.kind == 'Lambda' || lambda_node.kind == 'Lambda2'):
             if (node.children.length() != 3):
                 throw 'thread_pool.submit lambda requires exactly one task argument'
+            if (lambda_node.kind == 'Lambda'):
+                captured = submit_lambda_captures(lambda_node, bindings, declaration_names)
             worker_return_type = validate_submit_lambda(lambda_node, functions, captured)
             rewrite_worker = lambda_node.kind == 'Lambda'
 
@@ -709,11 +714,12 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
         current_names = add_unique_name(current_names, worker_name)
         current_index += 1
         Node[] function_children = []
-        bool multi_capture = lambda_node.kind == 'Lambda0' && captured.length() > 1
+        bool packed_environment = (lambda_node.kind == 'Lambda0' && captured.length() > 1) || (lambda_node.kind == 'Lambda' && !captured.is_empty())
         string environment_name = ''
         string wrapper_name = ''
         string wrapper_pool_name = ''
-        if (multi_capture):
+        string wrapper_task_name = ''
+        if (packed_environment):
             environment_name = submit_capture_name(current_names, '__tb_submit_environment_', current_index)
             current_names = add_unique_name(current_names, environment_name)
             current_index += 1
@@ -728,13 +734,21 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
                 function_children.push(Node('Param', 'const ' + capture_type + ' ' + binding.name, []))
                 rewritten_children.push(Node('Identifier', binding.name, []))
         Node lambda_body = lambda_node.children[0]
-        if (multi_capture):
+        if (packed_environment):
+            int environment_offset = 0
+            if (lambda_node.kind == 'Lambda'):
+                BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+                Node parameter_value = Node('Index', '', [Node('Identifier', environment_name, []), Node('Int', '0', [])])
+                if (parameter.type_name == 'bool'):
+                    parameter_value = Node('Binary', '!=', [parameter_value, Node('Int', '0', [])])
+                function_children.push(Node('VarDecl', parameter.type_name + ' ' + parameter.name, [parameter_value]))
+                environment_offset = 1
             for (int capture_index = 0; capture_index < captured.length(); capture_index += 1):
                 BindingIR binding = captured[capture_index]
                 string capture_type = binding.type_name
                 if (capture_type.starts_with('const ')):
                     capture_type = capture_type.substring(6)
-                Node captured_value = Node('Index', '', [Node('Identifier', environment_name, []), Node('Int', capture_index.to_string(), [])])
+                Node captured_value = Node('Index', '', [Node('Identifier', environment_name, []), Node('Int', (capture_index + environment_offset).to_string(), [])])
                 if (capture_type == 'bool'):
                     captured_value = Node('Binary', '!=', [captured_value, Node('Int', '0', [])])
                 function_children.push(Node('VarDecl', 'const ' + capture_type + ' ' + binding.name, [captured_value]))
@@ -752,10 +766,20 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
         else:
             function_children.push(Node('Return', '', [lambda_body]))
         generated.push(Node('Function', worker_return_type + ' ' + worker_name, function_children))
-        if (multi_capture):
+        if (packed_environment):
             Node[] wrapper_children = [Node('Param', 'thread_pool ' + wrapper_pool_name, [])]
             Node[] capture_values = []
             Node[] packed_values = []
+            if (lambda_node.kind == 'Lambda'):
+                BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+                wrapper_task_name = submit_capture_name(current_names, '__tb_submit_task_', current_index)
+                current_names = add_unique_name(current_names, wrapper_task_name)
+                current_index += 1
+                wrapper_children.push(Node('Param', parameter.type_name + ' ' + wrapper_task_name, []))
+                if (parameter.type_name == 'bool'):
+                    packed_values.push(Node('Ternary', '', [Node('Identifier', wrapper_task_name, []), Node('Int', '1', []), Node('Int', '0', [])]))
+                else:
+                    packed_values.push(Node('Identifier', wrapper_task_name, []))
             for (int capture_index = 0; capture_index < captured.length(); capture_index += 1):
                 BindingIR binding = captured[capture_index]
                 string capture_type = binding.type_name
@@ -774,9 +798,11 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
             Node submit_call = Node('MethodCall', 'submit', [Node('Identifier', wrapper_pool_name, []), Node('Identifier', worker_name, []), Node('Identifier', wrapper_environment_name, [])])
             wrapper_children.push(Node('Return', '', [submit_call]))
             generated.push(Node('Function', 'future<' + worker_return_type + '> ' + wrapper_name, wrapper_children))
-            Node[] wrapper_arguments = [rewritten_children[0]]
-            wrapper_arguments = append_nodes(wrapper_arguments, capture_values)
-            rewritten = Node('Call', wrapper_name, wrapper_arguments)
+            Node[] call_arguments = [rewritten_children[0]]
+            if (lambda_node.kind == 'Lambda'):
+                call_arguments.push(rewritten_children[2])
+            call_arguments = append_nodes(call_arguments, capture_values)
+            rewritten = Node('Call', wrapper_name, call_arguments)
         else:
             rewritten_children[1] = Node('Identifier', worker_name, [])
             rewritten = Node(node.kind, node.value, rewritten_children)

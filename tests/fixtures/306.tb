@@ -1,0 +1,81 @@
+int ordered_value = 5
+int order_calls = 0
+
+int next_input():
+    order_calls += 1
+    ordered_value = 40
+    return order_calls
+
+future<int> submit_with_scoped_captures(thread_pool pool, int base):
+    int extra = 5
+    return pool.submit(int item -> item + base + extra, base)
+
+int main(string[] args):
+    thread_pool pool = thread_pool(1)
+    int offset = 4 + args.length()
+    bool enabled = true
+    const bool fixed = true
+
+    future<int> int_to_int = pool.submit(int item -> {
+        item += offset
+        if (enabled && fixed) {
+            return item
+        }
+        return 0
+    }, 11 - args.length())
+    offset = 100
+    enabled = false
+    print(int_to_int.await())
+    print(int_to_int.await())
+
+    const int threshold = 3
+    future<bool> int_to_bool = pool.submit(int item -> item > threshold && enabled, 5)
+    enabled = true
+    print(int_to_bool.await())
+
+    int amount = 6
+    future<int> bool_to_int = pool.submit(bool item -> {
+        int item_shadow = amount
+        if (item) {
+            item_shadow += 2
+        }
+        return item_shadow
+    }, true)
+    amount = 90
+    print(bool_to_int.await())
+
+    bool ready = true
+    const int bonus = 2
+    future<bool> bool_to_bool = pool.submit(bool item -> item && ready && bonus == 2, true)
+    ready = false
+    print(bool_to_bool.await())
+
+    int item = 100
+    int captured_offset = 7
+    future<int> shadows_outer = pool.submit(int item -> item + captured_offset, 8)
+    print(shadows_outer.await())
+
+    future<int> scoped = submit_with_scoped_captures(pool, 6)
+    print(scoped.await())
+
+    future<int> evaluates_task_before_capture = pool.submit(int value -> value + ordered_value, next_input())
+    print(evaluates_task_before_capture.await())
+    print(order_calls)
+
+    int local_for_throw = 11
+    future<int> throws_with_capture = pool.submit(int value -> {
+        value += local_for_throw
+        if (value > 0) {
+            throw 'parameterized capture failure'
+        }
+        return value
+    }, 1)
+    try:
+        throws_with_capture.await()
+    catch (string message):
+        print(message)
+    try:
+        throws_with_capture.await()
+    catch (string message):
+        print(message)
+    return 0
