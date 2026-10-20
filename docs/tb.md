@@ -202,6 +202,8 @@ int main(string[] args):
     return 0
 ```
 
+Submitted scalar lambda blocks also support `try` / `catch` with brace-delimited bodies. The try and catch branches start from the same outer scalar scope, so locals declared in one branch stay private. A catch binding must have type `exception` or `string`; its name is unique across the whole lambda but its message is not available as a scalar expression or assignment target. Either branch may update an outer mutable scalar local. `break` and `continue` inside try/catch keep targeting the nearest enclosing loop. A try guarantees termination only when both branches return or throw; a literal throw in a catch can propagate to an outer catch. Return types merge across both branches, including unreachable returns, and at least one scalar return is still required to infer the future result type. Scalar range loops inside either branch lower to loops with scalar bounds and do not allocate a range array.
+
 7. Statements and control flow
 
 - Expression statement: `expr;`.
@@ -239,13 +241,17 @@ int main(string[] args):
 - Returning a function-local `int[]`, `bool[]`, `int[][]`, or `string[]` transfers that owned array to the caller, which releases it normally. Const local arrays follow the same rule. Returning a borrowed parameter or global array produces an independent copy. Returning a borrowed `bool[]` field of a record parameter also produces an independent copy.
 - Returning a string from a function preserves the value before releasing that function's local variables. This includes direct local bindings and strings read from a local array or record field; borrowed parameters and literals keep their existing behavior.
 - Exceptions use `throw expr`, where `expr` must be string-compatible. `exception` is currently a string-backed alias for catch bindings.
-- Catch exceptions with `try` / `catch`:
+- Catch exceptions with `try` / `catch`, using either indented or brace-delimited bodies:
 
   ```tb
   try:
       throw 'boom'
   catch (exception err):
       print(err)
+  ```
+
+  ```tb
+  try { throw 'boom'; } catch (string err) { print(err); }
   ```
 
   A direct throw caught in the same function preserves preceding local mutations

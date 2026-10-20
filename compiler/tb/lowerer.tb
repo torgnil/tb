@@ -427,6 +427,23 @@ SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements
                 child_index += 1
             scope.declared_names = declared_names
             current.return_type = return_type
+        else if (statement.kind == 'Try'):
+            Node[] try_statements = try_body_nodes(statement)
+            Node catch_clause = catch_node(statement)
+            SubmitLambdaValidation try_validation = validate_submit_lambda_block_statements(try_statements, copy_submit_lambda_scope(scope), functions, loop_depth)
+            BindingIR catch_binding = ir_parse_binding_decl(catch_clause.value)
+            if (!(catch_binding.type_name == 'exception' || catch_binding.type_name == 'string')):
+                throw 'thread_pool.submit lambda catch binding must have type exception or string'
+            if (contains_name(try_validation.scope.declared_names, catch_binding.name)):
+                throw 'thread_pool.submit lambda local names must be unique, including the parameter'
+            SubmitLambdaScope catch_scope = copy_submit_lambda_scope(scope)
+            catch_scope.declared_names = append_lines(try_validation.scope.declared_names, [catch_binding.name])
+            SubmitLambdaValidation catch_validation = validate_submit_lambda_block_statements(catch_clause.children, catch_scope, functions, loop_depth)
+            return_type = merge_submit_return_types(return_type, try_validation.check.return_type)
+            return_type = merge_submit_return_types(return_type, catch_validation.check.return_type)
+            scope.declared_names = catch_validation.scope.declared_names
+            current.return_type = return_type
+            current.returns_all_paths = try_validation.check.returns_all_paths && catch_validation.check.returns_all_paths
         else if (statement.kind == 'Break'):
             if (loop_depth == 0):
                 throw 'thread_pool.submit lambda break is only supported inside a while or for loop'
@@ -434,7 +451,7 @@ SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements
             if (loop_depth == 0):
                 throw 'thread_pool.submit lambda continue is only supported inside a while or for loop'
         else:
-            throw 'thread_pool.submit lambda block supports only scalar locals, assignments, return, literal throw, if/else, while, for, range foreach and switch statements with break/continue'
+            throw 'thread_pool.submit lambda block supports only scalar locals, assignments, return, literal throw, if/else, while, for, range foreach, switch and try/catch statements with break/continue'
         return_type = merge_submit_return_types(return_type, current.return_type)
         if (!previous_paths_return):
             previous_paths_return = current.returns_all_paths
@@ -474,7 +491,9 @@ string validate_submit_lambda(Node lambda_node, Node[] functions, BindingIR[] ca
 string[] submit_lambda_local_names(Node node, string[] names):
     if (node.kind == 'Lambda' || node.kind == 'Lambda0' || node.kind == 'Lambda2'):
         return names
-    if (node.kind == 'VarDecl' || node.kind == 'ForEach' || node.kind == 'Catch'):
+    # Catch binders are reserved by the validator, but must not hide an outer
+    # scalar reference when collecting captures for the whole lambda.
+    if (node.kind == 'VarDecl' || node.kind == 'ForEach'):
         names = add_unique_name(names, binding_name(node.value))
     for (Node child : node.children):
         names = submit_lambda_local_names(child, names)
@@ -631,6 +650,16 @@ SubmitRangeListRewrite rewrite_submit_range_foreach_list(Node[] statements, stri
                 current_names = body.used_names
                 current_index = body.next_index
             rewritten.push(Node(statement.kind, statement.value, children))
+        else if (statement.kind == 'Try'):
+            Node[] try_source = try_body_nodes(statement)
+            SubmitRangeListRewrite try_part = rewrite_submit_range_foreach_list(try_source, current_names, current_index)
+            Node catch_clause = catch_node(statement)
+            SubmitRangeListRewrite catch_part = rewrite_submit_range_foreach_list(catch_clause.children, try_part.used_names, try_part.next_index)
+            Node[] children = try_part.nodes
+            children.push(Node(catch_clause.kind, catch_clause.value, catch_part.nodes))
+            rewritten.push(Node(statement.kind, statement.value, children))
+            current_names = catch_part.used_names
+            current_index = catch_part.next_index
         else:
             rewritten.push(statement)
     return SubmitRangeListRewrite(rewritten, current_names, current_index)

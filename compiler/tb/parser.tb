@@ -828,9 +828,15 @@ ParseResult parse_for_each_statement(Token[] tokens, int index):
 
 ParseResult parse_try_statement(Token[] tokens, int index):
     int current = index + 1
-    current = expect_symbol(tokens, current, ':')
-    current = expect_kind(tokens, current, 'NEWLINE')
-    ParseNodesResult body = parse_block(tokens, current)
+    ParseNodesResult body = ParseNodesResult([], current)
+    if (token_is(token_at(tokens, current), 'SYMBOL', ':')):
+        current += 1
+        current = expect_kind(tokens, current, 'NEWLINE')
+        body = parse_block(tokens, current)
+    else if (token_is(token_at(tokens, current), 'SYMBOL', '{')):
+        body = parse_block(tokens, current)
+    else:
+        throw parser_error(token_at(tokens, current), 'expected try body')
     current = skip_newlines(tokens, body.next_index)
 
     if (!token_is(token_at(tokens, current), 'KEYWORD', 'catch')):
@@ -845,9 +851,15 @@ ParseResult parse_try_statement(Token[] tokens, int index):
     string binding = catch_type + ' ' + name_token.value
     current += 1
     current = expect_symbol(tokens, current, ')')
-    current = expect_symbol(tokens, current, ':')
-    current = expect_kind(tokens, current, 'NEWLINE')
-    ParseNodesResult catch_body = parse_block(tokens, current)
+    ParseNodesResult catch_body = ParseNodesResult([], current)
+    if (token_is(token_at(tokens, current), 'SYMBOL', ':')):
+        current += 1
+        current = expect_kind(tokens, current, 'NEWLINE')
+        catch_body = parse_block(tokens, current)
+    else if (token_is(token_at(tokens, current), 'SYMBOL', '{')):
+        catch_body = parse_block(tokens, current)
+    else:
+        throw parser_error(token_at(tokens, current), 'expected catch body')
 
     Node[] children = body.nodes
     children.push(Node('Catch', binding, catch_body.nodes))
