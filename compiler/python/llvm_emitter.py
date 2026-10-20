@@ -6291,7 +6291,7 @@ class LLVMEmitter:
         lines: list[str] = []
         parameter_text = ", ".join(self._emit_function_parameter(parameter) for parameter in parameters)
         lines.append(f"define {self._llvm_type_for(return_type)} {symbol_name}({parameter_text}) {{")
-        lines.append("entry:")
+        lines.append("function.entry:")
         self._reset_function_state()
         self.function_exception_label = self._next_label("exc.unwind")
         for parameter in parameters:
