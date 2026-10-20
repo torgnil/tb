@@ -2828,9 +2828,15 @@ BindingIR[] collect_function_locals(LinearInstruction[] instructions):
     for (LinearInstruction op : instructions):
         if (op.kind == 'set' || op.kind == 'catch'):
             BindingIR local_decl = ir_parse_binding_decl(op.detail)
+            string local_type_name = local_decl.type_name
+            if (local_type_name.starts_with('const ')):
+                local_type_name = local_type_name.substring(6)
             bool seen = false
             for (BindingIR existing : locals):
-                if (existing.type_name == local_decl.type_name && existing.name == local_decl.name):
+                string existing_type_name = existing.type_name
+                if (existing_type_name.starts_with('const ')):
+                    existing_type_name = existing_type_name.substring(6)
+                if (existing_type_name == local_type_name && existing.name == local_decl.name):
                     seen = true
             if (!seen):
                 locals.push(local_decl)
