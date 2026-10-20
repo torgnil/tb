@@ -1034,7 +1034,15 @@ class IRGenerator:
             raise TypeError(f"Expected foreach item type {statement.item_type}, got {iterable_item_type}")
 
         iterable = self._array_constant_value(statement.iterable, iterable_type) if self._is_array_type(iterable_type) else None
-        if iterable is None or self._contains_loop_control_statement(statement.body):
+        # Preflight nested leaves before lowering the body; static rows have no runtime binding.
+        if (
+            iterable is None
+            or not all(
+                self._can_unroll_foreach_item(item, statement.item_type)
+                for item in iterable.items
+            )
+            or self._contains_loop_control_statement(statement.body)
+        ):
             return self._lower_runtime_for_each(statement, iterable_type)
 
         instructions = []
@@ -1091,6 +1099,22 @@ class IRGenerator:
         self.enum_variables = saved_enum_variables
         self.const_variables = saved_const_variables
         return instructions
+
+    def _can_unroll_foreach_item(self, item, item_type: str) -> bool:
+        if item_type == "int":
+            return self._integer_constant_value(item) is not None
+        if item_type == "string":
+            return self._string_constant_value(item) is not None
+        if self._is_array_type(item_type):
+            value = self._array_constant_value(item, item_type)
+            if value is None:
+                return False
+            nested_item_type = self._array_item_type(item_type)
+            return all(
+                self._can_unroll_foreach_item(nested_item, nested_item_type)
+                for nested_item in value.items
+            )
+        return True
 
     def _lower_runtime_for_each(self, statement: ForEachStatement, iterable_type: str):
         if self._expression_type(statement.iterable) != iterable_type:
