@@ -772,7 +772,16 @@ ParseResult parse_for_each_statement(Token[] tokens, int index):
     current = expect_symbol(tokens, current, '(')
 
     string binding = ''
+    bool is_const = token_is(token_at(tokens, current), 'KEYWORD', 'const')
+    if (is_const):
+        current += 1
     Token first = token_at(tokens, current)
+    if (is_const):
+        int const_binding_end = type_end(tokens, current)
+        if (const_binding_end >= tokens.length()):
+            throw parser_error(first, 'expected typed const foreach binding')
+        if (token_at(tokens, const_binding_end).kind != 'IDENTIFIER'):
+            throw parser_error(first, 'expected typed const foreach binding')
     if (first.kind == 'KEYWORD' || first.kind == 'IDENTIFIER'):
         int after_type = type_end(tokens, current)
         if (after_type < tokens.length() && token_at(tokens, after_type).kind == 'IDENTIFIER'):
@@ -791,6 +800,9 @@ ParseResult parse_for_each_statement(Token[] tokens, int index):
             throw parser_error(name_token, 'expected loop binding')
         binding = name_token.value
         current += 1
+
+    if (is_const):
+        binding = 'const ' + binding
 
     Token separator = token_at(tokens, current)
     if (token_is(separator, 'SYMBOL', ':') || token_is(separator, 'KEYWORD', 'in')):

@@ -1058,7 +1058,9 @@ class IRGenerator:
                 self.int_constants[statement.item_name] = constant_value
                 instructions.extend(
                     self._lower_statement(
-                        VariableDeclaration("int", statement.item_name, IntegerLiteral(constant_value))
+                        VariableDeclaration(
+                            "int", statement.item_name, IntegerLiteral(constant_value), statement.is_const
+                        )
                     )
                 )
             elif statement.item_type == "string":
@@ -1073,6 +1075,8 @@ class IRGenerator:
                 self.array_variables[statement.item_name] = constant_value
             else:
                 raise TypeError(f"Unsupported foreach item type: {statement.item_type}")
+            if statement.is_const:
+                self.const_variables.add(statement.item_name)
             for body_statement in statement.body:
                 lowered = self._lower_statement(body_statement)
                 instructions.extend(lowered)
@@ -1140,8 +1144,11 @@ class IRGenerator:
                         statement.item_type,
                         statement.item_name,
                         ArrayAccess(iterable_expression, Identifier(index_name)),
+                        statement.is_const,
                     )
                 )
+            if statement.is_const:
+                self.const_variables.add(statement.item_name)
             for body_statement in statement.body:
                 self._invalidate_assigned_bindings(body_statement)
                 body_instructions.extend(self._lower_statement(body_statement))

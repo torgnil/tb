@@ -227,6 +227,7 @@ class ForEachStatement(ASTNode):
     item_name: str
     iterable: Expression
     body: list[ASTNode]
+    is_const: bool = False
 
 
 @dataclass(slots=True)

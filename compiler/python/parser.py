@@ -568,6 +568,9 @@ class Parser:
         self._expect("FOR", "Expected 'for'")
         self._expect("LPAREN", "Expected '('")
         if self._looks_like_for_each_loop():
+            is_const = self._current().type == "CONST"
+            if is_const:
+                self._advance()
             item_type = self._parse_type_name()
             item_name = self._expect("IDENTIFIER", "Expected iterator name")
             if self._current().type not in {"COLON", "IN"}:
@@ -576,7 +579,7 @@ class Parser:
             iterable = self._parse_expression()
             self._expect("RPAREN", "Expected ')'")
             body = self._parse_block_suite()
-            return ForEachStatement(item_type, item_name.value or "", iterable, body)
+            return ForEachStatement(item_type, item_name.value or "", iterable, body, is_const)
         if self._looks_like_variable_declaration():
             initializer = self._parse_variable_declaration()
         else:
@@ -773,7 +776,8 @@ class Parser:
         return type_name
 
     def _looks_like_for_each_loop(self) -> bool:
-        index = self._scan_type_end(self.index)
+        index = self.index + (1 if self._current().type == "CONST" else 0)
+        index = self._scan_type_end(index)
         if index is None:
             return False
         return self._token_at(index).type == "IDENTIFIER" and self._token_at(index + 1).type in {"COLON", "IN"}
