@@ -1,0 +1,33 @@
+record Item(int key);
+
+void inspect_queues(int label, const prio_q<int> values, const prio_q<Item> items):
+    print(label)
+    print(values.is_empty())
+    print(items.is_empty())
+
+int compare_items(Item left, Item right):
+    return right.key - left.key
+
+int compare_high_first(int left, int right):
+    return right - left
+
+int main(string[] args):
+    int argc = args.length()
+    int[] values = [4, 1, 3]
+    prio_q<int> queue = values.create_prio_q(compare_high_first)
+    Item[] items = [Item(7), Item(2)]
+    prio_q<Item> item_queue = items.create_prio_q(compare_items)
+    const prio_q<int> const_queue = queue
+    const prio_q<Item> const_item_queue = item_queue
+
+    inspect_queues(10 + argc, const_queue, const_item_queue)
+    int label = 20 + argc
+    label.inspect_queues(queue, item_queue)
+
+    int[] empty_values = []
+    prio_q<int> empty_queue = empty_values.create_prio_q(compare_high_first)
+    print(empty_queue.is_empty())
+    print(queue.pop())
+    print(item_queue.pop().key)
+    print(empty_queue.is_empty())
+    return 0
