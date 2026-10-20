@@ -507,6 +507,20 @@ int submit_name_occurrence_count(string[] names, string name):
             count += 1
     return count
 
+BindingIR[] submit_unique_global_bindings(Node[] declarations):
+    BindingIR[] globals = []
+    string[] names = []
+    for (Node declaration : declarations):
+        if (declaration.kind == 'VarDecl'):
+            BindingIR binding = ir_parse_binding_decl(declaration.value)
+            globals.push(binding)
+            names.push(binding.name)
+    BindingIR[] unique = []
+    for (BindingIR binding : globals):
+        if (submit_name_occurrence_count(names, binding.name) == 1):
+            unique.push(binding)
+    return unique
+
 BindingIR[] submit_lambda_captures(Node lambda_node, BindingIR[] bindings, string[] declaration_names):
     BindingIR[] captured = []
     if (lambda_node.kind != 'Lambda0' || lambda_node.children.length() != 1):
@@ -790,6 +804,7 @@ SubmitScopedRewrite rewrite_submit_statement(Node node, string[] used_names, int
 
 SubmitLambdaRewrite rewrite_submit_lambdas_in_program(Node program):
     string[] unavailable_names = collect_submit_unavailable_names(program, [])
+    BindingIR[] global_bindings = submit_unique_global_bindings(program.children)
     Node[] functions = []
     for (Node child : program.children):
         if (child.kind == 'Function' || child.kind == 'CachedFunction'):
@@ -806,6 +821,10 @@ SubmitLambdaRewrite rewrite_submit_lambdas_in_program(Node program):
                 if (fn_child.kind == 'Param'):
                     bindings.push(ir_parse_binding_decl(fn_child.value))
             string[] declaration_names = submit_function_declaration_names(child, [])
+            for (BindingIR global_binding : global_bindings):
+                if (submit_name_occurrence_count(declaration_names, global_binding.name) == 0):
+                    bindings.push(global_binding)
+                    declaration_names.push(global_binding.name)
             Node[] body_nodes = []
             for (Node fn_child : child.children):
                 if (fn_child.kind != 'Param'):
