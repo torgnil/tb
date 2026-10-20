@@ -1103,6 +1103,8 @@ class IRGenerator:
     def _can_unroll_foreach_item(self, item, item_type: str) -> bool:
         if item_type == "bool":
             return False
+        if item_type in self.record_types:
+            return False
         if item_type == "int":
             return self._integer_constant_value(item) is not None
         if item_type == "string":

@@ -1,0 +1,48 @@
+record Entry(int value, string label, int[] samples);
+
+Entry make_entry(int value, string label):
+    return Entry(value, label, [value, value + 10])
+
+int main(string[] args):
+    int seed = args.length() + 2
+    Entry[] entries = [make_entry(seed, 'first'), make_entry(seed + 2, 'second')]
+    int total = 0
+
+    Entry[] direct = [Entry(seed, 'direct-one', [seed]), Entry(seed + 1, 'direct-two', [seed + 1])]
+    for (Entry direct_entry : direct):
+        print(direct_entry.label)
+        print(direct_entry.samples[0])
+
+    for (const Entry initial : entries):
+        print(initial.value)
+
+    for (const Entry element : entries):
+        print(element.value)
+        print(element.label)
+        print(element.samples[1])
+        total += element.value
+        if (element.value == seed):
+            continue
+        print('last')
+    print(total)
+
+    Entry[] empty = []
+    for (Entry element in empty):
+        total += element.value
+    print(total)
+
+    const Entry[] fixed = [make_entry(seed + 4, 'fixed')]
+    for (const Entry element in fixed):
+        print(element.label)
+        print(element.samples[0])
+
+    for (Entry element in entries):
+        element = make_entry(seed + 9, 'local')
+        print(element.value)
+        print(element.label)
+        break
+
+    print(entries[0].value)
+    print(entries[0].label)
+    print(entries[0].samples[0])
+    return 0
