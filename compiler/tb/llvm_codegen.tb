@@ -140,6 +140,7 @@ int LLVM_METHOD_STRING_COUNT = 0;
 int LLVM_METHOD_STRING_BYTES = 0;
 string[] LLVM_NAMED_INT_SORT_COMPARATOR_NAMES = [];
 string[] LLVM_NAMED_RECORD_SORT_COMPARATOR_KEYS = [];
+string[] LLVM_INLINE_RECORD_FIELD_DESC_COMPARATOR_KEYS = [];
 int LLVM_EMIT_RECORD_VALUE_MS = 0;
 int LLVM_EMIT_RECORD_VALUE_COUNT = 0;
 int LLVM_EMIT_CALL_VALUE_MS = 0;
@@ -543,6 +544,7 @@ void reset_llvm_backend_helper_stats():
     LLVM_METHOD_STRING_BYTES = 0
     LLVM_NAMED_INT_SORT_COMPARATOR_NAMES = []
     LLVM_NAMED_RECORD_SORT_COMPARATOR_KEYS = []
+    LLVM_INLINE_RECORD_FIELD_DESC_COMPARATOR_KEYS = []
     LLVM_EMIT_RECORD_VALUE_MS = 0
     LLVM_EMIT_RECORD_VALUE_COUNT = 0
     LLVM_EMIT_CALL_VALUE_MS = 0
@@ -2262,6 +2264,14 @@ void register_named_record_sort_comparator(string record_name, string comparator
     string key = record_name + '|' + comparator_name
     if (!(key in LLVM_NAMED_RECORD_SORT_COMPARATOR_KEYS)):
         LLVM_NAMED_RECORD_SORT_COMPARATOR_KEYS.push(key)
+
+string llvm_inline_record_field_desc_comparator_symbol(string record_name, string field_name):
+    return '@__tb_prio_q_cmp_record_field_desc_' + record_name.length().to_string() + '_' + record_name + '_' + field_name
+
+void register_inline_record_field_desc_comparator(string record_name, string field_name):
+    string key = record_name + '|' + field_name
+    if (!(key in LLVM_INLINE_RECORD_FIELD_DESC_COMPARATOR_KEYS)):
+        LLVM_INLINE_RECORD_FIELD_DESC_COMPARATOR_KEYS.push(key)
 
 string llvm_zero_value(string type_name):
     type_name = normalize_llvm_type_name(type_name)
@@ -4328,14 +4338,23 @@ string emit_sort_lambda_instruction(ProgramIR program, ParsedFunction function_i
         return '  ' + lhs + ' = call ptr @tb_bootstrap_record_array_sort_' + record_name + '_by_' + op.args[4] + '(ptr ' + temp_ref(op.args[1]) + ')'
     throw 'unsupported llvm sort lambda op: ' + join_llvm_strings(op.args, ' ')
 
-string emit_prio_q_lambda_instruction(ParsedFunction function_ir, LinearInstruction op):
+string emit_prio_q_lambda_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op):
     string lhs = temp_ref(op.lhs)
     if (op.args[0] == 'create_prio_q_int_desc'):
         return '  ' + lhs + ' = call ptr @tb_bootstrap_create_prio_q_int_by(ptr ' + temp_ref(op.args[1]) + ', ptr @tb_bootstrap_cmp_int_desc)'
     if (op.args[0] == 'create_prio_q_record_field_desc'):
         string base_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[1]))
         string record_name = record_name_from_type(array_item_type(base_type))
-        return '  ' + lhs + ' = call ptr @tb_bootstrap_create_prio_q_generic_' + record_name + '_by(ptr ' + temp_ref(op.args[1]) + ', ptr @tb_bootstrap_cmp_record_pair_' + record_name + '_by_' + op.args[4] + ')'
+        RecordDeclIR record_decl = lookup_record_decl(program, record_name)
+        if (record_decl.header == ''):
+            throw 'unknown priority queue record type: ' + record_name
+        BindingIR field = record_field_binding(record_decl, op.args[4])
+        if (field.name == ''):
+            throw 'priority queue comparator field does not exist: ' + record_name + '.' + op.args[4]
+        if (normalize_llvm_type_name(field.type_name) != 'int'):
+            throw 'priority queue comparator field must be int: ' + record_name + '.' + op.args[4]
+        register_inline_record_field_desc_comparator(record_name, op.args[4])
+        return '  ' + lhs + ' = call ptr @tb_bootstrap_create_prio_q_generic_' + record_name + '_by(ptr ' + temp_ref(op.args[1]) + ', ptr ' + llvm_inline_record_field_desc_comparator_symbol(record_name, op.args[4]) + ')'
     throw 'unsupported llvm prio_q lambda op: ' + join_llvm_strings(op.args, ' ')
 
 string[] emit_string_length_map_helper():
@@ -6472,9 +6491,9 @@ string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, Lin
     if (op.detail == 'method-call-lambda'):
         if (op.args.length() >= 2):
             if (op.args[0] == 'create_prio_q_int_desc'):
-                return emit_prio_q_lambda_instruction(function_ir, op)
+                return emit_prio_q_lambda_instruction(program, function_ir, op)
             if (op.args[0] == 'create_prio_q_record_field_desc'):
-                return emit_prio_q_lambda_instruction(function_ir, op)
+                return emit_prio_q_lambda_instruction(program, function_ir, op)
             if (op.args[0] == 'sort_int_asc' || op.args[0] == 'sort_int_desc' || op.args[0] == 'sort_record_field_asc'):
                 return emit_sort_lambda_instruction(program, function_ir, op)
             if (op.args[0] == 'map_to_parse_point' || op.args[0] == 'map_to_string_length' || op.args[0] == 'map_to_edge_distance' || op.args[0] == 'flat_map_edges_for_point'):
@@ -8441,6 +8460,28 @@ string[] emit_named_record_sort_helper(string record_name, string comparator_nam
         '}'
     ]
 
+string[] emit_inline_record_field_desc_comparator_helper(string record_name, string field_name, int field_index):
+    string comparator_symbol = llvm_inline_record_field_desc_comparator_symbol(record_name, field_name)
+    string record_type = llvm_record_type_name(record_name)
+    return [
+        'define private i32 ' + comparator_symbol + '(ptr %left.pair.ptr, ptr %right.pair.ptr) {',
+        'entry:',
+        '  %left.item.ptr = getelementptr inbounds { ptr, i8 }, ptr %left.pair.ptr, i32 0, i32 0',
+        '  %left.item = load ptr, ptr %left.item.ptr',
+        '  %right.item.ptr = getelementptr inbounds { ptr, i8 }, ptr %right.pair.ptr, i32 0, i32 0',
+        '  %right.item = load ptr, ptr %right.item.ptr',
+        '  %left.field.ptr = getelementptr inbounds ' + record_type + ', ptr %left.item, i32 0, i32 ' + field_index.to_string(),
+        '  %left.field = load i64, ptr %left.field.ptr',
+        '  %right.field.ptr = getelementptr inbounds ' + record_type + ', ptr %right.item, i32 0, i32 ' + field_index.to_string(),
+        '  %right.field = load i64, ptr %right.field.ptr',
+        '  %left.higher = icmp sgt i64 %left.field, %right.field',
+        '  %left.lower = icmp slt i64 %left.field, %right.field',
+        '  %higher.result = select i1 %left.higher, i32 -1, i32 0',
+        '  %result = select i1 %left.lower, i32 1, i32 %higher.result',
+        '  ret i32 %result',
+        '}'
+    ]
+
 string[] emit_record_set_helpers(ProgramIR program, string record_name):
     RecordDeclIR record_decl = lookup_record_decl(program, record_name)
     BindingIR[] fields = record_field_bindings(record_decl)
@@ -9154,6 +9195,7 @@ string[] llvm_codegen_ir(ProgramIR program):
         throw 'llvm bootstrap backend only supports modules without imports'
     LLVM_NAMED_INT_SORT_COMPARATOR_NAMES = []
     LLVM_NAMED_RECORD_SORT_COMPARATOR_KEYS = []
+    LLVM_INLINE_RECORD_FIELD_DESC_COMPARATOR_KEYS = []
     string[] lines = []
     int map_types_start_ms = time_ms()
     string[] map_types = collect_used_map_types(program)
@@ -9444,6 +9486,15 @@ string[] llvm_codegen_ir(ProgramIR program):
         for (string helper in emit_named_record_sort_helper(record_name, comparator_name)):
             lines.push(helper)
         lines.push('')
+    for (string key in LLVM_INLINE_RECORD_FIELD_DESC_COMPARATOR_KEYS):
+        int split = key.index_of('|')
+        string record_name = key.substring(0, split)
+        string field_name = key.substring(split + 1)
+        RecordDeclIR record_decl = lookup_record_decl(program, record_name)
+        int field_index = record_field_index(record_decl, field_name)
+        for (string helper in emit_inline_record_field_desc_comparator_helper(record_name, field_name, field_index)):
+            lines.push(helper)
+        lines.push('')
     string[] detached = []
     for (string line in lines):
         detached.push(line.substring(0))
@@ -9461,6 +9512,7 @@ void llvm_print_ir(ProgramIR program):
         throw 'llvm bootstrap backend only supports modules without imports'
     LLVM_NAMED_INT_SORT_COMPARATOR_NAMES = []
     LLVM_NAMED_RECORD_SORT_COMPARATOR_KEYS = []
+    LLVM_INLINE_RECORD_FIELD_DESC_COMPARATOR_KEYS = []
     string[] map_types = collect_used_map_types(program)
     bool needs_maps = !map_types.is_empty()
     analyze_program_features(program, map_types)
@@ -9773,6 +9825,14 @@ void llvm_print_ir(ProgramIR program):
         string record_name = key.substring(0, split)
         string comparator_name = key.substring(split + 1)
         print_llvm_lines(emit_named_record_sort_helper(record_name, comparator_name))
+        print('')
+    for (string key in LLVM_INLINE_RECORD_FIELD_DESC_COMPARATOR_KEYS):
+        int split = key.index_of('|')
+        string record_name = key.substring(0, split)
+        string field_name = key.substring(split + 1)
+        RecordDeclIR record_decl = lookup_record_decl(program, record_name)
+        int field_index = record_field_index(record_decl, field_name)
+        print_llvm_lines(emit_inline_record_field_desc_comparator_helper(record_name, field_name, field_index))
         print('')
 
 string[] llvm_codegen_source(string source):
