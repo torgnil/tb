@@ -143,6 +143,12 @@ Build and invocation details are documented in the repository or release `README
   Qualifiers are ignored. Unknown or untyped arguments keep their existing
   handling.
 
+  Set arguments at those calls must match the same complete normalized
+  `set<T>` type. This checks the item type, including declared record identity,
+  and rejects passing a set where a non-set parameter is declared or vice
+  versa. Const qualifiers are ignored, and unknown or untyped arguments keep
+  their existing handling.
+
 - Cached function declaration:
 
   `cached int fib(int n): ...`
