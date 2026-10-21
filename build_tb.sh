@@ -2,10 +2,36 @@
 
 set -euo pipefail
 
+bootstrap_mode=native
+case "${1:-}" in
+    --bootstrap-python) bootstrap_mode=python ;;
+    --help|-h)
+        echo "Usage: ./build_tb.sh [--bootstrap-python]"
+        echo "Default: bootstrap with released tb 0.2.1 (TB_BOOTSTRAP_COMPILER overrides its path)."
+        exit 0 ;;
+    '') ;;
+    *) echo "Usage: ./build_tb.sh [--bootstrap-python]" >&2; exit 2 ;;
+esac
+if [ "$#" -gt 1 ]; then
+    echo "Usage: ./build_tb.sh [--bootstrap-python]" >&2
+    exit 2
+fi
+
 script_dir=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 repo_root=$(CDPATH= cd -- "$script_dir" && pwd)
 source_file="$repo_root/compiler/tb/tb.tb"
 build_root="$repo_root/.build/stage2"
+seed_compiler="${TB_BOOTSTRAP_COMPILER:-}"
+if [ "$bootstrap_mode" = native ] && [ -z "$seed_compiler" ]; then
+    if ! command -v brew >/dev/null 2>&1; then
+        echo "Set TB_BOOTSTRAP_COMPILER to a tb 0.2.1 LLVM compiler, or use --bootstrap-python." >&2
+        exit 1
+    fi
+    seed_compiler="$(brew --cellar)/tb/0.2.1/libexec/libexec/tb"
+fi
+if [ "$bootstrap_mode" = python ]; then
+    build_root="$repo_root/.build/python-bootstrap"
+fi
 stage1_ll="$build_root/tb_stage1.ll"
 stage1_bin="$build_root/tb_stage1"
 stage2_ll="$build_root/tb_stage2.ll"
@@ -14,17 +40,62 @@ output_bin="$output_dir/tb"
 
 mkdir -p "$build_root" "$output_dir"
 
-echo "[1/5] embed compiler runtime sources"
-python3 - "$repo_root" <<'PY'
+echo "[1/5] verify bootstrap inputs and embed compiler runtime sources"
+python3 - "$repo_root" "$build_root" "$bootstrap_mode" "$seed_compiler" <<'PY'
 from pathlib import Path
+import hashlib
+import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 
 repo_root = Path(sys.argv[1])
+build_root = Path(sys.argv[2])
+bootstrap_mode = sys.argv[3]
+minimum_python = (3, 10) if bootstrap_mode == 'python' else (3, 8)
+if sys.version_info < minimum_python:
+    requirement = '.'.join(map(str, minimum_python))
+    raise SystemExit(f'{bootstrap_mode} bootstrap requires Python {requirement} or newer')
 version = os.environ.get('TB_VERSION', 'dev')
 if version != 'dev' and not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9][A-Za-z0-9.-]*)?', version):
     raise SystemExit(f'Invalid TB_VERSION: {version!r}')
+
+def sha256(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+metadata = {'mode': bootstrap_mode, 'python': sys.executable, 'python_version': sys.version}
+if bootstrap_mode == 'native':
+    seed = Path(sys.argv[4]).resolve()
+    if not seed.is_file() or not os.access(seed, os.X_OK):
+        raise SystemExit(f'Missing bootstrap compiler: {seed}\n'
+                         'Set TB_BOOTSTRAP_COMPILER to the tb 0.2.1 LLVM compiler binary, '
+                         'or use --bootstrap-python.')
+    # Invoke a private copy, never the moving Homebrew link or active bin/tb.
+    frozen_seed = build_root / 'bootstrap_seed'
+    if seed == frozen_seed.resolve():
+        raise SystemExit('TB_BOOTSTRAP_COMPILER must point to the original released compiler')
+    shutil.copy2(seed, frozen_seed)
+    seed_hash = sha256(frozen_seed)
+    if sha256(seed) != seed_hash:
+        raise SystemExit('Bootstrap compiler changed while being copied')
+    expected_hash = os.environ.get('TB_BOOTSTRAP_SHA256')
+    if expected_hash is not None:
+        if not re.fullmatch(r'[0-9a-fA-F]{64}', expected_hash):
+            raise SystemExit('TB_BOOTSTRAP_SHA256 must be a 64-digit SHA-256')
+        if seed_hash != expected_hash.lower():
+            raise SystemExit('Bootstrap compiler SHA-256 does not match TB_BOOTSTRAP_SHA256')
+    result = subprocess.run([str(frozen_seed), '--version'], capture_output=True, text=True)
+    if result.returncode != 0 or result.stdout.strip() != 'tb 0.2.1' or result.stderr:
+        raise SystemExit('Bootstrap compiler must be the tb 0.2.1 LLVM compiler binary')
+    metadata.update(seed_source=str(seed), seed_copy=str(frozen_seed),
+                    seed_version='0.2.1', seed_sha256=seed_hash)
+    print(f'Bootstrap seed: {seed} (tb 0.2.1)\nSHA-256: {seed_hash}', flush=True)
+else:
+    print('Bootstrap seed: frozen Python compiler fallback', flush=True)
+(build_root / 'bootstrap.json').write_text(json.dumps(metadata, indent=2) + '\n')
+
 helpers = sorted((repo_root / 'compiler/tb/llvm_helpers').glob('*.ll'))
 if not helpers:
     raise SystemExit('No LLVM helper templates found')
@@ -72,7 +143,11 @@ PY
 echo "[2/5] build stage1 llvm"
 (
   cd "$repo_root"
-  python3 compiler/python/tb.py "$source_file" "$stage1_ll"
+  if [ "$bootstrap_mode" = native ]; then
+      "$build_root/bootstrap_seed" "$source_file" "$stage1_ll"
+  else
+      python3 compiler/python/tb.py "$source_file" "$stage1_ll"
+  fi
 )
 
 echo "[3/5] link stage1 compiler"
