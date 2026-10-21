@@ -1,0 +1,135 @@
+int text_calls = 0
+int row_calls = 0
+int grid_calls = 0
+int index_calls = 0
+
+string next_managed_text(int suffix):
+    text_calls += 1
+    return 'managed-' + suffix.to_string() + '-' + text_calls.to_string()
+
+int[] next_managed_row():
+    row_calls += 1
+    return [5, 8]
+
+int[][] next_managed_grid():
+    grid_calls += 1
+    return [[2, 7], [4]]
+
+int next_index():
+    index_calls += 1
+    return 1
+
+int score_managed_row(int[] values, int offset):
+    values[0] += offset
+    return values[0] + values.length()
+
+int row_length(int[] values):
+    return values.length()
+
+int score_managed_grid(int[][] values, int offset):
+    values[0][0] += offset
+    return values[0][0] + values[0][1] + values[1][0]
+
+bool grid_has_value(int[][] values, int expected):
+    if (!values.is_empty()):
+        if (!values[0].is_empty()):
+            return values[0][0] == expected
+    return false
+
+int fail_on_text(string value):
+    if (value.length() > 0):
+        throw 'managed read failure ' + value
+    return 0
+
+int length(int[] values):
+    return 99
+
+bool is_empty(int[] values):
+    return true
+
+future<int> submit_scoped_grid(thread_pool pool):
+    int[][] source = [[10, 11], [12]]
+    return pool.submit(int[][] grid -> grid[0][0] + row_length(grid[1]), source)
+
+int main(string[] args):
+    thread_pool pool = thread_pool(2)
+    const string fixed_text = 'fixed'
+    const int[] fixed_row = [6, 9]
+    int[] row_input = next_managed_row()
+    int[][] grid_input = next_managed_grid()
+    int[] empty_row_input = []
+    int[][] loop_grid_input = [[2, 7], empty_row_input, [4]]
+    int[][] empty_grid_input = []
+    int[][] empty_row_grid_input = [[]]
+    string empty_text_input = ''
+    string failing_text_input = 'bad'
+
+    future<int> text_length = pool.submit(string text -> text.length(), next_managed_text(args.length()))
+    future<bool> text_empty = pool.submit(string text -> text.is_empty(), fixed_text)
+    future<int> empty_text_length = pool.submit(string text -> text.length(), empty_text_input)
+    future<bool> empty_text_query = pool.submit(string text -> text.is_empty(), empty_text_input)
+    future<int> row_score = pool.submit(int[] row -> score_managed_row(row, 7), row_input)
+    future<bool> row_match = pool.submit(int[] row -> row[1] == 9, fixed_row)
+    future<int> grid_score = pool.submit(int[][] grid -> score_managed_grid(grid, 3), grid_input)
+    future<int> grid_query = pool.submit(int[][] grid -> grid[0][1] + grid[0].length() + grid.length(), [[2, 7], [4]])
+    future<bool> grid_match = pool.submit(int[][] grid -> grid_has_value(grid, 2), [[2, 7]])
+    future<int> grid_block = pool.submit(int[][] grid -> {
+        int total = 0
+        if (!grid.is_empty()) {
+            for (int index = 0; index < grid.length(); index += 1) {
+                if (!grid[index].is_empty()) {
+                    total += row_length(grid[index])
+                }
+            }
+        }
+        return total
+    }, loop_grid_input)
+    future<int> indexed = pool.submit(int[] row -> row[next_index()], [6, args.length() + 8])
+    future<int> empty_row_length = pool.submit(int[] row -> row.length(), empty_row_input)
+    future<bool> empty_row_query = pool.submit(int[] row -> row.is_empty(), empty_row_input)
+    future<int> empty_grid_length = pool.submit(int[][] grid -> grid.length(), empty_grid_input)
+    future<bool> empty_grid_query = pool.submit(int[][] grid -> grid.is_empty(), empty_grid_input)
+    future<bool> row_empty_in_grid = pool.submit(int[][] grid -> grid[0].is_empty(), empty_row_grid_input)
+    future<bool> row_grid_is_empty = pool.submit(int[][] grid -> grid.is_empty(), empty_row_grid_input)
+    future<int> scoped_grid = submit_scoped_grid(pool)
+    future<int> failed = pool.submit(string text -> fail_on_text(text), failing_text_input)
+
+    print(text_length.await())
+    print(text_length.await())
+    print(text_empty.await())
+    print(empty_text_length.await())
+    print(empty_text_query.await())
+    print(row_score.await())
+    print(row_score.await())
+    print(row_match.await())
+    print(row_input[0])
+    print(grid_score.await())
+    print(grid_score.await())
+    print(grid_match.await())
+    print(grid_input[0][0])
+    print(grid_query.await())
+    print(grid_block.await())
+    print(indexed.await())
+    print(indexed.await())
+    print(index_calls)
+    print(empty_row_length.await())
+    print(empty_row_query.await())
+    print(empty_grid_length.await())
+    print(empty_grid_query.await())
+    print(row_empty_in_grid.await())
+    print(row_grid_is_empty.await())
+    print(scoped_grid.await())
+    print(text_calls)
+    print(row_calls)
+    print(grid_calls)
+    print(fixed_row.length())
+    print(fixed_row.is_empty())
+    try:
+        failed.await()
+    catch (string error):
+        print(error)
+    try:
+        failed.await()
+    catch (string error):
+        print(error)
+    return 0

@@ -169,6 +169,33 @@ string submit_lambda_expression_type(Node node, SubmitLambdaScope scope, Node[] 
         if (local_index >= 0):
             return scope.types[local_index]
         return ''
+    if (node.kind == 'Index'):
+        if (node.children.length() != 2):
+            return ''
+        string base_type = submit_lambda_expression_type(node.children[0], scope, functions)
+        string index_type = submit_lambda_expression_type(node.children[1], scope, functions)
+        if (index_type != 'int'):
+            throw 'thread_pool.submit lambda array index must have type int'
+        if (base_type == 'int[]'):
+            return 'int'
+        if (base_type == 'int[][]'):
+            return 'int[]'
+        if (base_type == 'string' || base_type == 'string[]' || base_type == 'string[][]'):
+            throw 'thread_pool.submit lambda string indexing is not supported'
+        throw 'thread_pool.submit lambda indexing requires int[] or int[][]'
+    if (node.kind == 'MethodCall'):
+        if (node.children.length() < 1):
+            return ''
+        if (node.value != 'length' && node.value != 'is_empty'):
+            return ''
+        if (node.children.length() != 1):
+            throw 'thread_pool.submit lambda ' + node.value + ' query takes no arguments'
+        string receiver_type = submit_lambda_expression_type(node.children[0], scope, functions)
+        if (!(receiver_type == 'string' || receiver_type == 'int[]' || receiver_type == 'int[][]')):
+            throw 'thread_pool.submit lambda ' + node.value + ' query requires string, int[], or int[][]'
+        if (node.value == 'length'):
+            return 'int'
+        return 'bool'
     if (node.kind == 'Unary'):
         if (node.children.length() != 1):
             return ''
