@@ -1,0 +1,60 @@
+bool has_positive_row(const int[][] rows):
+    if rows.length() > 0:
+        if rows[0].length() > 0:
+            if rows[0][0] < 0:
+                throw 'negative first row'
+            return rows[0][0] > 0
+    return false
+
+bool mutate_snapshot(int[][] rows):
+    if rows.length() > 0:
+        if rows[0].length() > 0:
+            rows[0][0] = 99
+            return rows[0][0] == 99
+    return false
+
+void enqueue_grid(thread_pool pool, int[][] rows):
+    future<bool> ignored = pool.submit(has_positive_row, rows)
+
+int main(string[] args):
+    thread_pool pool = thread_pool(1)
+
+    int[][] source = [[args.length() + 4, 2], [], [-3]]
+    future<bool> changed = pool.submit(has_positive_row, source)
+    source[0][0] = -1
+    print(changed.await())
+    print(changed.await())
+    print(source[0][0])
+
+    const int[][] const_source = [[], [7]]
+    future<bool> const_result = pool.submit(has_positive_row, const_source)
+    print(const_result.await())
+
+    int[][] empty_outer = []
+    future<bool> empty_result = pool.submit(has_positive_row, empty_outer)
+    print(empty_result.await())
+
+    int[][] empty_first_row = [[], [8]]
+    future<bool> empty_row_result = pool.submit(has_positive_row, empty_first_row)
+    print(empty_row_result.await())
+
+    int[][] mutable_copy_source = [[1], []]
+    future<bool> mutation = pool.submit(mutate_snapshot, mutable_copy_source)
+    print(mutation.await())
+    print(mutable_copy_source[0][0])
+
+    int[][] throwing_source = [[-1]]
+    future<bool> throwing = pool.submit(has_positive_row, throwing_source)
+    try {
+        throwing.await()
+    } catch (string message) {
+        print(message)
+    }
+    try {
+        throwing.await()
+    } catch (string message) {
+        print(message)
+    }
+
+    enqueue_grid(pool, [[args.length() + 9]])
+    return 0
