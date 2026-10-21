@@ -2035,6 +2035,65 @@ string[] emit_future_int_array_array_materialize_if_needed(ParsedFunction functi
         return []
     return ['  ' + emit_future_int_array_array_owned_value(function_ir, temp_name, temp_suffix) + ' = call ptr @tb_future_int_array_array_retain(ptr ' + temp_ref(temp_name) + ')']
 
+bool is_thread_pool_or_future_type(string type_name):
+    type_name = normalize_llvm_type_name(type_name)
+    return is_thread_pool_type_name(type_name) || type_name == 'future<int>' || type_name == 'future<bool>' || type_name == 'future<string>' || type_name == 'future<int[]>' || type_name == 'future<int[][]>'
+
+string[] emit_thread_pool_or_future_materialize_if_needed(ParsedFunction function_ir, string temp_name, string type_name, string temp_suffix):
+    type_name = normalize_llvm_type_name(type_name)
+    if (is_thread_pool_type_name(type_name)):
+        return emit_thread_pool_materialize_if_needed(function_ir, temp_name, temp_suffix)
+    if (type_name == 'future<int>'):
+        return emit_future_i64_materialize_if_needed(function_ir, temp_name, temp_suffix)
+    if (type_name == 'future<bool>'):
+        return emit_future_bool_materialize_if_needed(function_ir, temp_name, temp_suffix)
+    if (type_name == 'future<string>'):
+        return emit_future_string_materialize_if_needed(function_ir, temp_name, temp_suffix)
+    if (type_name == 'future<int[]>'):
+        return emit_future_int_array_materialize_if_needed(function_ir, temp_name, temp_suffix)
+    if (type_name == 'future<int[][]>'):
+        return emit_future_int_array_array_materialize_if_needed(function_ir, temp_name, temp_suffix)
+    return []
+
+string thread_pool_or_future_owned_value(ParsedFunction function_ir, string temp_name, string type_name, string temp_suffix):
+    type_name = normalize_llvm_type_name(type_name)
+    if (is_thread_pool_type_name(type_name)):
+        return emit_thread_pool_owned_value(function_ir, temp_name, temp_suffix)
+    if (type_name == 'future<int>'):
+        return emit_future_i64_owned_value(function_ir, temp_name, temp_suffix)
+    if (type_name == 'future<bool>'):
+        return emit_future_bool_owned_value(function_ir, temp_name, temp_suffix)
+    if (type_name == 'future<string>'):
+        return emit_future_string_owned_value(function_ir, temp_name, temp_suffix)
+    if (type_name == 'future<int[]>'):
+        return emit_future_int_array_owned_value(function_ir, temp_name, temp_suffix)
+    if (type_name == 'future<int[][]>'):
+        return emit_future_int_array_array_owned_value(function_ir, temp_name, temp_suffix)
+    return temp_ref(temp_name)
+
+string emit_thread_pool_or_future_local_binding(ParsedFunction function_ir, BindingIR binding, string temp_name, string temp_suffix):
+    string type_name = normalize_llvm_type_name(binding.type_name)
+    string value = temp_ref(temp_name)
+    string owned_flag = 'false'
+    string source_binding = transferable_local_binding_name(function_ir, temp_name)
+    string[] lines = []
+    if (temp_can_transfer_to_local(function_ir, temp_name)):
+        owned_flag = 'true'
+        if (source_binding != '' && source_binding != binding.name):
+            string source_owned = '%move.owned.' + binding.name + '.' + temp_suffix
+            lines.push('  ' + source_owned + ' = load i1, ptr ' + owned_slot_ref(source_binding))
+            owned_flag = source_owned
+    else:
+        lines = emit_thread_pool_or_future_materialize_if_needed(function_ir, temp_name, type_name, binding.name + '.' + temp_suffix)
+        value = thread_pool_or_future_owned_value(function_ir, temp_name, type_name, binding.name + '.' + temp_suffix)
+        owned_flag = 'true'
+    lines.push('  store ' + llvm_type(type_name) + ' ' + value + ', ptr ' + slot_ref(binding.name))
+    lines.push('  store i1 ' + owned_flag + ', ptr ' + owned_slot_ref(binding.name))
+    if (temp_can_transfer_to_local(function_ir, temp_name) && source_binding != '' && source_binding != binding.name):
+        lines.push('  store i1 false, ptr ' + owned_slot_ref(source_binding))
+        lines.push('  store ptr null, ptr ' + slot_ref(source_binding))
+    return join_llvm_strings(lines, '\n')
+
 
 string emit_string_owned_value(ParsedFunction function_ir, string temp_name, string temp_suffix):
     if (temp_needs_backend_free(function_ir, temp_name)):
@@ -6673,6 +6732,8 @@ string emit_set_instruction(ProgramIR program, ParsedFunction function_ir, Linea
         lines.push('  store ptr ' + stored_value + ', ptr ' + slot_ref(binding.name))
         lines.push('  store i1 ' + owned_flag + ', ptr ' + owned_slot_ref(binding.name))
         return join_llvm_strings(lines, '\n')
+    if (is_thread_pool_or_future_type(binding.type_name)):
+        return emit_thread_pool_or_future_local_binding(function_ir, binding, op.args[0], temp_suffix)
     if (is_backend_managed_type(binding.type_name)):
         string[] lines = []
         string owned_flag = 'false'.substring(0)
@@ -6805,6 +6866,8 @@ string emit_assign_local_instruction(ProgramIR program, ParsedFunction function_
         lines.push('  store ptr ' + stored_value + ', ptr ' + slot_ref(binding.name))
         lines.push('  store i1 ' + owned_flag + ', ptr ' + owned_slot_ref(binding.name))
         return join_llvm_strings(lines, '\n')
+    if (is_thread_pool_or_future_type(binding.type_name)):
+        return emit_thread_pool_or_future_local_binding(function_ir, binding, op.args[0], temp_suffix)
     if (normalize_llvm_type_name(binding.type_name).starts_with('map<')):
         string[] lines = []
         string stored_value = temp_ref(op.args[0]).substring(0)
