@@ -28,7 +28,7 @@ record SubmitLambdaRewrite(Node node, Node[] generated, string[] used_names, int
 record SubmitScopedRewrite(Node node, Node[] generated, string[] used_names, int next_index, BindingIR[] bindings);
 record SubmitScopedListRewrite(Node[] nodes, Node[] generated, string[] used_names, int next_index, BindingIR[] bindings);
 record SubmitLambdaBlockCheck(string return_type, bool returns_all_paths);
-record SubmitLambdaScope(string[] names, string[] types, string[] const_names, string[] declared_names);
+record SubmitLambdaScope(string[] names, string[] types, string[] const_names, string[] declared_names, string parameter_name);
 record SubmitLambdaValidation(SubmitLambdaBlockCheck check, SubmitLambdaScope scope);
 record SubmitRangeListRewrite(Node[] nodes, string[] used_names, int next_index);
 
@@ -138,7 +138,7 @@ SubmitLambdaScope copy_submit_lambda_scope(SubmitLambdaScope scope):
         const_names.push(name)
     for (string name : scope.declared_names):
         declared_names.push(name)
-    return SubmitLambdaScope(names, types, const_names, declared_names)
+    return SubmitLambdaScope(names, types, const_names, declared_names, scope.parameter_name)
 
 string[] collect_submit_unavailable_names(Node node, string[] names):
     names = add_unique_name(names, node.value)
@@ -401,21 +401,32 @@ SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements
         else if (statement.kind == 'ForEach'):
             if (statement.children.length() < 1):
                 throw 'thread_pool.submit lambda foreach iterable must be a direct range call'
-            if (statement.children[0].kind != 'Call' || statement.children[0].value != 'range'):
-                throw 'thread_pool.submit lambda foreach iterable must be a direct range call'
-            Node range_call = statement.children[0]
-            if (!(range_call.children.length() == 1 || range_call.children.length() == 2)):
-                throw 'thread_pool.submit lambda range requires one or two int bounds'
-            for (Node bound : range_call.children):
-                if (submit_lambda_expression_type(bound, scope, functions) != 'int'):
-                    throw 'thread_pool.submit lambda range bounds must be int expressions using only in-scope scalar values and declared scalar helper calls'
+            bool is_range = statement.children[0].kind == 'Call' && statement.children[0].value == 'range'
+            if (is_range):
+                Node range_call = statement.children[0]
+                if (!(range_call.children.length() == 1 || range_call.children.length() == 2)):
+                    throw 'thread_pool.submit lambda range requires one or two int bounds'
+                for (Node bound : range_call.children):
+                    if (submit_lambda_expression_type(bound, scope, functions) != 'int'):
+                        throw 'thread_pool.submit lambda range bounds must be int expressions using only in-scope scalar values and declared scalar helper calls'
+            else:
+                int parameter_index = submit_lambda_name_index(scope.names, scope.parameter_name)
+                bool is_array_parameter = false
+                if (statement.children[0].kind == 'Identifier'):
+                    if (statement.children[0].value == scope.parameter_name):
+                        if (parameter_index >= 0):
+                            is_array_parameter = scope.types[parameter_index] == 'int[]'
+                if (!is_array_parameter):
+                    throw 'thread_pool.submit lambda foreach iterable must be the int[] task parameter or a direct range call'
             BindingIR iterator = ir_parse_binding_decl(statement.value)
             string iterator_type = iterator.type_name
             bool iterator_is_const = iterator_type.starts_with('const ')
             if (iterator_is_const):
                 iterator_type = iterator_type.substring(6)
             if (iterator_type != 'int'):
-                throw 'thread_pool.submit lambda range iterator must have type int'
+                if (is_range):
+                    throw 'thread_pool.submit lambda range iterator must have type int'
+                throw 'thread_pool.submit lambda array iterator must have type int'
             if (contains_name(scope.declared_names, iterator.name)):
                 throw 'thread_pool.submit lambda local names must be unique, including the parameter'
             SubmitLambdaScope loop_scope = copy_submit_lambda_scope(scope)
@@ -492,7 +503,7 @@ SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements
 string validate_submit_lambda(Node lambda_node, Node[] functions, BindingIR[] captured):
     if (lambda_node.children.length() != 1):
         throw 'thread_pool.submit lambda must have one int or bool parameter and a scalar body'
-    SubmitLambdaScope initial_scope = SubmitLambdaScope([], [], [], [])
+    SubmitLambdaScope initial_scope = SubmitLambdaScope([], [], [], [], '')
     if (lambda_node.kind == 'Lambda'):
         BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
         string parameter_type = parameter.type_name
@@ -501,7 +512,7 @@ string validate_submit_lambda(Node lambda_node, Node[] functions, BindingIR[] ca
         string[] const_names = []
         if (submit_lambda_managed_type(parameter_type)):
             const_names.push(parameter.name)
-        initial_scope = SubmitLambdaScope([parameter.name], [parameter_type], const_names, [parameter.name])
+        initial_scope = SubmitLambdaScope([parameter.name], [parameter_type], const_names, [parameter.name], parameter.name)
     else if (lambda_node.kind != 'Lambda0' || lambda_node.value != ''):
         throw 'thread_pool.submit lambda must have one int or bool parameter and a scalar body'
     for (BindingIR binding : captured):
@@ -632,7 +643,16 @@ SubmitRangeListRewrite rewrite_submit_range_foreach_list(Node[] statements, stri
     int current_index = next_index
     for (Node statement : statements):
         if (statement.kind == 'ForEach'):
-            Node range_call = statement.children[0]
+            Node iterable = statement.children[0]
+            if (iterable.kind != 'Call' || iterable.value != 'range'):
+                SubmitRangeListRewrite body = rewrite_submit_range_foreach_list(tail_nodes(statement.children, 1), current_names, current_index)
+                Node[] children = [iterable]
+                children = append_nodes(children, body.nodes)
+                rewritten.push(Node(statement.kind, statement.value, children))
+                current_names = body.used_names
+                current_index = body.next_index
+                continue
+            Node range_call = iterable
             Node start_expr = Node('Int', '0', [])
             Node end_expr = range_call.children[0]
             if (range_call.children.length() == 2):

@@ -1,0 +1,103 @@
+int visit_row(int[] values, int item):
+    if (values.length() == 2):
+        values.push(6)
+    return item
+
+int maybe_fail(int value):
+    if (value < 0):
+        throw 'negative item'
+    return value
+
+future<int> submit_local_row(thread_pool pool, int seed):
+    int[] local_row = [seed, 2]
+    return pool.submit(int[] row -> {
+        int total = 0
+        for (int item : row) {
+            total += item
+        }
+        return total
+    }, local_row)
+
+int main(string[] args):
+    thread_pool pool = thread_pool(1)
+    int seed = args.length()
+    int offset = seed
+    int[] source = [seed, 2]
+    int[] row_input = [seed + 2, 3]
+    int[] empty_input = []
+
+    future<int> sum = pool.submit(int[] row -> {
+        int total = 0
+        for (int item : row) {
+            total += item
+            item = 99
+        }
+        return total
+    }, source)
+    future<bool> found = pool.submit(int[] row -> {
+        for (const int item : row) {
+            if (item == seed) {
+                return true
+            }
+        }
+        return false
+    }, source)
+    future<int> empty = pool.submit(int[] row -> {
+        int total = 0
+        for (int item : row) {
+            total += 100
+        }
+        return total
+    }, empty_input)
+    future<int> stopped = pool.submit(int[] row -> {
+        int total = 0
+        for (int item : row) {
+            if (item == 2) {
+                break
+            }
+            total += item
+        }
+        return total
+    }, source)
+    future<int> nested_range = pool.submit(int[] row -> {
+        int total = 0
+        for (const int item : row) {
+            for (int repeat : range(2)) {
+                total += item
+            }
+        }
+        return total + offset
+    }, source)
+    future<int> live_length = pool.submit(int[] values -> {
+        int total = 0
+        for (int item : values) {
+            total += visit_row(values, item)
+        }
+        return total
+    }, row_input)
+    future<int> recovered = pool.submit(int[] row -> {
+        int total = 0
+        for (int item : row) {
+            try {
+                total += maybe_fail(item - 2)
+            } catch (string error) {
+                total += 1
+                continue
+            }
+        }
+        return total
+    }, [seed, 2])
+    future<int> local = submit_local_row(pool, seed)
+
+    source[0] = 99
+    print(sum.await())
+    print(sum.await())
+    print(found.await())
+    print(empty.await())
+    print(stopped.await())
+    print(nested_range.await())
+    print(live_length.await())
+    print(recovered.await())
+    print(local.await())
+    print(source[0])
+    return 0
