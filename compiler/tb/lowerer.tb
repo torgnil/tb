@@ -32,6 +32,9 @@ record SubmitLambdaScope(string[] names, string[] types, string[] const_names, s
 record SubmitLambdaValidation(SubmitLambdaBlockCheck check, SubmitLambdaScope scope);
 record SubmitRangeListRewrite(Node[] nodes, string[] used_names, int next_index);
 
+bool submit_lambda_managed_type(string type_name):
+    return type_name == 'string' || type_name == 'int[]' || type_name == 'int[][]'
+
 string quote_string(string value):
     return '\'' + value + '\''
 
@@ -218,7 +221,7 @@ string submit_lambda_expression_type(Node node, SubmitLambdaScope scope, Node[] 
             string helper_decl_type = parameter.type_name
             if (helper_decl_type.starts_with('const ')):
                 helper_decl_type = helper_decl_type.substring(6)
-            if (!(helper_decl_type == 'int' || helper_decl_type == 'bool')):
+            if (!(helper_decl_type == 'int' || helper_decl_type == 'bool' || submit_lambda_managed_type(helper_decl_type))):
                 return ''
             parameter_count += 1
             index += 1
@@ -286,6 +289,8 @@ SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements
             if (target_index < 0):
                 throw 'thread_pool.submit lambda assignment target must be an in-scope scalar local'
             if (contains_name(scope.const_names, target_name)):
+                if (submit_lambda_managed_type(scope.types[target_index])):
+                    throw 'thread_pool.submit lambda cannot assign to managed task parameter ' + target_name
                 throw 'thread_pool.submit lambda cannot assign to const local ' + target_name
             string value_type = submit_lambda_expression_type(statement.children[1], scope, functions)
             if (value_type == ''):
@@ -463,9 +468,13 @@ string validate_submit_lambda(Node lambda_node, Node[] functions, BindingIR[] ca
     SubmitLambdaScope initial_scope = SubmitLambdaScope([], [], [], [])
     if (lambda_node.kind == 'Lambda'):
         BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
-        if (!(parameter.type_name == 'int' || parameter.type_name == 'bool')):
-            throw 'thread_pool.submit lambda parameter must have type int or bool'
-        initial_scope = SubmitLambdaScope([parameter.name], [parameter.type_name], [], [parameter.name])
+        string parameter_type = parameter.type_name
+        if (!(parameter_type == 'int' || parameter_type == 'bool' || submit_lambda_managed_type(parameter_type))):
+            throw 'thread_pool.submit lambda parameter must have type int, bool, string, int[], or int[][]'
+        string[] const_names = []
+        if (submit_lambda_managed_type(parameter_type)):
+            const_names.push(parameter.name)
+        initial_scope = SubmitLambdaScope([parameter.name], [parameter_type], const_names, [parameter.name])
     else if (lambda_node.kind != 'Lambda0' || lambda_node.value != ''):
         throw 'thread_pool.submit lambda must have one int or bool parameter and a scalar body'
     for (BindingIR binding : captured):
@@ -688,6 +697,10 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
                 throw 'thread_pool.submit lambda requires exactly one task argument'
             if (lambda_node.kind == 'Lambda'):
                 captured = submit_lambda_captures(lambda_node, bindings, declaration_names)
+                BindingIR lambda_parameter = ir_parse_binding_decl(lambda_node.value)
+                string lambda_parameter_type = lambda_parameter.type_name
+                if (submit_lambda_managed_type(lambda_parameter_type) && !captured.is_empty()):
+                    throw 'thread_pool.submit lambda with a managed task parameter cannot capture values'
             worker_return_type = validate_submit_lambda(lambda_node, functions, captured)
             rewrite_worker = lambda_node.kind == 'Lambda'
 

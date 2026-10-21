@@ -1,0 +1,104 @@
+int text_calls = 0
+int row_calls = 0
+int grid_calls = 0
+
+string next_text(int suffix):
+    text_calls += 1
+    return 'dynamic-' + suffix.to_string() + '-' + text_calls.to_string()
+
+int[] next_row(int offset):
+    row_calls += 1
+    return [4 + offset, 8]
+
+int[][] next_grid(int offset):
+    grid_calls += 1
+    return [[2 + offset, 3], [5]]
+
+int score_text(string text, int offset):
+    return text.length() + offset
+
+bool has_text(const string text, int minimum):
+    return text.length() >= minimum
+
+int score_row(int[] values, int offset):
+    values[0] = values[0] + offset
+    return values[0] + values.length()
+
+bool row_has_value(const int[] values, int expected):
+    return values[0] == expected
+
+int score_grid(int[][] values, int offset):
+    values[0][0] = values[0][0] + offset
+    return values[0][0] + values[1][0]
+
+bool grid_has_value(int amount, const int[][] values):
+    return values[0][0] == amount
+
+int row_length(int[] values):
+    return values.length()
+
+int grid_rows(int[][] values):
+    return values.length()
+
+int fail_text(string text, int minimum):
+    if (text.length() >= minimum):
+        throw 'managed submit ' + text
+    return 0
+
+future<int> submit_scoped_grid(thread_pool pool):
+    int[][] source = [[10, 11], [12]]
+    return pool.submit(int[][] grid -> score_grid(grid, 3), source)
+
+int main(string[] args):
+    thread_pool pool = thread_pool(2)
+    const string fixed_text = 'fixed-input'
+    const int[] fixed_row = [6, 9]
+
+    future<int> text_score = pool.submit(string text -> score_text(text, 2), next_text(args.length()))
+    future<bool> text_match = pool.submit(string text -> {
+        if (has_text(text, 5)) {
+            return true
+        }
+        return false
+    }, fixed_text)
+    future<int> row_score = pool.submit(int[] row -> score_row(row, 7), next_row(args.length()))
+    future<bool> row_match = pool.submit(int[] row -> row_has_value(row, 6), fixed_row)
+    future<int> grid_score = pool.submit(int[][] grid -> {
+        return score_grid(grid, 4)
+    }, next_grid(args.length()))
+    future<bool> grid_match = pool.submit(int[][] grid -> grid_has_value(2, grid), [[2, 3]])
+    int[] empty_row_input = []
+    int[][] empty_grid_input = []
+    int[][] empty_row_grid_input = [[]]
+    future<int> empty_row = pool.submit(int[] row -> row_length(row), empty_row_input)
+    future<int> empty_grid = pool.submit(int[][] grid -> grid_rows(grid), empty_grid_input)
+    future<int> empty_grid_row = pool.submit(int[][] grid -> grid_rows(grid), empty_row_grid_input)
+    future<int> scoped_grid = submit_scoped_grid(pool)
+    future<int> failed = pool.submit(string text -> fail_text(text, 1), next_text(args.length()))
+
+    print(text_score.await())
+    print(text_score.await())
+    print(text_match.await())
+    print(row_score.await())
+    print(row_score.await())
+    print(row_match.await())
+    print(fixed_row[0])
+    print(grid_score.await())
+    print(grid_score.await())
+    print(grid_match.await())
+    print(empty_row.await())
+    print(empty_grid.await())
+    print(empty_grid_row.await())
+    print(scoped_grid.await())
+    print(text_calls)
+    print(row_calls)
+    print(grid_calls)
+    try:
+        failed.await()
+    catch (string error):
+        print(error)
+    try:
+        failed.await()
+    catch (string error):
+        print(error)
+    return 0
