@@ -6116,6 +6116,12 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
             throw 'unsupported llvm thread_pool submit signature: ' + future_type + ' ' + arg_type
         if (op.args.length() == 3):
             return '  ' + lhs + ' = call ptr ' + submit_name + '(ptr ' + temp_ref(op.args[1]) + ', ptr @' + op.args[2] + ')'
+        if (arg_type == 'string' && !temp_needs_backend_free(function_ir, op.args[3]) && !temp_is_managed_string(function_ir, op.args[3])):
+            string[] lines = emit_string_materialize_if_needed(function_ir, op.args[3], op.lhs + '.submit.arg')
+            string argument_value = emit_string_owned_value(function_ir, op.args[3], op.lhs + '.submit.arg')
+            lines.push('  ' + lhs + ' = call ptr ' + submit_name + '(ptr ' + temp_ref(op.args[1]) + ', ptr @' + op.args[2] + ', ptr ' + argument_value + ')')
+            lines.push(emit_backend_release_ptr('string', argument_value))
+            return join_llvm_strings(lines, '\n')
         return '  ' + lhs + ' = call ptr ' + submit_name + '(ptr ' + temp_ref(op.args[1]) + ', ptr @' + op.args[2] + ', ' + llvm_type(arg_type) + ' ' + temp_ref(op.args[3]) + ')'
     if (method_name == 'length' && method_base_type == 'int[][]'):
         return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, '  ' + lhs + '.len32 = call i32 @tb_bootstrap_int_array_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64')
