@@ -150,6 +150,11 @@ Build and invocation details are documented in the repository or release `README
   versa. Const qualifiers are ignored, and unknown or untyped arguments keep
   their existing handling.
 
+  `file` and `thread_pool` arguments at those calls must also match exactly:
+  a file handle cannot be passed as a pool or as an ordinary value, and a pool
+  cannot be passed as a file or as an ordinary value. Const qualifiers are
+  ignored, and unknown or untyped arguments keep their existing handling.
+
 - Cached function declaration:
 
   `cached int fib(int n): ...`

@@ -1866,6 +1866,10 @@ bool llvm_named_call_arg_types_compatible(string expected_type, string actual_ty
     actual_type = normalize_llvm_type_name(actual_type)
     if (actual_type == 'unknown' || is_untyped_array_shape(actual_type)):
         return true
+    bool expected_handle = expected_type == 'file' || expected_type == 'thread_pool'
+    bool actual_handle = actual_type == 'file' || actual_type == 'thread_pool'
+    if (expected_handle || actual_handle):
+        return expected_handle && actual_handle && expected_type == actual_type
     bool expected_future = is_future_type_name(expected_type)
     bool actual_future = is_future_type_name(actual_type)
     if (expected_future || actual_future):
