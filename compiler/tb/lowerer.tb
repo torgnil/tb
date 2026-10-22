@@ -35,6 +35,9 @@ record SubmitRangeListRewrite(Node[] nodes, string[] used_names, int next_index)
 bool submit_lambda_managed_type(string type_name):
     return type_name == 'string' || type_name == 'int[]' || type_name == 'int[][]'
 
+bool submit_lambda_result_type(string type_name):
+    return type_name == 'int' || type_name == 'bool' || submit_lambda_managed_type(type_name)
+
 int submit_lambda_array_capture_index(BindingIR[] captured):
     for (int index = 0; index < captured.length(); index += 1):
         string capture_type = captured[index].type_name
@@ -284,7 +287,7 @@ string merge_submit_return_types(string left, string right):
     if (right == ''):
         return left
     if (left != right):
-        throw 'thread_pool.submit lambda block returns must all have the same int or bool type'
+        throw 'thread_pool.submit lambda block returns must all have the same type'
     return left
 
 SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements, SubmitLambdaScope initial_scope, Node[] functions, int loop_depth):
@@ -337,8 +340,8 @@ SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements
             if (statement.children.length() != 1):
                 throw 'thread_pool.submit lambda block requires value returns'
             current.return_type = submit_lambda_expression_type(statement.children[0], scope, functions)
-            if (!(current.return_type == 'int' || current.return_type == 'bool')):
-                throw 'thread_pool.submit lambda return must be an int or bool expression using only in-scope scalar values and declared scalar helper calls'
+            if (!submit_lambda_result_type(current.return_type)):
+                throw 'thread_pool.submit lambda return must be an int, bool, string, int[], or int[][] expression using only in-scope values and declared scalar helper calls'
             current.returns_all_paths = true
         else if (statement.kind == 'Throw'):
             if (statement.children.length() != 1):
@@ -545,12 +548,12 @@ string validate_submit_lambda(Node lambda_node, Node[] functions, BindingIR[] ca
     if (body.kind == 'Block'):
         SubmitLambdaValidation validation = validate_submit_lambda_block_statements(body.children, initial_scope, functions, 0)
         SubmitLambdaBlockCheck block_check = validation.check
-        if (!(block_check.return_type == 'int' || block_check.return_type == 'bool') || !block_check.returns_all_paths):
+        if (!submit_lambda_result_type(block_check.return_type) || !block_check.returns_all_paths):
             throw 'thread_pool.submit lambda block must return a value on every path'
         return block_check.return_type
     string result_type = submit_lambda_expression_type(body, initial_scope, functions)
-    if (!(result_type == 'int' || result_type == 'bool')):
-        throw 'thread_pool.submit lambda body must be an int or bool expression using only in-scope scalar values and declared scalar helper calls'
+    if (!submit_lambda_result_type(result_type)):
+        throw 'thread_pool.submit lambda body must be an int, bool, string, int[], or int[][] expression using only in-scope values and declared scalar helper calls'
     return result_type
 
 string[] submit_lambda_local_names(Node node, string[] names):
