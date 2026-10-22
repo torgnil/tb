@@ -8056,6 +8056,13 @@ void append_cached_function_lines(string[] lines, ProgramIR program, ParsedFunct
     lines.push('}')
 
 void append_function_lines(string[] lines, ProgramIR program, ParsedFunction function_ir, bool needs_runtime_global_init):
+    string expected_return_type = normalize_llvm_type_name(function_ir.return_type)
+    for (BlockIR block in function_ir.blocks):
+        TerminatorIR terminator = block.terminator
+        if ((terminator.kind == 'return' || terminator.kind == 'return_owned') && terminator.args.length() == 1):
+            string actual_return_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, terminator.args[0]))
+            if (actual_return_type != 'unknown' && actual_return_type != expected_return_type):
+                throw 'return from function ' + function_ir.name + ' expected ' + expected_return_type + ', actual ' + actual_return_type
     if (is_cached_function_header(function_ir.header) && supports_cached_function_backend(program, function_ir)):
         append_cached_function_lines(lines, program, function_ir, needs_runtime_global_init)
         return

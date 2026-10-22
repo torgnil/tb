@@ -104,6 +104,12 @@ Build and invocation details are documented in the repository or release `README
 
   `int add(int a, int b): return a + b`
 
+  When an explicit return value has a known type, it must match the declared
+  function return type after `const` and enum normalization. A mismatch reports
+  the function name, expected type, and actual type before LLVM is emitted. For
+  example, `int invalid(): return true` is rejected. Empty array and map
+  literals keep the declared function return type as context when supported.
+
   Named function parameters may be declared `const`, for example
   `int increment(const int value): return value + 1`. A const parameter cannot
   be reassigned or mutated through that binding, following the same rules as a
