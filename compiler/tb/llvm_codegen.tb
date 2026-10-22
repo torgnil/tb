@@ -6956,8 +6956,14 @@ string emit_assign_local_add_instruction(ProgramIR program, ParsedFunction funct
     if (is_global):
         store_ptr = global_ref(binding.name)
     if (binding_type == 'int'):
+        string right_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0]))
+        if (right_type != 'unknown' && right_type != 'int'):
+            throw 'numeric self-add for binding ' + binding.name + ' expected int, actual ' + right_type
         return '  %local.add.old.' + temp_suffix + ' = load i64, ptr ' + store_ptr + '\n  %local.add.new.' + temp_suffix + ' = add i64 %local.add.old.' + temp_suffix + ', ' + temp_ref(op.args[0]) + '\n  store i64 %local.add.new.' + temp_suffix + ', ptr ' + store_ptr
     if (binding_type == 'num'):
+        string right_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0]))
+        if (right_type != 'unknown' && right_type != 'int' && right_type != 'num'):
+            throw 'numeric self-add for binding ' + binding.name + ' expected int or num, actual ' + right_type
         string[] lines = emit_num_materialize_if_needed(function_ir, op.args[0], binding.name + '.' + temp_suffix)
         lines.push('  %local.add.old.' + temp_suffix + ' = load %tb_bootstrap_num, ptr ' + store_ptr)
         lines.push('  %local.add.new.' + temp_suffix + ' = call %tb_bootstrap_num @tb_bootstrap_num_add(%tb_bootstrap_num %local.add.old.' + temp_suffix + ', %tb_bootstrap_num ' + emit_num_store_value(function_ir, op.args[0], binding.name + '.' + temp_suffix) + ')')
