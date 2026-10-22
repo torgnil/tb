@@ -1,0 +1,90 @@
+const string global_text = 'global-text'
+
+int mutate_first(int[] values, int amount):
+    values[0] += amount
+    return values[0]
+
+int fail_text(string value):
+    if (value == 'fail') {
+        throw 'managed capture failed'
+    }
+    return value.length()
+
+future<int> submit_scoped_text(thread_pool pool, int seed):
+    string scoped = 'scope' + seed
+    return pool.submit(() -> scoped.length())
+
+int main(string[] args):
+    thread_pool pool = thread_pool(2)
+    int seed = args.length()
+
+    string dynamic = 'dynamic' + seed
+    const string fixed = 'const-' + seed
+    string empty_text = ''
+    future<int> dynamic_length = pool.submit(() -> dynamic.length())
+    future<int> fixed_length = pool.submit(() -> fixed.length())
+    future<int> empty_length = pool.submit(() -> empty_text.length())
+    future<bool> empty_text_check = pool.submit(() -> empty_text.is_empty())
+    future<int> global_length = pool.submit(() -> global_text.length())
+    future<int> scoped_length = submit_scoped_text(pool, seed)
+    dynamic = 'replaced'
+
+    int[] source = [seed + 4, 2]
+    future<int> changed_copy = pool.submit(() -> mutate_first(source, 5))
+    future<int> read_copy = pool.submit(() -> source[0] + source.length())
+    int[] foreach_source = [seed + 1, 2]
+    future<int> foreach_sum = pool.submit(() -> {
+        int total = 0
+        for (int item : foreach_source) {
+            total += item
+        }
+        return total
+    })
+    const int[] fixed_source = [seed, 3]
+    future<int> fixed_array = pool.submit(() -> fixed_source[0] + fixed_source[1])
+    int[] empty_source = []
+    future<bool> empty_array_check = pool.submit(() -> empty_source.is_empty())
+    int[][] nested = [[seed + 1, 2], [3]]
+    future<int> nested_read = pool.submit(() -> nested[0][0] + nested[1][0] + nested.length())
+
+    string block_text = 'block' + seed
+    future<bool> text_block = pool.submit(() -> {
+        if (block_text.length() > 0) {
+            return true
+        } else {
+            return false
+        }
+    })
+    string failing = 'fail'
+    future<int> failed = pool.submit(() -> fail_text(failing))
+
+    source[0] = 99
+    foreach_source[0] = -1
+
+    print(dynamic_length.await())
+    print(dynamic_length.await())
+    print(fixed_length.await())
+    print(empty_length.await())
+    print(empty_text_check.await())
+    print(global_length.await())
+    print(scoped_length.await())
+    print(changed_copy.await())
+    print(changed_copy.await())
+    print(source[0])
+    print(read_copy.await())
+    print(foreach_sum.await())
+    print(fixed_array.await())
+    print(empty_array_check.await())
+    print(nested_read.await())
+    print(text_block.await())
+    try {
+        failed.await()
+    } catch (string error) {
+        print(error)
+    }
+    try {
+        failed.await()
+    } catch (string error) {
+        print(error)
+    }
+    return 0

@@ -515,6 +515,13 @@ string validate_submit_lambda(Node lambda_node, Node[] functions, BindingIR[] ca
         initial_scope = SubmitLambdaScope([parameter.name], [parameter_type], const_names, [parameter.name], parameter.name)
     else if (lambda_node.kind != 'Lambda0' || lambda_node.value != ''):
         throw 'thread_pool.submit lambda must have one int or bool parameter and a scalar body'
+    if (lambda_node.kind == 'Lambda0' && captured.length() == 1):
+        BindingIR binding = captured[0]
+        string captured_type = binding.type_name
+        if (captured_type.starts_with('const ')):
+            captured_type = captured_type.substring(6)
+        if (captured_type == 'int[]'):
+            initial_scope.parameter_name = binding.name
     for (BindingIR binding : captured):
         string captured_type = binding.type_name
         if (captured_type.starts_with('const ')):
@@ -606,8 +613,21 @@ BindingIR[] submit_lambda_captures(Node lambda_node, BindingIR[] bindings, strin
                 type_name = type_name.substring(6)
             if (type_name == 'int' || type_name == 'bool'):
                 captured.push(binding)
+            else if (lambda_node.kind == 'Lambda0' && submit_lambda_managed_type(type_name)):
+                captured.push(binding)
             else:
+                if (lambda_node.kind == 'Lambda0'):
+                    throw 'thread_pool.submit zero-argument lambda can capture int or bool values, or one string, int[], or int[][] value; unsupported capture ' + name
                 throw 'thread_pool.submit lambda can capture only int or bool values; unsupported capture ' + name
+    int managed_capture_count = 0
+    for (BindingIR binding : captured):
+        string capture_type = binding.type_name
+        if (capture_type.starts_with('const ')):
+            capture_type = capture_type.substring(6)
+        if (submit_lambda_managed_type(capture_type)):
+            managed_capture_count += 1
+    if (managed_capture_count > 0 && (lambda_node.kind != 'Lambda0' || captured.length() != 1)):
+        throw 'thread_pool.submit lambda can capture one managed value only in a zero-argument lambda without other captures'
     return captured
 
 string submit_worker_name(string[] used_names, int start_index):
