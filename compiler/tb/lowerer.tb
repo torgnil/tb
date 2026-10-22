@@ -188,6 +188,8 @@ string submit_lambda_expression_type(Node node, SubmitLambdaScope scope, Node[] 
         string index_type = submit_lambda_expression_type(node.children[1], scope, functions)
         if (index_type != 'int'):
             throw 'thread_pool.submit lambda array index must have type int'
+        if (base_type == 'int[][]' && node.children[0].kind == 'Call'):
+            throw 'thread_pool.submit lambda cannot index an int[][] helper result directly; use a declared row helper'
         if (base_type == 'int[]'):
             return 'int'
         if (base_type == 'int[][]'):
@@ -249,7 +251,7 @@ string submit_lambda_expression_type(Node node, SubmitLambdaScope scope, Node[] 
         if (function_node.kind == ''):
             return ''
         BindingIR signature = ir_parse_binding_decl(function_node.value)
-        if (!(signature.type_name == 'int' || signature.type_name == 'bool')):
+        if (!submit_lambda_result_type(signature.type_name)):
             return ''
         int parameter_count = 0
         int index = 0
@@ -341,7 +343,7 @@ SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements
                 throw 'thread_pool.submit lambda block requires value returns'
             current.return_type = submit_lambda_expression_type(statement.children[0], scope, functions)
             if (!submit_lambda_result_type(current.return_type)):
-                throw 'thread_pool.submit lambda return must be an int, bool, string, int[], or int[][] expression using only in-scope values and declared scalar helper calls'
+                throw 'thread_pool.submit lambda return must be an int, bool, string, int[], or int[][] expression using only in-scope values and declared helper calls'
             current.returns_all_paths = true
         else if (statement.kind == 'Throw'):
             if (statement.children.length() != 1):
@@ -553,7 +555,7 @@ string validate_submit_lambda(Node lambda_node, Node[] functions, BindingIR[] ca
         return block_check.return_type
     string result_type = submit_lambda_expression_type(body, initial_scope, functions)
     if (!submit_lambda_result_type(result_type)):
-        throw 'thread_pool.submit lambda body must be an int, bool, string, int[], or int[][] expression using only in-scope values and declared scalar helper calls'
+        throw 'thread_pool.submit lambda body must be an int, bool, string, int[], or int[][] expression using only in-scope values and declared helper calls'
     return result_type
 
 string[] submit_lambda_local_names(Node node, string[] names):
