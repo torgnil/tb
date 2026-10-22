@@ -94,6 +94,11 @@ Build and invocation details are documented in the repository or release `README
   `record Point(int x, int y);`
 
   Constructor syntax: `Point(1, 2)` creates a record instance (lowered to heap-allocated record when needed).
+  Known constructor arguments must match their declared field types, including
+  array rank and nominal record identity. Const-qualified values are accepted,
+  and empty array or map literals keep their field-provided type context. A
+  declared named function takes precedence over a same-name record in direct
+  calls; builtin dispatch keeps its existing precedence rules.
 
 - Function declaration (typed):
 

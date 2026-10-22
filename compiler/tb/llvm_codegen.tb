@@ -4695,6 +4695,13 @@ string emit_record_value_instruction_core(ProgramIR program, ParsedFunction func
     BindingIR[] fields = record_field_bindings(record_decl)
     if (fields.length() != op.args.length() - 1):
         throw 'record constructor arity mismatch: ' + record_name
+    int argument_index = 0
+    while (argument_index < fields.length()):
+        string expected_type = normalize_llvm_type_name(fields[argument_index].type_name)
+        string actual_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[argument_index + 1]))
+        if (!llvm_named_call_arg_types_compatible(expected_type, actual_type)):
+            throw 'record constructor ' + record_name + ' argument ' + (argument_index + 1).to_string() + ' expected ' + expected_type + ', actual ' + actual_type
+        argument_index += 1
     string lhs = temp_ref(op.lhs)
     string record_type = llvm_record_type_name(record_name)
     string[] lines = []
@@ -5276,7 +5283,7 @@ string emit_call_value_instruction_core(ProgramIR program, ParsedFunction functi
     int call_meta_index = lookup_call_meta_index(call_name)
     string result_type = lookup_call_meta_return_type(call_meta_index)
     string result_llvm_type = lookup_call_meta_return_llvm_type(call_meta_index)
-    if (lookup_record_decl(program, call_name).header != ''):
+    if (call_meta_index < 0 && lookup_record_decl(program, call_name).header != ''):
         string record_line = emit_record_value_instruction(program, function_ir, op)
         if (LLVM_USER_CALL_STATS_ACTIVE != 0):
             LLVM_USER_CALL_RECORD_CTOR_EMITTED_BYTES += record_line.length()
