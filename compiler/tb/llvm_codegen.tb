@@ -6617,9 +6617,19 @@ string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, Lin
         return emit_slice_value_instruction(function_ir, op)
     throw 'unsupported llvm value op: ' + op.detail + ' ' + join_llvm_strings(op.args, ' ')
 
+void require_local_scalar_assignment_type(ParsedFunction function_ir, BindingIR binding, string source_temp):
+    string target_type = normalize_llvm_type_name(binding.type_name)
+    if (!is_scalar_type(target_type)):
+        return
+    string actual_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, source_temp))
+    if (actual_type == 'unknown' || target_type == actual_type || (target_type == 'num' && actual_type == 'int')):
+        return
+    throw 'local ' + binding.name + ' expected ' + target_type + ', actual ' + actual_type
+
 string emit_set_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op, string temp_suffix):
     BindingIR binding = ir_parse_binding_decl(op.detail)
     require_backend_value_type(binding.type_name, 'set')
+    require_local_scalar_assignment_type(function_ir, binding, op.args[0])
     if (normalize_llvm_type_name(binding.type_name) == 'num'):
         string[] lines = emit_num_materialize_if_needed(function_ir, op.args[0], binding.name + '.' + temp_suffix)
         lines.push('  store %tb_bootstrap_num ' + emit_num_store_value(function_ir, op.args[0], binding.name + '.' + temp_suffix) + ', ptr ' + slot_ref(binding.name))
@@ -6780,6 +6790,7 @@ string emit_assign_local_instruction(ProgramIR program, ParsedFunction function_
             return join_llvm_strings(lines, '\n')
         return '  store ' + llvm_type(global_binding.type_name) + ' ' + temp_ref(op.args[0]) + ', ptr ' + global_ref(global_binding.name)
     require_backend_value_type(binding.type_name, 'assign_local')
+    require_local_scalar_assignment_type(function_ir, binding, op.args[0])
     if (normalize_llvm_type_name(binding.type_name) == 'num'):
         string[] lines = emit_num_materialize_if_needed(function_ir, op.args[0], binding.name + '.' + temp_suffix)
         lines.push('  store %tb_bootstrap_num ' + emit_num_store_value(function_ir, op.args[0], binding.name + '.' + temp_suffix) + ', ptr ' + slot_ref(binding.name))
