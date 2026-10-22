@@ -8099,11 +8099,15 @@ string emit_global_initializer(GlobalDeclIR global_decl):
     if (op.kind != 'value'):
         throw 'unsupported llvm global initializer instruction: ' + op.kind
     if (op.detail == 'int'):
+        if (normalize_llvm_type_name(binding.type_name) == 'num'):
+            return '{ i64 ' + op.args[0] + ', i64 0 }'
         return op.args[0].substring(0)
     if (op.detail == 'bool'):
         return llvm_bool_literal(op.args[0])
     if (op.detail == 'num'):
-        return '%tb_bootstrap_num { i64 ' + num_literal_value_text(op.args[0]) + ', i64 ' + num_literal_scale(op.args[0]).to_string() + ' }'
+        if (normalize_llvm_type_name(binding.type_name) != 'num'):
+            throw 'unsupported llvm num global initializer type: ' + binding.type_name
+        return '{ i64 ' + num_literal_value_text(op.args[0]) + ', i64 ' + num_literal_scale(op.args[0]).to_string() + ' }'
     if (op.detail == 'string'):
         StringConstIR constant = encode_tb_string_literal(global_string_symbol(binding.name, op.lhs), op.args[0])
         return 'getelementptr inbounds ([' + constant.length + ' x i8], ptr ' + string_symbol_ref(constant.symbol) + ', i32 0, i32 0)'
