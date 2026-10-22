@@ -71,6 +71,12 @@ Build and invocation details are documented in the repository or release `README
 - record — user-defined record types with named fields.
 - enum — named constants.
 
+Enum values use their string representation in named function parameters and
+returns. A returned enum call can be printed, compared with an enum member,
+passed to a string helper, or used with string methods; helper functions may
+forward enum values through additional returns. Enum values do not gain
+nominal type checking at calls.
+
 5. Declarations
 
 - Variable declaration (typed):

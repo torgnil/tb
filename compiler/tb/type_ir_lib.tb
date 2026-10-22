@@ -1638,6 +1638,8 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
             validate_sequence_index_type(index_base_type, index_type)
             validate_map_index_type(index_base_type, index_type)
         LinearInstruction current = refine_value_instruction(op, bindings, functions, record_fields, record_names, enum_types, temp_types)
+        if (current.kind == 'value' && (current.detail == 'call' || current.detail == 'method-call') && enum_name_exists(enum_types, current.result_type)):
+            current = refined_value_op(current, 'string', refine_ownership_mode(current, 'string'))
         if (current.kind == 'value'):
             if (current.detail == 'call'):
                 if (!current.args.is_empty()):
