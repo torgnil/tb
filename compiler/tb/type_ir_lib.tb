@@ -1695,7 +1695,8 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
             else if (current.detail == 'method-call' && current.args.length() >= 2):
                 string method_name = current.args[0]
                 FunctionSigIR method_sig = lookup_function_sig(functions, method_name)
-                if (method_sig.name != '' && !record_type_exists(record_names, method_name) && !is_builtin_ufcs_array_context_name(method_name) && current.args.length() == method_sig.param_types.length() + 1):
+                bool user_priority_copy_fill = (method_name == 'copy' || method_name == 'fill') && method_sig.name != '' && !record_type_exists(record_names, method_name)
+                if (method_sig.name != '' && !record_type_exists(record_names, method_name) && (!is_builtin_ufcs_array_context_name(method_name) || user_priority_copy_fill) && current.args.length() == method_sig.param_types.length() + 1):
                     int index = 1
                     while (index < current.args.length()):
                         string expected_type = normalize_llvm_type_name(method_sig.param_types[index - 1])

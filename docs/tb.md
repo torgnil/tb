@@ -134,10 +134,12 @@ nominal type checking at calls.
   including nested empty rows such as `count_rows([[]])`. Populated literals
   still need matching element types and nesting depth. The same empty-literal
   context is available for unambiguous UFCS calls to named tb functions, with
-  the receiver checked as the first parameter. UFCS calls whose names collide
-  with builtins do not gain this context. Record-array arguments still do not
-  receive empty-literal context; builtin and record-constructor dispatch retain
-  their existing behavior.
+  the receiver checked as the first parameter. For UFCS calls named `copy` or
+  `fill`, this context applies when a declared user function is selected and no
+  same-named record is declared. Other UFCS names that collide with builtins
+  remain excluded. Record-array arguments still do not receive empty-literal
+  context; builtin and record-constructor dispatch retain their existing
+  behavior.
 
   Resolved direct and UFCS calls to named tb functions require exactly the
   declared number of arguments. A UFCS receiver counts as the first argument.
@@ -515,11 +517,11 @@ Array helpers
   - For `string[]`, removal returns the selected string. The index must be an `int`; negative and out-of-range indices, including on an empty array, return an owned empty string without changing the array. The returned string remains valid after the source is cleared or reused. Owned slots transfer their string; borrowed slots return an independent copy. A recognized owned array temporary used only as the direct or UFCS receiver is released after the string has been detached, including on invalid or empty calls. Named, borrowed, global, record-field, or reused arrays remain with their owners.
 
 - fill(arr, value) -> void for matching pairs: `int[]`/`int`, `bool[]`/`bool`, `string[]`/`string`, `int[][]`/`int[]`, or `string[][]`/`string[]`.
-  - Replace every existing element with `value`, preserving length. The value type must match the array element type. Also available as `arr.fill(value)`.
+  - Replace every existing element with `value`, preserving length. The value type must match the array element type. Also available as `arr.fill(value)`. When a declared user function named `fill` is selected, its typed array parameters provide context for bare empty literals in direct and UFCS calls, including the receiver. Same-named record declarations remain excluded from UFCS empty-literal context.
 
 - copy(arr: int[] | bool[] | string[] | int[][] | string[][]) -> same array type
   - Return an independent mutable snapshot. Also available as `arr.copy()`.
-  - Nested arrays copy their rows as well as the outer array; immutable strings may be shared.
+  - Nested arrays copy their rows as well as the outer array; immutable strings may be shared. When a declared user function named `copy` is selected, its typed array parameters provide context for bare empty literals in direct and UFCS calls, including the receiver. Same-named record declarations remain excluded from UFCS empty-literal context.
 
 - clear(arr: T[]) -> void
   - For `string[]`, clear releases owned strings in live slots and keeps the array storage available for reuse. For `bool[]`, it sets the live length to zero and keeps the array available for reuse. Also available as `arr.clear()`.
