@@ -35,6 +35,15 @@ record SubmitRangeListRewrite(Node[] nodes, string[] used_names, int next_index)
 bool submit_lambda_managed_type(string type_name):
     return type_name == 'string' || type_name == 'int[]' || type_name == 'int[][]'
 
+int submit_lambda_array_capture_index(BindingIR[] captured):
+    for (int index = 0; index < captured.length(); index += 1):
+        string capture_type = captured[index].type_name
+        if (capture_type.starts_with('const ')):
+            capture_type = capture_type.substring(6)
+        if (capture_type == 'int[]'):
+            return index
+    return -1
+
 string quote_string(string value):
     return '\'' + value + '\''
 
@@ -515,13 +524,15 @@ string validate_submit_lambda(Node lambda_node, Node[] functions, BindingIR[] ca
         initial_scope = SubmitLambdaScope([parameter.name], [parameter_type], const_names, [parameter.name], parameter.name)
     else if (lambda_node.kind != 'Lambda0' || lambda_node.value != ''):
         throw 'thread_pool.submit lambda must have one int or bool parameter and a scalar body'
-    if (lambda_node.kind == 'Lambda0' && captured.length() == 1):
-        BindingIR binding = captured[0]
-        string captured_type = binding.type_name
-        if (captured_type.starts_with('const ')):
-            captured_type = captured_type.substring(6)
-        if (captured_type == 'int[]'):
-            initial_scope.parameter_name = binding.name
+    if (lambda_node.kind == 'Lambda0'):
+        int array_capture_index = submit_lambda_array_capture_index(captured)
+        if (array_capture_index >= 0):
+            BindingIR binding = captured[array_capture_index]
+            string captured_type = binding.type_name
+            if (captured_type.starts_with('const ')):
+                captured_type = captured_type.substring(6)
+            if (captured_type == 'int[]'):
+                initial_scope.parameter_name = binding.name
     for (BindingIR binding : captured):
         string captured_type = binding.type_name
         if (captured_type.starts_with('const ')):
@@ -626,8 +637,10 @@ BindingIR[] submit_lambda_captures(Node lambda_node, BindingIR[] bindings, strin
             capture_type = capture_type.substring(6)
         if (submit_lambda_managed_type(capture_type)):
             managed_capture_count += 1
-    if (managed_capture_count > 0 && (lambda_node.kind != 'Lambda0' || captured.length() != 1)):
-        throw 'thread_pool.submit lambda can capture one managed value only in a zero-argument lambda without other captures'
+    if (managed_capture_count > 0):
+        int array_capture_index = submit_lambda_array_capture_index(captured)
+        if (lambda_node.kind != 'Lambda0' || managed_capture_count != 1 || (captured.length() != 1 && array_capture_index < 0)):
+            throw 'thread_pool.submit lambda can capture one managed value only in a zero-argument lambda without other captures, except that one int[] may be combined with scalar captures'
     return captured
 
 string submit_worker_name(string[] used_names, int start_index):
@@ -798,6 +811,18 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
     Node rewritten = Node(node.kind, node.value, rewritten_children)
     if (rewrite_worker):
         Node lambda_node = node.children[1]
+        if (lambda_node.kind == 'Lambda0' && captured.length() > 1):
+            int array_capture_index = submit_lambda_array_capture_index(captured)
+            if (array_capture_index >= 0):
+                string array_capture_name = captured[array_capture_index].name
+                BindingIR[] scalar_captures = []
+                for (int capture_index = 0; capture_index < captured.length(); capture_index += 1):
+                    if (capture_index != array_capture_index):
+                        scalar_captures.push(captured[capture_index])
+                captured = scalar_captures
+                lambda_node = Node('Lambda', 'int[] ' + array_capture_name, [lambda_node.children[0]])
+                rewritten_children[1] = lambda_node
+                rewritten_children.push(Node('Identifier', array_capture_name, []))
         string worker_name = submit_worker_name(current_names, current_index)
         current_names = add_unique_name(current_names, worker_name)
         current_index += 1

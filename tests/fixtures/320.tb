@@ -1,0 +1,75 @@
+const int global_offset = 4
+const bool global_enabled = true
+const int[] global_values = [8, 3]
+
+int mutate_first(int[] values, int amount):
+    values[0] += amount
+    return values[0]
+
+int fail_mixed(int[] values, bool enabled):
+    if (enabled):
+        throw 'mixed capture failed'
+    return values.length()
+
+future<int> submit_scoped(thread_pool pool, int seed):
+    int[] local_values = [seed, 5]
+    int local_bias = 6
+    return pool.submit(() -> local_values[1] + local_bias)
+
+future<int> submit_parameter(thread_pool pool, int[] source, int bias):
+    return pool.submit(() -> bias + source[0])
+
+int main(string[] args):
+    thread_pool pool = thread_pool(2)
+    int[] source = [args.length() + 1, 3]
+    int bias = args.length() + 4
+    bool enabled = true
+    const int[] fixed_values = [10, 11]
+    int[] empty_values = []
+
+    future<int> expression = pool.submit(() -> bias + source[0])
+    future<int> block = pool.submit(() -> {
+        int total = 0
+        for (int item : source) {
+            total += item
+        }
+        return total + bias
+    })
+    future<bool> predicate = pool.submit(() -> source.length() == 2 && enabled && bias == 5 && source[0] == 2)
+    future<int> changed = pool.submit(() -> mutate_first(source, bias))
+    future<int> fixed = pool.submit(() -> fixed_values[0] + global_offset)
+    future<bool> global_check = pool.submit(() -> global_values[0] == 8 && global_enabled)
+    future<int> parameter = submit_parameter(pool, source, bias)
+    future<int> scoped = submit_scoped(pool, args.length())
+    future<bool> empty = pool.submit(() -> {
+        return empty_values.is_empty() && enabled
+    })
+    future<int> failed = pool.submit(() -> fail_mixed(source, enabled))
+
+    source[0] = 99
+    bias = 50
+    enabled = false
+
+    print(expression.await())
+    print(expression.await())
+    print(block.await())
+    print(predicate.await())
+    print(changed.await())
+    print(changed.await())
+    print(source[0])
+    print(fixed.await())
+    print(global_check.await())
+    print(parameter.await())
+    print(scoped.await())
+    print(empty.await())
+    try {
+        failed.await()
+    } catch (string error) {
+        print(error)
+    }
+    try {
+        failed.await()
+    } catch (string error) {
+        print(error)
+    }
+    return 0
