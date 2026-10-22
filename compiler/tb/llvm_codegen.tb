@@ -1693,6 +1693,15 @@ bool temp_is_int_set(ParsedFunction function_ir, string temp_name):
 bool temp_is_int_array_array(ParsedFunction function_ir, string temp_name):
     return normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, temp_name)) == 'int[][]'
 
+bool temp_is_owned_int_grid_index_result(ParsedFunction function_ir, string temp_name):
+    LinearInstruction op = lookup_temp_instruction(function_ir, temp_name)
+    if (op.kind != 'value' || op.detail != 'index' || op.args.length() != 2 || op.ownership_mode != 'owned'):
+        return false
+    if (normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, temp_name)) != 'int[]'):
+        return false
+    LinearInstruction source = lookup_temp_instruction(function_ir, op.args[0])
+    return source.kind == 'value' && normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0])) == 'int[][]' && ownership_is_owned_mode(source.ownership_mode) && (source.detail == 'call' || source.detail == 'array')
+
 bool temp_is_record_array(ParsedFunction function_ir, string temp_name):
     string type_name = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, temp_name))
     return type_name.ends_with('[]') && record_name_from_type(array_item_type(type_name)) != ''
@@ -1783,7 +1792,7 @@ bool temp_needs_backend_free(ParsedFunction function_ir, string temp_name):
     if (result_type == 'bool[]'):
         return op.detail == 'array' || op.detail == 'call' || op.detail == 'slice'
     if (result_type == 'int[]'):
-        return op.detail == 'array' || op.detail == 'call' || op.detail == 'slice'
+        return op.detail == 'array' || op.detail == 'call' || op.detail == 'slice' || temp_is_owned_int_grid_index_result(function_ir, temp_name)
     if (result_type.starts_with('set<')):
         return op.detail == 'set' || op.detail == 'call' || op.detail == 'method-call'
     if (result_type == 'int[][]'):
@@ -6231,7 +6240,12 @@ string emit_index_value_instruction(ParsedFunction function_ir, LinearInstructio
         string record_name = record_name_from_type(set_item_type(base_type))
         return '  ' + llvm_i32_index_temp(op.lhs) + ' = trunc i64 ' + temp_ref(op.args[1]) + ' to i32\n  ' + lhs + ' = call ptr @tb_bootstrap_record_set_get_' + record_name + '(ptr ' + temp_ref(op.args[0]) + ', i32 ' + llvm_i32_index_temp(op.lhs) + ')'
     if (base_type == 'int[][]'):
-        return emit_array_index_materialize(base_type, op.args[0], op.args[1], op.lhs) + '\n  ' + lhs + ' = call ptr @tb_bootstrap_int_array_array_get(ptr ' + temp_ref(op.args[0]) + ', i32 ' + llvm_i32_index_temp(op.lhs) + ')'
+        string index_line = emit_array_index_materialize(base_type, op.args[0], op.args[1], op.lhs) + '\n  ' + lhs + ' = call ptr @tb_bootstrap_int_array_array_get(ptr ' + temp_ref(op.args[0]) + ', i32 ' + llvm_i32_index_temp(op.lhs) + ')'
+        if (temp_is_owned_int_grid_index_result(function_ir, op.lhs)):
+            string borrowed_name = '%index.borrowed.' + op.lhs
+            index_line = emit_array_index_materialize(base_type, op.args[0], op.args[1], op.lhs) + '\n  ' + borrowed_name + ' = call ptr @tb_bootstrap_int_array_array_get(ptr ' + temp_ref(op.args[0]) + ', i32 ' + llvm_i32_index_temp(op.lhs) + ')\n  ' + lhs + ' = call ptr @tb_bootstrap_int_array_clone(ptr ' + borrowed_name + ')\n' + emit_backend_release_ptr('int[][]', temp_ref(op.args[0]))
+            return index_line
+        return index_line
     if (base_type.ends_with('[]') && record_name_from_type(array_item_type(base_type)) != ''):
         string record_name = record_name_from_type(array_item_type(base_type))
         return emit_array_index_materialize(base_type, op.args[0], op.args[1], op.lhs) + '\n  ' + lhs + ' = call ptr @tb_bootstrap_record_array_get_' + record_name + '(ptr ' + temp_ref(op.args[0]) + ', i32 ' + llvm_i32_index_temp(op.lhs) + ')'

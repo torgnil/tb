@@ -334,6 +334,93 @@ string index_target_type(OwnershipTempMetaCache cache, LinearInstruction op):
         return map_value_type(base_type)
     return 'unknown'
 
+LinearInstruction ownership_lookup_temp_instruction(ParsedFunction function_ir, string temp_name):
+    for (BlockIR block in function_ir.blocks):
+        for (LinearInstruction op in block.instructions):
+            if (op.lhs == temp_name):
+                return op
+    return LinearInstruction('', '', '', '', '', [])
+
+bool owned_int_grid_index_sole_use_in_block(ParsedFunction function_ir, string source_name, string index_name):
+    int source_block = -1
+    int source_instruction = -1
+    int index_block = -1
+    int index_instruction = -1
+    int block_index = 0
+    for (BlockIR block in function_ir.blocks):
+        int instruction_index = 0
+        for (LinearInstruction op in block.instructions):
+            if (op.lhs == source_name):
+                source_block = block_index
+                source_instruction = instruction_index
+            if (op.lhs == index_name):
+                index_block = block_index
+                index_instruction = instruction_index
+            instruction_index += 1
+        block_index += 1
+    if (source_block < 0 || source_block != index_block || source_instruction >= index_instruction):
+        return false
+    int use_count = 0
+    bool index_is_use = false
+    block_index = 0
+    for (BlockIR block in function_ir.blocks):
+        for (LinearInstruction op in block.instructions):
+            if (op.lhs != source_name):
+                for (string arg in op.args):
+                    if (arg == source_name):
+                        use_count += 1
+                        if (op.lhs == index_name && op.kind == 'value' && op.detail == 'index'):
+                            index_is_use = true
+        for (string arg in block.terminator.args):
+            if (arg == source_name):
+                use_count += 1
+        block_index += 1
+    return use_count == 1 && index_is_use
+
+bool owned_int_grid_index_result_single_use_in_producing_block(ParsedFunction function_ir, string index_name):
+    int index_block = -1
+    int block_index = 0
+    for (BlockIR block in function_ir.blocks):
+        for (LinearInstruction op in block.instructions):
+            if (op.lhs == index_name):
+                index_block = block_index
+        block_index += 1
+    if (index_block < 0):
+        return false
+    int same_block_uses = 0
+    int other_block_uses = 0
+    block_index = 0
+    for (BlockIR block in function_ir.blocks):
+        for (LinearInstruction op in block.instructions):
+            if (op.lhs != index_name):
+                for (string arg in op.args):
+                    if (arg == index_name):
+                        if (block_index == index_block):
+                            same_block_uses += 1
+                        else:
+                            other_block_uses += 1
+        for (string arg in block.terminator.args):
+            if (arg == index_name):
+                if (block_index == index_block):
+                    same_block_uses += 1
+                else:
+                    other_block_uses += 1
+        block_index += 1
+    return same_block_uses == 1 && other_block_uses == 0
+
+ParsedFunction promote_owned_int_grid_index_temporaries(ParsedFunction function_ir):
+    BlockIR[] blocks = []
+    for (BlockIR block in function_ir.blocks):
+        LinearInstruction[] instructions = []
+        for (LinearInstruction op in block.instructions):
+            if (op.kind == 'value' && op.detail == 'index' && op.args.length() == 2 && normalize_llvm_type_name(op.result_type) == 'int[]'):
+                LinearInstruction source = ownership_lookup_temp_instruction(function_ir, op.args[0])
+                if (source.kind == 'value' && source.lhs != '' && normalize_llvm_type_name(source.result_type) == 'int[][]' && ownership_is_owned_mode(source.ownership_mode) && (source.detail == 'call' || source.detail == 'array') && owned_int_grid_index_sole_use_in_block(function_ir, op.args[0], op.lhs) && owned_int_grid_index_result_single_use_in_producing_block(function_ir, op.lhs)):
+                    op = LinearInstruction(op.kind, op.lhs, op.result_type, 'owned', op.detail, op.args)
+            instructions.push(op)
+        blocks.push(BlockIR(block.label, instructions, block.terminator))
+    return ParsedFunction(function_ir.header, function_ir.name, function_ir.return_type, function_ir.params, function_ir.locals, blocks)
+
 BindingIR[] initialized_managed_locals(ParsedFunction function_ir, string[] record_names, string[] enum_names):
     BindingIR[] result = []
     for (BlockIR block in function_ir.blocks):
@@ -515,6 +602,7 @@ BlockIR apply_ownership_to_block(ParsedFunction function_ir, OwnershipTempMetaCa
 ParsedFunction apply_ownership_to_function(ParsedFunction function_ir, RecordFieldIR[] record_fields, string[] record_names, string[] enum_names):
     if (OWNERSHIP_PROFILE_ACTIVE != 0):
         OWNERSHIP_APPLY_FUNCTION_COUNT += 1
+    function_ir = promote_owned_int_grid_index_temporaries(function_ir)
     OwnershipTempMetaCache cache = build_ownership_temp_meta_cache(function_ir)
     OwnershipBindingCache binding_cache = build_ownership_binding_cache(function_ir, record_names, enum_names)
     OwnershipIdentifierTargetCache identifier_target_cache = build_ownership_identifier_target_cache(function_ir, binding_cache)
