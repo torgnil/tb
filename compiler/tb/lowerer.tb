@@ -179,6 +179,15 @@ string submit_lambda_expression_type(Node node, SubmitLambdaScope scope, Node[] 
         return 'bool'
     if (node.kind == 'String'):
         return 'string'
+    if (node.kind == 'Array'):
+        if (node.children.is_empty()):
+            return ''
+        int index = 0
+        while (index < node.children.length()):
+            if (submit_lambda_expression_type(node.children[index], scope, functions) != 'int'):
+                return ''
+            index += 1
+        return 'int[]'
     if (node.kind == 'Identifier'):
         int local_index = submit_lambda_name_index(scope.names, node.value)
         if (local_index >= 0):

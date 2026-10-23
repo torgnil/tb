@@ -1,0 +1,69 @@
+int[] make_values(int value):
+    return [value, value + 1]
+
+int[] shifted_values(int[] values):
+    return [values[0] + 1, values[1] + 1]
+
+int mark_length(int[] values, int marker):
+    values.push(marker)
+    return values.length()
+
+future<int[]> submit_scoped_values(thread_pool pool, int value):
+    int[] values = [value, value + 1]
+    return pool.submit(int[] input -> [input[0], input[1]], values)
+
+int main(string[] args):
+    int seed = args.length() + 3
+    const int captured = seed + 10
+    int[] source = [seed, seed + 1]
+    thread_pool pool = thread_pool(2)
+
+    future<int[]> direct = pool.submit(int value -> [value, value + 1], seed)
+    future<int[]> captured_values = pool.submit(() -> [seed, captured])
+    future<int[]> task_values = pool.submit(int[] values -> [values[0], values.length()], source)
+    future<int[]> conditional = pool.submit(int value -> value == 4 ? [value, value + 1] : [0 - value], seed)
+    future<int[]> block_values = pool.submit(int value -> {
+        return [value + 2, value + 3]
+    }, seed)
+    future<int> literal_index = pool.submit(int value -> [value, value + 1][1], seed)
+    future<int> literal_length = pool.submit(int value -> [value, value + 1].length(), seed)
+    future<int[]> helper_result = pool.submit(int[] values -> shifted_values([values[0], values[1]]), source)
+    future<int[]> ordered = pool.submit(int[] values -> [mark_length(values, 1), mark_length(values, 2)], source)
+    future<int[]> scoped = submit_scoped_values(pool, seed + 20)
+    future<int[]> named = pool.submit(make_values, seed)
+
+    source[0] = 99
+
+    int[] direct_first = direct.await()
+    direct_first[0] = 999
+    print(direct_first[0])
+    int[] direct_second = direct.await()
+    print(direct_second[0])
+    print(direct_second[1])
+
+    int[] captured_result = captured_values.await()
+    print(captured_result[0])
+    print(captured_result[1])
+    int[] task_result = task_values.await()
+    print(task_result.length())
+    print(task_result[0])
+    int[] conditional_result = conditional.await()
+    print(conditional_result.length())
+    print(conditional_result[0])
+    int[] block_result = block_values.await()
+    print(block_result[0])
+    print(block_result[1])
+    print(literal_index.await())
+    print(literal_length.await())
+    int[] helper_array = helper_result.await()
+    print(helper_array[0])
+    print(helper_array[1])
+    int[] order_result = ordered.await()
+    print(order_result[0])
+    print(order_result[1])
+    int[] scoped_result = scoped.await()
+    print(scoped_result[0])
+    print(scoped_result[1])
+    int[] named_result = named.await()
+    print(named_result[0])
+    return 0
