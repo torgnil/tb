@@ -1,0 +1,47 @@
+record TextBox(string value);
+
+string global_text = 'stable'
+
+string make_text(int seed):
+    return 'word-' + seed.to_string()
+
+string[] make_words(int seed):
+    return ['word-' + seed.to_string()]
+
+string make_empty():
+    return ''
+
+bool compare_borrowed(string left, string right):
+    return left == right
+
+string worker_text():
+    return 'stable'
+
+int main(string[] args):
+    int seed = args.length()
+    print(make_text(seed) == make_text(seed))
+    print(make_text(seed) != make_text(seed + 1))
+    print('word-3' == make_text(3))
+    print('word-4' != make_text(5))
+    print(make_words(seed)[0] == make_text(seed))
+    print(make_text(seed) == make_words(seed)[0])
+    print(make_empty() == '')
+    print(make_empty() != make_text(seed))
+    print(make_text(seed) == make_text(seed) && make_text(seed + 1) != make_text(seed + 2))
+    string local_text = 'stable'
+    const string fixed_text = 'stable'
+    TextBox box = TextBox('stable')
+    print(compare_borrowed(local_text, fixed_text))
+    print(global_text == box.value)
+    int index = 0
+    int matches = 0
+    while (index < 3):
+        if (make_text(index) == make_text(index)):
+            matches += 1
+        index += 1
+    print(matches)
+    thread_pool pool = thread_pool(1)
+    future<string> answer = pool.submit(worker_text)
+    print(answer.await() == answer.await())
+    print(answer.await())
+    return 0

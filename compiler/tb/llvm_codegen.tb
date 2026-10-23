@@ -2454,6 +2454,21 @@ string track_string_compare_binary(string emitted):
     LLVM_STRING_COMPARE_BINARY_BYTES += emitted.length()
     return emitted
 
+string emit_string_compare_binary(ParsedFunction function_ir, LinearInstruction op, bool not_equal):
+    string[] lines = []
+    lines.push('  ' + temp_ref(op.lhs) + '.cmp = call i32 @strcmp(ptr ' + temp_ref(op.args[1]) + ', ptr ' + temp_ref(op.args[2]) + ')')
+    string compare = 'eq'
+    if (not_equal):
+        compare = 'ne'
+    lines.push('  ' + temp_ref(op.lhs) + ' = icmp ' + compare + ' i32 ' + temp_ref(op.lhs + '.cmp') + ', 0')
+    int operand_index = 0
+    while (operand_index < 2):
+        string operand_name = op.args[operand_index + 1]
+        if (temp_needs_backend_free(function_ir, operand_name) && !temp_is_moved(function_ir, operand_name) && temp_is_query_only_use_in_producing_block(function_ir, operand_name, op.lhs)):
+            lines.push(emit_backend_release_ptr('string', temp_ref(operand_name)))
+        operand_index += 1
+    return track_string_compare_binary(join_llvm_strings(lines, '\n'))
+
 string track_scalar_binary(string emitted):
     LLVM_SCALAR_BINARY_COUNT += 1
     LLVM_SCALAR_BINARY_BYTES += emitted.length()
@@ -6513,7 +6528,7 @@ string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, Lin
             return track_scalar_binary('  ' + lhs + ' = call i64 @tb_bootstrap_shift_right(i64 ' + temp_ref(op.args[1]) + ', i64 ' + temp_ref(op.args[2]) + ')')
         if (op_name == '=='):
             if (temp_is_string_like_value(function_ir, op.args[1]) && temp_is_string_like_value(function_ir, op.args[2])):
-                return track_string_compare_binary('  ' + lhs + '.cmp = call i32 @strcmp(ptr ' + temp_ref(op.args[1]) + ', ptr ' + temp_ref(op.args[2]) + ')\n  ' + lhs + ' = icmp eq i32 ' + temp_ref(op.lhs + '.cmp') + ', 0')
+                return emit_string_compare_binary(function_ir, op, false)
             if (left_type_normalized == 'bool' && right_type_normalized == 'bool'):
                 return track_scalar_binary('  ' + lhs + ' = icmp eq i1 ' + temp_ref(op.args[1]) + ', ' + temp_ref(op.args[2]))
             if (left_type_normalized == 'num' || right_type_normalized == 'num'):
@@ -6528,7 +6543,7 @@ string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, Lin
             return track_scalar_binary('  ' + lhs + ' = icmp eq i64 ' + temp_ref(op.args[1]) + ', ' + temp_ref(op.args[2]))
         if (op_name == '!='):
             if (temp_is_string_like_value(function_ir, op.args[1]) && temp_is_string_like_value(function_ir, op.args[2])):
-                return track_string_compare_binary('  ' + lhs + '.cmp = call i32 @strcmp(ptr ' + temp_ref(op.args[1]) + ', ptr ' + temp_ref(op.args[2]) + ')\n  ' + lhs + ' = icmp ne i32 ' + temp_ref(op.lhs + '.cmp') + ', 0')
+                return emit_string_compare_binary(function_ir, op, true)
             if (left_type_normalized == 'bool' && right_type_normalized == 'bool'):
                 return track_scalar_binary('  ' + lhs + ' = icmp ne i1 ' + temp_ref(op.args[1]) + ', ' + temp_ref(op.args[2]))
             if (left_type_normalized == 'num' || right_type_normalized == 'num'):
