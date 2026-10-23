@@ -245,6 +245,16 @@ string submit_lambda_expression_type(Node node, SubmitLambdaScope scope, Node[] 
             if (left_type == 'bool' && right_type == 'bool'):
                 return 'bool'
         return ''
+    if (node.kind == 'Ternary'):
+        if (node.children.length() != 3):
+            return ''
+        if (submit_lambda_expression_type(node.children[0], scope, functions) != 'bool'):
+            return ''
+        string true_type = submit_lambda_expression_type(node.children[1], scope, functions)
+        string false_type = submit_lambda_expression_type(node.children[2], scope, functions)
+        if (true_type == false_type && (true_type == 'int' || true_type == 'bool')):
+            return true_type
+        return ''
     if (node.kind == 'Call'):
         Node function_node = submit_lambda_helper(functions, node.value)
         if (function_node.kind == ''):
@@ -1303,6 +1313,8 @@ bool is_logical_operator(string op):
     return op == '&&' || op == 'and' || op == '||' || op == 'or'
 
 bool contains_logical_expression(Node node):
+    if (node.kind == 'Ternary'):
+        return true
     if (node.kind == 'Binary'):
         if (is_logical_operator(node.value)):
             return true
@@ -1392,8 +1404,16 @@ TempResult lower_linear_value(Node node, int next_temp):
         TempResult when_true = lower_linear_value(node.children[1], condition.next_temp)
         TempResult when_false = lower_linear_value(node.children[2], when_true.next_temp)
         string name = temp_name(when_false.next_temp)
-        string[] lines = append_lines(condition.lines, when_true.lines)
+        string carrier = 'choice.' + name
+        string[] lines = append_lines(condition.lines, ['branch_if ' + condition.name + ' ' + carrier + '.true ' + carrier + '.false', 'label ' + carrier + '.true'])
+        lines = append_lines(lines, when_true.lines)
+        lines.push('choice_set ' + carrier + ' ' + when_true.name)
+        lines.push('jump ' + carrier + '.end')
+        lines.push('label ' + carrier + '.false')
         lines = append_lines(lines, when_false.lines)
+        lines.push('choice_set ' + carrier + ' ' + when_false.name)
+        lines.push('jump ' + carrier + '.end')
+        lines.push('label ' + carrier + '.end')
         lines.push(name + ' = ternary ' + condition.name + ' ' + when_true.name + ' ' + when_false.name)
         return TempResult(name, lines, when_false.next_temp + 1)
     if (node.kind == 'Unary'):
@@ -1642,8 +1662,18 @@ TempIRResult lower_linear_value_ir(Node node, int next_temp):
         TempIRResult when_true = lower_linear_value_ir(node.children[1], condition.next_temp)
         TempIRResult when_false = lower_linear_value_ir(node.children[2], when_true.next_temp)
         string name = temp_name(when_false.next_temp)
-        LinearInstruction[] instructions = append_instructions(condition.instructions, when_true.instructions)
+        string carrier = 'choice.' + name
+        LinearInstruction[] instructions = append_instructions(condition.instructions, [LinearInstruction('branch_if', '', '', '', '', [condition.name, carrier + '.true', carrier + '.false']), LinearInstruction('label', '', '', '', carrier + '.true', [])])
+        instructions = append_instructions(instructions, when_true.instructions)
+        instructions.push(LinearInstruction('choice_set', '', '', '', carrier, [when_true.name]))
+        instructions.push(LinearInstruction('jump', '', '', '', carrier + '.end', []))
+        instructions.push(LinearInstruction('label', '', '', '', carrier + '.false', []))
         instructions = append_instructions(instructions, when_false.instructions)
+        instructions.push(LinearInstruction('choice_set', '', '', '', carrier, [when_false.name]))
+        instructions.push(LinearInstruction('jump', '', '', '', carrier + '.end', []))
+        instructions.push(LinearInstruction('label', '', '', '', carrier + '.end', []))
+        # Retain both arm types for refinement; the typed pass replaces this
+        # metadata with a load from the selected arm's hidden binding.
         instructions.push(LinearInstruction('value', name, 'unknown', 'unknown', 'ternary', [condition.name, when_true.name, when_false.name]))
         return TempIRResult(name, instructions, when_false.next_temp + 1)
     if (node.kind == 'Unary'):
@@ -3242,7 +3272,7 @@ BlockIR[] linear_instructions_to_blocks(LinearInstruction[] instructions):
         blocks.push(make_block('entry', current_instructions, empty_terminator()))
     return blocks
 
-# Global initialization emits straight-line IR. Keep a logical initializer at its
+# Global initialization emits straight-line IR. Keep a branching initializer at its
 # original initialization point by calling an ordinary CFG function. Dots cannot
 # occur in source identifiers, so generated functions and bool slots are hygienic.
 ParsedFunction lower_logical_global_initializer(Node declaration, int index):

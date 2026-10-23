@@ -544,7 +544,7 @@ LinearInstruction[] exit_cleanup_instructions(OwnershipIdentifierTargetCache ide
         if (transferred_binding != ''):
             BindingIR transferred = ir_parse_binding_decl(transferred_binding)
             string transferred_type = normalize_llvm_type_name(transferred.type_name)
-            if (transferred_type == 'string'):
+            if (transferred_type == 'string' || ir_is_conditional_binding(transferred.name)):
                 transferred_binding = ''
     for (BindingIR binding in initialized_managed):
         string current = binding_decl(binding)
@@ -589,6 +589,11 @@ BlockIR apply_ownership_to_block(ParsedFunction function_ir, OwnershipTempMetaCa
                 prepare_int_array_array_return = normalized_return_type == 'int[][]'
                 prepare_bool_array_return = normalized_return_type == 'bool[]'
                 prepare_int_array_return = normalized_return_type == 'int[]'
+                string returned_binding = identifier_target_binding_cached(identifier_target_cache, terminator.args[0])
+                if (returned_binding != ''):
+                    BindingIR binding = ir_parse_binding_decl(returned_binding)
+                    if (ir_is_conditional_binding(binding.name) && normalized_return_type != 'string'):
+                        instructions.push(LinearInstruction('prepare_return_choice', '', '', '', normalized_return_type, [terminator.args[0]]))
             if (prepare_string_return):
                 instructions.push(LinearInstruction('prepare_return_string', '', '', '', '', [terminator.args[0]]))
             if (prepare_string_array_array_return):

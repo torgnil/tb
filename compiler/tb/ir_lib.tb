@@ -19,6 +19,13 @@ string ir_source_binding_name(string identity):
         return identity.substring(0, separator)
     return identity.substring(0)
 
+# Conditional carriers are compiler-only bindings, unavailable to source names.
+bool ir_is_conditional_binding(string name):
+    return name.starts_with('choice.')
+
+bool ir_is_expression_block(string label):
+    return label.starts_with('logic.') || label.starts_with('choice.')
+
 record LinearInstruction(string kind, string lhs, string result_type, string ownership_mode, string detail, string[] args);
 record TerminatorIR(string kind, string[] args);
 record BindingIR(string type_name, string name);

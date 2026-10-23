@@ -1477,18 +1477,18 @@ bool instruction_uses_temp(LinearInstruction op, string temp_name):
         first_operand += 1
     return false
 
-# A lowered logical expression can separate a receiver from its sole query.
-# Accept only a closed, forward CFG region ending at a logical merge: every
+# A lowered branching expression can separate a receiver from its sole query.
+# Accept only a closed, forward CFG region ending at an expression merge: every
 # path reaches the query, and no outside edge can bypass the producer.
 bool query_crosses_only_logical_blocks(ParsedFunction function_ir, int producer, int query):
     if (producer < 0 || query <= producer):
         return false
-    if (!function_ir.blocks[query].label.starts_with('logic.') || !function_ir.blocks[query].label.ends_with('.end')):
+    if (!ir_is_expression_block(function_ir.blocks[query].label) || !function_ir.blocks[query].label.ends_with('.end')):
         return false
     int index = producer
     while (index < query):
         if (index > producer):
-            if (!function_ir.blocks[index].label.starts_with('logic.')):
+            if (!ir_is_expression_block(function_ir.blocks[index].label)):
                 return false
         TerminatorIR terminator = function_ir.blocks[index].terminator
         int first_target = 0
@@ -6635,15 +6635,6 @@ string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, Lin
                 return emit_array_scalar_query_with_release(function_ir, op.args[2], op.lhs, query_line)
             throw 'unsupported llvm not in operand types: ' + left_type + ' not in ' + right_type
         throw 'unsupported llvm binary op: ' + op_name
-    if (op.detail == 'ternary'):
-        string result_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.lhs))
-        if (result_type == 'int'):
-            return '  ' + lhs + ' = select i1 ' + temp_ref(op.args[0]) + ', i64 ' + temp_ref(op.args[1]) + ', i64 ' + temp_ref(op.args[2])
-        if (result_type == 'bool'):
-            return '  ' + lhs + ' = select i1 ' + temp_ref(op.args[0]) + ', i1 ' + temp_ref(op.args[1]) + ', i1 ' + temp_ref(op.args[2])
-        if (result_type == 'string' || result_type == 'string[]' || result_type.starts_with('map<') || record_name_from_type(result_type) != ''):
-            return '  ' + lhs + ' = select i1 ' + temp_ref(op.args[0]) + ', ptr ' + temp_ref(op.args[1]) + ', ptr ' + temp_ref(op.args[2])
-        throw 'unsupported llvm ternary result type: ' + result_type
     if (op.detail == 'call'):
         return track_call_value(emit_call_value_instruction(program, function_ir, op))
     if (op.detail == 'field'):
@@ -6708,10 +6699,50 @@ void require_local_scalar_assignment_type(ParsedFunction function_ir, BindingIR 
         throw 'logical operator requires bool operands; got ' + actual_type
     throw 'local ' + ir_source_binding_name(binding.name) + ' expected ' + target_type + ', actual ' + actual_type
 
+# Ordinary map storage snapshots these array families, nested maps and records.
+# Other composite fields can still escape as raw borrowed pointers. Keep their
+# legacy selected owner alive rather than introduce destruction at a carrier.
+# Recursive/unknown graphs are retained conservatively; this does not repair
+# the existing general borrowed-composite escape rules.
+bool conditional_carrier_can_own(ProgramIR program, string type_name, int record_depth):
+    type_name = normalize_llvm_type_name(type_name)
+    if (type_name == 'int' || type_name == 'bool' || type_name == 'num' || type_name == 'file' || type_name == 'string' || type_name == 'int[]' || type_name == 'string[]'):
+        return true
+    if (type_name.starts_with('map<')):
+        string key_type = map_key_type(type_name)
+        if (key_type != 'int' && key_type != 'string'):
+            return false
+        return conditional_carrier_can_own(program, map_value_type(type_name), record_depth)
+    string record_name = record_name_from_type(type_name)
+    if (record_name == '' || record_depth >= program.records.length()):
+        return false
+    RecordDeclIR record_decl = lookup_record_decl(program, record_name)
+    if (record_decl.header == ''):
+        return false
+    for (BindingIR field in record_field_bindings(record_decl)):
+        if (!conditional_carrier_can_own(program, field.type_name, record_depth + 1)):
+            return false
+    return true
+
 string emit_set_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op, string temp_suffix):
     BindingIR binding = ir_parse_binding_decl(op.detail)
     require_backend_value_type(binding.type_name, 'set')
     require_local_scalar_assignment_type(function_ir, binding, op.args[0])
+    if (ir_is_conditional_binding(binding.name)):
+        # Preserve selected borrowed aliases; only the selected owned leaf is
+        # held by this binding. The ownership pass releases it before reuse.
+        string[] lines = ['  store ' + llvm_type(binding.type_name) + ' ' + temp_ref(op.args[0]) + ', ptr ' + slot_ref(binding.name)]
+        if (is_backend_managed_type(binding.type_name)):
+            string owned_flag = 'false'
+            if (temp_can_transfer_to_local(function_ir, op.args[0]) && conditional_carrier_can_own(program, binding.type_name, 0)):
+                owned_flag = 'true'
+            lines.push('  store i1 ' + owned_flag + ', ptr ' + owned_slot_ref(binding.name))
+            if (normalize_llvm_type_name(binding.type_name) == 'string'):
+                string managed_flag = 'false'
+                if (temp_is_managed_string(function_ir, op.args[0])):
+                    managed_flag = owned_flag
+                lines.push('  store i1 ' + managed_flag + ', ptr ' + managed_slot_ref(binding.name))
+        return join_llvm_strings(lines, '\n')
     if (normalize_llvm_type_name(binding.type_name) == 'num'):
         string[] lines = emit_num_materialize_if_needed(function_ir, op.args[0], binding.name + '.' + temp_suffix)
         lines.push('  store %tb_bootstrap_num ' + emit_num_store_value(function_ir, op.args[0], binding.name + '.' + temp_suffix) + ', ptr ' + slot_ref(binding.name))
@@ -7419,6 +7450,17 @@ string emit_instruction(ProgramIR program, ParsedFunction function_ir, string bl
         return '  ; move_temp ' + op.detail + ' ' + temp_ref(op.args[0])
     if (op.kind == 'prepare_throw_string'):
         return join_llvm_strings(emit_string_materialize_if_needed(function_ir, op.args[0], 'throw.' + block_label), '\n')
+    if (op.kind == 'prepare_return_choice'):
+        string clone_function = ''
+        if (op.detail == 'string[]'):
+            clone_function = '@tb_bootstrap_string_array_clone'
+        else if (op.detail.starts_with('map<')):
+            clone_function = llvm_map_clone_name(op.detail)
+        else if (record_name_from_type(op.detail) != ''):
+            clone_function = '@tb_bootstrap_record_clone_' + record_name_from_type(op.detail)
+        if (clone_function == ''):
+            throw 'unsupported conditional return type: ' + op.detail
+        return '  %choice.return.' + block_label + ' = call ptr ' + clone_function + '(ptr ' + temp_ref(op.args[0]) + ')'
     if (op.kind == 'prepare_return_string'):
         return join_llvm_strings(emit_string_materialize_if_needed(function_ir, op.args[0], 'return.' + block_label), '\n')
     if (op.kind == 'prepare_return_string_array_array'):
@@ -7588,6 +7630,11 @@ string[] emit_terminator(ParsedFunction function_ir, BlockIR block, TerminatorIR
             string[] lines = emit_try_restore_lines(try_suffix, temp_suffix)
             lines.push('  ret void')
             return lines
+        for (LinearInstruction op in block.instructions):
+            if (op.kind == 'prepare_return_choice'):
+                string[] lines = emit_try_restore_lines(try_suffix, temp_suffix)
+                lines.push('  ret ptr %choice.return.' + block.label)
+                return lines
         if (!terminator.args.is_empty()):
             string local_name = transferable_local_binding_name(function_ir, terminator.args[0])
             if (local_name != ''):
