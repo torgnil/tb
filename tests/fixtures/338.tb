@@ -1,0 +1,81 @@
+string runtime_text(int suffix):
+    return '#' + 'tag-' + suffix.to_string()
+
+string duplicate_text(string text):
+    return text
+
+bool starts_with_text(string text, string prefix):
+    return text.starts_with(prefix)
+
+future<bool> submit_scoped_string(thread_pool pool, int suffix):
+    string scoped = 'scope-' + suffix.to_string()
+    return pool.submit(() -> scoped.length() > 0 && scoped[0] == 's')
+
+int main(string[] args):
+    thread_pool pool = thread_pool(2)
+    const string fixed_text = 'needle'
+    string dynamic_text = runtime_text(args.length())
+
+    future<bool> equal = pool.submit(string text -> text == 'needle', fixed_text)
+    future<bool> not_equal = pool.submit(string text -> text != 'other', fixed_text)
+    future<bool> literal_left = pool.submit(string text -> 'needle' == text, fixed_text)
+    future<bool> helper_equality = pool.submit(string text -> text == duplicate_text(text), fixed_text)
+    future<bool> helper_literal = pool.submit(string text -> starts_with_text(text, '#'), dynamic_text)
+    future<bool> block_predicate = pool.submit(string text -> {
+        if (text.length() > 0 && starts_with_text(text, '#')) {
+            return text[0] == '#'
+        }
+        return false
+    }, dynamic_text)
+    future<bool> loop_predicate = pool.submit(string text -> {
+        int index = 0
+        while (index < text.length()) {
+            if (text[index] == '#') {
+                return true
+            }
+            index += 1
+        }
+        return false
+    }, dynamic_text)
+    future<bool> guarded_empty = pool.submit(string text -> text.is_empty() || text[0] == 'x', '')
+    future<bool> empty_index = pool.submit(string text -> text[0] == '', '')
+    future<bool> out_of_bounds_index = pool.submit(string text -> text[100] == '', 'x')
+    future<bool> negative_index = pool.submit(string text -> text[-1] == 'e', 'needle')
+    future<bool> const_input = pool.submit(string text -> text == 'fixed', 'fixed')
+    future<string> literal_result = pool.submit(() -> 'literal-result')
+    future<string> block_literal_result = pool.submit(string text -> {
+        if (text.length() > 0) {
+            return 'block-result'
+        }
+        return ''
+    }, fixed_text)
+    future<string> indexed_result = pool.submit(string text -> text[-1], dynamic_text)
+    future<string> empty_result = pool.submit(string text -> text[0], '')
+    future<bool> scoped_capture = submit_scoped_string(pool, args.length())
+    future<bool> scalar_compatibility = pool.submit(int value -> value > 0, args.length())
+
+    print(equal.await())
+    print(not_equal.await())
+    print(literal_left.await())
+    print(helper_equality.await())
+    print(helper_literal.await())
+    print(block_predicate.await())
+    print(loop_predicate.await())
+    print(guarded_empty.await())
+    print(empty_index.await())
+    print(out_of_bounds_index.await())
+    print(negative_index.await())
+    print(const_input.await())
+    print(scoped_capture.await())
+    print(scalar_compatibility.await())
+    print(literal_result.await())
+    print(literal_result.await())
+    print(block_literal_result.await())
+    print(indexed_result.await())
+    print(indexed_result.await())
+    string empty_first = empty_result.await()
+    string empty_second = empty_result.await()
+    print(empty_first)
+    print(empty_second)
+    print(empty_first.length())
+    return 0

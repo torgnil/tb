@@ -177,6 +177,8 @@ string submit_lambda_expression_type(Node node, SubmitLambdaScope scope, Node[] 
         return 'int'
     if (node.kind == 'Bool'):
         return 'bool'
+    if (node.kind == 'String'):
+        return 'string'
     if (node.kind == 'Identifier'):
         int local_index = submit_lambda_name_index(scope.names, node.value)
         if (local_index >= 0):
@@ -193,9 +195,11 @@ string submit_lambda_expression_type(Node node, SubmitLambdaScope scope, Node[] 
             return 'int'
         if (base_type == 'int[][]'):
             return 'int[]'
-        if (base_type == 'string' || base_type == 'string[]' || base_type == 'string[][]'):
+        if (base_type == 'string'):
+            return 'string'
+        if (base_type == 'string[]' || base_type == 'string[][]'):
             throw 'thread_pool.submit lambda string indexing is not supported'
-        throw 'thread_pool.submit lambda indexing requires int[] or int[][]'
+        throw 'thread_pool.submit lambda indexing requires string, int[], or int[][]'
     if (node.kind == 'MethodCall'):
         if (node.children.length() < 1):
             return ''
@@ -238,7 +242,7 @@ string submit_lambda_expression_type(Node node, SubmitLambdaScope scope, Node[] 
                 return 'bool'
             return ''
         if (node.value == '==' || node.value == '!='):
-            if (left_type == right_type && (left_type == 'int' || left_type == 'bool')):
+            if (left_type == right_type && (left_type == 'int' || left_type == 'bool' || left_type == 'string')):
                 return 'bool'
             return ''
         if (node.value == '&&' || node.value == '||' || node.value == 'and' || node.value == 'or'):
