@@ -182,12 +182,22 @@ string submit_lambda_expression_type(Node node, SubmitLambdaScope scope, Node[] 
     if (node.kind == 'Array'):
         if (node.children.is_empty()):
             return ''
+        string element_type = ''
         int index = 0
         while (index < node.children.length()):
-            if (submit_lambda_expression_type(node.children[index], scope, functions) != 'int'):
+            string current_type = submit_lambda_expression_type(node.children[index], scope, functions)
+            if (!(current_type == 'int' || current_type == 'int[]')):
+                return ''
+            if (element_type == ''):
+                element_type = current_type
+            else if (current_type != element_type):
                 return ''
             index += 1
-        return 'int[]'
+        if (element_type == 'int'):
+            return 'int[]'
+        if (element_type == 'int[]'):
+            return 'int[][]'
+        return ''
     if (node.kind == 'Identifier'):
         int local_index = submit_lambda_name_index(scope.names, node.value)
         if (local_index >= 0):

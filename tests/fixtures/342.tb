@@ -1,0 +1,84 @@
+int[] make_row(int value):
+    return [value, value + 1]
+
+int[] empty_row():
+    return []
+
+int[][] make_grid(int value):
+    return [[value], make_row(value + 1)]
+
+int grid_sum(int[][] values):
+    return values[0][0] + values[1][0]
+
+int mark_grid_length(int[][] values, int marker):
+    values.push([marker])
+    return values.length()
+
+future<int[][]> submit_scoped_grid(thread_pool pool, int value):
+    int[][] local_grid = [[value], [value + 1]]
+    return pool.submit(int[][] input -> [input[0], input[1]], local_grid)
+
+int main(string[] args):
+    int seed = args.length() + 3
+    const int[][] fixed_grid = [[seed + 10], [seed + 20, seed + 21]]
+    int[][] source_grid = [[seed, seed + 1], [seed + 2, seed + 3]]
+    thread_pool pool = thread_pool(2)
+
+    future<int[][]> direct = pool.submit(int value -> [[value, value + 1], [value + 2]], seed)
+    future<int[][]> block_grid = pool.submit(int value -> {
+        return [[value], [value + 1, value + 2]]
+    }, seed)
+    future<int[][]> computed_rows = pool.submit(int[][] grid -> [grid[0], make_row(grid[1][0])], source_grid)
+    future<int[][]> captured_rows = pool.submit(() -> [fixed_grid[0], make_row(5)])
+    future<int[][]> empty_typed_row = pool.submit(int value -> [empty_row(), make_row(value)], seed)
+    future<int[][]> conditional_rows = pool.submit(int value -> [value == 4 ? [value] : [value + 1], make_row(value)], seed)
+    future<int[]> indexed_literal_row = pool.submit(int value -> [[value], [value + 1, value + 2]][1], seed)
+    future<int> literal_grid_length = pool.submit(int value -> [[value], [value + 1]].length(), seed)
+    future<int[][]> helper_grid = pool.submit(int[][] grid -> make_grid(grid[0][0]), source_grid)
+    future<int> helper_argument = pool.submit(int[][] grid -> grid_sum([make_row(grid[0][0]), make_row(grid[1][0])]), source_grid)
+    future<int[][]> ordered_rows = pool.submit(int[][] grid -> [[mark_grid_length(grid, 1)], [mark_grid_length(grid, 2)]], source_grid)
+    future<int[][]> scoped_grid = submit_scoped_grid(pool, seed + 30)
+    future<int[]> scalar_control = pool.submit(int value -> [value, value + 1], seed)
+
+    source_grid[0][0] = 99
+
+    int[][] direct_first = direct.await()
+    direct_first[0][0] = 999
+    print(direct_first[0][0])
+    print(direct_first[1][0])
+    int[][] direct_second = direct.await()
+    print(direct_second[0][0])
+    print(direct_second[0][1])
+
+    int[][] block_result = block_grid.await()
+    print(block_result[1][1])
+    int[][] computed_result = computed_rows.await()
+    print(computed_result[0][0])
+    print(computed_result[1][0])
+    int[][] captured_result = captured_rows.await()
+    print(captured_result[0][0])
+    print(captured_result[1][1])
+    int[][] empty_result = empty_typed_row.await()
+    print(empty_result[0].length())
+    print(empty_result[1][0])
+    int[][] conditional_result = conditional_rows.await()
+    print(conditional_result[0][0])
+    print(conditional_result[1][1])
+    int[] indexed_row = indexed_literal_row.await()
+    print(indexed_row[0])
+    print(indexed_row[1])
+    print(literal_grid_length.await())
+    int[][] helper_result = helper_grid.await()
+    print(helper_result[0][0])
+    print(helper_result[1][1])
+    print(helper_argument.await())
+    int[][] order_result = ordered_rows.await()
+    print(order_result[0][0])
+    print(order_result[1][0])
+    print(source_grid[0][0])
+    int[][] scoped_result = scoped_grid.await()
+    print(scoped_result[0][0])
+    print(scoped_result[1][0])
+    int[] scalar_result = scalar_control.await()
+    print(scalar_result[1])
+    return 0
