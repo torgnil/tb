@@ -86,6 +86,17 @@ nominal type checking at calls.
 
   `string s = 'hello';`
 
+Ordinary function locals have lexical scope. A declaration becomes visible after
+its initializer, so an inner `int value = value + 1` reads the previously visible
+`value`. Inner blocks may shadow locals, parameters, or globals with a different
+type or `const` qualifier; assignments use the nearest visible binding, and the
+outer binding remains available afterward. Branches, loop bodies, switch cases,
+and try/catch bodies have separate scopes. A C-style for initializer is visible
+in its condition, update, and body; a foreach iterator is visible only in its body,
+and its iterable is evaluated before the iterator is introduced. Repeating a
+declaration in the same block introduces a new binding for subsequent statements.
+Submitted lambdas keep their documented capture uniqueness restrictions.
+
 - Immutable variable declaration:
 
   `const int answer = 42;`

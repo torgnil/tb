@@ -14,6 +14,7 @@
 
 import ir_lib;
 import parser;
+import local_bindings;
 
 record TempResult(string name, string[] lines, int next_temp);
 record TempListResult(string[] names, string[] lines, int next_temp);
@@ -1107,6 +1108,11 @@ bool int_node_is(Node node, string value):
 bool identifier_node_is(Node node, string value):
     return node.kind == 'Identifier' && node.value == value
 
+# Supported filter lambda shapes name captures by their source spelling.
+# Recognition does not change the resolved reference used by subsequent lowering.
+bool source_identifier_node_is(Node node, string value):
+    return node.kind == 'Identifier' && ir_source_binding_name(node.value) == value
+
 bool is_local_self_add_assignment(Node target, Node value):
     if (target.kind != 'Identifier'):
         return false
@@ -1126,7 +1132,7 @@ bool binding_index_node_is(Node node, string binding_name, string index_value):
 bool add_capture_and_binding_index(Node node, string capture_name, string binding_name, string index_value):
     if (node.kind != 'Binary' || node.value != '+'):
         return false
-    if (!identifier_node_is(node.children[0], capture_name)):
+    if (!source_identifier_node_is(node.children[0], capture_name)):
         return false
     return binding_index_node_is(node.children[1], binding_name, index_value)
 
@@ -1155,11 +1161,11 @@ bool is_filter_bounds_lambda(Node lambda_node):
         return false
     if (!add_capture_and_binding_index(parts[0].children[0], 'r', binding.name, '0') || !int_node_is(parts[0].children[1], '0')):
         return false
-    if (!add_capture_and_binding_index(parts[1].children[0], 'r', binding.name, '0') || !identifier_node_is(parts[1].children[1], 'WIDTH')):
+    if (!add_capture_and_binding_index(parts[1].children[0], 'r', binding.name, '0') || !source_identifier_node_is(parts[1].children[1], 'WIDTH')):
         return false
     if (!add_capture_and_binding_index(parts[2].children[0], 'c', binding.name, '1') || !int_node_is(parts[2].children[1], '0')):
         return false
-    if (!add_capture_and_binding_index(parts[3].children[0], 'c', binding.name, '1') || !identifier_node_is(parts[3].children[1], 'HEIGHT')):
+    if (!add_capture_and_binding_index(parts[3].children[0], 'c', binding.name, '1') || !source_identifier_node_is(parts[3].children[1], 'HEIGHT')):
         return false
     return true
 
@@ -1176,7 +1182,7 @@ bool is_grid_eq_lambda(Node lambda_node):
     Node row_index = outer_index.children[0]
     if (row_index.kind != 'Index'):
         return false
-    if (!identifier_node_is(row_index.children[0], 'GRID')):
+    if (!source_identifier_node_is(row_index.children[0], 'GRID')):
         return false
     if (!add_capture_and_binding_index(row_index.children[1], 'r', binding.name, '0')):
         return false
@@ -3081,6 +3087,7 @@ void validate_const_bindings(Node program):
 
 string[] lower_program(Node program):
     validate_const_bindings(program)
+    program = normalize_program_local_bindings(program)
     string[] lines = ['program']
     for (Node child in program.children):
         string[] child_lines = lower_statement_lines(child, '  ')
@@ -3143,9 +3150,10 @@ LoweredFunctionDeclIR lower_function_declaration_from_parts(FunctionDeclParseRes
     BindingIR[] params = []
     for (string param_binding in function_decl.params):
         params.push(ir_parse_binding_decl(param_binding))
-    if (!is_linear_body(function_decl.body_nodes)):
+    Node[] body_nodes = normalize_function_local_bindings(function_decl.body_nodes)
+    if (!is_linear_body(body_nodes)):
         throw 'shared bootstrap IR currently requires linear entry lowering'
-    LinearIRListResult linear = lower_linear_statement_list_ir(function_decl.body_nodes, 0, 1, '', '')
+    LinearIRListResult linear = lower_linear_statement_list_ir(body_nodes, 0, 1, '', '')
     BindingIR[] locals = collect_function_locals(linear.instructions)
     BlockIR[] blocks = linear_instructions_to_blocks(linear.instructions)
     string header = 'func ' + function_decl.return_type + ' ' + function_decl.name
@@ -3205,6 +3213,7 @@ ProgramIR lower_program_ir(Node program):
     SubmitLambdaRewrite rewritten = rewrite_submit_lambdas_in_program(program)
     program = rewritten.node
     validate_const_bindings(program)
+    program = normalize_program_local_bindings(program)
     ImportDeclIR[] imports = []
     GlobalDeclIR[] globals = []
     RecordDeclIR[] records = []
@@ -3304,6 +3313,7 @@ ProgramIR lower_tokens_ir(Token[] tokens):
                 values.push('value ' + value_decl.value)
             enums.push(EnumDeclIR('enum ' + child.value, values))
         else if (child.kind == 'Function' || child.kind == 'CachedFunction'):
+            child = Node(child.kind, child.value, normalize_function_local_bindings(child.children))
             BindingIR[] params = []
             Node[] body_nodes = []
             for (Node fn_child : child.children):
