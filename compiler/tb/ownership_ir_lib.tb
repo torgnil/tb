@@ -423,6 +423,11 @@ ParsedFunction promote_owned_int_grid_index_temporaries(ParsedFunction function_
 
 BindingIR[] initialized_managed_locals(ParsedFunction function_ir, string[] record_names, string[] enum_names):
     BindingIR[] result = []
+    bool is_main_args_parameter = false
+    if (function_ir.name == 'main' && function_ir.params.length() == 1):
+        is_main_args_parameter = normalize_llvm_type_name(function_ir.params[0].type_name) == 'string[]'
+    if (is_main_args_parameter):
+        result.push(function_ir.params[0])
     for (BlockIR block in function_ir.blocks):
         for (LinearInstruction op in block.instructions):
             string binding_name = ''
@@ -433,6 +438,8 @@ BindingIR[] initialized_managed_locals(ParsedFunction function_ir, string[] reco
                 bool exists = false
                 for (BindingIR existing in result):
                     if (existing.type_name == binding.type_name && existing.name == binding.name):
+                        exists = true
+                    else if (is_main_args_parameter && existing.name == binding.name && normalize_llvm_type_name(existing.type_name) == normalize_llvm_type_name(binding.type_name)):
                         exists = true
                 if (!exists):
                     result.push(binding)

@@ -7812,7 +7812,10 @@ string[] emit_allocas(ParsedFunction function_ir, bool bootstrap_main_args):
             lines.push('  store ' + llvm_type(param_decl.type_name) + ' ' + param_ref(param_decl.name) + ', ptr ' + slot_ref(param_decl.name))
         if (is_backend_managed_type(param_decl.type_name)):
             lines.push('  ' + owned_slot_ref(param_decl.name) + ' = alloca i1')
-            lines.push('  store i1 false, ptr ' + owned_slot_ref(param_decl.name))
+            if (bootstrap_main_args && normalize_llvm_type_name(param_decl.type_name) == 'string[]'):
+                lines.push('  store i1 true, ptr ' + owned_slot_ref(param_decl.name))
+            else:
+                lines.push('  store i1 false, ptr ' + owned_slot_ref(param_decl.name))
         if (normalize_llvm_type_name(param_decl.type_name) == 'string'):
             lines.push('  ' + managed_slot_ref(param_decl.name) + ' = alloca i1')
             lines.push('  store i1 false, ptr ' + managed_slot_ref(param_decl.name))

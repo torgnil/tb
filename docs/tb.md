@@ -51,6 +51,7 @@ Build and invocation details are documented in the repository or release `README
 
 - Every runnable program must declare `int main(string[] args) { ... }` or `int main(string[] args): ...` as the entry point.
 - `args[0]` is the executable path from the generated `main(argc, argv)` wrapper. User-supplied CLI arguments start at `args[1]`.
+- The entry wrapper copies process arguments into the `string[]` binding; the native backend releases that owned array and its copied strings when `main` returns normally.
 - There is currently no built-in “user args only” helper; use manual indexing/slicing patterns or helpers such as `has_flag(args, '--flag')` and `option_value(args, '--opt')` on the full `args` array.
 - Top-level variable declarations are allowed, including `const` globals; they run in the generated entry wrapper.
 - A global `num` may be initialized by a decimal literal such as `num RATE = 1.25` or an integer literal such as `num COUNT = 5`. Decimal literals keep their written scale; integer literals use scale zero. Runtime initializers remain supported.
