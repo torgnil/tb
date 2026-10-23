@@ -2,12 +2,27 @@
 %tb_bootstrap_prio_q_int = type { ptr, ptr }
 define private ptr @tb_bootstrap_int_array_new(i32 %len) {
 entry:
+  %len.negative = icmp slt i32 %len, 0
+  br i1 %len.negative, label %invalid.length, label %allocate.object
+invalid.length:
+  call void @abort()
+  unreachable
+allocate.object:
   %array = call ptr @malloc(i64 16)
+  %array.null = icmp eq ptr %array, null
+  br i1 %array.null, label %allocation.failed, label %allocate.data
+allocate.data:
   %cap.small = icmp slt i32 %len, 4
   %cap = select i1 %cap.small, i32 4, i32 %len
   %cap64 = sext i32 %cap to i64
   %bytes = mul i64 %cap64, 8
   %data = call ptr @malloc(i64 %bytes)
+  %data.null = icmp eq ptr %data, null
+  br i1 %data.null, label %allocation.failed, label %initialize
+allocation.failed:
+  call void @abort()
+  unreachable
+initialize:
   call void @llvm.memset.p0.i64(ptr %data, i8 0, i64 %bytes, i1 false)
   %len.ptr = getelementptr inbounds %tb_bootstrap_int_array, ptr %array, i32 0, i32 0
   store i32 %len, ptr %len.ptr
@@ -69,14 +84,25 @@ done:
 }
 define private ptr @tb_bootstrap_range(i64 %start, i64 %end) {
 entry:
+  %reversed = icmp sle i64 %end, %start
+  br i1 %reversed, label %empty, label %check.length
+empty:
+  %empty.array = call ptr @tb_bootstrap_int_array_new(i32 0)
+  ret ptr %empty.array
+check.length:
   %delta = sub i64 %end, %start
-  %has.items = icmp sgt i64 %delta, 0
-  %len64 = select i1 %has.items, i64 %delta, i64 0
+  %too.large = icmp ugt i64 %delta, 2147483647
+  br i1 %too.large, label %invalid.length, label %allocate
+invalid.length:
+  call void @abort()
+  unreachable
+allocate:
+  %len64 = phi i64 [ %delta, %check.length ]
   %len = trunc i64 %len64 to i32
   %array = call ptr @tb_bootstrap_int_array_new(i32 %len)
   br label %loop.cond
 loop.cond:
-  %index = phi i32 [0, %entry], [%next.index, %loop.body]
+  %index = phi i32 [0, %allocate], [%next.index, %loop.body]
   %index64 = sext i32 %index to i64
   %keep.loop = icmp slt i64 %index64, %len64
   br i1 %keep.loop, label %loop.body, label %done

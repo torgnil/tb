@@ -615,10 +615,10 @@ Hashing, misc
   - Compute integer hash for `int`, `num`, `string` and arrays; UFCS sugar `v.hash()`.
 
 - range(n) -> int[]
-  - `range(end)` yields integers `0`..`end-1`.
+  - `range(end)` yields integers `0`..`end-1`; a non-positive end produces an empty array.
 
 - range(start, end) -> int[]
-  - Yields `start`..`end-1`.
+  - Yields `start`..`end-1`, including negative values. Equal or reversed bounds produce an empty array, including at the signed integer limits. The span must fit the supported `int[]` length (at most `2147483647` elements); a larger span aborts before allocating or filling the array. If `int[]` allocation fails, the process aborts before using the result.
 
 14. Examples
 
