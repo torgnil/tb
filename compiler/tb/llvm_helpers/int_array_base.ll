@@ -325,13 +325,28 @@ entry:
   %cap = load i32, ptr %cap.ptr
   %data.ptr = getelementptr inbounds %tb_bootstrap_int_array, ptr %array, i32 0, i32 2
   %data.old = load ptr, ptr %data.ptr
+  %at.limit = icmp eq i32 %len, 2147483647
+  br i1 %at.limit, label %length.failed, label %check.growth
+length.failed:
+  call void @abort()
+  unreachable
+check.growth:
   %need.grow = icmp eq i32 %len, %cap
   br i1 %need.grow, label %grow, label %store
 grow:
-  %new.cap = mul i32 %cap, 2
-  %new.cap64 = sext i32 %new.cap to i64
+  %cap64 = sext i32 %cap to i64
+  %doubled.cap64 = mul i64 %cap64, 2
+  %cap.too.large = icmp sgt i64 %doubled.cap64, 2147483647
+  %new.cap64 = select i1 %cap.too.large, i64 2147483647, i64 %doubled.cap64
+  %new.cap = trunc i64 %new.cap64 to i32
   %new.bytes = mul i64 %new.cap64, 8
   %new.data = call ptr @malloc(i64 %new.bytes)
+  %new.data.null = icmp eq ptr %new.data, null
+  br i1 %new.data.null, label %allocation.failed, label %copy
+allocation.failed:
+  call void @abort()
+  unreachable
+copy:
   %old.cap64 = sext i32 %cap to i64
   %old.bytes = mul i64 %old.cap64, 8
   call void @llvm.memcpy.p0.p0.i64(ptr %new.data, ptr %data.old, i64 %old.bytes, i1 false)
