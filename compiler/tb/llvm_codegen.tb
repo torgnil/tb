@@ -1477,6 +1477,54 @@ bool instruction_uses_temp(LinearInstruction op, string temp_name):
         first_operand += 1
     return false
 
+# A lowered logical expression can separate a receiver from its sole query.
+# Accept only a closed, forward CFG region ending at a logical merge: every
+# path reaches the query, and no outside edge can bypass the producer.
+bool query_crosses_only_logical_blocks(ParsedFunction function_ir, int producer, int query):
+    if (producer < 0 || query <= producer):
+        return false
+    if (!function_ir.blocks[query].label.starts_with('logic.') || !function_ir.blocks[query].label.ends_with('.end')):
+        return false
+    int index = producer
+    while (index < query):
+        if (index > producer):
+            if (!function_ir.blocks[index].label.starts_with('logic.')):
+                return false
+        TerminatorIR terminator = function_ir.blocks[index].terminator
+        int first_target = 0
+        if (terminator.kind == 'branch_if'):
+            if (terminator.args.length() != 3):
+                return false
+            first_target = 1
+        else if (terminator.kind == 'jump'):
+            if (terminator.args.length() != 1):
+                return false
+        else:
+            return false
+        int target_index = first_target
+        while (target_index < terminator.args.length()):
+            int target = block_index_by_label(function_ir, terminator.args[target_index])
+            if (target <= index || target > query):
+                return false
+            target_index += 1
+        index += 1
+    index = 0
+    while (index < function_ir.blocks.length()):
+        if (index < producer || index >= query):
+            TerminatorIR terminator = function_ir.blocks[index].terminator
+            int first_target = 0
+            if (terminator.kind == 'branch_if'):
+                first_target = 1
+            if (terminator.kind == 'jump' || terminator.kind == 'branch_if'):
+                int target_index = first_target
+                while (target_index < terminator.args.length()):
+                    int target = block_index_by_label(function_ir, terminator.args[target_index])
+                    if (target > producer && target <= query):
+                        return false
+                    target_index += 1
+        index += 1
+    return true
+
 bool temp_is_query_only_use_in_producing_block(ParsedFunction function_ir, string temp_name, string query_temp_name):
     int producer_block_index = -1
     int producer_instruction_index = -1
@@ -1494,7 +1542,10 @@ bool temp_is_query_only_use_in_producing_block(ParsedFunction function_ir, strin
                 query_instruction_index = instruction_index
             instruction_index += 1
         block_index += 1
-    if (producer_block_index < 0 || producer_block_index != query_block_index || producer_instruction_index >= query_instruction_index):
+    if (producer_block_index == query_block_index):
+        if (producer_block_index < 0 || producer_instruction_index >= query_instruction_index):
+            return false
+    else if (!query_crosses_only_logical_blocks(function_ir, producer_block_index, query_block_index)):
         return false
     int use_count = 0
     bool query_is_use = false
@@ -6638,6 +6689,8 @@ void require_local_scalar_assignment_type(ParsedFunction function_ir, BindingIR 
     string actual_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, source_temp))
     if (actual_type == 'unknown' || target_type == actual_type || (target_type == 'num' && actual_type == 'int')):
         return
+    if (binding.name.starts_with('logic.')):
+        throw 'logical operator requires bool operands; got ' + actual_type
     throw 'local ' + ir_source_binding_name(binding.name) + ' expected ' + target_type + ', actual ' + actual_type
 
 string emit_set_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op, string temp_suffix):

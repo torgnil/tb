@@ -1299,6 +1299,18 @@ TempIRListResult lower_linear_values_ir(Node[] nodes, int next_temp):
         current_temp = lowered.next_temp
     return TempIRListResult(names, instructions, current_temp)
 
+bool is_logical_operator(string op):
+    return op == '&&' || op == 'and' || op == '||' || op == 'or'
+
+bool contains_logical_expression(Node node):
+    if (node.kind == 'Binary'):
+        if (is_logical_operator(node.value)):
+            return true
+    for (Node child : node.children):
+        if (contains_logical_expression(child)):
+            return true
+    return false
+
 TempResult lower_linear_value(Node node, int next_temp):
     if (node.kind == 'Int'):
         string name = temp_name(next_temp)
@@ -1350,9 +1362,28 @@ TempResult lower_linear_value(Node node, int next_temp):
         lines.push(line)
         return TempResult(name, lines, current_temp + 1)
     if (node.kind == 'Binary'):
-        TempResult left = lower_linear_value(node.children[0], next_temp)
+        int operand_temp = next_temp
+        if (is_logical_operator(node.value)):
+            operand_temp += 1
+        TempResult left = lower_linear_value(node.children[0], operand_temp)
         TempResult right = lower_linear_value(node.children[1], left.next_temp)
         string name = temp_name(right.next_temp)
+        if (is_logical_operator(node.value)):
+            string carrier = 'logic.' + next_temp.to_string()
+            string rhs_label = carrier + '.rhs'
+            string end_label = carrier + '.end'
+            string[] lines = append_lines(left.lines, ['set bool ' + carrier + ' ' + left.name])
+            if (node.value == '&&' || node.value == 'and'):
+                lines.push('branch_if ' + left.name + ' ' + rhs_label + ' ' + end_label)
+            else:
+                lines.push('branch_if ' + left.name + ' ' + end_label + ' ' + rhs_label)
+            lines.push('label ' + rhs_label)
+            lines = append_lines(lines, right.lines)
+            lines.push('set bool ' + carrier + ' ' + right.name)
+            lines.push('jump ' + end_label)
+            lines.push('label ' + end_label)
+            lines.push(name + ' = identifier ' + carrier)
+            return TempResult(name, lines, right.next_temp + 1)
         string[] lines = append_lines(left.lines, right.lines)
         lines.push(name + ' = binary ' + node.value + ' ' + left.name + ' ' + right.name)
         return TempResult(name, lines, right.next_temp + 1)
@@ -1581,9 +1612,28 @@ TempIRResult lower_linear_value_ir(Node node, int next_temp):
         instructions.push(LinearInstruction('value', name, 'map', 'owned', 'map', names))
         return TempIRResult(name, instructions, current_temp + 1)
     if (node.kind == 'Binary'):
-        TempIRResult left = lower_linear_value_ir(node.children[0], next_temp)
+        int operand_temp = next_temp
+        if (is_logical_operator(node.value)):
+            operand_temp += 1
+        TempIRResult left = lower_linear_value_ir(node.children[0], operand_temp)
         TempIRResult right = lower_linear_value_ir(node.children[1], left.next_temp)
         string name = temp_name(right.next_temp)
+        if (is_logical_operator(node.value)):
+            string carrier = 'logic.' + next_temp.to_string()
+            string rhs_label = carrier + '.rhs'
+            string end_label = carrier + '.end'
+            LinearInstruction[] instructions = append_instructions(left.instructions, [LinearInstruction('set', '', '', '', 'bool ' + carrier, [left.name])])
+            if (node.value == '&&' || node.value == 'and'):
+                instructions.push(LinearInstruction('branch_if', '', '', '', '', [left.name, rhs_label, end_label]))
+            else:
+                instructions.push(LinearInstruction('branch_if', '', '', '', '', [left.name, end_label, rhs_label]))
+            instructions.push(LinearInstruction('label', '', '', '', rhs_label, []))
+            instructions = append_instructions(instructions, right.instructions)
+            instructions.push(LinearInstruction('set', '', '', '', 'bool ' + carrier, [right.name]))
+            instructions.push(LinearInstruction('jump', '', '', '', end_label, []))
+            instructions.push(LinearInstruction('label', '', '', '', end_label, []))
+            instructions.push(LinearInstruction('value', name, 'bool', 'plain', 'identifier', [carrier]))
+            return TempIRResult(name, instructions, right.next_temp + 1)
         LinearInstruction[] instructions = append_instructions(left.instructions, right.instructions)
         instructions.push(LinearInstruction('value', name, 'unknown', 'unknown', 'binary', [node.value, left.name, right.name]))
         return TempIRResult(name, instructions, right.next_temp + 1)
@@ -3192,6 +3242,18 @@ BlockIR[] linear_instructions_to_blocks(LinearInstruction[] instructions):
         blocks.push(make_block('entry', current_instructions, empty_terminator()))
     return blocks
 
+# Global initialization emits straight-line IR. Keep a logical initializer at its
+# original initialization point by calling an ordinary CFG function. Dots cannot
+# occur in source identifiers, so generated functions and bool slots are hygienic.
+ParsedFunction lower_logical_global_initializer(Node declaration, int index):
+    BindingIR binding = ir_parse_binding_decl(declaration.value)
+    string result_type = binding.type_name
+    if (result_type.starts_with('const ')):
+        result_type = result_type.substring(6)
+    string name = 'global.logic.' + index.to_string()
+    LinearIRBlockResult value = lower_linear_statement_ir(Node('Return', '', declaration.children), 0)
+    return ParsedFunction('func ' + result_type + ' ' + name, name, result_type, [], collect_function_locals(value.instructions), linear_instructions_to_blocks(value.instructions))
+
 ProgramIR lower_program_ir(Node program):
     SubmitLambdaRewrite rewritten = rewrite_submit_lambdas_in_program(program)
     program = rewritten.node
@@ -3206,8 +3268,13 @@ ProgramIR lower_program_ir(Node program):
         if (child.kind == 'ImportDecl'):
             imports.push(ImportDeclIR('import ' + child.value))
         else if (child.kind == 'VarDecl'):
-            TempIRResult value = lower_linear_value_ir(child.children[0], 0)
-            globals.push(GlobalDeclIR('global ' + child.value, value.instructions, value.name))
+            if (contains_logical_expression(child.children[0])):
+                ParsedFunction initializer = lower_logical_global_initializer(child, globals.length())
+                functions.push(initializer)
+                globals.push(GlobalDeclIR('global ' + child.value, [LinearInstruction('value', 't0', 'unknown', 'unknown', 'call', [initializer.name])], 't0'))
+            else:
+                TempIRResult value = lower_linear_value_ir(child.children[0], 0)
+                globals.push(GlobalDeclIR('global ' + child.value, value.instructions, value.name))
         else if (child.kind == 'RecordDecl'):
             string[] fields = []
             for (Node field_decl : child.children):
@@ -3283,8 +3350,13 @@ ProgramIR lower_tokens_ir(Token[] tokens):
         if (child.kind == 'ImportDecl'):
             imports.push(ImportDeclIR('import ' + child.value))
         else if (child.kind == 'VarDecl'):
-            TempIRResult value = lower_linear_value_ir(child.children[0], 0)
-            globals.push(GlobalDeclIR('global ' + child.value, value.instructions, value.name))
+            if (contains_logical_expression(child.children[0])):
+                ParsedFunction initializer = lower_logical_global_initializer(child, globals.length())
+                functions.push(initializer)
+                globals.push(GlobalDeclIR('global ' + child.value, [LinearInstruction('value', 't0', 'unknown', 'unknown', 'call', [initializer.name])], 't0'))
+            else:
+                TempIRResult value = lower_linear_value_ir(child.children[0], 0)
+                globals.push(GlobalDeclIR('global ' + child.value, value.instructions, value.name))
         else if (child.kind == 'RecordDecl'):
             string[] fields = []
             for (Node field_decl : child.children):

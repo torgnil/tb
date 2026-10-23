@@ -1,0 +1,97 @@
+int hits = 0
+int order = 0
+bool global_first = mark(1, false) && mark(2, true)
+bool global_second = mark(3, true) || mark(4, false)
+bool[] global_flags = [mark(5, false) or mark(6, true), true]
+
+bool mark(int digit, bool value):
+    hits += 1
+    order = order * 10 + digit
+    return value
+
+bool explode():
+    throw 'evaluated'
+
+string make_text(int seed):
+    return 'value-' + seed.to_string()
+
+int[] make_values(int seed):
+    return [seed, seed + 1]
+
+bool[] make_flags(int seed):
+    return [seed > 0, seed < 0]
+
+string[] make_words(int seed):
+    return ['word', seed.to_string()]
+
+string expected_word(bool enabled):
+    if (enabled):
+        return 'word'
+    return 'other'
+
+bool identity(bool value):
+    return value
+
+bool worker(int seed):
+    return seed < 0 && explode() || seed > 0 and make_values(seed).length() == 2
+
+int main(string[] args):
+    print(global_first)
+    print(global_second)
+    print(global_flags[0])
+    print(global_flags[1])
+    print(hits)
+    print(order)
+    bool yes = args.length() > 0
+    bool no = args.length() < 0
+    print(no && mark(7, true))
+    print(no && mark(7, false))
+    print(yes && mark(7, true))
+    print(yes && mark(7, false))
+    print(no || mark(8, true))
+    print(no || mark(8, false))
+    print(yes || mark(8, true))
+    print(yes || mark(8, false))
+    print(hits)
+    hits = 0
+    order = 0
+    bool result = mark(1, yes) and mark(2, no) or mark(3, yes) && mark(4, yes)
+    print(identity(result))
+    print(hits)
+    print(order)
+    print(mark(5, no) && (mark(6, yes) || mark(7, yes)))
+    print(mark(8, yes) || (mark(9, no) && mark(1, yes)))
+    print(order)
+    result = no or yes and yes
+    print(result)
+    if (yes && make_text(args.length()).length() > 0):
+        print('if')
+    int loops = 0
+    while (loops < 2 && make_values(args.length()).length() == 2):
+        loops += 1
+    for (int i = 0; i < 2 and yes; i += 1):
+        loops += 1
+    print(loops)
+    print(make_flags(args.length()).contains(yes && yes))
+    print(yes && make_words(args.length())[0] == expected_word(no || yes && yes))
+    int[] empty = []
+    int[] populated = [9]
+    print(empty.length() > 0 && empty[0] == 9)
+    print(populated.length() > 0 && populated[0] == 9)
+    int divisor = args.length() - args.length()
+    print(divisor != 0 && 5 / divisor > 0)
+    try:
+        print(no && explode())
+        print(yes || explode())
+        print(yes && make_values(args.length()).sum() > 0)
+        print(no || make_text(args.length()).length() > 0)
+        print(yes && explode())
+    catch (string message):
+        print(message)
+    print(yes || explode())
+    thread_pool pool = thread_pool(1)
+    future<bool> answer = pool.submit(worker, args.length())
+    print(answer.await())
+    future<bool> inline_answer = pool.submit(int value -> value < 0 && explode() || value > 0, args.length())
+    print(inline_answer.await())
+    return 0
