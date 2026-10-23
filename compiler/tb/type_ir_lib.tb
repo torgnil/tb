@@ -1071,6 +1071,11 @@ GlobalDeclIR clone_global_decl_ir(GlobalDeclIR global_decl):
 LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bindings, FunctionSigIR[] functions, RecordFieldIR[] record_fields, string[] record_names, EnumTypeIR[] enum_types, string[] temp_types):
     if (op.kind != 'value'):
         return op
+    if (op.detail == 'foreach-value'):
+        if (op.args.length() != 1):
+            throw 'foreach iterable marker requires one source value'
+        string iterable_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[0]))
+        return refined_value_op(op, iterable_type, 'borrowed')
     if (op.detail == 'method-call'):
         if (op.args.length() >= 2):
             if (op.args[0] == 'last'):

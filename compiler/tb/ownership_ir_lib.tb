@@ -421,6 +421,81 @@ ParsedFunction promote_owned_int_grid_index_temporaries(ParsedFunction function_
         blocks.push(BlockIR(block.label, instructions, block.terminator))
     return ParsedFunction(function_ir.header, function_ir.name, function_ir.return_type, function_ir.params, function_ir.locals, blocks)
 
+int ownership_foreach_marker_index(string[] marker_names, string name):
+    int index = 0
+    while (index < marker_names.length()):
+        if (marker_names[index] == name):
+            return index
+        index += 1
+    return -1
+
+ParsedFunction materialize_owned_foreach_iterables(ParsedFunction function_ir):
+    string[] marker_names = []
+    string[] source_names = []
+    string[] owned_declarations = []
+    BindingIR[] locals = clone_binding_irs(function_ir.locals)
+    for (BlockIR block in function_ir.blocks):
+        for (LinearInstruction op in block.instructions):
+            if (op.kind == 'value' && op.detail == 'foreach-value'):
+                if (op.args.length() != 1):
+                    throw 'foreach iterable marker requires one source value'
+                string marker_name = op.lhs.substring(0)
+                string source_name = op.args[0].substring(0)
+                LinearInstruction source = ownership_lookup_temp_instruction(function_ir, source_name)
+                string declaration = ''
+                if (normalize_llvm_type_name(op.result_type) == 'int[]' && source.kind == 'value' && normalize_llvm_type_name(source.result_type) == 'int[]' && ownership_is_owned_mode(source.ownership_mode)):
+                    string local_name = 'foreach.' + marker_name
+                    declaration = 'int[] ' + local_name
+                    locals.push(BindingIR('int[]', local_name))
+                marker_names.push(marker_name)
+                source_names.push(source_name)
+                owned_declarations.push(declaration)
+    if (marker_names.is_empty()):
+        return function_ir
+
+    BlockIR[] blocks = []
+    for (BlockIR block in function_ir.blocks):
+        LinearInstruction[] instructions = []
+        for (LinearInstruction op in block.instructions):
+            if (op.kind == 'value' && op.detail == 'foreach-value'):
+                int marker_index = ownership_foreach_marker_index(marker_names, op.lhs)
+                if (marker_index < 0):
+                    throw 'foreach iterable marker metadata missing'
+                string declaration = owned_declarations[marker_index]
+                if (declaration != ''):
+                    string local_name = ir_parse_binding_decl(declaration).name
+                    instructions.push(LinearInstruction('set', '', '', '', declaration, [source_names[marker_index]]))
+                    instructions.push(LinearInstruction('value', op.lhs, 'int[]', 'borrowed', 'identifier', [local_name]))
+                continue
+            if (op.kind == 'foreach_end'):
+                int marker_index = ownership_foreach_marker_index(marker_names, op.detail)
+                if (marker_index < 0):
+                    throw 'foreach end marker metadata missing'
+                string declaration = owned_declarations[marker_index]
+                if (declaration != ''):
+                    instructions.push(LinearInstruction('release_local', '', '', '', declaration, []))
+                continue
+            bool rewrite_length_receiver = false
+            if (op.kind == 'value' && op.detail == 'method-call' && op.args.length() >= 2):
+                if (op.args[0] == 'length'):
+                    rewrite_length_receiver = true
+            bool rewrite_index_base = op.kind == 'value' && op.detail == 'index' && op.args.length() >= 1
+            if (rewrite_length_receiver || rewrite_index_base):
+                # Only these generated operands consume the marker; leave method symbols and literal values untouched.
+                int operand_index = 1
+                if (rewrite_index_base):
+                    operand_index = 0
+                int marker_index = ownership_foreach_marker_index(marker_names, op.args[operand_index])
+                if (marker_index >= 0):
+                    if (owned_declarations[marker_index] == ''):
+                        string[] args = clone_string_array(op.args)
+                        args[operand_index] = source_names[marker_index]
+                        instructions.push(LinearInstruction(op.kind, op.lhs, op.result_type, op.ownership_mode, op.detail, args))
+                        continue
+            instructions.push(op)
+        blocks.push(BlockIR(block.label, instructions, block.terminator))
+    return ParsedFunction(function_ir.header, function_ir.name, function_ir.return_type, function_ir.params, locals, blocks)
+
 BindingIR[] initialized_managed_locals(ParsedFunction function_ir, string[] record_names, string[] enum_names):
     BindingIR[] result = []
     bool is_main_args_parameter = false
@@ -617,6 +692,7 @@ ParsedFunction apply_ownership_to_function(ParsedFunction function_ir, RecordFie
     if (OWNERSHIP_PROFILE_ACTIVE != 0):
         OWNERSHIP_APPLY_FUNCTION_COUNT += 1
     function_ir = promote_owned_int_grid_index_temporaries(function_ir)
+    function_ir = materialize_owned_foreach_iterables(function_ir)
     OwnershipTempMetaCache cache = build_ownership_temp_meta_cache(function_ir)
     OwnershipBindingCache binding_cache = build_ownership_binding_cache(function_ir, record_names, enum_names)
     OwnershipIdentifierTargetCache identifier_target_cache = build_ownership_identifier_target_cache(function_ir, binding_cache)
