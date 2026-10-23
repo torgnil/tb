@@ -199,7 +199,7 @@ captures resolve to the nearest binding visible when submission occurs.
 6. Expressions and operators
 
 - Arithmetic: `+`, `-`, `*`, `/`, `%`.
-- Integer `/` and `%` use signed truncating division, matching LLVM runtime behavior. Division rounds toward zero, and the remainder keeps the sign of the left operand. Examples: `(0 - 5) / 3` is `-1`, `(0 - 5) % 3` is `-2`, `5 % (0 - 3)` is `2`, and `(0 - 5) % (0 - 3)` is `-2`.
+- Integer `/` and `%` use signed truncating division. Division rounds toward zero, and the remainder keeps the sign of the left operand. Examples: `(0 - 5) / 3` is `-1`, `(0 - 5) % 3` is `-2`, `5 % (0 - 3)` is `2`, and `(0 - 5) % (0 - 3)` is `-2`. A zero divisor, or `INT64_MIN` divided or remaindered by `-1`, aborts the process. The same rule applies in integer-array `map_to` operations; an empty source array performs no element operation.
 - Compile-time `num` arithmetic keeps the highest operand precision for `+`, `-`, `*`, and `/`. For example, `1.5 + 2.50` yields `4.00`, `2.50 * 1.5` yields `3.75`, and `2.50 / 1.5` yields `1.67`.
 - Bitwise integers: `&`, `|`, `^`, `<<`, `>>`.
 - Integer shifts require a non-negative shift count; a negative runtime count aborts. Counts `>= 64` shift all bits out: `x << 64` becomes `0`, and `x >> 64` becomes `0` for non-negative `x` or `-1` for negative `x`.

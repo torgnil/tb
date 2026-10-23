@@ -209,6 +209,7 @@ int LLVM_SCAN_NEEDS_TO_INT = 0;
 int LLVM_SCAN_NEEDS_INT_TO_STRING = 0;
 int LLVM_SCAN_NEEDS_POPCOUNT = 0;
 int LLVM_SCAN_NEEDS_INTEGER_SHIFTS = 0;
+int LLVM_SCAN_NEEDS_INTEGER_DIVISION = 0;
 int LLVM_SCAN_NEEDS_HASH = 0;
 int LLVM_SCAN_NEEDS_NUM_HASH = 0;
 int LLVM_SCAN_NEEDS_STRING_HELPERS_OPS = 0;
@@ -619,6 +620,7 @@ void reset_llvm_backend_helper_stats():
     LLVM_SCAN_NEEDS_INT_TO_STRING = 0
     LLVM_SCAN_NEEDS_POPCOUNT = 0
     LLVM_SCAN_NEEDS_INTEGER_SHIFTS = 0
+    LLVM_SCAN_NEEDS_INTEGER_DIVISION = 0
     LLVM_SCAN_NEEDS_HASH = 0
     LLVM_SCAN_NEEDS_NUM_HASH = 0
     LLVM_SCAN_NEEDS_STRING_HELPERS_OPS = 0
@@ -2877,6 +2879,7 @@ void analyze_program_features(ProgramIR program, string[] map_types):
     LLVM_SCAN_NEEDS_INT_TO_STRING = 0
     LLVM_SCAN_NEEDS_POPCOUNT = 0
     LLVM_SCAN_NEEDS_INTEGER_SHIFTS = 0
+    LLVM_SCAN_NEEDS_INTEGER_DIVISION = 0
     LLVM_SCAN_NEEDS_HASH = 0
     LLVM_SCAN_NEEDS_NUM_HASH = 0
     LLVM_SCAN_NEEDS_STRING_HELPERS_OPS = 0
@@ -2920,6 +2923,7 @@ void analyze_program_features(ProgramIR program, string[] map_types):
     bool needs_int_to_string = false
     bool needs_popcount = false
     bool needs_integer_shifts = false
+    bool needs_integer_division = false
     bool needs_hash = false
     bool needs_num_hash = false
     bool needs_string_helpers_ops = false
@@ -3010,6 +3014,8 @@ void analyze_program_features(ProgramIR program, string[] map_types):
                 if (!op.args.is_empty()):
                     if (op.args[0] == '<<' || op.args[0] == '>>'):
                         needs_integer_shifts = true
+                    if (op.args[0] == '/' || op.args[0] == '%'):
+                        needs_integer_division = true
     for (RecordDeclIR record_decl in program.records):
         for (BindingIR field in record_field_bindings(record_decl)):
             string field_type = normalize_llvm_type_name(field.type_name)
@@ -3141,6 +3147,8 @@ void analyze_program_features(ProgramIR program, string[] map_types):
                     if (!op.args.is_empty()):
                         if (op.args[0] == '<<' || op.args[0] == '>>'):
                             needs_integer_shifts = true
+                        if (op.args[0] == '/' || op.args[0] == '%'):
+                            needs_integer_division = true
                     if (!op.args.is_empty() && (op.args[0] == '==' || op.args[0] == '!=')):
                         if (lookup_temp_llvm_type(function_ir, op.args[1]) == 'string' && lookup_temp_llvm_type(function_ir, op.args[2]) == 'string'):
                             needs_strcmp = true
@@ -3227,6 +3235,10 @@ void analyze_program_features(ProgramIR program, string[] map_types):
         needs_int_array = true
     if (needs_int_array_array):
         needs_int_array = true
+    # int_array_map_ops.ll is emitted with the int[] helpers and contains
+    # checked division/remainder calls even in modules without map_to sites.
+    if (needs_int_array):
+        needs_integer_division = true
     needs_flat_map_edges_for_point = has_edges_for_point && uses_edges_for_point_mapper
     configure_runtime_build_metadata(needs_thread_pool)
     if (needs_file_output):
@@ -3306,6 +3318,8 @@ void analyze_program_features(ProgramIR program, string[] map_types):
         LLVM_SCAN_NEEDS_POPCOUNT = 1
     if (needs_integer_shifts):
         LLVM_SCAN_NEEDS_INTEGER_SHIFTS = 1
+    if (needs_integer_division):
+        LLVM_SCAN_NEEDS_INTEGER_DIVISION = 1
     if (needs_hash):
         LLVM_SCAN_NEEDS_HASH = 1
     if (needs_num_hash):
@@ -6519,9 +6533,9 @@ string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, Lin
                     lines.push(line)
                 lines.push('  ' + lhs + ' = call %tb_bootstrap_num @tb_bootstrap_num_div(%tb_bootstrap_num ' + emit_num_store_value(function_ir, op.args[1], op.lhs + '.left') + ', %tb_bootstrap_num ' + emit_num_store_value(function_ir, op.args[2], op.lhs + '.right') + ')')
                 return join_llvm_strings(lines, '\n')
-            return track_scalar_binary('  ' + lhs + ' = sdiv i64 ' + temp_ref(op.args[1]) + ', ' + temp_ref(op.args[2]))
+            return track_scalar_binary('  ' + lhs + ' = call i64 @tb_bootstrap_checked_int_div(i64 ' + temp_ref(op.args[1]) + ', i64 ' + temp_ref(op.args[2]) + ')')
         if (op_name == '%'):
-            return track_scalar_binary('  ' + lhs + ' = srem i64 ' + temp_ref(op.args[1]) + ', ' + temp_ref(op.args[2]))
+            return track_scalar_binary('  ' + lhs + ' = call i64 @tb_bootstrap_checked_int_rem(i64 ' + temp_ref(op.args[1]) + ', i64 ' + temp_ref(op.args[2]) + ')')
         if (op_name == '&'):
             return track_scalar_binary('  ' + lhs + ' = and i64 ' + temp_ref(op.args[1]) + ', ' + temp_ref(op.args[2]))
         if (op_name == '|'):
@@ -9508,6 +9522,7 @@ string[] llvm_codegen_ir(ProgramIR program):
     bool needs_int_to_string = LLVM_SCAN_NEEDS_INT_TO_STRING != 0
     bool needs_popcount = LLVM_SCAN_NEEDS_POPCOUNT != 0
     bool needs_integer_shifts = LLVM_SCAN_NEEDS_INTEGER_SHIFTS != 0
+    bool needs_integer_division = LLVM_SCAN_NEEDS_INTEGER_DIVISION != 0
     bool needs_hash = LLVM_SCAN_NEEDS_HASH != 0
     bool needs_num_hash = LLVM_SCAN_NEEDS_NUM_HASH != 0
     bool needs_thread_pool = LLVM_SCAN_NEEDS_THREAD_POOL != 0
@@ -9595,7 +9610,7 @@ string[] llvm_codegen_ir(ProgramIR program):
         lines.push('declare i32 @snprintf(ptr, i64, ptr, ...)')
     if (needs_popcount):
         lines.push('declare i64 @llvm.ctpop.i64(i64)')
-    if (needs_integer_shifts || needs_int_array || needs_bool_array || needs_string_array_helpers || needs_int_array_array || needs_string_array_array || needs_checked_array_index):
+    if (needs_integer_shifts || needs_integer_division || needs_int_array || needs_bool_array || needs_string_array_helpers || needs_int_array_array || needs_string_array_array || needs_checked_array_index):
         lines.push('declare void @abort() noreturn')
     if (needs_num):
         lines.push('declare double @llvm.sqrt.f64(double)')
@@ -9625,6 +9640,9 @@ string[] llvm_codegen_ir(ProgramIR program):
         helpers_start_ms = time_ms()
     if (needs_num):
         for (string helper in emit_num_helpers()):
+            lines.push(helper)
+    if (needs_integer_division):
+        for (string helper in llvm_embedded_helper_text('integer_division.ll').split_lines()):
             lines.push(helper)
     if (needs_integer_shifts):
         for (string helper in emit_integer_shift_helpers()):
@@ -9831,6 +9849,7 @@ void llvm_print_ir(ProgramIR program):
     bool needs_int_to_string = LLVM_SCAN_NEEDS_INT_TO_STRING != 0
     bool needs_popcount = LLVM_SCAN_NEEDS_POPCOUNT != 0
     bool needs_integer_shifts = LLVM_SCAN_NEEDS_INTEGER_SHIFTS != 0
+    bool needs_integer_division = LLVM_SCAN_NEEDS_INTEGER_DIVISION != 0
     bool needs_hash = LLVM_SCAN_NEEDS_HASH != 0
     bool needs_num_hash = LLVM_SCAN_NEEDS_NUM_HASH != 0
     bool needs_thread_pool = LLVM_SCAN_NEEDS_THREAD_POOL != 0
@@ -9931,7 +9950,7 @@ void llvm_print_ir(ProgramIR program):
     if (needs_popcount):
         print('declare i64 @llvm.ctpop.i64(i64)')
         emitted_any_header = true
-    if (needs_integer_shifts || needs_int_array || needs_bool_array || needs_string_array_helpers || needs_int_array_array || needs_string_array_array || needs_checked_array_index):
+    if (needs_integer_shifts || needs_integer_division || needs_int_array || needs_bool_array || needs_string_array_helpers || needs_int_array_array || needs_string_array_array || needs_checked_array_index):
         print('declare void @abort() noreturn')
         emitted_any_header = true
     if (needs_num):
@@ -9970,6 +9989,9 @@ void llvm_print_ir(ProgramIR program):
     if (needs_num):
         string[] num_helper_lines = emit_num_helpers()
         for (string line in num_helper_lines):
+            print(line)
+    if (needs_integer_division):
+        for (string line in llvm_embedded_helper_text('integer_division.ll').split_lines()):
             print(line)
     if (needs_integer_shifts):
         string[] integer_shift_helper_lines = emit_integer_shift_helpers()

@@ -69,7 +69,7 @@ loop.cond:
   br i1 %keep.loop, label %loop.body, label %done
 loop.body:
   %value = call i64 @tb_bootstrap_int_array_get(ptr %array, i32 %index)
-  %mapped = sdiv i64 %value, %rhs
+  %mapped = call i64 @tb_bootstrap_checked_int_div(i64 %value, i64 %rhs)
   call void @tb_bootstrap_int_array_set(ptr %result, i32 %index, i64 %mapped)
   br label %loop.step
 loop.step:
@@ -89,7 +89,7 @@ loop.cond:
   br i1 %keep.loop, label %loop.body, label %done
 loop.body:
   %value = call i64 @tb_bootstrap_int_array_get(ptr %array, i32 %index)
-  %mapped = srem i64 %value, %rhs
+  %mapped = call i64 @tb_bootstrap_checked_int_rem(i64 %value, i64 %rhs)
   call void @tb_bootstrap_int_array_set(ptr %result, i32 %index, i64 %mapped)
   br label %loop.step
 loop.step:
