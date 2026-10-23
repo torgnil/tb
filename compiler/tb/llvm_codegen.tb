@@ -2537,7 +2537,7 @@ string track_string_method_value(string emitted):
 string llvm_i32_index_temp(string temp_suffix):
     return '%index32.' + temp_suffix
 
-string emit_array_index_materialize(string base_type, string array_temp, string index_temp, string temp_suffix):
+string emit_array_index_materialize_with_guard(string base_type, string array_temp, string index_temp, string temp_suffix, string guard_name):
     string length_call = ''
     string normalized_type = normalize_llvm_type_name(base_type)
     if (normalized_type == 'string[]'):
@@ -2556,12 +2556,17 @@ string emit_array_index_materialize(string base_type, string array_temp, string 
     else:
         throw 'unsupported llvm array index type: ' + base_type
     string length32_name = '%index.len32.' + temp_suffix
-    string length64_name = '%index.len64.' + temp_suffix
-    string negative_name = '%index.negative.' + temp_suffix
-    string adjusted_name = '%index.adjusted.' + temp_suffix
-    string normalized_name = '%index.normalized.' + temp_suffix
     string index32_name = llvm_i32_index_temp(temp_suffix)
-    return '  ' + length32_name + ' = ' + length_call + '\n  ' + length64_name + ' = sext i32 ' + length32_name + ' to i64\n  ' + negative_name + ' = icmp slt i64 ' + temp_ref(index_temp) + ', 0\n  ' + adjusted_name + ' = add i64 ' + length64_name + ', ' + temp_ref(index_temp) + '\n  ' + normalized_name + ' = select i1 ' + negative_name + ', i64 ' + adjusted_name + ', i64 ' + temp_ref(index_temp) + '\n  ' + index32_name + ' = trunc i64 ' + normalized_name + ' to i32'
+    return '  ' + length32_name + ' = ' + length_call + '\n  ' + index32_name + ' = call i32 @' + guard_name + '(i64 ' + temp_ref(index_temp) + ', i32 ' + length32_name + ')'
+
+string emit_array_index_materialize(string base_type, string array_temp, string index_temp, string temp_suffix):
+    return emit_array_index_materialize_with_guard(base_type, array_temp, index_temp, temp_suffix, 'tb_checked_array_index')
+
+string emit_nested_array_write_index_materialize(string base_type, string array_temp, string index_temp, string temp_suffix):
+    string normalized_type = normalize_llvm_type_name(base_type)
+    if (normalized_type == 'int[][]' || normalized_type == 'string[][]'):
+        return emit_array_index_materialize_with_guard(base_type, array_temp, index_temp, temp_suffix, 'tb_nested_array_write_index')
+    return emit_array_index_materialize(base_type, array_temp, index_temp, temp_suffix)
 
 string[] emit_i32_index_materialize(string temp_name, string temp_suffix):
     return ['  ' + llvm_i32_index_temp(temp_suffix) + ' = trunc i64 ' + temp_ref(temp_name) + ' to i32']
@@ -4589,7 +4594,8 @@ string[] emit_map_to_edge_distance_helper():
     lines.push('  br i1 %keep.loop, label %loop.body, label %done')
     lines.push('loop.body:')
     lines.push('  %j = call i64 @tb_bootstrap_int_array_get(ptr %array, i32 %index)')
-    lines.push('  %j.index = trunc i64 %j to i32')
+    lines.push('  %points.len = call i32 @tb_bootstrap_record_array_length_Point(ptr %points)')
+    lines.push('  %j.index = call i32 @tb_checked_array_index(i64 %j, i32 %points.len)')
     lines.push('  %point = call ptr @tb_bootstrap_record_array_get_Point(ptr %points, i32 %j.index)')
     lines.push('  %distance = call i64 @point_distance(ptr %left, ptr %point)')
     lines.push('  %edge.size.ptr = getelementptr %tb_bootstrap_record_Edge, ptr null, i32 1')
@@ -7272,10 +7278,10 @@ string emit_release_index_instruction(ProgramIR program, ParsedFunction function
         return emit_array_index_materialize(base_type, op.args[0], op.args[1], 'release.' + temp_suffix) + '\n  call void @tb_bootstrap_string_array_release_slot(ptr ' + temp_ref(op.args[0]) + ', i32 ' + index_name + ')'
     if (base_type == 'string[][]'):
         string index_name = llvm_i32_index_temp('release.' + temp_suffix)
-        return emit_array_index_materialize(base_type, op.args[0], op.args[1], 'release.' + temp_suffix) + '\n  call void @tb_bootstrap_string_array_array_release_slot(ptr ' + temp_ref(op.args[0]) + ', i32 ' + index_name + ')'
+        return emit_nested_array_write_index_materialize(base_type, op.args[0], op.args[1], 'release.' + temp_suffix) + '\n  call void @tb_bootstrap_string_array_array_release_slot(ptr ' + temp_ref(op.args[0]) + ', i32 ' + index_name + ')'
     if (base_type == 'int[][]'):
         string index_name = llvm_i32_index_temp('release.' + temp_suffix)
-        return emit_array_index_materialize(base_type, op.args[0], op.args[1], 'release.' + temp_suffix) + '\n  call void @tb_bootstrap_int_array_array_release_slot(ptr ' + temp_ref(op.args[0]) + ', i32 ' + index_name + ')'
+        return emit_nested_array_write_index_materialize(base_type, op.args[0], op.args[1], 'release.' + temp_suffix) + '\n  call void @tb_bootstrap_int_array_array_release_slot(ptr ' + temp_ref(op.args[0]) + ', i32 ' + index_name + ')'
     if (base_type.ends_with('[]') && record_name_from_type(array_item_type(base_type)) != ''):
         string index_name = llvm_i32_index_temp('release.' + temp_suffix)
         string record_name = record_name_from_type(array_item_type(base_type))
@@ -7330,7 +7336,7 @@ string emit_assign_index_instruction(ProgramIR program, ParsedFunction function_
         string stored_value = temp_ref(op.args[2]).substring(0)
         string owned_flag = 'false'.substring(0)
         string index_name = llvm_i32_index_temp('assign.' + temp_suffix)
-        lines.push(emit_array_index_materialize(base_type, op.args[0], op.args[1], 'assign.' + temp_suffix))
+        lines.push(emit_nested_array_write_index_materialize(base_type, op.args[0], op.args[1], 'assign.' + temp_suffix))
         if (temp_is_string_array(function_ir, op.args[2])):
             if (temp_needs_backend_free(function_ir, op.args[2])):
                 owned_flag = 'true'.substring(0)
@@ -7345,7 +7351,7 @@ string emit_assign_index_instruction(ProgramIR program, ParsedFunction function_
         string stored_value = temp_ref(op.args[2]).substring(0)
         string owned_flag = 'false'.substring(0)
         string index_name = llvm_i32_index_temp('assign.' + temp_suffix)
-        lines.push(emit_array_index_materialize(base_type, op.args[0], op.args[1], 'assign.' + temp_suffix))
+        lines.push(emit_nested_array_write_index_materialize(base_type, op.args[0], op.args[1], 'assign.' + temp_suffix))
         if (temp_is_int_array(function_ir, op.args[2])):
             if (temp_needs_backend_free(function_ir, op.args[2])):
                 owned_flag = 'true'.substring(0)
@@ -9478,6 +9484,7 @@ string[] llvm_codegen_ir(ProgramIR program):
     bool needs_map_to_parse_point = LLVM_SCAN_NEEDS_MAP_TO_PARSE_POINT != 0
     bool needs_map_to_string_length = LLVM_SCAN_NEEDS_MAP_TO_STRING_LENGTH != 0
     bool needs_map_to_edge_distance = LLVM_SCAN_NEEDS_MAP_TO_EDGE_DISTANCE != 0
+    bool needs_checked_array_index = needs_int_array || needs_bool_array || needs_string_array || needs_string_array_array || needs_int_array_array || needs_record_array || needs_map_to_edge_distance
     bool needs_flat_map_edges_for_point = LLVM_SCAN_NEEDS_FLAT_MAP_EDGES_FOR_POINT != 0
     bool needs_runtime_string_copy = LLVM_SCAN_NEEDS_RUNTIME_STRING_COPY != 0
     bool needs_backend_free = LLVM_SCAN_NEEDS_BACKEND_FREE != 0
@@ -9588,7 +9595,7 @@ string[] llvm_codegen_ir(ProgramIR program):
         lines.push('declare i32 @snprintf(ptr, i64, ptr, ...)')
     if (needs_popcount):
         lines.push('declare i64 @llvm.ctpop.i64(i64)')
-    if (needs_integer_shifts || needs_int_array || needs_bool_array || needs_string_array_helpers || needs_int_array_array || needs_string_array_array):
+    if (needs_integer_shifts || needs_int_array || needs_bool_array || needs_string_array_helpers || needs_int_array_array || needs_string_array_array || needs_checked_array_index):
         lines.push('declare void @abort() noreturn')
     if (needs_num):
         lines.push('declare double @llvm.sqrt.f64(double)')
@@ -9621,6 +9628,9 @@ string[] llvm_codegen_ir(ProgramIR program):
             lines.push(helper)
     if (needs_integer_shifts):
         for (string helper in emit_integer_shift_helpers()):
+            lines.push(helper)
+    if (needs_checked_array_index):
+        for (string helper in llvm_embedded_helper_text('array_index.ll').split_lines()):
             lines.push(helper)
     if (needs_string_helpers):
         for (string helper in emit_string_helpers(needs_num_hash)):
@@ -9794,6 +9804,7 @@ void llvm_print_ir(ProgramIR program):
     bool needs_map_to_parse_point = LLVM_SCAN_NEEDS_MAP_TO_PARSE_POINT != 0
     bool needs_map_to_string_length = LLVM_SCAN_NEEDS_MAP_TO_STRING_LENGTH != 0
     bool needs_map_to_edge_distance = LLVM_SCAN_NEEDS_MAP_TO_EDGE_DISTANCE != 0
+    bool needs_checked_array_index = needs_int_array || needs_bool_array || needs_string_array || needs_string_array_array || needs_int_array_array || needs_record_array || needs_map_to_edge_distance
     bool needs_flat_map_edges_for_point = LLVM_SCAN_NEEDS_FLAT_MAP_EDGES_FOR_POINT != 0
     RecordDeclIR[] record_decls = effective_record_decls_for_scan(program, needs_map_to_parse_point, needs_map_to_edge_distance, needs_flat_map_edges_for_point)
     bool needs_records = !record_decls.is_empty()
@@ -9920,7 +9931,7 @@ void llvm_print_ir(ProgramIR program):
     if (needs_popcount):
         print('declare i64 @llvm.ctpop.i64(i64)')
         emitted_any_header = true
-    if (needs_integer_shifts || needs_int_array || needs_bool_array || needs_string_array_helpers || needs_int_array_array || needs_string_array_array):
+    if (needs_integer_shifts || needs_int_array || needs_bool_array || needs_string_array_helpers || needs_int_array_array || needs_string_array_array || needs_checked_array_index):
         print('declare void @abort() noreturn')
         emitted_any_header = true
     if (needs_num):
@@ -9963,6 +9974,9 @@ void llvm_print_ir(ProgramIR program):
     if (needs_integer_shifts):
         string[] integer_shift_helper_lines = emit_integer_shift_helpers()
         for (string line in integer_shift_helper_lines):
+            print(line)
+    if (needs_checked_array_index):
+        for (string line in llvm_embedded_helper_text('array_index.ll').split_lines()):
             print(line)
     if (needs_string_helpers):
         string[] string_helper_lines = emit_string_helpers(needs_num_hash)

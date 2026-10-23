@@ -93,6 +93,14 @@ done:
 }
 define private void @tb_bootstrap_string_array_array_set_owned(ptr %array, i32 %index, ptr %value, i1 %is_owned) {
 entry:
+  %index.nonnegative = icmp sge i32 %index, 0
+  %index.fits.length = icmp slt i32 %index, 2147483647
+  %index.valid = and i1 %index.nonnegative, %index.fits.length
+  br i1 %index.valid, label %check.grow, label %invalid.index
+invalid.index:
+  call void @abort()
+  unreachable
+check.grow:
   %len.ptr = getelementptr inbounds %tb_bootstrap_string_array_array, ptr %array, i32 0, i32 0
   %len = load i32, ptr %len.ptr
   %needs.grow = icmp sge i32 %index, %len
@@ -104,6 +112,14 @@ grow:
   %owned.bytes = mul i64 %next.len64, 1
   %data.new = call ptr @malloc(i64 %data.bytes)
   %owned.new = call ptr @malloc(i64 %owned.bytes)
+  %data.failed = icmp eq ptr %data.new, null
+  %owned.failed = icmp eq ptr %owned.new, null
+  %allocation.failed = or i1 %data.failed, %owned.failed
+  br i1 %allocation.failed, label %allocation.abort, label %allocation.ready
+allocation.abort:
+  call void @abort()
+  unreachable
+allocation.ready:
   call void @llvm.memset.p0.i64(ptr %data.new, i8 0, i64 %data.bytes, i1 false)
   call void @llvm.memset.p0.i64(ptr %owned.new, i8 0, i64 %owned.bytes, i1 false)
   %data.ptr.grow = getelementptr inbounds %tb_bootstrap_string_array_array, ptr %array, i32 0, i32 1
