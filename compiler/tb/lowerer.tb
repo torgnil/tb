@@ -252,7 +252,15 @@ string submit_lambda_expression_type(Node node, SubmitLambdaScope scope, Node[] 
         string right_type = submit_lambda_expression_type(node.children[1], scope, functions)
         if (right_type == ''):
             return ''
-        if (node.value == '+' || node.value == '-' || node.value == '*' || node.value == '/' || node.value == '%' || node.value == '&' || node.value == '|' || node.value == '^' || node.value == '<<' || node.value == '>>'):
+        if (node.value == '+'):
+            if (left_type == 'int' && right_type == 'int'):
+                return 'int'
+            if (left_type == 'string' && (right_type == 'string' || right_type == 'int')):
+                return 'string'
+            if (left_type == 'int' && right_type == 'string'):
+                return 'string'
+            return ''
+        if (node.value == '-' || node.value == '*' || node.value == '/' || node.value == '%' || node.value == '&' || node.value == '|' || node.value == '^' || node.value == '<<' || node.value == '>>'):
             if (left_type == 'int' && right_type == 'int'):
                 return 'int'
             return ''

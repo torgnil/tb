@@ -1880,7 +1880,7 @@ string emit_owned_string_array_index_result_release(ParsedFunction function_ir, 
         return consumer_line
     return consumer_line + '\n' + emit_backend_release_ptr('string', temp_ref(value_name))
 
-string emit_owned_string_size_query_release(ParsedFunction function_ir, string value_name, string consumer_temp_name, string consumer_line):
+string emit_owned_string_receiver_release(ParsedFunction function_ir, string value_name, string consumer_temp_name, string consumer_line):
     if (!temp_is_string(function_ir, value_name) || !temp_needs_backend_free(function_ir, value_name) || temp_is_moved(function_ir, value_name)):
         return consumer_line
     if (!temp_is_query_only_use_in_producing_block(function_ir, value_name, consumer_temp_name)):
@@ -5680,7 +5680,7 @@ string emit_builtin_query_call_value_instruction(ProgramIR program, ParsedFuncti
                 return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, empty_line)
         if (call_arg1_type == 'string'):
             string empty_line = emit_string_length_value(function_ir, op.args[1], temp_ref(op.lhs + '.len'), op.lhs + '.builtin.empty') + '\n  ' + lhs + ' = icmp eq i64 ' + temp_ref(op.lhs + '.len') + ', 0'
-            return emit_owned_string_size_query_release(function_ir, op.args[1], op.lhs, empty_line)
+            return emit_owned_string_receiver_release(function_ir, op.args[1], op.lhs, empty_line)
         if (call_arg1_type == 'string[]'):
             return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, '  ' + lhs + '.len32 = call i32 @tb_bootstrap_string_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = icmp eq i32 ' + temp_ref(op.lhs + '.len32') + ', 0')
         if (call_arg1_type == 'int[]'):
@@ -6050,7 +6050,7 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
     string string_result = emit_string_method_call_value_instruction(program, function_ir, op, method_name, method_base_type)
     if (string_result != ''):
         if (method_base_type == 'string' && (method_name == 'length' || method_name == 'is_empty')):
-            return emit_owned_string_size_query_release(function_ir, op.args[1], op.lhs, string_result)
+            return emit_owned_string_receiver_release(function_ir, op.args[1], op.lhs, string_result)
         if (method_base_type == 'string' && (method_name == 'hash' || method_name == 'to_int' || method_name == 'index_of' || method_name == 'contains' || method_name == 'starts_with' || method_name == 'ends_with' || method_name == 'starts_with_at' || is_string_char_predicate_method_name(method_name))):
             return emit_owned_string_array_index_result_release(function_ir, op.args[1], op.lhs, string_result)
         return string_result
@@ -6313,7 +6313,8 @@ string emit_index_value_instruction(ParsedFunction function_ir, LinearInstructio
     string lhs = temp_ref(op.lhs)
     string base_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0]))
     if (base_type == 'string'):
-        return emit_string_char_at_value(function_ir, op.args[0], op.args[1], lhs, op.lhs + '.string.index')
+        string char_at_line = emit_string_char_at_value(function_ir, op.args[0], op.args[1], lhs, op.lhs + '.string.index')
+        return emit_owned_string_receiver_release(function_ir, op.args[0], op.lhs, char_at_line)
     if (base_type == 'string[]'):
         string index_materialize = emit_array_index_materialize(base_type, op.args[0], op.args[1], op.lhs)
         if (temp_is_owned_string_array_index_result(function_ir, op.lhs)):
