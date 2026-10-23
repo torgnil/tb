@@ -1,0 +1,74 @@
+record TextBox(string value);
+
+string GLOBAL_TEXT = 'global'
+
+string make_text(int value):
+    if (value == 0):
+        return ''
+    return 'line-' + value.to_string()
+
+string make_empty_text():
+    return ''
+
+string[] make_words(int value):
+    return ['word-' + value.to_string()]
+
+bool is_empty(int value):
+    return value == 0
+
+int main(string[] args):
+    int seed = args.length()
+    thread_pool pool = thread_pool(2)
+
+    print(is_empty(0))
+
+    print(is_empty(make_empty_text()))
+    print(make_empty_text().is_empty())
+    print(make_text(seed).length())
+    print(make_text(seed).is_empty())
+    print(is_empty(make_text(seed)))
+    print(make_words(seed)[0].length())
+    print(is_empty(make_words(seed)[0]))
+    print(('segment-' + seed.to_string()).length())
+
+    string named_text = make_text(seed)
+    const string fixed_text = make_text(4)
+    TextBox box = TextBox(make_text(5))
+    print(named_text[0].length())
+    print(named_text.length())
+    print(named_text)
+    print(fixed_text.is_empty())
+    print(box.value.length())
+    print(box.value)
+    print(GLOBAL_TEXT.length())
+    print(is_empty(GLOBAL_TEXT))
+
+    string reused_text = make_text(6)
+    print(reused_text.length())
+    print(reused_text)
+
+    int total_length = 0
+    for (int index = 0; index < 3; index++):
+        total_length += make_text(index).length()
+    print(total_length)
+
+    if (make_empty_text().is_empty()):
+        print('branch-empty')
+    else:
+        print('branch-not-empty')
+
+    try:
+        int query_result = make_text(seed).length()
+        if (query_result > 0):
+            throw 'query then throw'
+    catch (exception error):
+        print(error)
+
+    future<int> worker_length = pool.submit(int value -> make_text(value).length(), seed)
+    future<bool> worker_method_empty = pool.submit(int value -> make_empty_text().is_empty(), 0)
+    future<int> worker_borrowed_length = pool.submit(string value -> value.length(), named_text)
+    print(worker_length.await())
+    print(worker_method_empty.await())
+    print(worker_borrowed_length.await())
+
+    return 0

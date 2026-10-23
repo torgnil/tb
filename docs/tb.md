@@ -552,6 +552,7 @@ Array helpers
 
 - is_empty(x: string | T[] | set<T> | map<K, V> | prio_q<T>) -> bool
   - Return `true` when the value has no items. UFCS sugar such as `arr.is_empty()` and `scores.is_empty()` is supported.
+  - For scalar strings, `is_empty(value)`, `value.is_empty()`, and `value.length()` release a recognized owned string temporary when it is used only by that query. Named, borrowed, const, global, field, moved, and reused strings remain with their owners.
   - For native `int[]`, `bool[]`, `string[]`, `int[][]`, and `string[][]`, array `length` and `is_empty` queries borrow their receiver. A recognized owned array expression used only for the query is released after the result is computed; a named array remains available for later use.
   - Direct calls and UFCS queries support `is_empty` for native `int[]`, `bool[]`, `string[]`, `int[][]`, and `string[][]`. Nested-array queries test whether the outer array has rows: `[[]]` is not empty. The query does not change the receiver's length or contents; named, borrowed, const, global, record-field, moved, or reused arrays stay with their owners.
   - A direct `is_empty(values)` call uses the native built-in for `int[]` and `string[]`, as before. For `bool[]`, `int[][]`, and `string[][]`, a same-named user function or lowercase record constructor keeps normal direct-call precedence.
