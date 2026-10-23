@@ -7481,7 +7481,9 @@ string emit_instruction(ProgramIR program, ParsedFunction function_ir, string bl
         return join_llvm_strings(emit_string_materialize_if_needed(function_ir, op.args[0], 'throw.' + block_label), '\n')
     if (op.kind == 'prepare_return_choice'):
         string clone_function = ''
-        if (op.detail == 'string[]'):
+        if (op.detail == 'int[]'):
+            clone_function = '@tb_bootstrap_int_array_clone'
+        else if (op.detail == 'string[]'):
             clone_function = '@tb_bootstrap_string_array_clone'
         else if (op.detail.starts_with('map<')):
             clone_function = llvm_map_clone_name(op.detail)
