@@ -1,0 +1,63 @@
+int helper_calls = 0
+
+int next_factor():
+    helper_calls += 1
+    return 2
+
+int next_divisor():
+    helper_calls += 1
+    return 4
+
+int[] add_amount(int[] values, int amount):
+    return values.map_to(int item -> item + amount)
+
+void print_values(int[] values):
+    for (int value in values):
+        print(value)
+
+int main(string[] args):
+    int seed = args.length()
+    const int fixed = 3
+    int[] source = [12, -12, 15, -15]
+
+    int[] added = source.map_to(int item -> item + seed)
+    added[0] = 99
+    print_values(added)
+    print(source[0])
+
+    int[] subtracted = source.map_to(int item -> item - fixed)
+    print_values(subtracted)
+
+    int[] multiplied = source.map_to(int item -> item * next_factor())
+    print_values(multiplied)
+
+    int[] divided = source.map_to(int item -> item / 4)
+    print_values(divided)
+
+    int[] remainder = source.map_to(int item -> item % next_divisor())
+    print_values(remainder)
+    print(helper_calls)
+
+    const int[] fixed_values = [10, 15]
+    int[] fixed_remainder = fixed_values.map_to(int item -> item % fixed)
+    print_values(fixed_remainder)
+
+    int[] empty_values = []
+    int[] empty_division = empty_values.map_to(int item -> item / 0)
+    print(empty_division.length())
+
+    int[] chained = add_amount(source, seed).map_to(int item -> item * 2)
+    print_values(chained)
+    int branch_value = 0
+    if (seed == 1):
+        branch_value = chained[0]
+    else:
+        branch_value = chained[1]
+    for (int index : range(2)):
+        branch_value += index
+    print(branch_value)
+
+    string[] words = ['a', 'abc']
+    int[] lengths = words.map_to(string word -> length(word))
+    print_values(lengths)
+    return 0

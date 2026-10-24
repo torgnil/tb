@@ -1187,6 +1187,15 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             string integer_right_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2])), enum_types)
             if ((integer_left_type != '' && integer_left_type != 'unknown' && integer_left_type != 'int') || (integer_right_type != '' && integer_right_type != 'unknown' && integer_right_type != 'int')):
                 throw 'operator ' + op.args[0] + ' requires int operands; got ' + integer_left_type + ' and ' + integer_right_type
+    if (op.detail == 'method-call-lambda' && op.args.length() == 5):
+        if (op.args[0] == 'map_to'):
+            string map_receiver_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+            if (map_receiver_type == 'int[]' && is_integer_map_to_operator(op.args[3])):
+                BindingIR map_parameter = ir_parse_binding_decl(op.args[2])
+                string map_parameter_type = normalize_enum_type_name(normalize_llvm_type_name(map_parameter.type_name), enum_types)
+                string map_right_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[4])), enum_types)
+                if (map_parameter_type != 'int' || (map_right_type != '' && map_right_type != 'unknown' && map_right_type != 'int')):
+                    throw 'int[] map_to operator ' + op.args[3] + ' requires int operands; got ' + map_parameter_type + ' and ' + map_right_type
     if (op.result_type != 'unknown' && op.detail != 'array' && op.detail != 'set' && op.detail != 'map'):
         return refined_value_op(op, op.result_type, refine_ownership_mode(op, op.result_type))
     if (op.detail == 'identifier'):

@@ -574,7 +574,7 @@ Array helpers
 - map_to(arr: T[], item -> expr) -> U[]
   - Transform each element with a single-parameter lambda and return a new array containing the lambda results.
   - Example: `lines.map_to(string line -> parse_point(line))`
-  - Example: `range(5).map_to(int i -> i * i)` builds a new `int[]` without a manual push loop.
+  - For native `int[]`, `item + value`, `item - value`, `item * value`, `item / value`, and `item % value` accept an `int` parameter and an independent `int` right operand. The right operand is evaluated once before traversal and cannot reference the lambda parameter. For example, `range(5).map_to(int i -> i * 2)` builds a new `int[]` without a manual push loop. General element-dependent arithmetic expressions such as `item * item` remain unsupported.
 
 - filter(arr: T[], item -> bool) -> T[]
   - Keep the items for which the predicate returns `true` and return a new array.
