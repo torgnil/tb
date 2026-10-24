@@ -1,0 +1,110 @@
+string render_row(int[] values):
+    if (values.is_empty()):
+        return 'row=empty'
+    return 'row=' + values.length() + ':' + values[0]
+
+string render_grid(int[][] values):
+    if (values.is_empty()):
+        return 'grid=empty'
+    if (values[0].is_empty()):
+        return 'grid=' + values.length() + ':empty'
+    return 'grid=' + values.length() + ':' + values[0].length() + ':' + values[0][0]
+
+string summarize_row(int[] values, int offset):
+    return render_row(values) + ':offset=' + offset
+
+string fail_row(int[] values):
+    throw 'row-failure=' + values.length()
+
+string fail_grid(int[][] values):
+    throw 'grid-failure=' + values.length()
+
+future<string> submit_scoped_row(thread_pool pool, int value):
+    int[] local = [value, value + 1]
+    return pool.submit(int[] values -> render_row(values), local)
+
+int main(string[] args):
+    int seed = args.length() + 3
+    thread_pool pool = thread_pool(2)
+    int offset = 10
+    int other = 20
+    int[] source = [seed, seed + 1]
+    int[][] grid_source = [[seed], [], [seed + 2, seed + 3]]
+    const int[] fixed = [seed + 4, seed + 5]
+    int[] empty_row = []
+    int[][] empty_grid = []
+    int[][] empty_first_grid = [empty_row]
+
+    future<string> named_row_result = pool.submit(render_row, source)
+    future<string> lambda_row_result = pool.submit(int[] values -> render_row(values), source)
+    future<string> block_row_result = pool.submit(int[] values -> {
+        return summarize_row(values, offset)
+    }, source)
+    future<string> named_grid_result = pool.submit(render_grid, grid_source)
+    future<string> lambda_grid_result = pool.submit(int[][] values -> render_grid(values), grid_source)
+    future<string> block_grid_result = pool.submit(int[][] values -> {
+        return render_grid(values)
+    }, grid_source)
+    future<string> fixed_result = pool.submit(render_row, fixed)
+    future<string> empty_row_result = pool.submit(int[] values -> render_row(values), empty_row)
+    future<string> empty_grid_result = pool.submit(render_grid, empty_grid)
+    future<string> empty_first_result = pool.submit(int[][] values -> render_grid(values), empty_first_grid)
+    future<string> row_capture_result = pool.submit(int[] values -> 'capture=' + (values[0] + offset), source)
+    future<string> zero_capture_result = pool.submit(() -> 'zero=' + source[0] + offset + other)
+    future<string> zero_grid_capture_result = pool.submit(() -> render_grid(grid_source))
+    future<string> scalar_captures_result = pool.submit(() -> 'scalars=' + offset + ':' + other)
+    future<string> scalar_parameter_capture_result = pool.submit(int value -> 'task=' + (value + offset), seed)
+    future<string> scoped_result = submit_scoped_row(pool, seed + 20)
+
+    future<string> named_row_error = pool.submit(fail_row, source)
+    future<string> lambda_row_error = pool.submit(int[] values -> fail_row(values), source)
+    future<string> named_grid_error = pool.submit(fail_grid, grid_source)
+    future<string> lambda_grid_error = pool.submit(int[][] values -> fail_grid(values), grid_source)
+
+    source[0] = 999
+    grid_source[0][0] = 999
+    offset = 100
+    other = 200
+
+    print(named_row_result.await())
+    string reassigned_row = lambda_row_result.await()
+    print(reassigned_row)
+    reassigned_row = 'reassigned'
+    print(lambda_row_result.await())
+    print(block_row_result.await())
+    print(named_grid_result.await())
+    print(lambda_grid_result.await())
+    print(block_grid_result.await())
+    print(fixed_result.await())
+    print(empty_row_result.await())
+    print(empty_grid_result.await())
+    print(empty_first_result.await())
+    print(row_capture_result.await())
+    print(zero_capture_result.await())
+    print(zero_grid_capture_result.await())
+    print(scalar_captures_result.await())
+    print(scalar_parameter_capture_result.await())
+    print(scoped_result.await())
+    print(source[0])
+    print(grid_source[0][0])
+    try:
+        named_row_error.await()
+    catch (string error):
+        print(error)
+    try:
+        named_row_error.await()
+    catch (string error):
+        print(error)
+    try:
+        lambda_row_error.await()
+    catch (string error):
+        print(error)
+    try:
+        named_grid_error.await()
+    catch (string error):
+        print(error)
+    try:
+        lambda_grid_error.await()
+    catch (string error):
+        print(error)
+    return 0
