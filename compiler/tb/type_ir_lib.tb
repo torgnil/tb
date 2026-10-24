@@ -875,6 +875,12 @@ string infer_call_type_cached(string name, FunctionSigIR[] functions, string[] c
         cache_types.push(result_type)
     return result_type
 
+bool is_native_contains_receiver_type(string base_type):
+    string normalized_type = normalize_llvm_type_name(base_type)
+    if (normalized_type == 'string' || normalized_type == 'int[]' || normalized_type == 'bool[]' || normalized_type == 'string[]'):
+        return true
+    return normalized_type.starts_with('map<') || normalized_type.starts_with('set<')
+
 string infer_method_call_type(string method_name, string base_type, FunctionSigIR[] functions):
     if (method_name == 'await' && is_future_type(base_type)):
         return future_value_type(base_type)
@@ -911,7 +917,7 @@ string infer_method_call_type(string method_name, string base_type, FunctionSigI
         return 'int'
     if (method_name == 'starts_with' || method_name == 'ends_with' || method_name == 'starts_with_at'):
         return 'bool'
-    if (method_name == 'contains'):
+    if (method_name == 'contains' && is_native_contains_receiver_type(base_type)):
         return 'bool'
     if (method_name == 'is_alpha' || method_name == 'is_digit' || method_name == 'is_alnum' || method_name == 'is_space' || method_name == 'is_whitespace'):
         return 'bool'
@@ -940,8 +946,6 @@ string infer_method_call_type(string method_name, string base_type, FunctionSigI
     if (method_name == 'push'):
         return 'int'
     if (method_name == 'is_empty'):
-        return 'bool'
-    if (method_name == 'contains' && base_type.starts_with('set<')):
         return 'bool'
     if (method_name == 'trim' || method_name == 'trim_left' || method_name == 'trim_right'):
         return 'string'
@@ -1494,7 +1498,10 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
         if (method_name == 'length' || method_name == 'index_of' || method_name == 'hash'):
             string result_type = infer_method_call_type(method_name, 'unknown', functions)
             return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
-        if (method_name == 'is_empty' || method_name == 'contains' || method_name == 'starts_with' || method_name == 'ends_with' || method_name == 'starts_with_at' || method_name == 'is_alpha' || method_name == 'is_digit' || method_name == 'is_alnum' || method_name == 'is_space' || method_name == 'is_whitespace'):
+        if (method_name == 'contains'):
+            string result_type = infer_method_call_type_cached(method_name, base_type, functions, TYPE_IR_FUNCTION_TYPE_CACHE_NAMES, TYPE_IR_FUNCTION_TYPE_CACHE_VALUES)
+            return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
+        if (method_name == 'is_empty' || method_name == 'starts_with' || method_name == 'ends_with' || method_name == 'starts_with_at' || method_name == 'is_alpha' || method_name == 'is_digit' || method_name == 'is_alnum' || method_name == 'is_space' || method_name == 'is_whitespace'):
             return refined_value_op(op, 'bool', 'plain')
         if (method_name == 'char_at' || method_name == 'replace' || method_name == 'trim' || method_name == 'trim_left' || method_name == 'trim_right' || method_name == 'substring' || method_name == 'to_string'):
             return refined_value_op(op, 'string', 'managed')

@@ -213,6 +213,7 @@ captures resolve to the nearest binding visible when submission occurs.
 - Conditional expression: `condition ? whenTrue : whenFalse`. The condition must be `bool` and is evaluated once; only the selected arm runs. Both arms are checked statically and must have matching underlying types. Native result types are `int`, `bool`, `string`, `int[]`, `string[]`, maps, and records. Nested conditionals keep their usual precedence. Submitted lambdas support conditional expressions with `int`, `bool`, `string`, or `int[]` results. Borrowed array or record results refer to the selected value; ordinary binding and return ownership rules still apply.
 - Lambdas: single-parameter lambdas such as `int x -> x * 2`, block lambdas such as `int[] row -> { return row[0] < 0; }`, and multi-parameter comparator lambdas such as `(int a, int b) -> a - b`.
 - UFCS (parser sugar): `value.method(args)` lowers to `method(value, args)` — parser-only sugar, no dynamic dispatch.
+- Native `contains` builtins return `bool` for strings, `int[]`, `bool[]`, `string[]`, maps, and sets. When UFCS falls back to a user-defined `contains` on another receiver, it uses that function's declared return type.
 
 ### Thread pools and futures
 
