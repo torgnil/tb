@@ -1072,6 +1072,9 @@ string[] clone_instruction_args(string[] args):
 LinearInstruction refined_value_op(LinearInstruction op, string result_type, string ownership_mode):
     return LinearInstruction(op.kind.substring(0), op.lhs.substring(0), result_type.substring(0), ownership_mode.substring(0), op.detail.substring(0), clone_instruction_args(op.args))
 
+bool is_integer_only_binary_operator(string op_name):
+    return op_name == '%' || op_name == '&' || op_name == '|' || op_name == '^' || op_name == '<<' || op_name == '>>'
+
 LinearInstruction clone_linear_instruction(LinearInstruction op):
     if (TYPE_IR_PROFILE_ACTIVE != 0):
         TYPE_IR_CLONE_LINEAR_INSTRUCTION_CALLS += 1
@@ -1178,6 +1181,12 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             string query_base_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
             string query_result_type = infer_method_call_type_cached(query_method_name, query_base_type, functions, TYPE_IR_FUNCTION_TYPE_CACHE_NAMES, TYPE_IR_FUNCTION_TYPE_CACHE_VALUES)
             return refined_value_op(op, query_result_type, refine_ownership_mode(op, query_result_type))
+    if (op.detail == 'binary' && op.args.length() >= 3):
+        if (is_integer_only_binary_operator(op.args[0])):
+            string integer_left_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
+            string integer_right_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2])), enum_types)
+            if ((integer_left_type != '' && integer_left_type != 'unknown' && integer_left_type != 'int') || (integer_right_type != '' && integer_right_type != 'unknown' && integer_right_type != 'int')):
+                throw 'operator ' + op.args[0] + ' requires int operands; got ' + integer_left_type + ' and ' + integer_right_type
     if (op.result_type != 'unknown' && op.detail != 'array' && op.detail != 'set' && op.detail != 'map'):
         return refined_value_op(op, op.result_type, refine_ownership_mode(op, op.result_type))
     if (op.detail == 'identifier'):

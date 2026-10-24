@@ -1,0 +1,68 @@
+record Counter(int value);
+
+const int GLOBAL_MASK = 45 & 15
+int global_shift = 3 << 2
+int effect_calls = 0
+
+int counted_shift():
+    effect_calls += 1
+    return 1
+
+int compute(const int value):
+    return ((value % 5) << 1) ^ 3
+
+int main(string[] args):
+    int seed = args.length()
+    print(GLOBAL_MASK)
+    print(global_shift)
+    print(compute(seed + 6))
+
+    const int mask = 6
+    print(mask & 3)
+    print(29 % 6)
+    print(12 & 10)
+    print(12 | 10)
+    print(12 ^ 10)
+    print(3 << seed)
+    print(3 >> 0)
+    print(-32 >> seed)
+    print(-5 % 3)
+    print(1 << 63)
+    print(1 << 64)
+    print(-1 >> 65)
+
+    int local = 63
+    local %= 10
+    local |= 8
+    local ^= 3
+    local &= 7
+    local <<= 2
+    local >>= 1
+    print(local)
+
+    int[] values = [33]
+    values[0] >>= 1
+    print(values[0])
+
+    Counter counter = Counter(64)
+    counter.value %= 10
+    print(counter.value)
+
+    int before_calls = effect_calls
+    local = 3
+    local <<= counted_shift()
+    print(local)
+    print(effect_calls - before_calls)
+
+    int branch_value = 0
+    if (seed == 1):
+        branch_value = 7 ^ 3
+    else:
+        branch_value = 9 & 5
+    for (int index : range(3)):
+        branch_value += index
+    print(branch_value)
+
+    print(true && false)
+    print(1.50 + 0.25)
+    return 0
