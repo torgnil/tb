@@ -7509,6 +7509,20 @@ string emit_instruction(ProgramIR program, ParsedFunction function_ir, string bl
         if (transferable_local_binding_name(function_ir, op.args[0]) != '' && temp_is_int_array_array(function_ir, op.args[0])):
             return '  ; return int[][] local transfers directly'
         return join_llvm_strings(emit_int_array_array_materialize_if_needed(function_ir, op.args[0], 'return.' + block_label), '\n')
+    if (op.kind == 'prepare_return_record_array'):
+        string return_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0]))
+        string record_name = record_name_from_type(array_item_type(return_type))
+        string source_binding = transferable_local_binding_name(function_ir, op.args[0])
+        string owned_flag = 'false'
+        string[] lines = []
+        if (source_binding != ''):
+            # A record-array local can be a borrowed alias or own its array.
+            owned_flag = '%return.record_array.owned.' + block_label
+            lines.push('  ' + owned_flag + ' = load i1, ptr ' + owned_slot_ref(source_binding))
+        else if (temp_needs_backend_free(function_ir, op.args[0])):
+            owned_flag = 'true'
+        lines.push('  %record_array.return.' + block_label + ' = call ptr @tb_bootstrap_record_array_prepare_return_' + record_name + '(ptr ' + temp_ref(op.args[0]) + ', i1 ' + owned_flag + ')')
+        return join_llvm_strings(lines, '\n')
     if (op.kind == 'prepare_return_bool_array'):
         if (transferable_local_binding_name(function_ir, op.args[0]) != '' && temp_is_bool_array(function_ir, op.args[0])):
             return '  ; return bool[] local transfers directly'
@@ -7673,6 +7687,15 @@ string[] emit_terminator(ParsedFunction function_ir, BlockIR block, TerminatorIR
                 string[] lines = emit_try_restore_lines(try_suffix, temp_suffix)
                 lines.push('  ret ptr %choice.return.' + block.label)
                 return lines
+        string normalized_return_type = normalize_llvm_type_name(result_type)
+        if (normalized_return_type.ends_with('[]') && record_name_from_type(array_item_type(normalized_return_type)) != ''):
+            for (LinearInstruction op in block.instructions):
+                if (op.kind == 'prepare_return_record_array'):
+                    if (!op.args.is_empty()):
+                        if (op.args[0] == terminator.args[0]):
+                            string[] lines = emit_try_restore_lines(try_suffix, temp_suffix)
+                            lines.push('  ret ptr %record_array.return.' + block.label)
+                            return lines
         if (!terminator.args.is_empty()):
             string local_name = transferable_local_binding_name(function_ir, terminator.args[0])
             if (local_name != ''):
@@ -8851,6 +8874,15 @@ string[] replace_llvm_template_block_lines(string[] template_lines, string marke
 string[] emit_record_array_helpers(string record_name):
     string[] lines = replace_llvm_template_lines(llvm_embedded_helper_text('record_array_base.ll').split_lines(), '__RECORD__', record_name)
     string record_array_type = llvm_record_array_type_name(record_name)
+    lines.push('define private ptr @tb_bootstrap_record_array_prepare_return_' + record_name + '(ptr %array, i1 %owned) {')
+    lines.push('entry:')
+    lines.push('  br i1 %owned, label %transfer, label %clone')
+    lines.push('transfer:')
+    lines.push('  ret ptr %array')
+    lines.push('clone:')
+    lines.push('  %copy = call ptr @tb_bootstrap_record_array_clone_' + record_name + '(ptr %array)')
+    lines.push('  ret ptr %copy')
+    lines.push('}')
     lines.push('%tb_bootstrap_prio_q_' + record_name + ' = type { ptr, ptr }')
     lines.push('define private ptr @tb_bootstrap_record_array_sort_by_' + record_name + '(ptr %array, ptr %cmp) {')
     lines.push('entry:')
