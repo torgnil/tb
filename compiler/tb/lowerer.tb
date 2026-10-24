@@ -637,6 +637,17 @@ bool map_to_arithmetic_rhs_uses_item(Node lambda_node):
     string[] rhs_names = submit_lambda_free_identifiers(body.children[1], [], [])
     return contains_name(rhs_names, binding.name)
 
+bool map_to_arithmetic_uses_same_item(Node lambda_node):
+    if (lambda_node.kind != 'Lambda' || lambda_node.children.length() != 1):
+        return false
+    BindingIR binding = ir_parse_binding_decl(lambda_node.value)
+    Node body = lambda_node.children[0]
+    if (body.kind != 'Binary' || body.children.length() != 2 || !is_integer_map_to_operator(body.value)):
+        return false
+    if (body.children[0].kind != 'Identifier' || body.children[0].value != binding.name):
+        return false
+    return body.children[1].kind == 'Identifier' && body.children[1].value == binding.name
+
 int submit_name_occurrence_count(string[] names, string name):
     int count = 0
     for (string existing : names):
@@ -1588,6 +1599,11 @@ TempResult lower_linear_value(Node node, int next_temp):
                     if (lambda_body.kind == 'Binary'):
                         if (lambda_body.children.length() == 2):
                             if (lambda_body.children[0].kind == 'Identifier' && lambda_body.children[0].value == binding.name):
+                                if (map_to_arithmetic_uses_same_item(node.children[1])):
+                                    string name = temp_name(base.next_temp)
+                                    string[] lines = base.lines
+                                    lines.push(name + ' = method-call-lambda map_to_self ' + base.name + ' ' + node.children[1].value + ' ' + lambda_body.value)
+                                    return TempResult(name, lines, base.next_temp + 1)
                                 if (map_to_arithmetic_rhs_uses_item(node.children[1])):
                                     throw 'map_to arithmetic right operand cannot reference its lambda parameter'
                                 TempResult right = lower_linear_value(lambda_body.children[1], base.next_temp)
@@ -1855,6 +1871,10 @@ TempIRResult lower_linear_value_ir(Node node, int next_temp):
                     if (lambda_body.kind == 'Binary'):
                         if (lambda_body.children.length() == 2):
                             if (lambda_body.children[0].kind == 'Identifier' && lambda_body.children[0].value == binding.name):
+                                if (map_to_arithmetic_uses_same_item(node.children[1])):
+                                    string name = temp_name(base.next_temp)
+                                    LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', name, 'unknown', 'unknown', 'method-call-lambda', ['map_to_self', base.name, node.children[1].value, lambda_body.value])])
+                                    return TempIRResult(name, instructions, base.next_temp + 1)
                                 if (map_to_arithmetic_rhs_uses_item(node.children[1])):
                                     throw 'map_to arithmetic right operand cannot reference its lambda parameter'
                                 TempIRResult right = lower_linear_value_ir(lambda_body.children[1], base.next_temp)

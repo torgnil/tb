@@ -1465,8 +1465,13 @@ bool instruction_uses_temp(LinearInstruction op, string temp_name):
             first_operand = 1
             int index = first_operand
             while (index < operand_limit):
-                if (index != 2 && !(op.args[0] == 'map_to' && index == 3) && temp_name == op.args[index]):
-                    return true
+                if (index != 2):
+                    bool metadata_operand = false
+                    if (index == 3):
+                        if (op.args[0] == 'map_to' || op.args[0] == 'map_to_self'):
+                            metadata_operand = true
+                    if (!metadata_operand && temp_name == op.args[index]):
+                        return true
                 index += 1
             return false
         while (first_operand < operand_limit):
@@ -1851,6 +1856,10 @@ bool temp_needs_backend_free(ParsedFunction function_ir, string temp_name):
     if (result_type == 'bool[]'):
         return op.detail == 'array' || op.detail == 'call' || op.detail == 'slice'
     if (result_type == 'int[]'):
+        if (op.detail == 'method-call-lambda'):
+            if (op.args.length() == 4):
+                if (op.args[0] == 'map_to_self'):
+                    return true
         return op.detail == 'array' || op.detail == 'call' || op.detail == 'slice' || temp_is_owned_int_grid_index_result(function_ir, temp_name)
     if (result_type.starts_with('set<')):
         return op.detail == 'set' || op.detail == 'call' || op.detail == 'method-call'
@@ -4509,6 +4518,26 @@ string emit_int_array_map_to_lambda_instruction(ParsedFunction function_ir, Line
         return '  ' + lhs + ' = call ptr @tb_bootstrap_int_array_map_mod(ptr ' + temp_ref(op.args[1]) + ', i64 ' + temp_ref(op.args[4]) + ')'
     throw 'unsupported llvm int[] map_to lambda op: ' + op_name
 
+string emit_int_array_map_to_self_lambda_instruction(ParsedFunction function_ir, LinearInstruction op):
+    if (op.args.length() != 4):
+        throw 'unsupported llvm int[] map_to self lambda arity'
+    string lhs = temp_ref(op.lhs)
+    string helper_name = ''
+    if (op.args[3] == '+'):
+        helper_name = '@tb_bootstrap_int_array_map_self_add'
+    if (op.args[3] == '-'):
+        helper_name = '@tb_bootstrap_int_array_map_self_sub'
+    if (op.args[3] == '*'):
+        helper_name = '@tb_bootstrap_int_array_map_self_mul'
+    if (op.args[3] == '/'):
+        helper_name = '@tb_bootstrap_int_array_map_self_div'
+    if (op.args[3] == '%'):
+        helper_name = '@tb_bootstrap_int_array_map_self_mod'
+    if (helper_name == ''):
+        throw 'unsupported llvm int[] map_to self lambda op: ' + op.args[3]
+    string call_line = '  ' + lhs + ' = call ptr ' + helper_name + '(ptr ' + temp_ref(op.args[1]) + ')'
+    return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, call_line)
+
 string emit_bootstrap_fixture_lambda_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op):
     string lhs = temp_ref(op.lhs)
     if (op.args[0] == 'map_to_string_length'):
@@ -6728,6 +6757,9 @@ string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, Lin
         require_backend_value_type(field_type, 'field')
         return track_field_value('  %' + op.lhs + '.field = getelementptr inbounds ' + llvm_record_type_name(record_name) + ', ptr ' + temp_ref(op.args[1]) + ', i32 0, i32 ' + field_index + '\n  ' + lhs + ' = load ' + llvm_type(field_type) + ', ptr %' + op.lhs + '.field')
     if (op.detail == 'method-call-lambda'):
+        if (op.args.length() == 4):
+            if (op.args[0] == 'map_to_self'):
+                return emit_int_array_map_to_self_lambda_instruction(function_ir, op)
         if (op.args.length() >= 2):
             if (op.args[0] == 'create_prio_q_int_desc'):
                 return emit_prio_q_lambda_instruction(program, function_ir, op)
