@@ -1,0 +1,50 @@
+string append_mark(string text):
+    return text + '!'
+
+future<bool> scoped_order(thread_pool pool, int value):
+    string local_text = 'scope-' + value
+    return pool.submit(() -> local_text < 'scope-z')
+
+int main(string[] args):
+    int seed = args.length()
+    thread_pool pool = thread_pool(2)
+    future<bool> less = pool.submit(string text -> text < 'm', 'alpha')
+    future<bool> greater = pool.submit(string text -> text > 'm', 'alpha')
+    future<bool> equality_boundary = pool.submit(string text -> text <= text, 'same')
+    future<bool> block_order = pool.submit(string text -> {
+        if (text < 'm') {
+            return true
+        }
+        return false
+    }, 'alpha')
+    future<bool> helper_order = pool.submit(string text -> append_mark(text) < 'z', 'alpha')
+    future<bool> indexed_order = pool.submit(string text -> text[0] < 'b', 'alpha')
+    future<bool> loop_order = pool.submit(string text -> {
+        int index = 0
+        int count = 0
+        while (index < text.length()) {
+            if (text[index] < 'm') {
+                count += 1
+            }
+            index += 1
+        }
+        return count > 0
+    }, 'alpha')
+    future<bool> captured = scoped_order(pool, seed)
+    future<bool> repeated = pool.submit(string text -> text >= 'beta', 'beta')
+    future<bool> scalar_compatibility = pool.submit(int value -> value < 10, seed)
+
+    print(less.await())
+    print(greater.await())
+    print(equality_boundary.await())
+    print(block_order.await())
+    print(helper_order.await())
+    print(indexed_order.await())
+    print(loop_order.await())
+    print(captured.await())
+    print(repeated.await())
+    print(repeated.await())
+    print(scalar_compatibility.await())
+    print('ordinary' < 'ordered')
+    print(seed)
+    return 0

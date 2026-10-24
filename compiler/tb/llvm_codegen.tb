@@ -2477,12 +2477,20 @@ string track_string_compare_binary(string emitted):
     LLVM_STRING_COMPARE_BINARY_BYTES += emitted.length()
     return emitted
 
-string emit_string_compare_binary(ParsedFunction function_ir, LinearInstruction op, bool not_equal):
+string emit_string_compare_binary(ParsedFunction function_ir, LinearInstruction op, string op_name):
     string[] lines = []
     lines.push('  ' + temp_ref(op.lhs) + '.cmp = call i32 @strcmp(ptr ' + temp_ref(op.args[1]) + ', ptr ' + temp_ref(op.args[2]) + ')')
     string compare = 'eq'
-    if (not_equal):
+    if (op_name == '!='):
         compare = 'ne'
+    if (op_name == '<'):
+        compare = 'slt'
+    if (op_name == '<='):
+        compare = 'sle'
+    if (op_name == '>'):
+        compare = 'sgt'
+    if (op_name == '>='):
+        compare = 'sge'
     lines.push('  ' + temp_ref(op.lhs) + ' = icmp ' + compare + ' i32 ' + temp_ref(op.lhs + '.cmp') + ', 0')
     int operand_index = 0
     while (operand_index < 2):
@@ -3173,8 +3181,8 @@ void analyze_program_features(ProgramIR program, string[] map_types):
                             needs_integer_shifts = true
                         if (op.args[0] == '/' || op.args[0] == '%'):
                             needs_integer_division = true
-                    if (!op.args.is_empty() && (op.args[0] == '==' || op.args[0] == '!=')):
-                        if (lookup_temp_llvm_type(function_ir, op.args[1]) == 'string' && lookup_temp_llvm_type(function_ir, op.args[2]) == 'string'):
+                    if (!op.args.is_empty() && (op.args[0] == '==' || op.args[0] == '!=' || op.args[0] == '<' || op.args[0] == '<=' || op.args[0] == '>' || op.args[0] == '>=')):
+                        if (normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[1])) == 'string' && normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[2])) == 'string'):
                             needs_strcmp = true
                     if (!op.args.is_empty() && op.args[0] == '+'):
                         string left_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[1]))
@@ -3363,8 +3371,8 @@ bool program_uses_string_compare(ProgramIR program):
             for (LinearInstruction op in block.instructions):
                 if (op.kind == 'value'):
                     if (op.detail == 'binary'):
-                        if (op.args[0] == '==' || op.args[0] == '!='):
-                            if (lookup_temp_llvm_type(function_ir, op.args[1]) == 'string' && lookup_temp_llvm_type(function_ir, op.args[2]) == 'string'):
+                        if (op.args[0] == '==' || op.args[0] == '!=' || op.args[0] == '<' || op.args[0] == '<=' || op.args[0] == '>' || op.args[0] == '>='):
+                            if (normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[1])) == 'string' && normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[2])) == 'string'):
                                 return true
     return false
 
@@ -6581,7 +6589,7 @@ string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, Lin
             return track_scalar_binary('  ' + lhs + ' = call i64 @tb_bootstrap_shift_right(i64 ' + temp_ref(op.args[1]) + ', i64 ' + temp_ref(op.args[2]) + ')')
         if (op_name == '=='):
             if (temp_is_string_like_value(function_ir, op.args[1]) && temp_is_string_like_value(function_ir, op.args[2])):
-                return emit_string_compare_binary(function_ir, op, false)
+                return emit_string_compare_binary(function_ir, op, op_name)
             if (left_type_normalized == 'bool' && right_type_normalized == 'bool'):
                 return track_scalar_binary('  ' + lhs + ' = icmp eq i1 ' + temp_ref(op.args[1]) + ', ' + temp_ref(op.args[2]))
             if (left_type_normalized == 'num' || right_type_normalized == 'num'):
@@ -6596,7 +6604,7 @@ string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, Lin
             return track_scalar_binary('  ' + lhs + ' = icmp eq i64 ' + temp_ref(op.args[1]) + ', ' + temp_ref(op.args[2]))
         if (op_name == '!='):
             if (temp_is_string_like_value(function_ir, op.args[1]) && temp_is_string_like_value(function_ir, op.args[2])):
-                return emit_string_compare_binary(function_ir, op, true)
+                return emit_string_compare_binary(function_ir, op, op_name)
             if (left_type_normalized == 'bool' && right_type_normalized == 'bool'):
                 return track_scalar_binary('  ' + lhs + ' = icmp ne i1 ' + temp_ref(op.args[1]) + ', ' + temp_ref(op.args[2]))
             if (left_type_normalized == 'num' || right_type_normalized == 'num'):
@@ -6610,6 +6618,10 @@ string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, Lin
                 return join_llvm_strings(lines, '\n')
             return track_scalar_binary('  ' + lhs + ' = icmp ne i64 ' + temp_ref(op.args[1]) + ', ' + temp_ref(op.args[2]))
         if (op_name == '<'):
+            if (left_type_normalized == 'string' || right_type_normalized == 'string'):
+                if (left_type_normalized == 'string' && right_type_normalized == 'string'):
+                    return emit_string_compare_binary(function_ir, op, op_name)
+                throw 'unsupported llvm string ordering argument types: ' + left_type_normalized + ' ' + right_type_normalized
             if (left_type_normalized == 'num' || right_type_normalized == 'num'):
                 string[] lines = emit_num_materialize_if_needed(function_ir, op.args[1], op.lhs + '.left')
                 string[] right_lines = emit_num_materialize_if_needed(function_ir, op.args[2], op.lhs + '.right')
@@ -6621,6 +6633,10 @@ string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, Lin
                 return join_llvm_strings(lines, '\n')
             return track_scalar_binary('  ' + lhs + ' = icmp slt i64 ' + temp_ref(op.args[1]) + ', ' + temp_ref(op.args[2]))
         if (op_name == '>'):
+            if (left_type_normalized == 'string' || right_type_normalized == 'string'):
+                if (left_type_normalized == 'string' && right_type_normalized == 'string'):
+                    return emit_string_compare_binary(function_ir, op, op_name)
+                throw 'unsupported llvm string ordering argument types: ' + left_type_normalized + ' ' + right_type_normalized
             if (left_type_normalized == 'num' || right_type_normalized == 'num'):
                 string[] lines = emit_num_materialize_if_needed(function_ir, op.args[1], op.lhs + '.left')
                 string[] right_lines = emit_num_materialize_if_needed(function_ir, op.args[2], op.lhs + '.right')
@@ -6632,6 +6648,10 @@ string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, Lin
                 return join_llvm_strings(lines, '\n')
             return track_scalar_binary('  ' + lhs + ' = icmp sgt i64 ' + temp_ref(op.args[1]) + ', ' + temp_ref(op.args[2]))
         if (op_name == '<='):
+            if (left_type_normalized == 'string' || right_type_normalized == 'string'):
+                if (left_type_normalized == 'string' && right_type_normalized == 'string'):
+                    return emit_string_compare_binary(function_ir, op, op_name)
+                throw 'unsupported llvm string ordering argument types: ' + left_type_normalized + ' ' + right_type_normalized
             if (left_type_normalized == 'num' || right_type_normalized == 'num'):
                 string[] lines = emit_num_materialize_if_needed(function_ir, op.args[1], op.lhs + '.left')
                 string[] right_lines = emit_num_materialize_if_needed(function_ir, op.args[2], op.lhs + '.right')
@@ -6643,6 +6663,10 @@ string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, Lin
                 return join_llvm_strings(lines, '\n')
             return track_scalar_binary('  ' + lhs + ' = icmp sle i64 ' + temp_ref(op.args[1]) + ', ' + temp_ref(op.args[2]))
         if (op_name == '>='):
+            if (left_type_normalized == 'string' || right_type_normalized == 'string'):
+                if (left_type_normalized == 'string' && right_type_normalized == 'string'):
+                    return emit_string_compare_binary(function_ir, op, op_name)
+                throw 'unsupported llvm string ordering argument types: ' + left_type_normalized + ' ' + right_type_normalized
             if (left_type_normalized == 'num' || right_type_normalized == 'num'):
                 string[] lines = emit_num_materialize_if_needed(function_ir, op.args[1], op.lhs + '.left')
                 string[] right_lines = emit_num_materialize_if_needed(function_ir, op.args[2], op.lhs + '.right')

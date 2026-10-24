@@ -1204,6 +1204,12 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             left_type = normalized_left_type
         if (normalized_right_type == 'int' || normalized_right_type == 'num'):
             right_type = normalized_right_type
+        if (op.args[0] == '<' || op.args[0] == '<=' || op.args[0] == '>' || op.args[0] == '>='):
+            bool left_is_string = normalize_llvm_type_name(left_type) == 'string'
+            bool right_is_string = normalize_llvm_type_name(right_type) == 'string'
+            if (left_is_string || right_is_string):
+                if (!(left_is_string && right_is_string)):
+                    throw 'string ordering requires two string operands; got ' + normalize_llvm_type_name(left_type) + ' and ' + normalize_llvm_type_name(right_type)
         string result_type = infer_binary_type(op.args[0], left_type, right_type)
         return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
     if (op.detail == 'ternary'):
