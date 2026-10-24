@@ -997,7 +997,7 @@ bool is_array_copy_type(string type_name):
 string refine_ownership_mode(LinearInstruction op, string result_type):
     if (result_type == 'int' || result_type == 'bool' || result_type == 'num'):
         return 'plain'
-    if (op.detail == 'identifier' || op.detail == 'field' || op.detail == 'index' || op.detail == 'target-index'):
+    if (op.detail == 'identifier' || op.detail == 'field' || op.detail == 'index' || op.detail == 'target-index' || op.detail == 'assign-index-key'):
         if (is_managed_ir_type(result_type)):
             return 'borrowed'
         return 'plain'
@@ -1538,6 +1538,11 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             return op
         string index_type = lookup_temp_type_slot(temp_types, op.args[1])
         return refined_value_op(op, index_type, refine_ownership_mode(op, index_type))
+    if (op.detail == 'assign-index-key'):
+        if (op.args.length() < 2):
+            return op
+        string index_type = lookup_temp_type_slot(temp_types, op.args[1])
+        return refined_value_op(op, index_type, refine_ownership_mode(op, index_type))
     if (op.detail == 'index'):
         if (op.args.is_empty()):
             return op
@@ -1640,7 +1645,7 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
     int op_index = 0
     while (op_index < instructions.length()):
         LinearInstruction op = instructions[op_index]
-        if (op.kind == 'value' && (op.detail == 'index' || op.detail == 'target-index') && op.args.length() >= 2):
+        if (op.kind == 'value' && (op.detail == 'index' || op.detail == 'target-index' || op.detail == 'assign-index-key') && op.args.length() >= 2):
             string index_base_type = lookup_temp_type_slot(temp_types, op.args[0])
             string index_type = lookup_temp_type_slot(temp_types, op.args[1])
             validate_sequence_index_type(index_base_type, index_type)

@@ -2009,6 +2009,11 @@ LinearBlockResult lower_linear_statement(Node node, int next_temp, string indent
                     lines.push(old_name + ' = index ' + base.name + ' ' + item_name)
                 current_temp += 1
                 rhs = node.children[1].children[1]
+            else if (target_node.kind == 'Index'):
+                string selected_name = temp_name(current_temp)
+                lines.push(selected_name + ' = assign-index-key ' + base.name + ' ' + item_name)
+                item_name = selected_name
+                current_temp += 1
             TempResult value = lower_linear_value(rhs, current_temp)
             lines = append_lines(lines, value.lines)
             string value_name = value.name
@@ -2103,6 +2108,11 @@ LinearIRBlockResult lower_linear_statement_ir(Node node, int next_temp):
                     instructions.push(LinearInstruction('value', old_name, 'unknown', 'borrowed', 'index', [base.name, item_name]))
                 current_temp += 1
                 rhs = node.children[1].children[1]
+            else if (target.kind == 'Index'):
+                string selected_name = temp_name(current_temp)
+                instructions.push(LinearInstruction('value', selected_name, 'unknown', 'unknown', 'assign-index-key', [base.name, item_name]))
+                item_name = selected_name
+                current_temp += 1
             TempIRResult value = lower_linear_value_ir(rhs, current_temp)
             instructions = append_instructions(instructions, value.instructions)
             string value_name = value.name
