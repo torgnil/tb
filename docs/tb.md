@@ -578,6 +578,7 @@ Array helpers
 
 - filter(arr: T[], item -> bool) -> T[]
   - Keep the items for which the predicate returns `true` and return a new array.
+  - For native `int[]`, a closed scalar predicate can use an `int` parameter, integer and boolean literals, arithmetic and bitwise/shift operators, comparisons, boolean operators, unary `-` and `!`/`not`, and nested conditionals. The predicate must return `bool`; this form cannot read captures or globals, call helpers, or use a block body. Filtering preserves source order and duplicates, returns an independent owned `int[]`, and does not evaluate the predicate for an empty source. For example, `values.filter(int item -> item > 0 && item % 2 == 0)` selects positive even values.
   - Example: `lines.filter(string line -> { return !line.trim().is_empty(); })`
 
 - flat_map(arr: T[], item -> U[]) -> U[]

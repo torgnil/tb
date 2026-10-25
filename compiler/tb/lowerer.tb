@@ -648,7 +648,7 @@ bool map_to_arithmetic_uses_same_item(Node lambda_node):
         return false
     return body.children[1].kind == 'Identifier' && body.children[1].value == binding.name
 
-bool closed_int_map_expression(Node node, string parameter_name):
+bool closed_int_array_expression(Node node, string parameter_name):
     if (node.kind == 'Int' || node.kind == 'Bool'):
         return true
     if (node.kind == 'Identifier'):
@@ -656,17 +656,17 @@ bool closed_int_map_expression(Node node, string parameter_name):
     if (node.kind == 'Unary'):
         if (node.children.length() != 1 || !(node.value == '-' || node.value == '!' || node.value == 'not')):
             return false
-        return closed_int_map_expression(node.children[0], parameter_name)
+        return closed_int_array_expression(node.children[0], parameter_name)
     if (node.kind == 'Binary'):
         if (node.children.length() != 2):
             return false
         if (!(node.value == '+' || node.value == '-' || node.value == '*' || node.value == '/' || node.value == '%' || node.value == '&' || node.value == '|' || node.value == '^' || node.value == '<<' || node.value == '>>' || node.value == '==' || node.value == '!=' || node.value == '<' || node.value == '<=' || node.value == '>' || node.value == '>=' || node.value == '&&' || node.value == '||' || node.value == 'and' || node.value == 'or')):
             return false
-        return closed_int_map_expression(node.children[0], parameter_name) && closed_int_map_expression(node.children[1], parameter_name)
+        return closed_int_array_expression(node.children[0], parameter_name) && closed_int_array_expression(node.children[1], parameter_name)
     if (node.kind == 'Ternary'):
         if (node.children.length() != 3):
             return false
-        return closed_int_map_expression(node.children[0], parameter_name) && closed_int_map_expression(node.children[1], parameter_name) && closed_int_map_expression(node.children[2], parameter_name)
+        return closed_int_array_expression(node.children[0], parameter_name) && closed_int_array_expression(node.children[1], parameter_name) && closed_int_array_expression(node.children[2], parameter_name)
     return false
 
 bool legacy_int_map_lambda(Node lambda_node):
@@ -691,7 +691,13 @@ string map_expression_helper_name(string[] used_names, int start_index):
         index += 1
     return '__tb_int_map_expression_' + index.to_string()
 
-SubmitLambdaRewrite rewrite_int_map_expression(Node node, string[] used_names, int next_index):
+string filter_expression_helper_name(string[] used_names, int start_index):
+    int index = start_index
+    while (contains_name(used_names, '__tb_int_filter_expression_' + index.to_string())):
+        index += 1
+    return '__tb_int_filter_expression_' + index.to_string()
+
+SubmitLambdaRewrite rewrite_int_array_expression(Node node, string[] used_names, int next_index):
     if (node.kind == 'Lambda' || node.kind == 'Lambda0' || node.kind == 'Lambda2'):
         return SubmitLambdaRewrite(node, [], used_names, next_index)
     Node[] children = []
@@ -699,7 +705,7 @@ SubmitLambdaRewrite rewrite_int_map_expression(Node node, string[] used_names, i
     string[] current_names = used_names
     int current_index = next_index
     for (Node child : node.children):
-        SubmitLambdaRewrite rewritten_child = rewrite_int_map_expression(child, current_names, current_index)
+        SubmitLambdaRewrite rewritten_child = rewrite_int_array_expression(child, current_names, current_index)
         children.push(rewritten_child.node)
         generated = append_nodes(generated, rewritten_child.generated)
         current_names = rewritten_child.used_names
@@ -715,7 +721,7 @@ SubmitLambdaRewrite rewrite_int_map_expression(Node node, string[] used_names, i
                         string parameter_type = parameter.type_name
                         if (parameter_type.starts_with('const ')):
                             parameter_type = parameter_type.substring(6)
-                        if (parameter_type == 'int' && closed_int_map_expression(lambda_node.children[0], parameter.name)):
+                        if (parameter_type == 'int' && closed_int_array_expression(lambda_node.children[0], parameter.name)):
                             SubmitLambdaScope scope = SubmitLambdaScope([parameter.name], ['int'], [], [parameter.name], parameter.name)
                             Node[] no_functions = []
                             string callback_return_type = submit_lambda_expression_type(lambda_node.children[0], scope, no_functions)
@@ -726,15 +732,38 @@ SubmitLambdaRewrite rewrite_int_map_expression(Node node, string[] used_names, i
                                 generated.push(Node('Function', callback_return_type + ' ' + helper_name, [Node('Param', 'int ' + parameter.name, []), Node('Return', '', [lambda_node.children[0]])]))
                                 children[1] = Node('MapIntExpression', lambda_node.value, [Node('Identifier', helper_name, [])])
                                 rewritten = Node(node.kind, node.value, children)
+    if (node.kind == 'MethodCall' && node.value == 'filter'):
+        if (children.length() == 2):
+            if (children[1].kind == 'Lambda'):
+                Node lambda_node = children[1]
+                if (lambda_node.children.length() == 1):
+                    BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+                    string parameter_type = parameter.type_name
+                    if (parameter_type.starts_with('const ')):
+                        parameter_type = parameter_type.substring(6)
+                    if (closed_int_array_expression(lambda_node.children[0], parameter.name)):
+                        if (parameter_type != 'int'):
+                            throw 'int[] filter expression requires int parameter; got ' + parameter_type
+                        SubmitLambdaScope scope = SubmitLambdaScope([parameter.name], ['int'], [], [parameter.name], parameter.name)
+                        Node[] no_functions = []
+                        string callback_return_type = submit_lambda_expression_type(lambda_node.children[0], scope, no_functions)
+                        if (callback_return_type == ''):
+                            throw 'int[] filter expression has invalid scalar operand types'
+                        string helper_name = filter_expression_helper_name(current_names, current_index)
+                        current_names = add_unique_name(current_names, helper_name)
+                        current_index += 1
+                        generated.push(Node('Function', callback_return_type + ' ' + helper_name, [Node('Param', 'int ' + parameter.name, []), Node('Return', '', [lambda_node.children[0]])]))
+                        children[1] = Node('FilterIntExpression', lambda_node.value, [Node('Identifier', helper_name, [])])
+                        rewritten = Node(node.kind, node.value, children)
     return SubmitLambdaRewrite(rewritten, generated, current_names, current_index)
 
-SubmitLambdaRewrite rewrite_int_map_expressions_in_program(Node program):
+SubmitLambdaRewrite rewrite_int_array_expressions_in_program(Node program):
     string[] used_names = collect_submit_unavailable_names(program, [])
     Node[] children = []
     Node[] generated = []
     int next_index = 0
     for (Node child : program.children):
-        SubmitLambdaRewrite rewritten = rewrite_int_map_expression(child, used_names, next_index)
+        SubmitLambdaRewrite rewritten = rewrite_int_array_expression(child, used_names, next_index)
         children.push(rewritten.node)
         generated = append_nodes(generated, rewritten.generated)
         used_names = rewritten.used_names
@@ -1649,6 +1678,13 @@ TempResult lower_linear_value(Node node, int next_temp):
                         return TempResult(name, lines, base.next_temp + 1)
         if (node.value == 'filter'):
             if (node.children.length() == 2):
+                if (node.children[1].kind == 'FilterIntExpression'):
+                    if (node.children[1].children.length() == 1):
+                        if (node.children[1].children[0].kind == 'Identifier'):
+                            string name = temp_name(base.next_temp)
+                            string[] lines = base.lines
+                            lines.push(name + ' = method-call-lambda filter_int_expr ' + base.name + ' ' + node.children[1].value + ' ' + node.children[1].children[0].value)
+                            return TempResult(name, lines, base.next_temp + 1)
                 if (node.children[1].kind == 'Lambda' && is_filter_bounds_lambda(node.children[1])):
                     Node[] parts = flatten_logical_and_nodes(node.children[1].children[0])
                     TempResult row = lower_linear_value(parts[0].children[0].children[0], base.next_temp)
@@ -1932,6 +1968,12 @@ TempIRResult lower_linear_value_ir(Node node, int next_temp):
                         return TempIRResult(name, instructions, base.next_temp + 1)
         if (node.value == 'filter'):
             if (node.children.length() == 2):
+                if (node.children[1].kind == 'FilterIntExpression'):
+                    if (node.children[1].children.length() == 1):
+                        if (node.children[1].children[0].kind == 'Identifier'):
+                            string name = temp_name(base.next_temp)
+                            LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', name, 'unknown', 'unknown', 'method-call-lambda', ['filter_int_expr', base.name, node.children[1].value, node.children[1].children[0].value])])
+                            return TempIRResult(name, instructions, base.next_temp + 1)
                 if (node.children[1].kind == 'Lambda' && is_filter_bounds_lambda(node.children[1])):
                     Node[] parts = flatten_logical_and_nodes(node.children[1].children[0])
                     TempIRResult row = lower_linear_value_ir(parts[0].children[0].children[0], base.next_temp)
@@ -3341,7 +3383,7 @@ void validate_const_bindings(Node program):
                     validate_const_statement(fn_child, function_bindings, function_names, record_nodes)
 
 string[] lower_program(Node program):
-    SubmitLambdaRewrite map_rewritten = rewrite_int_map_expressions_in_program(program)
+    SubmitLambdaRewrite map_rewritten = rewrite_int_array_expressions_in_program(program)
     program = map_rewritten.node
     validate_const_bindings(program)
     program = normalize_program_local_bindings(program)
@@ -3480,7 +3522,7 @@ ParsedFunction lower_logical_global_initializer(Node declaration, int index):
 
 ProgramIR lower_program_ir(Node program):
     SubmitLambdaRewrite rewritten = rewrite_submit_lambdas_in_program(program)
-    SubmitLambdaRewrite map_rewritten = rewrite_int_map_expressions_in_program(rewritten.node)
+    SubmitLambdaRewrite map_rewritten = rewrite_int_array_expressions_in_program(rewritten.node)
     program = map_rewritten.node
     validate_const_bindings(program)
     program = normalize_program_local_bindings(program)
@@ -3535,6 +3577,7 @@ ProgramIR lower_program_ir(Node program):
 ProgramIR lower_tokens_ir(Token[] tokens):
     bool has_submit_identifier = false
     bool has_map_to_identifier = false
+    bool has_filter_identifier = false
     bool has_arrow_symbol = false
     for (Token token : tokens):
         if (token_is(token, 'IDENTIFIER', 'submit')):
@@ -3543,7 +3586,9 @@ ProgramIR lower_tokens_ir(Token[] tokens):
             has_arrow_symbol = true
         if (token_is(token, 'IDENTIFIER', 'map_to')):
             has_map_to_identifier = true
-    if ((has_submit_identifier || has_map_to_identifier) && has_arrow_symbol):
+        if (token_is(token, 'IDENTIFIER', 'filter')):
+            has_filter_identifier = true
+    if ((has_submit_identifier || has_map_to_identifier || has_filter_identifier) && has_arrow_symbol):
         return lower_program_ir(parse_program(tokens))
 
     bool has_const = false

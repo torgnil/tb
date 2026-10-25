@@ -1468,7 +1468,7 @@ bool instruction_uses_temp(LinearInstruction op, string temp_name):
                 if (index != 2):
                     bool metadata_operand = false
                     if (index == 3):
-                        if (op.args[0] == 'map_to' || op.args[0] == 'map_to_self' || op.args[0] == 'map_to_expr'):
+                        if (op.args[0] == 'map_to' || op.args[0] == 'map_to_self' || op.args[0] == 'map_to_expr' || op.args[0] == 'filter_int_expr'):
                             metadata_operand = true
                     if (!metadata_operand && temp_name == op.args[index]):
                         return true
@@ -1858,7 +1858,7 @@ bool temp_needs_backend_free(ParsedFunction function_ir, string temp_name):
     if (result_type == 'int[]'):
         if (op.detail == 'method-call-lambda'):
             if (op.args.length() == 4):
-                if (op.args[0] == 'map_to_self' || op.args[0] == 'map_to_expr'):
+                if (op.args[0] == 'map_to_self' || op.args[0] == 'map_to_expr' || op.args[0] == 'filter_int_expr'):
                     return true
         return op.detail == 'array' || op.detail == 'call' || op.detail == 'slice' || temp_is_owned_int_grid_index_result(function_ir, temp_name)
     if (result_type.starts_with('set<')):
@@ -4545,6 +4545,13 @@ string emit_int_array_map_to_expression_instruction(ParsedFunction function_ir, 
     string call_line = '  ' + lhs + ' = call ptr @tb_bootstrap_int_array_map_expr(ptr ' + temp_ref(op.args[1]) + ', ptr @' + op.args[3] + ')'
     return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, call_line)
 
+string emit_int_array_filter_expression_instruction(ParsedFunction function_ir, LinearInstruction op):
+    if (op.args.length() != 4):
+        throw 'unsupported int[] filter expression lambda arity'
+    string lhs = temp_ref(op.lhs)
+    string call_line = '  ' + lhs + ' = call ptr @tb_bootstrap_int_array_filter_expr(ptr ' + temp_ref(op.args[1]) + ', ptr @' + op.args[3] + ')'
+    return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, call_line)
+
 string emit_bootstrap_fixture_lambda_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op):
     string lhs = temp_ref(op.lhs)
     if (op.args[0] == 'map_to_string_length'):
@@ -6764,6 +6771,9 @@ string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, Lin
         require_backend_value_type(field_type, 'field')
         return track_field_value('  %' + op.lhs + '.field = getelementptr inbounds ' + llvm_record_type_name(record_name) + ', ptr ' + temp_ref(op.args[1]) + ', i32 0, i32 ' + field_index + '\n  ' + lhs + ' = load ' + llvm_type(field_type) + ', ptr %' + op.lhs + '.field')
     if (op.detail == 'method-call-lambda'):
+        if (op.args.length() == 4):
+            if (op.args[0] == 'filter_int_expr'):
+                return emit_int_array_filter_expression_instruction(function_ir, op)
         if (op.args.length() == 4):
             if (op.args[0] == 'map_to_expr'):
                 return emit_int_array_map_to_expression_instruction(function_ir, op)

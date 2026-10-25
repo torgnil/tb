@@ -1229,6 +1229,27 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
                 if (expression_return_type != 'int'):
                     throw 'int[] map_to expression must return int; got ' + expression_return_type
                 return refined_value_op(op, 'int[]', 'owned')
+            if (op.args[0] == 'filter_int_expr'):
+                if (op.args.length() != 4):
+                    throw 'int[] filter expression has invalid IR arity'
+                string filter_receiver_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+                if (filter_receiver_type != 'int[]'):
+                    throw 'int[] filter expression requires int[] receiver; got ' + filter_receiver_type
+                BindingIR filter_parameter = ir_parse_binding_decl(op.args[2])
+                string filter_parameter_type = normalize_enum_type_name(normalize_llvm_type_name(filter_parameter.type_name), enum_types)
+                if (filter_parameter_type != 'int'):
+                    throw 'int[] filter expression requires int parameter; got ' + filter_parameter_type
+                FunctionSigIR filter_callback = lookup_function_sig(functions, op.args[3])
+                if (filter_callback.name == ''):
+                    throw 'int[] filter expression callback must have signature bool(int)'
+                if (filter_callback.param_types.length() != 1):
+                    throw 'int[] filter expression callback must have signature bool(int)'
+                if (normalize_llvm_type_name(filter_callback.param_types[0]) != 'int'):
+                    throw 'int[] filter expression callback must have signature bool(int)'
+                string filter_return_type = normalize_llvm_type_name(filter_callback.return_type)
+                if (filter_return_type != 'bool'):
+                    throw 'int[] filter expression must return bool; got ' + filter_return_type
+                return refined_value_op(op, 'int[]', 'owned')
     if (op.detail == 'unary'):
         if (op.args.length() < 2):
             return op

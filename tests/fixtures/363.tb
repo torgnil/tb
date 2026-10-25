@@ -1,0 +1,65 @@
+record Selection(int[] values, int total);
+
+string int_array_text(int[] values):
+    string text = '['
+    for (int index : range(values.length())):
+        if (index > 0):
+            text += ', '
+        text += values[index]
+    text += ']'
+    return text
+
+int array_total(int[] values):
+    int total = 0
+    for (int value : values):
+        total += value
+    return total
+
+int[] positive_values(int[] values):
+    return values.filter(int item -> item > 0)
+
+int __tb_int_filter_expression_0(int value):
+    return value + 100
+
+int[] global_values = [0 - 2, 2, 4, 0]
+int[] global_filtered = global_values.filter(int item -> item > 0 && item % 2 == 0)
+
+int main(string[] args):
+    int seed = args.length() + 2
+    int[] values = [seed, 0 - seed, 0, seed, 4, 0 - 4, 3, 2]
+    const int[] frozen = values
+
+    print(int_array_text(values))
+    print(int_array_text(values.filter(int item -> item >= 0 && (item & 1) == 0)))
+    print(int_array_text(values.filter(int item -> item == 0 ? true : item != 0)))
+    print(int_array_text(values.filter(int item -> item > 99)))
+    print(int_array_text(values.filter(int item -> item <= 0)))
+    int[] empty_values = []
+    print(int_array_text(empty_values.filter(int item -> item == 0 ? item / item > 0 : false)))
+    print(int_array_text(values.filter(int item -> item != 0 && 12 / item > 0)))
+    print(int_array_text(frozen.filter(int item -> item < 0 || item == 0)))
+    print(int_array_text(values.filter(int item -> item > 0).filter(int item -> item % 2 == 0)))
+    print(int_array_text(global_filtered))
+    print(int_array_text(positive_values(values)))
+    print(array_total(values.filter(int item -> item > 0)))
+
+    Selection selected = Selection(values.filter(int item -> item >= 0), array_total(values))
+    print(int_array_text(selected.values))
+    print(selected.total)
+
+    int foreach_total = 0
+    for (int value : values.filter(int item -> item >= 0)):
+        if (value == 0):
+            continue
+        foreach_total += value
+        if (foreach_total > 5):
+            break
+    print(foreach_total)
+
+    int repeated_count = 0
+    for (int index : range(2)):
+        int[] repeated = values.filter(int item -> item > 0 && item < 5)
+        repeated_count += repeated.length()
+    print(repeated_count)
+    print(__tb_int_filter_expression_0(seed))
+    return 0

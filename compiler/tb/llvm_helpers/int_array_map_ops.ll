@@ -218,3 +218,25 @@ loop.step:
 done:
   ret ptr %result
 }
+define private ptr @tb_bootstrap_int_array_filter_expr(ptr %array, ptr %callback) {
+entry:
+  %len = call i32 @tb_bootstrap_int_array_length(ptr %array)
+  %result = call ptr @tb_bootstrap_int_array_new(i32 0)
+  br label %loop.cond
+loop.cond:
+  %index = phi i32 [0, %entry], [%next.index, %loop.step]
+  %keep.loop = icmp slt i32 %index, %len
+  br i1 %keep.loop, label %loop.body, label %done
+loop.body:
+  %value = call i64 @tb_bootstrap_int_array_get(ptr %array, i32 %index)
+  %selected = call i1 %callback(i64 %value)
+  br i1 %selected, label %append, label %loop.step
+append:
+  call i32 @tb_bootstrap_int_array_push(ptr %result, i64 %value)
+  br label %loop.step
+loop.step:
+  %next.index = add i32 %index, 1
+  br label %loop.cond
+done:
+  ret ptr %result
+}
