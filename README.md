@@ -107,6 +107,19 @@ Python implementation. Compiler source must remain acceptable to the pinned
 native seed until that seed is deliberately upgraded. Self-hosting generation
 stability is checked for releases and bootstrap changes.
 
+## Tests
+
+Run the native regression suite with Python 3.10+:
+
+```bash
+python3 verify_fixtures_tb.py tests/fixtures --compiler bin/tb
+```
+
+Each numbered `.tb` fixture has exactly one expectation: `.out` for executable
+stdout, or `.err` for a compile-time diagnostic. A rejection fixture must exit
+with status 1, match the `.err` text on compiler stdout, leave stderr empty, and
+produce no LLVM file. Successful runtime fixtures also require Clang.
+
 ## Documentation
 
 - language reference: `docs/tb.md`
@@ -119,7 +132,7 @@ stability is checked for releases and bootstrap changes.
 ### Supported
 
 - Building and using the self-hosted tb compiler
-- Native numbered fixtures through `tests/fixtures/315.tb`
+- Native numbered runtime and compiler-rejection fixtures in `tests/fixtures/`
 - Frozen Python bootstrap fallback and its existing fixtures through phase 76;
   this is a separate suite from the native numbered fixtures
 - The current AoC sample set in `examples/aoc`
