@@ -1229,6 +1229,25 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
                 if (expression_return_type != 'int'):
                     throw 'int[] map_to expression must return int; got ' + expression_return_type
                 return refined_value_op(op, 'int[]', 'owned')
+    if (op.detail == 'unary'):
+        if (op.args.length() < 2):
+            return op
+        string operand_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
+        bool operand_type_known = operand_type != '' && operand_type != 'unknown'
+        string result_type = infer_unary_type(op.args[0], operand_type)
+        if (!operand_type_known && op.result_type != 'unknown'):
+            result_type = op.result_type
+        if (op.args[0] == '!' || op.args[0] == 'not'):
+            if (operand_type_known && operand_type != 'bool'):
+                throw 'unary ' + op.args[0] + ' requires bool operand; got ' + operand_type
+            return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
+        if (op.args[0] == '-'):
+            if (operand_type_known && operand_type != 'int' && operand_type != 'num'):
+                throw 'unary - requires int or num operand; got ' + operand_type
+            return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
+        if (op.result_type != 'unknown'):
+            result_type = op.result_type
+        return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
     if (op.result_type != 'unknown' && op.detail != 'array' && op.detail != 'set' && op.detail != 'map'):
         return refined_value_op(op, op.result_type, refine_ownership_mode(op, op.result_type))
     if (op.detail == 'identifier'):
@@ -1279,12 +1298,6 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
         if (true_type == 'int' || true_type == 'bool' || true_type == 'num'):
             ownership_mode = 'plain'
         return refined_value_op(op, true_type, ownership_mode)
-    if (op.detail == 'unary'):
-        if (op.args.length() < 2):
-            return op
-        string operand_type = lookup_temp_type_slot(temp_types, op.args[1])
-        string result_type = infer_unary_type(op.args[0], operand_type)
-        return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
     if (op.detail == 'call'):
         if (op.args.is_empty()):
             return op
