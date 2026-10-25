@@ -2330,6 +2330,8 @@ string mangle_backend_type(string type_name):
         return 'int'
     if (type_name == 'bool'):
         return 'bool'
+    if (type_name == 'bool[]'):
+        return 'bool_array'
     if (type_name == 'string'):
         return 'string'
     if (type_name == 'string[]'):
@@ -2412,7 +2414,7 @@ bool llvm_map_int_literal_uses_unique_keys(string type_name):
     if (normalize_llvm_type_name(map_key_type(type_name)) != 'int'):
         return false
     string value_type = normalize_llvm_type_name(map_value_type(type_name))
-    if (value_type == 'int[]' || value_type == 'string[]' || value_type == 'int[][]' || value_type == 'string[][]' || value_type == 'bool' || value_type == 'string' || value_type.starts_with('map<')):
+    if (value_type == 'int[]' || value_type == 'bool[]' || value_type == 'string[]' || value_type == 'int[][]' || value_type == 'string[][]' || value_type == 'bool' || value_type == 'string' || value_type.starts_with('map<')):
         return true
     if (record_name_from_type(value_type) != ''):
         return true
@@ -2464,7 +2466,7 @@ string llvm_zero_value(string type_name):
         return 'false'
     if (type_name == 'num'):
         return 'zeroinitializer'
-    if (type_name == 'string' || type_name == 'string[]' || type_name == 'string[][]' || type_name == 'int[]' || type_name == 'int[][]' || type_name.starts_with('set<') || (type_name.ends_with('[]') && record_name_from_type(array_item_type(type_name)) != '') || type_name.starts_with('map<') || record_name_from_type(type_name) != ''):
+    if (type_name == 'string' || type_name == 'bool[]' || type_name == 'string[]' || type_name == 'string[][]' || type_name == 'int[]' || type_name == 'int[][]' || type_name.starts_with('set<') || (type_name.ends_with('[]') && record_name_from_type(array_item_type(type_name)) != '') || type_name.starts_with('map<') || record_name_from_type(type_name) != ''):
         return 'null'
     throw 'unsupported llvm zero value type: ' + type_name
 
@@ -3006,7 +3008,7 @@ void analyze_program_features(ProgramIR program, string[] map_types):
         if (map_value == 'int[]'):
             needs_int_array = true
             needs_int_array_array = true
-        if (map_value == 'bool'):
+        if (map_value == 'bool' || map_value == 'bool[]'):
             needs_bool_array = true
         if (map_value.ends_with('[]') && record_name_from_type(array_item_type(map_value)) != ''):
             needs_record_array = true
@@ -3757,7 +3759,7 @@ string[] program_record_set_types(ProgramIR program):
 
 bool program_uses_bool_array(ProgramIR program):
     for (string map_type in collect_used_map_types(program)):
-        if (normalize_llvm_type_name(map_value_type(map_type)) == 'bool'):
+        if (normalize_llvm_type_name(map_value_type(map_type)) == 'bool' || normalize_llvm_type_name(map_value_type(map_type)) == 'bool[]'):
             return true
     for (GlobalDeclIR global_decl in program.globals):
         BindingIR global_binding = ir_parse_binding_decl(strip_prefix(global_decl.header, 'global '))
@@ -4870,6 +4872,12 @@ string emit_map_value_instruction(ProgramIR program, ParsedFunction function_ir,
             if (temp_is_int_array(function_ir, value_name) && !temp_needs_backend_free(function_ir, value_name)):
                 stored_value = emit_int_array_owned_value(function_ir, value_name, value_suffix)
             stored_owned = 'true'
+        else if (value_type == 'bool[]'):
+            for (string line in emit_bool_array_materialize_if_needed(function_ir, value_name, value_suffix)):
+                lines.push(line)
+            if (temp_is_bool_array(function_ir, value_name) && !temp_needs_backend_free(function_ir, value_name)):
+                stored_value = emit_bool_array_owned_value(function_ir, value_name, value_suffix)
+            stored_owned = 'true'
         else if (value_type == 'string[][]'):
             for (string line in emit_string_array_array_materialize_if_needed(function_ir, value_name, value_suffix)):
                 lines.push(line)
@@ -4905,6 +4913,8 @@ string emit_map_value_instruction(ProgramIR program, ParsedFunction function_ir,
         else if (key_type == 'int'):
             lines.push('  call void ' + llvm_map_set_name(map_type) + '(ptr ' + lhs + ', i32 ' + item_index + ', i64 ' + stored_key + ', ' + llvm_type(value_type) + ' ' + stored_value + ', i1 ' + stored_owned + ')')
         else:
+            if (value_type == 'bool[]'):
+                lines.push('  call void ' + llvm_map_release_by_key_name(map_type) + '(ptr ' + lhs + ', ptr ' + stored_key + ')')
             lines.push('  call void ' + llvm_map_set_name(map_type) + '(ptr ' + lhs + ', i32 ' + item_index + ', ptr ' + stored_key + ', ' + llvm_type(value_type) + ' ' + stored_value + ', i1 ' + stored_owned + ')')
             if (key_type == 'string'):
                 lines.push('  call void @tb_release(ptr ' + stored_key + ')')
@@ -6858,7 +6868,7 @@ string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, Lin
         string base_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0]))
         if (base_type.starts_with('map<') && normalize_llvm_type_name(map_key_type(base_type)) == 'string'):
             string map_value = normalize_llvm_type_name(map_value_type(base_type))
-            if (llvm_map_value_is_grid_or_record_array(map_value)):
+            if (map_value == 'bool[]' || llvm_map_value_is_grid_or_record_array(map_value)):
                 return '  ' + lhs + ' = call ptr @tb_bootstrap_string_copy(ptr ' + temp_ref(op.args[1]) + ')'
         if (base_type.ends_with('[]')):
             return emit_array_index_materialize(base_type, op.args[0], op.args[1], op.lhs) + '\n  ' + lhs + ' = sext i32 ' + llvm_i32_index_temp(op.lhs) + ' to i64'
@@ -6868,7 +6878,7 @@ string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, Lin
         string base_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0]))
         if (base_type.starts_with('map<') && normalize_llvm_type_name(map_key_type(base_type)) == 'string'):
             string map_value = normalize_llvm_type_name(map_value_type(base_type))
-            if (llvm_map_value_is_grid_or_record_array(map_value)):
+            if (map_value == 'bool[]' || llvm_map_value_is_grid_or_record_array(map_value)):
                 return '  ' + lhs + ' = call ptr @tb_bootstrap_string_copy(ptr ' + temp_ref(op.args[1]) + ')'
         string index_type = llvm_type(normalize_llvm_type_name(op.result_type))
         return '  ' + lhs + ' = select i1 true, ' + index_type + ' ' + temp_ref(op.args[1]) + ', ' + index_type + ' ' + temp_ref(op.args[1])
@@ -7585,8 +7595,12 @@ string emit_assign_index_instruction(ProgramIR program, ParsedFunction function_
                 stored_value = emit_int_array_owned_value(function_ir, op.args[2], 'index.' + temp_suffix)
             stored_owned = 'true'.substring(0)
             lines.push(emit_release_index_instruction(program, function_ir, LinearInstruction('release_index', '', '', '', '', [op.args[0], map_key_temp]), 'map.replace.' + temp_suffix))
-        else if (llvm_map_value_is_grid_or_record_array(value_type)):
-            if (value_type == 'string[][]'):
+        else if (value_type == 'bool[]' || llvm_map_value_is_grid_or_record_array(value_type)):
+            if (value_type == 'bool[]'):
+                lines = emit_bool_array_materialize_if_needed(function_ir, op.args[2], 'index.' + temp_suffix)
+                if (temp_is_bool_array(function_ir, op.args[2]) && !temp_needs_backend_free(function_ir, op.args[2])):
+                    stored_value = emit_bool_array_owned_value(function_ir, op.args[2], 'index.' + temp_suffix)
+            else if (value_type == 'string[][]'):
                 lines = emit_string_array_array_materialize_if_needed(function_ir, op.args[2], 'index.' + temp_suffix)
                 if (temp_is_string_array_array(function_ir, op.args[2]) && !temp_needs_backend_free(function_ir, op.args[2])):
                     stored_value = emit_string_array_array_owned_value(function_ir, op.args[2], 'index.' + temp_suffix)
@@ -7813,7 +7827,7 @@ string emit_instruction(ProgramIR program, ParsedFunction function_ir, string bl
             return '  ; defer release_index ' + temp_ref(op.args[0]) + ' ' + temp_ref(op.args[1]) + ' until assign_index materializes the replacement'
         if (base_type.starts_with('map<')):
             string map_value = normalize_llvm_type_name(map_value_type(base_type))
-            if (map_value == 'int[]' || llvm_map_value_is_grid_or_record_array(map_value)):
+            if (map_value == 'int[]' || map_value == 'bool[]' || llvm_map_value_is_grid_or_record_array(map_value)):
                 return '  ; defer release_index ' + temp_ref(op.args[0]) + ' ' + temp_ref(op.args[1]) + ' until assign_index prepares the replacement'
         return emit_release_index_instruction(program, function_ir, op, temp_suffix)
     if (op.kind == 'assign_index'):
@@ -9638,6 +9652,10 @@ string[] emit_map_helpers(string type_name):
         clone_stored_owned = 'true'
     else if (value_type == 'int[]'):
         clone_value_copy_lines = ['  %value.copy = call ptr @tb_bootstrap_int_array_clone(ptr %value.raw)']
+        clone_stored_value = '%value.copy'
+        clone_stored_owned = 'true'
+    else if (value_type == 'bool[]'):
+        clone_value_copy_lines = ['  %value.copy = call ptr @tb_bootstrap_bool_array_clone(ptr %value.raw)']
         clone_stored_value = '%value.copy'
         clone_stored_owned = 'true'
     else if (value_type == 'string[][]'):
