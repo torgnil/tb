@@ -1,0 +1,62 @@
+string int_array_text(int[] values):
+    string text = '['
+    for (int index : range(values.length())):
+        if (index > 0):
+            text += ', '
+        text += values[index]
+    text += ']'
+    return text
+
+int[] transform_closed(int[] values):
+    return values.map_to(int item -> item * (item + 1))
+
+int[] make_values(int seed):
+    return [seed, 0 - seed, 0, 3]
+
+int[] transform_global():
+    return global_values.map_to(int item -> item < 0 ? 0 - item : item)
+
+int[] global_values = [0 - 4, 5, 0]
+int[] global_mapped = global_values.map_to(int item -> item * (item + 1))
+
+int main(string[] args):
+    int seed = args.length() + 2
+    int[] values = [seed, 0 - seed, 0, 3]
+    const int[] frozen = values
+    int __tb_int_map_expression_0 = 42
+
+    print(int_array_text(values.map_to(int item -> item * (item + 1))))
+    print(int_array_text(values.map_to(int item -> 2 * item + 1)))
+    print(int_array_text(values.map_to(int item -> item < 0 ? 0 - item : item)))
+    print(int_array_text(values.map_to(int item -> item == 0 ? 99 : 84 / item)))
+    print(int_array_text(values.map_to(int item -> item > 0 && (item & 1) == 1 ? item << 1 : item >> 1)))
+    print(int_array_text(values.map_to(int item -> item < 0 ? (item == 0 - 3 ? 1 : 2) : (item == 0 ? 3 : 4))))
+    print(int_array_text(values.map_to(int item -> item)))
+    print(int_array_text(values.map_to(int item -> 9)))
+    print(int_array_text(frozen.map_to(int item -> item * item)))
+    print(int_array_text(transform_closed(values)))
+    print(int_array_text(transform_global()))
+    print(int_array_text(global_mapped))
+
+    int[] empty = []
+    print(empty.map_to(int item -> item * (item + 1)).length())
+    print(values.map_to(int item -> item * (item + 1)).length())
+
+    int[] independent = values.map_to(int item -> 10 + item)
+    independent[0] = 700
+    print(values[0])
+    print(independent[0])
+    print(make_values(seed).map_to(int item -> item * (item + 1)).sum())
+
+    if (seed == 3):
+        print(values.map_to(int item -> item * (item + 1))[0])
+    else:
+        print(values.map_to(int item -> 2 * item + 1)[0])
+
+    int loop_value = 0
+    for (int index : range(2)):
+        int[] repeated = values.map_to(int item -> 1 + item)
+        loop_value += repeated[index]
+    print(loop_value)
+    print(__tb_int_map_expression_0)
+    return 0

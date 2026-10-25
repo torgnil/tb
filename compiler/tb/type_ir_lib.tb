@@ -1208,6 +1208,27 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             if (map_parameter_type != 'int'):
                 throw 'int[] map_to self operator ' + op.args[3] + ' requires int parameter; got ' + map_parameter_type
             return refined_value_op(op, 'int[]', 'owned')
+    if (op.detail == 'method-call-lambda'):
+        if (op.args.length() > 0):
+            if (op.args[0] == 'map_to_expr'):
+                if (op.args.length() != 4):
+                    throw 'int[] map_to expression has invalid IR arity'
+                string expression_receiver_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+                BindingIR expression_parameter = ir_parse_binding_decl(op.args[2])
+                string expression_parameter_type = normalize_enum_type_name(normalize_llvm_type_name(expression_parameter.type_name), enum_types)
+                FunctionSigIR expression_callback = lookup_function_sig(functions, op.args[3])
+                if (expression_receiver_type != 'int[]'):
+                    throw 'int[] map_to expression requires int[] receiver; got ' + expression_receiver_type
+                if (expression_parameter_type != 'int'):
+                    throw 'int[] map_to expression requires int parameter; got ' + expression_parameter_type
+                if (expression_callback.name == '' || expression_callback.param_types.length() != 1):
+                    throw 'int[] map_to expression callback must have signature int(int)'
+                if (normalize_llvm_type_name(expression_callback.param_types[0]) != 'int'):
+                    throw 'int[] map_to expression callback must have signature int(int)'
+                string expression_return_type = normalize_llvm_type_name(expression_callback.return_type)
+                if (expression_return_type != 'int'):
+                    throw 'int[] map_to expression must return int; got ' + expression_return_type
+                return refined_value_op(op, 'int[]', 'owned')
     if (op.result_type != 'unknown' && op.detail != 'array' && op.detail != 'set' && op.detail != 'map'):
         return refined_value_op(op, op.result_type, refine_ownership_mode(op, op.result_type))
     if (op.detail == 'identifier'):

@@ -198,3 +198,23 @@ loop.step:
 done:
   ret ptr %result
 }
+define private ptr @tb_bootstrap_int_array_map_expr(ptr %array, ptr %callback) {
+entry:
+  %len = call i32 @tb_bootstrap_int_array_length(ptr %array)
+  %result = call ptr @tb_bootstrap_int_array_new(i32 %len)
+  br label %loop.cond
+loop.cond:
+  %index = phi i32 [0, %entry], [%next.index, %loop.step]
+  %keep.loop = icmp slt i32 %index, %len
+  br i1 %keep.loop, label %loop.body, label %done
+loop.body:
+  %value = call i64 @tb_bootstrap_int_array_get(ptr %array, i32 %index)
+  %mapped = call i64 %callback(i64 %value)
+  call void @tb_bootstrap_int_array_set(ptr %result, i32 %index, i64 %mapped)
+  br label %loop.step
+loop.step:
+  %next.index = add i32 %index, 1
+  br label %loop.cond
+done:
+  ret ptr %result
+}
