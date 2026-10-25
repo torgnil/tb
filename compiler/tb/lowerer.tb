@@ -468,14 +468,13 @@ SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements
                     if (submit_lambda_expression_type(bound, scope, functions) != 'int'):
                         throw 'thread_pool.submit lambda range bounds must be int expressions using only in-scope scalar values and declared scalar helper calls'
             else:
-                int parameter_index = submit_lambda_name_index(scope.names, scope.parameter_name)
-                bool is_array_parameter = false
+                bool is_array_binding = false
                 if (statement.children[0].kind == 'Identifier'):
-                    if (statement.children[0].value == scope.parameter_name):
-                        if (parameter_index >= 0):
-                            is_array_parameter = scope.types[parameter_index] == 'int[]'
-                if (!is_array_parameter):
-                    throw 'thread_pool.submit lambda foreach iterable must be the int[] task parameter or a direct range call'
+                    int iterable_index = submit_lambda_name_index(scope.names, statement.children[0].value)
+                    if (iterable_index >= 0):
+                        is_array_binding = scope.types[iterable_index] == 'int[]'
+                if (!is_array_binding):
+                    throw 'thread_pool.submit lambda foreach iterable must be an int[] task parameter, a captured int[] binding, or a direct range call'
             BindingIR iterator = ir_parse_binding_decl(statement.value)
             string iterator_type = iterator.type_name
             bool iterator_is_const = iterator_type.starts_with('const ')
@@ -818,16 +817,21 @@ BindingIR[] submit_lambda_captures(Node lambda_node, BindingIR[] bindings):
                     throw 'thread_pool.submit zero-argument lambda can capture int or bool values, or one string, int[], or int[][] value; unsupported capture ' + name
                 throw 'thread_pool.submit lambda can capture only int or bool values; unsupported capture ' + name
     int managed_capture_count = 0
+    int int_array_capture_count = 0
     for (BindingIR binding : captured):
         string capture_type = binding.type_name
         if (capture_type.starts_with('const ')):
             capture_type = capture_type.substring(6)
         if (submit_lambda_managed_type(capture_type)):
             managed_capture_count += 1
+        if (capture_type == 'int[]'):
+            int_array_capture_count += 1
     if (managed_capture_count > 0):
         int array_capture_index = submit_lambda_array_capture_index(captured)
-        if (lambda_node.kind != 'Lambda0' || managed_capture_count != 1 || (captured.length() != 1 && array_capture_index < 0)):
-            throw 'thread_pool.submit lambda can capture one managed value only in a zero-argument lambda without other captures, except that one int[] may be combined with scalar captures'
+        bool supported_single_managed_capture = managed_capture_count == 1 && (captured.length() == 1 || array_capture_index >= 0)
+        bool multiple_array_captures = lambda_node.kind == 'Lambda0' && int_array_capture_count >= 2 && managed_capture_count == int_array_capture_count
+        if (lambda_node.kind != 'Lambda0' || (!supported_single_managed_capture && !multiple_array_captures)):
+            throw 'thread_pool.submit lambda managed captures require a zero-argument lambda with only int[] and scalar captures, or one string or int[][] capture'
     return captured
 
 ArrayScalarCaptureResult int_array_scalar_captures(Node lambda_node, BindingIR[] bindings):
@@ -923,6 +927,37 @@ Node rewrite_submit_array_parameter_reads(Node node, string parameter_name, stri
     Node[] children = []
     for (Node child : node.children):
         children.push(rewrite_submit_array_parameter_reads(child, parameter_name, environment_name))
+    return Node(node.kind, node.value, children)
+
+Node submit_packed_capture_read(BindingIR binding, string environment_name, int array_row, int scalar_row, int scalar_index):
+    string capture_type = binding.type_name
+    if (capture_type.starts_with('const ')):
+        capture_type = capture_type.substring(6)
+    if (capture_type == 'int[]'):
+        return Node('Index', '', [Node('Identifier', environment_name, []), Node('Int', array_row.to_string(), [])])
+    Node scalar_value = Node('Index', '', [Node('Index', '', [Node('Identifier', environment_name, []), Node('Int', scalar_row.to_string(), [])]), Node('Int', scalar_index.to_string(), [])])
+    if (capture_type == 'bool'):
+        return Node('Binary', '!=', [scalar_value, Node('Int', '0', [])])
+    return scalar_value
+
+Node rewrite_submit_packed_capture_reads(Node node, BindingIR[] captured, string environment_name, int scalar_row):
+    if (node.kind == 'Identifier'):
+        int array_row = 0
+        int scalar_index = 0
+        for (BindingIR binding : captured):
+            if (binding.name == node.value):
+                return submit_packed_capture_read(binding, environment_name, array_row, scalar_row, scalar_index)
+            string capture_type = binding.type_name
+            if (capture_type.starts_with('const ')):
+                capture_type = capture_type.substring(6)
+            if (capture_type == 'int[]'):
+                array_row += 1
+            else:
+                scalar_index += 1
+        return node
+    Node[] children = []
+    for (Node child : node.children):
+        children.push(rewrite_submit_packed_capture_reads(child, captured, environment_name, scalar_row))
     return Node(node.kind, node.value, children)
 
 # Called only after validate_submit_lambda accepted the original worker AST.
@@ -1068,17 +1103,52 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
     if (rewrite_worker):
         Node lambda_node = node.children[1]
         if (lambda_node.kind == 'Lambda0' && captured.length() > 1):
-            int array_capture_index = submit_lambda_array_capture_index(captured)
-            if (array_capture_index >= 0):
-                string array_capture_name = captured[array_capture_index].name
-                BindingIR[] scalar_captures = []
-                for (int capture_index = 0; capture_index < captured.length(); capture_index += 1):
-                    if (capture_index != array_capture_index):
-                        scalar_captures.push(captured[capture_index])
-                captured = scalar_captures
-                lambda_node = Node('Lambda', 'int[] ' + array_capture_name, [lambda_node.children[0]])
+            int int_array_capture_count = 0
+            for (BindingIR binding : captured):
+                string capture_type = binding.type_name
+                if (capture_type.starts_with('const ')):
+                    capture_type = capture_type.substring(6)
+                if (capture_type == 'int[]'):
+                    int_array_capture_count += 1
+            if (int_array_capture_count >= 2):
+                string environment_name = submit_capture_name(current_names, '__tb_submit_captures_', current_index)
+                current_names = add_unique_name(current_names, environment_name)
+                current_index += 1
+                Node[] environment_rows = []
+                Node[] scalar_values = []
+                int scalar_count = 0
+                for (BindingIR binding : captured):
+                    string capture_type = binding.type_name
+                    if (capture_type.starts_with('const ')):
+                        capture_type = capture_type.substring(6)
+                    if (capture_type == 'int[]'):
+                        environment_rows.push(Node('Identifier', binding.name, []))
+                    else:
+                        Node scalar_value = Node('Identifier', binding.name, [])
+                        if (capture_type == 'bool'):
+                            scalar_value = Node('Ternary', '', [scalar_value, Node('Int', '1', []), Node('Int', '0', [])])
+                        scalar_values.push(scalar_value)
+                        scalar_count += 1
+                int scalar_row = environment_rows.length()
+                if (scalar_count > 0):
+                    environment_rows.push(Node('Array', '', scalar_values))
+                Node lambda_body = rewrite_submit_packed_capture_reads(lambda_node.children[0], captured, environment_name, scalar_row)
+                lambda_node = Node('Lambda', 'const int[][] ' + environment_name, [lambda_body])
                 rewritten_children[1] = lambda_node
-                rewritten_children.push(Node('Identifier', array_capture_name, []))
+                rewritten_children.push(Node('Array', '', environment_rows))
+                captured = []
+            else:
+                int array_capture_index = submit_lambda_array_capture_index(captured)
+                if (array_capture_index >= 0):
+                    string array_capture_name = captured[array_capture_index].name
+                    BindingIR[] scalar_captures = []
+                    for (int capture_index = 0; capture_index < captured.length(); capture_index += 1):
+                        if (capture_index != array_capture_index):
+                            scalar_captures.push(captured[capture_index])
+                    captured = scalar_captures
+                    lambda_node = Node('Lambda', 'int[] ' + array_capture_name, [lambda_node.children[0]])
+                    rewritten_children[1] = lambda_node
+                    rewritten_children.push(Node('Identifier', array_capture_name, []))
         string worker_name = submit_worker_name(current_names, current_index)
         current_names = add_unique_name(current_names, worker_name)
         current_index += 1

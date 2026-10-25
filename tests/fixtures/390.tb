@@ -1,0 +1,95 @@
+int bump_first(int[] values, int amount):
+    values[0] += amount
+    return values[0]
+
+int[] pair_values(int[] left, int[] right):
+    return [left[0], right[0]]
+
+string label_pair(int[] left, int[] right):
+    return 'pair=' + left[0] + ':' + right[0]
+
+int[] maybe_pair(int[] left, int[] right, bool should_fail):
+    if (should_fail):
+        throw 'multi-array failure'
+    return pair_values(left, right)
+
+future<int> submit_distinct_bindings(thread_pool pool, int[] left, int[] right):
+    return pool.submit(() -> {
+        int changed = bump_first(left, 10)
+        return right[0]
+    })
+
+const int[] global_left = [2]
+const int[] global_right = [5]
+
+int main(string[] args):
+    thread_pool pool = thread_pool(2)
+    int seed = args.length() + 3
+    int[] left = [seed, 2]
+    int[] right = [3, 4]
+    int[] empty_values = []
+    const int[] fixed_values = [seed + 2]
+    int bias = 2
+    bool enabled = args.length() == 1
+    bool should_fail = args.length() == 1
+
+    future<int> two_arrays = pool.submit(() -> left[0] + right[0])
+    future<int> combined = pool.submit(() -> {
+        int changed = bump_first(left, bias)
+        int total = 0
+        for (int item : left) {
+            total += item
+        }
+        int right_total = 0
+        for (int right_item : right) {
+            right_total += right_item
+        }
+        return changed + total + right_total + empty_values.length() + (enabled ? 10 : 0)
+    })
+    future<int> constants = pool.submit(() -> left[0] + right[0] + fixed_values[0])
+    future<int> globals = pool.submit(() -> global_left[0] + global_right[0])
+    future<bool> same_lengths = pool.submit(() -> left.length() == right.length())
+    future<string> label = pool.submit(() -> label_pair(left, right))
+    future<int[][]> grid_result = pool.submit(() -> [left, right])
+    future<int[]> returned = pool.submit(() -> pair_values(left, right))
+    future<int[]> captured_row = pool.submit(() -> left.length() == right.length() ? left : right)
+    future<int[]> maybe_failed = pool.submit(() -> maybe_pair(left, right, should_fail))
+    future<int> separate_snapshots = submit_distinct_bindings(pool, left, left)
+
+    left[0] = 90
+    right[0] = 80
+    empty_values.push(1)
+
+    print(two_arrays.await())
+    print(combined.await())
+    print(combined.await())
+    print(constants.await())
+    print(globals.await())
+    print(same_lengths.await())
+    print(label.await())
+    int[][] grid = grid_result.await()
+    print(grid[0][0] + grid[1][0])
+    int[] first = returned.await()
+    first[0] = 777
+    print(first[0])
+    int[] second = returned.await()
+    print(second[0])
+    print(second[1])
+    int[] captured_first = captured_row.await()
+    captured_first[0] = -777
+    print(captured_first[0])
+    int[] captured_second = captured_row.await()
+    print(captured_second[0])
+    print(captured_second[1])
+    print(separate_snapshots.await())
+    try:
+        int[] guarded = maybe_failed.await()
+        print(guarded[0])
+        print(guarded[1])
+    catch (string message):
+        print(message)
+    try:
+        maybe_failed.await()
+    catch (string message):
+        print(message)
+    return 0
