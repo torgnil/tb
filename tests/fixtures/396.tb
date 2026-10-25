@@ -1,0 +1,78 @@
+int evaluations = 0
+
+int[] make_task(int[] source):
+    evaluations += 1
+    source[0] += 10
+    return source
+
+int mutate_first(int[] values, int amount):
+    values[0] += amount
+    return values[0]
+
+int[] add_rows(int[] task, int[] weights):
+    return [task[0] + weights[0], task[1] + weights[1]]
+
+string describe_rows(int[] task, int[] weights, int bonus):
+    return 'sum-' + (task[0] + weights[0] + bonus)
+
+int[][] return_rows(int[] task, int[] weights):
+    return [task, weights]
+
+future<int> alias_total(thread_pool pool, int[] left, int[] right, int[] weights, int bonus):
+    return pool.submit(int[] task -> {
+        int task_change = mutate_first(task, 1)
+        int left_change = mutate_first(left, 100)
+        return task[0] + left[0] + right[0] + weights[0] + bonus
+    }, make_task(left))
+
+int main(string[] args):
+    thread_pool pool = thread_pool(2)
+    int seed = args.length()
+    int[] source = [seed]
+    int[] weights = [seed + 2, seed + 5]
+    int bonus = seed
+    bool enabled = args.length() == 1
+
+    future<int> total = alias_total(pool, source, source, weights, bonus)
+    source[0] = 99
+    print(total.await())
+    print(evaluations)
+    print(source[0])
+
+    future<bool> selected = pool.submit(int[] values -> enabled && values.length() == 2 && values[1] == weights[1], [seed, seed + 5])
+    print(selected.await())
+
+    future<string> label = pool.submit(int[] values -> describe_rows(values, weights, bonus), [seed, 4])
+    print(label.await())
+
+    future<int[]> mapped = pool.submit(int[] values -> add_rows(values, weights), [seed, 4])
+    int[] mapped_values = mapped.await()
+    print(mapped_values[0])
+    print(mapped_values[1])
+
+    future<int[][]> nested = pool.submit(int[] values -> return_rows(values, weights), [seed, 4])
+    int[][] nested_values = nested.await()
+    print(nested_values.length())
+    print(nested_values[0][0])
+    print(nested_values[0][1])
+    print(nested_values[1][0])
+    print(nested_values[1][1])
+
+    future<int> empty_task = pool.submit(int[] empty_row -> empty_row.length() + weights[0] - weights[0], [])
+    print(empty_task.await())
+
+    future<int> loop_total = pool.submit(int[] row -> {
+        int result = 0
+        for (int row_item : row) {
+            result += row_item
+        }
+        for (int weight_item : weights) {
+            result += weight_item
+        }
+        if (enabled) {
+            result += bonus
+        }
+        return result
+    }, [seed, 2])
+    print(loop_total.await())
+    return 0
