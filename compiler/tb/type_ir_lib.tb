@@ -1780,6 +1780,14 @@ void validate_future_binding_type(string binding_name, string expected_type, str
             if (normalized_actual_type != normalized_expected_type):
                 throw 'future binding ' + ir_source_binding_name(binding_name) + ' requires ' + normalized_expected_type + '; got ' + normalized_actual_type
 
+void validate_map_binding_type(string binding_name, string expected_type, string actual_type):
+    string normalized_expected_type = normalize_llvm_type_name(expected_type)
+    string normalized_actual_type = normalize_llvm_type_name(actual_type)
+    if (normalized_expected_type != 'unknown' && normalized_actual_type != 'unknown'):
+        if (normalized_expected_type.starts_with('map<') || normalized_actual_type.starts_with('map<')):
+            if (normalized_actual_type != normalized_expected_type):
+                throw 'map binding ' + ir_source_binding_name(binding_name) + ' requires ' + normalized_expected_type + '; got ' + normalized_actual_type
+
 RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, BindingIR[] globals, BindingIR[] params, BindingIR[] locals, FunctionSigIR[] functions, RecordFieldIR[] record_fields, string[] record_names, EnumTypeIR[] enum_types, LinearInstruction[] prior_instructions, string[] temp_types):
     BindingIR[] bindings = []
     for (BindingIR binding in globals):
@@ -1897,6 +1905,7 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                     RefineInstructionsResult contextual_map = contextualize_map_literal_rows(block_refined, temp_types, current.args[0], declared_map_type, record_names)
                     block_refined = contextual_map.instructions
                     temp_types = contextual_map.temp_types
+                validate_map_binding_type(binding.name, binding.type_name, lookup_temp_type_slot(temp_types, current.args[0]))
                 if (value_type == '[]' && binding.type_name.ends_with('[]')):
                     block_refined = set_temp_type(block_refined, current.args[0], binding.type_name)
                     temp_types = set_temp_type_slot(temp_types, current.args[0], binding.type_name)
@@ -2003,6 +2012,7 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                     RefineInstructionsResult contextual_map = contextualize_map_literal_rows(block_refined, temp_types, current.args[0], normalized_binding_type, record_names)
                     block_refined = contextual_map.instructions
                     temp_types = contextual_map.temp_types
+                validate_map_binding_type(current.detail, binding_type, lookup_temp_type_slot(temp_types, current.args[0]))
                 if (value_type == '[]' && binding_type.ends_with('[]')):
                     block_refined = set_temp_type(block_refined, current.args[0], binding_type)
                     temp_types = set_temp_type_slot(temp_types, current.args[0], binding_type)
@@ -2046,6 +2056,7 @@ GlobalDeclIR refine_global(GlobalDeclIR global_decl, BindingIR[] globals, Functi
     if (declared_map_type.starts_with('map<')):
         RefineInstructionsResult contextual_map = contextualize_map_literal_rows(refined, refined_result.temp_types, global_decl.value_name, declared_map_type, record_names)
         refined = contextual_map.instructions
+    validate_map_binding_type(binding.name, binding.type_name, lookup_temp_type(refined, global_decl.value_name))
     if (value_type == '[]' && binding.type_name.ends_with('[]')):
         refined = set_temp_type(refined, global_decl.value_name, binding.type_name)
     else if (is_untyped_array_shape(value_type) && binding.type_name.ends_with('[]')):
@@ -2140,6 +2151,7 @@ ProgramIR refine_program_ir(ProgramIR program):
             RefineInstructionsResult contextual_map = contextualize_map_literal_rows(refined_global.instructions, refined_global_result.temp_types, global_decl.value_name, declared_map_type, record_names)
             refined_global = GlobalDeclIR(refined_global.header, contextual_map.instructions, refined_global.value_name)
             refined_global_result.temp_types = contextual_map.temp_types
+        validate_map_binding_type(binding.name, binding.type_name, lookup_temp_type(refined_global.instructions, global_decl.value_name))
         prior_global_temp_types = refined_global_result.temp_types
         if (value_type == '[]' && binding.type_name.ends_with('[]')):
             refined_global = GlobalDeclIR(refined_global.header, set_temp_type(refined_global.instructions, global_decl.value_name, binding.type_name), refined_global.value_name)
