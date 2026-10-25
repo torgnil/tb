@@ -32,6 +32,8 @@ record SubmitLambdaBlockCheck(string return_type, bool returns_all_paths);
 record SubmitLambdaScope(string[] names, string[] types, string[] const_names, string[] declared_names, string parameter_name);
 record SubmitLambdaValidation(SubmitLambdaBlockCheck check, SubmitLambdaScope scope);
 record SubmitRangeListRewrite(Node[] nodes, string[] used_names, int next_index);
+record ArrayScalarCaptureResult(BindingIR[] captures, bool complete);
+record ArrayScalarCallbackRewrite(BindingIR[] captures, bool recognized);
 
 bool submit_lambda_managed_type(string type_name):
     return type_name == 'string' || type_name == 'int[]' || type_name == 'int[][]'
@@ -648,25 +650,25 @@ bool map_to_arithmetic_uses_same_item(Node lambda_node):
         return false
     return body.children[1].kind == 'Identifier' && body.children[1].value == binding.name
 
-bool closed_int_array_expression(Node node, string parameter_name):
+bool int_array_scalar_expression(Node node, string parameter_name, string[] capture_names):
     if (node.kind == 'Int' || node.kind == 'Bool'):
         return true
     if (node.kind == 'Identifier'):
-        return node.value == parameter_name
+        return node.value == parameter_name || contains_name(capture_names, node.value)
     if (node.kind == 'Unary'):
         if (node.children.length() != 1 || !(node.value == '-' || node.value == '!' || node.value == 'not')):
             return false
-        return closed_int_array_expression(node.children[0], parameter_name)
+        return int_array_scalar_expression(node.children[0], parameter_name, capture_names)
     if (node.kind == 'Binary'):
         if (node.children.length() != 2):
             return false
         if (!(node.value == '+' || node.value == '-' || node.value == '*' || node.value == '/' || node.value == '%' || node.value == '&' || node.value == '|' || node.value == '^' || node.value == '<<' || node.value == '>>' || node.value == '==' || node.value == '!=' || node.value == '<' || node.value == '<=' || node.value == '>' || node.value == '>=' || node.value == '&&' || node.value == '||' || node.value == 'and' || node.value == 'or')):
             return false
-        return closed_int_array_expression(node.children[0], parameter_name) && closed_int_array_expression(node.children[1], parameter_name)
+        return int_array_scalar_expression(node.children[0], parameter_name, capture_names) && int_array_scalar_expression(node.children[1], parameter_name, capture_names)
     if (node.kind == 'Ternary'):
         if (node.children.length() != 3):
             return false
-        return closed_int_array_expression(node.children[0], parameter_name) && closed_int_array_expression(node.children[1], parameter_name) && closed_int_array_expression(node.children[2], parameter_name)
+        return int_array_scalar_expression(node.children[0], parameter_name, capture_names) && int_array_scalar_expression(node.children[1], parameter_name, capture_names) && int_array_scalar_expression(node.children[2], parameter_name, capture_names)
     return false
 
 bool legacy_int_map_lambda(Node lambda_node):
@@ -721,7 +723,7 @@ SubmitLambdaRewrite rewrite_int_array_expression(Node node, string[] used_names,
                         string parameter_type = parameter.type_name
                         if (parameter_type.starts_with('const ')):
                             parameter_type = parameter_type.substring(6)
-                        if (parameter_type == 'int' && closed_int_array_expression(lambda_node.children[0], parameter.name)):
+                        if (parameter_type == 'int' && int_array_scalar_expression(lambda_node.children[0], parameter.name, [])):
                             SubmitLambdaScope scope = SubmitLambdaScope([parameter.name], ['int'], [], [parameter.name], parameter.name)
                             Node[] no_functions = []
                             string callback_return_type = submit_lambda_expression_type(lambda_node.children[0], scope, no_functions)
@@ -741,7 +743,7 @@ SubmitLambdaRewrite rewrite_int_array_expression(Node node, string[] used_names,
                     string parameter_type = parameter.type_name
                     if (parameter_type.starts_with('const ')):
                         parameter_type = parameter_type.substring(6)
-                    if (closed_int_array_expression(lambda_node.children[0], parameter.name)):
+                    if (int_array_scalar_expression(lambda_node.children[0], parameter.name, [])):
                         if (parameter_type != 'int'):
                             throw 'int[] filter expression requires int parameter; got ' + parameter_type
                         SubmitLambdaScope scope = SubmitLambdaScope([parameter.name], ['int'], [], [parameter.name], parameter.name)
@@ -827,6 +829,75 @@ BindingIR[] submit_lambda_captures(Node lambda_node, BindingIR[] bindings):
         if (lambda_node.kind != 'Lambda0' || managed_capture_count != 1 || (captured.length() != 1 && array_capture_index < 0)):
             throw 'thread_pool.submit lambda can capture one managed value only in a zero-argument lambda without other captures, except that one int[] may be combined with scalar captures'
     return captured
+
+ArrayScalarCaptureResult int_array_scalar_captures(Node lambda_node, BindingIR[] bindings):
+    if (lambda_node.kind != 'Lambda' || lambda_node.children.length() != 1):
+        return ArrayScalarCaptureResult([], false)
+    string[] locals = submit_lambda_local_names(lambda_node.children[0], [])
+    BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+    locals = add_unique_name(locals, parameter.name)
+    string[] identifiers = submit_lambda_free_identifiers(lambda_node.children[0], locals, [])
+    BindingIR[] captured = []
+    for (string name : identifiers):
+        BindingIR binding = const_lookup_binding(bindings, name)
+        if (binding.name == ''):
+            return ArrayScalarCaptureResult([], false)
+        string capture_type = binding.type_name
+        if (capture_type.starts_with('const ')):
+            capture_type = capture_type.substring(6)
+        if (!(capture_type == 'int' || capture_type == 'bool')):
+            return ArrayScalarCaptureResult([], false)
+        captured.push(binding)
+    return ArrayScalarCaptureResult(captured, true)
+
+SubmitLambdaScope int_array_scalar_capture_scope(Node lambda_node, BindingIR[] captured):
+    BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+    string parameter_type = parameter.type_name
+    if (parameter_type.starts_with('const ')):
+        parameter_type = parameter_type.substring(6)
+    string[] names = [parameter.name]
+    string[] types = [parameter_type]
+    for (BindingIR binding : captured):
+        string capture_type = binding.type_name
+        if (capture_type.starts_with('const ')):
+            capture_type = capture_type.substring(6)
+        names.push(binding.name)
+        types.push(capture_type)
+    return SubmitLambdaScope(names, types, [], names, parameter.name)
+
+ArrayScalarCallbackRewrite int_array_scalar_callback_rewrite(Node node, BindingIR[] bindings):
+    if (node.kind != 'MethodCall' || !(node.value == 'map_to' || node.value == 'filter') || node.children.length() != 2):
+        return ArrayScalarCallbackRewrite([], false)
+    Node lambda_node = node.children[1]
+    if (lambda_node.kind != 'Lambda' || lambda_node.children.length() != 1):
+        return ArrayScalarCallbackRewrite([], false)
+    if (node.value == 'map_to' && legacy_int_map_lambda(lambda_node)):
+        return ArrayScalarCallbackRewrite([], false)
+    ArrayScalarCaptureResult capture_result = int_array_scalar_captures(lambda_node, bindings)
+    if (!capture_result.complete || capture_result.captures.is_empty()):
+        return ArrayScalarCallbackRewrite([], false)
+    BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+    string parameter_type = parameter.type_name
+    if (parameter_type.starts_with('const ')):
+        parameter_type = parameter_type.substring(6)
+    if (parameter_type != 'int'):
+        return ArrayScalarCallbackRewrite([], false)
+    string[] capture_names = []
+    for (BindingIR binding : capture_result.captures):
+        capture_names.push(binding.name)
+    if (!int_array_scalar_expression(lambda_node.children[0], parameter.name, capture_names)):
+        return ArrayScalarCallbackRewrite([], false)
+    SubmitLambdaScope scope = int_array_scalar_capture_scope(lambda_node, capture_result.captures)
+    Node[] no_functions = []
+    string result_type = submit_lambda_expression_type(lambda_node.children[0], scope, no_functions)
+    string required_result = 'int'
+    if (node.value == 'filter'):
+        required_result = 'bool'
+    if (result_type == ''):
+        throw 'int[] ' + node.value + ' captured expression has invalid scalar operand types'
+    if (result_type != required_result):
+        throw 'int[] ' + node.value + ' captured expression must return ' + required_result + '; got ' + result_type
+    return ArrayScalarCallbackRewrite(capture_result.captures, true)
 
 string submit_worker_name(string[] used_names, int start_index):
     int index = start_index
@@ -953,11 +1024,13 @@ SubmitRangeListRewrite rewrite_submit_range_foreach_list(Node[] statements, stri
             rewritten.push(statement)
     return SubmitRangeListRewrite(rewritten, current_names, current_index)
 
-SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, int next_index, Node[] functions, BindingIR[] bindings):
+SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, int next_index, Node[] functions, BindingIR[] bindings, bool include_submit):
     BindingIR[] captured = []
     string worker_return_type = ''
     bool rewrite_worker = false
-    if (node.kind == 'MethodCall' && node.value == 'submit' && node.children.length() > 1):
+    ArrayScalarCallbackRewrite callback_rewrite = int_array_scalar_callback_rewrite(node, bindings)
+    BindingIR[] array_callback_captures = callback_rewrite.captures
+    if (include_submit && node.kind == 'MethodCall' && node.value == 'submit' && node.children.length() > 1):
         Node lambda_node = node.children[1]
         if (lambda_node.kind == 'Lambda0'):
             if (node.children.length() != 2):
@@ -985,7 +1058,7 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
     if (node.kind == 'Lambda' || node.kind == 'Lambda0' || node.kind == 'Lambda2'):
         child_bindings = []
     for (Node child : node.children):
-        SubmitScopedRewrite rewritten_child = rewrite_submit_expression(child, current_names, current_index, functions, child_bindings)
+        SubmitScopedRewrite rewritten_child = rewrite_submit_expression(child, current_names, current_index, functions, child_bindings, include_submit)
         rewritten_children.push(rewritten_child.node)
         generated = append_nodes(generated, rewritten_child.generated)
         current_names = rewritten_child.used_names
@@ -1125,16 +1198,51 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
         else:
             rewritten_children[1] = Node('Identifier', worker_name, [])
             rewritten = Node(node.kind, node.value, rewritten_children)
+    if (callback_rewrite.recognized):
+        Node lambda_node = node.children[1]
+        string receiver_name = submit_capture_name(current_names, '__tb_array_callback_receiver_', current_index)
+        current_names = add_unique_name(current_names, receiver_name)
+        current_index += 1
+        string output_name = submit_capture_name(current_names, '__tb_array_callback_output_', current_index)
+        current_names = add_unique_name(current_names, output_name)
+        current_index += 1
+        string helper_name = submit_capture_name(current_names, '__tb_array_callback_', current_index)
+        current_names = add_unique_name(current_names, helper_name)
+        current_index += 1
+        Node[] helper_children = [Node('Param', 'const int[] ' + receiver_name, [])]
+        Node[] call_arguments = [rewritten_children[0]]
+        for (BindingIR binding : array_callback_captures):
+            string capture_type = binding.type_name
+            if (capture_type.starts_with('const ')):
+                capture_type = capture_type.substring(6)
+            helper_children.push(Node('Param', 'const ' + capture_type + ' ' + binding.name, []))
+            call_arguments.push(Node('Identifier', binding.name, []))
+        helper_children.push(Node('VarDecl', 'int[] ' + output_name, [Node('Array', '', [])]))
+        Node output_ref = Node('Identifier', output_name, [])
+        Node append_item = lambda_node.children[0]
+        if (node.value == 'filter'):
+            BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+            append_item = Node('Identifier', parameter.name, [])
+        Node append_value = Node('ExprStmt', '', [Node('MethodCall', 'push', [output_ref, append_item])])
+        Node[] loop_body = []
+        if (node.value == 'filter'):
+            loop_body.push(Node('If', '', [lambda_node.children[0], append_value]))
+        else:
+            loop_body.push(append_value)
+        helper_children.push(Node('ForEach', lambda_node.value, append_nodes([Node('Identifier', receiver_name, [])], loop_body)))
+        helper_children.push(Node('Return', '', [Node('Identifier', output_name, [])]))
+        generated.push(Node('Function', 'int[] ' + helper_name, helper_children))
+        rewritten = Node('Call', helper_name, call_arguments)
     return SubmitScopedRewrite(rewritten, generated, current_names, current_index, bindings)
 
-SubmitScopedListRewrite rewrite_submit_statement_list(Node[] statements, string[] used_names, int next_index, Node[] functions, BindingIR[] bindings):
+SubmitScopedListRewrite rewrite_submit_statement_list(Node[] statements, string[] used_names, int next_index, Node[] functions, BindingIR[] bindings, bool include_submit):
     Node[] rewritten_nodes = []
     Node[] generated = []
     string[] current_names = used_names
     int current_index = next_index
     BindingIR[] current_bindings = bindings
     for (Node statement : statements):
-        SubmitScopedRewrite rewritten = rewrite_submit_statement(statement, current_names, current_index, functions, current_bindings)
+        SubmitScopedRewrite rewritten = rewrite_submit_statement(statement, current_names, current_index, functions, current_bindings, include_submit)
         rewritten_nodes.push(rewritten.node)
         generated = append_nodes(generated, rewritten.generated)
         current_names = rewritten.used_names
@@ -1142,10 +1250,10 @@ SubmitScopedListRewrite rewrite_submit_statement_list(Node[] statements, string[
         current_bindings = rewritten.bindings
     return SubmitScopedListRewrite(rewritten_nodes, generated, current_names, current_index, current_bindings)
 
-SubmitScopedRewrite rewrite_submit_statement(Node node, string[] used_names, int next_index, Node[] functions, BindingIR[] bindings):
+SubmitScopedRewrite rewrite_submit_statement(Node node, string[] used_names, int next_index, Node[] functions, BindingIR[] bindings, bool include_submit):
     if (node.kind == 'If' && node.children.length() > 0):
-        SubmitScopedRewrite condition = rewrite_submit_expression(node.children[0], used_names, next_index, functions, bindings)
-        SubmitScopedListRewrite then_part = rewrite_submit_statement_list(if_then_nodes(node), condition.used_names, condition.next_index, functions, const_copy_bindings(bindings))
+        SubmitScopedRewrite condition = rewrite_submit_expression(node.children[0], used_names, next_index, functions, bindings, include_submit)
+        SubmitScopedListRewrite then_part = rewrite_submit_statement_list(if_then_nodes(node), condition.used_names, condition.next_index, functions, const_copy_bindings(bindings), include_submit)
         Node[] children = [condition.node]
         children = append_nodes(children, then_part.nodes)
         Node[] generated = append_nodes(condition.generated, then_part.generated)
@@ -1153,38 +1261,38 @@ SubmitScopedRewrite rewrite_submit_statement(Node node, string[] used_names, int
         int current_index = then_part.next_index
         if (!if_else_nodes(node).is_empty()):
             Node[] else_source = if_else_nodes(node)
-            SubmitScopedListRewrite else_part = rewrite_submit_statement_list(else_source, current_names, current_index, functions, const_copy_bindings(bindings))
+            SubmitScopedListRewrite else_part = rewrite_submit_statement_list(else_source, current_names, current_index, functions, const_copy_bindings(bindings), include_submit)
             children.push(Node('Else', '', else_part.nodes))
             generated = append_nodes(generated, else_part.generated)
             current_names = else_part.used_names
             current_index = else_part.next_index
         return SubmitScopedRewrite(Node(node.kind, node.value, children), generated, current_names, current_index, bindings)
     if (node.kind == 'While' && node.children.length() > 0):
-        SubmitScopedRewrite condition = rewrite_submit_expression(node.children[0], used_names, next_index, functions, bindings)
-        SubmitScopedListRewrite body = rewrite_submit_statement_list(tail_nodes(node.children, 1), condition.used_names, condition.next_index, functions, const_copy_bindings(bindings))
+        SubmitScopedRewrite condition = rewrite_submit_expression(node.children[0], used_names, next_index, functions, bindings, include_submit)
+        SubmitScopedListRewrite body = rewrite_submit_statement_list(tail_nodes(node.children, 1), condition.used_names, condition.next_index, functions, const_copy_bindings(bindings), include_submit)
         Node[] children = [condition.node]
         children = append_nodes(children, body.nodes)
         return SubmitScopedRewrite(Node(node.kind, node.value, children), append_nodes(condition.generated, body.generated), body.used_names, body.next_index, bindings)
     if (node.kind == 'For' && node.children.length() >= 3):
-        SubmitScopedRewrite init = rewrite_submit_statement(node.children[0], used_names, next_index, functions, const_copy_bindings(bindings))
+        SubmitScopedRewrite init = rewrite_submit_statement(node.children[0], used_names, next_index, functions, const_copy_bindings(bindings), include_submit)
         BindingIR[] loop_bindings = init.bindings
-        SubmitScopedRewrite condition = rewrite_submit_expression(node.children[1], init.used_names, init.next_index, functions, loop_bindings)
-        SubmitScopedRewrite update = rewrite_submit_statement(node.children[2], condition.used_names, condition.next_index, functions, loop_bindings)
-        SubmitScopedListRewrite body = rewrite_submit_statement_list(lowerer_for_body_nodes(node), update.used_names, update.next_index, functions, const_copy_bindings(loop_bindings))
+        SubmitScopedRewrite condition = rewrite_submit_expression(node.children[1], init.used_names, init.next_index, functions, loop_bindings, include_submit)
+        SubmitScopedRewrite update = rewrite_submit_statement(node.children[2], condition.used_names, condition.next_index, functions, loop_bindings, include_submit)
+        SubmitScopedListRewrite body = rewrite_submit_statement_list(lowerer_for_body_nodes(node), update.used_names, update.next_index, functions, const_copy_bindings(loop_bindings), include_submit)
         Node[] children = [init.node, condition.node, update.node]
         children = append_nodes(children, body.nodes)
         Node[] generated = append_nodes(append_nodes(init.generated, condition.generated), append_nodes(update.generated, body.generated))
         return SubmitScopedRewrite(Node(node.kind, node.value, children), generated, body.used_names, body.next_index, bindings)
     if (node.kind == 'ForEach' && node.children.length() > 0):
-        SubmitScopedRewrite iterable = rewrite_submit_expression(node.children[0], used_names, next_index, functions, bindings)
+        SubmitScopedRewrite iterable = rewrite_submit_expression(node.children[0], used_names, next_index, functions, bindings, include_submit)
         BindingIR[] body_bindings = const_copy_bindings(bindings)
         body_bindings.push(ir_parse_binding_decl(node.value))
-        SubmitScopedListRewrite body = rewrite_submit_statement_list(tail_nodes(node.children, 1), iterable.used_names, iterable.next_index, functions, body_bindings)
+        SubmitScopedListRewrite body = rewrite_submit_statement_list(tail_nodes(node.children, 1), iterable.used_names, iterable.next_index, functions, body_bindings, include_submit)
         Node[] children = [iterable.node]
         children = append_nodes(children, body.nodes)
         return SubmitScopedRewrite(Node(node.kind, node.value, children), append_nodes(iterable.generated, body.generated), body.used_names, body.next_index, bindings)
     if (node.kind == 'Switch' && node.children.length() > 0):
-        SubmitScopedRewrite subject = rewrite_submit_expression(node.children[0], used_names, next_index, functions, bindings)
+        SubmitScopedRewrite subject = rewrite_submit_expression(node.children[0], used_names, next_index, functions, bindings, include_submit)
         Node[] children = [subject.node]
         Node[] generated = subject.generated
         string[] current_names = subject.used_names
@@ -1193,13 +1301,13 @@ SubmitScopedRewrite rewrite_submit_statement(Node node, string[] used_names, int
             Node[] branch_children = []
             int body_start = 0
             if (branch.kind == 'Case' && branch.children.length() > 0):
-                SubmitScopedRewrite case_value = rewrite_submit_expression(branch.children[0], current_names, current_index, functions, bindings)
+                SubmitScopedRewrite case_value = rewrite_submit_expression(branch.children[0], current_names, current_index, functions, bindings, include_submit)
                 branch_children.push(case_value.node)
                 generated = append_nodes(generated, case_value.generated)
                 current_names = case_value.used_names
                 current_index = case_value.next_index
                 body_start = 1
-            SubmitScopedListRewrite body = rewrite_submit_statement_list(tail_nodes(branch.children, body_start), current_names, current_index, functions, const_copy_bindings(bindings))
+            SubmitScopedListRewrite body = rewrite_submit_statement_list(tail_nodes(branch.children, body_start), current_names, current_index, functions, const_copy_bindings(bindings), include_submit)
             branch_children = append_nodes(branch_children, body.nodes)
             children.push(Node(branch.kind, branch.value, branch_children))
             generated = append_nodes(generated, body.generated)
@@ -1208,11 +1316,11 @@ SubmitScopedRewrite rewrite_submit_statement(Node node, string[] used_names, int
         return SubmitScopedRewrite(Node(node.kind, node.value, children), generated, current_names, current_index, bindings)
     if (node.kind == 'Try'):
         Node[] try_source = try_body_nodes(node)
-        SubmitScopedListRewrite try_part = rewrite_submit_statement_list(try_source, used_names, next_index, functions, const_copy_bindings(bindings))
+        SubmitScopedListRewrite try_part = rewrite_submit_statement_list(try_source, used_names, next_index, functions, const_copy_bindings(bindings), include_submit)
         Node catch_part = catch_node(node)
         BindingIR[] catch_bindings = const_copy_bindings(bindings)
         catch_bindings.push(ir_parse_binding_decl(catch_part.value))
-        SubmitScopedListRewrite catch_rewrite = rewrite_submit_statement_list(catch_part.children, try_part.used_names, try_part.next_index, functions, catch_bindings)
+        SubmitScopedListRewrite catch_rewrite = rewrite_submit_statement_list(catch_part.children, try_part.used_names, try_part.next_index, functions, catch_bindings, include_submit)
         Node[] children = append_nodes(try_part.nodes, [Node('Catch', catch_part.value, catch_rewrite.nodes)])
         return SubmitScopedRewrite(Node(node.kind, node.value, children), append_nodes(try_part.generated, catch_rewrite.generated), catch_rewrite.used_names, catch_rewrite.next_index, bindings)
     if (node.kind == 'VarDecl'):
@@ -1221,7 +1329,7 @@ SubmitScopedRewrite rewrite_submit_statement(Node node, string[] used_names, int
         string[] current_names = used_names
         int current_index = next_index
         for (Node child : node.children):
-            SubmitScopedRewrite rewritten = rewrite_submit_expression(child, current_names, current_index, functions, bindings)
+            SubmitScopedRewrite rewritten = rewrite_submit_expression(child, current_names, current_index, functions, bindings, include_submit)
             children.push(rewritten.node)
             generated = append_nodes(generated, rewritten.generated)
             current_names = rewritten.used_names
@@ -1229,10 +1337,33 @@ SubmitScopedRewrite rewrite_submit_statement(Node node, string[] used_names, int
         BindingIR[] next_bindings = const_copy_bindings(bindings)
         next_bindings.push(ir_parse_binding_decl(node.value))
         return SubmitScopedRewrite(Node(node.kind, node.value, children), generated, current_names, current_index, next_bindings)
-    SubmitScopedRewrite rewritten = rewrite_submit_expression(node, used_names, next_index, functions, bindings)
+    SubmitScopedRewrite rewritten = rewrite_submit_expression(node, used_names, next_index, functions, bindings, include_submit)
     return SubmitScopedRewrite(rewritten.node, rewritten.generated, rewritten.used_names, rewritten.next_index, bindings)
 
-SubmitLambdaRewrite rewrite_submit_lambdas_in_program(Node program):
+bool global_array_callback_captures(Node node, BindingIR[] globals):
+    if (node.kind == 'MethodCall'):
+        if (node.value == 'map_to' || node.value == 'filter'):
+            if (node.children.length() == 2):
+                Node lambda_node = node.children[1]
+                if (lambda_node.kind == 'Lambda'):
+                    if (lambda_node.children.length() == 1):
+                        bool legacy_map = false
+                        if (node.value == 'map_to'):
+                            legacy_map = legacy_int_map_lambda(lambda_node)
+                        if (!legacy_map):
+                            string[] locals = submit_lambda_local_names(lambda_node.children[0], [])
+                            BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+                            locals = add_unique_name(locals, parameter.name)
+                            string[] identifiers = submit_lambda_free_identifiers(lambda_node.children[0], locals, [])
+                            for (string name : identifiers):
+                                if (const_lookup_binding(globals, name).name != ''):
+                                    return true
+    for (Node child : node.children):
+        if (global_array_callback_captures(child, globals)):
+            return true
+    return false
+
+SubmitLambdaRewrite rewrite_submit_lambdas_in_program(Node program, bool include_submit):
     string[] unavailable_names = collect_submit_unavailable_names(program, [])
     BindingIR[] global_bindings = submit_unique_global_bindings(program.children)
     Node[] functions = []
@@ -1256,7 +1387,7 @@ SubmitLambdaRewrite rewrite_submit_lambdas_in_program(Node program):
             for (Node fn_child : child.children):
                 if (fn_child.kind != 'Param'):
                     body_nodes.push(fn_child)
-            SubmitScopedListRewrite rewritten_body = rewrite_submit_statement_list(body_nodes, used_names, next_index, functions, bindings)
+            SubmitScopedListRewrite rewritten_body = rewrite_submit_statement_list(body_nodes, used_names, next_index, functions, bindings, include_submit)
             Node[] function_children = []
             for (Node fn_child : child.children):
                 if (fn_child.kind == 'Param'):
@@ -1268,7 +1399,9 @@ SubmitLambdaRewrite rewrite_submit_lambdas_in_program(Node program):
             next_index = rewritten_body.next_index
         else:
             BindingIR[] no_bindings = []
-            SubmitScopedRewrite rewritten = rewrite_submit_expression(child, used_names, next_index, functions, no_bindings)
+            if (child.kind == 'VarDecl' && global_array_callback_captures(child, global_bindings)):
+                throw 'captured int[] map_to/filter callbacks are not supported in global initializers'
+            SubmitScopedRewrite rewritten = rewrite_submit_expression(child, used_names, next_index, functions, no_bindings, include_submit)
             rewritten_children.push(rewritten.node)
             generated = append_nodes(generated, rewritten.generated)
             used_names = rewritten.used_names
@@ -3383,6 +3516,8 @@ void validate_const_bindings(Node program):
                     validate_const_statement(fn_child, function_bindings, function_names, record_nodes)
 
 string[] lower_program(Node program):
+    SubmitLambdaRewrite scoped_rewritten = rewrite_submit_lambdas_in_program(program, false)
+    program = scoped_rewritten.node
     SubmitLambdaRewrite map_rewritten = rewrite_int_array_expressions_in_program(program)
     program = map_rewritten.node
     validate_const_bindings(program)
@@ -3521,7 +3656,7 @@ ParsedFunction lower_logical_global_initializer(Node declaration, int index):
     return ParsedFunction('func ' + result_type + ' ' + name, name, result_type, [], collect_function_locals(value.instructions), linear_instructions_to_blocks(value.instructions))
 
 ProgramIR lower_program_ir(Node program):
-    SubmitLambdaRewrite rewritten = rewrite_submit_lambdas_in_program(program)
+    SubmitLambdaRewrite rewritten = rewrite_submit_lambdas_in_program(program, true)
     SubmitLambdaRewrite map_rewritten = rewrite_int_array_expressions_in_program(rewritten.node)
     program = map_rewritten.node
     validate_const_bindings(program)

@@ -1,0 +1,123 @@
+int GLOBAL_OFFSET = 1
+bool GLOBAL_ENABLED = true
+const int GLOBAL_LIMIT = 2
+
+int filter(int value):
+    return value + 100
+
+int map_to(int value):
+    return value + 200
+
+int __tb_array_callback_2(int value):
+    return value + 300
+
+int[] change_global_receiver():
+    GLOBAL_OFFSET = 10
+    return [1, 2]
+
+int[] make_values(int first):
+    return [first, first + 1]
+
+int[] transform_values(int[] values, int factor, int offset, bool enabled):
+    return values.map_to(int item -> enabled ? item * factor + offset : item)
+
+int branch_total(int[] values, int minimum):
+    int total = 0
+    if (minimum > 0):
+        int cutoff = minimum
+        int[] selected = values.filter(int item -> item > cutoff)
+        total = selected.sum()
+    return total
+
+int loop_total(int[] values):
+    int total = 0
+    for (int index : range(2)):
+        int delta = index + 1
+        int[] shifted = values.map_to(int item -> delta + item)
+        total += shifted.sum()
+    return total
+
+int foreach_total(int[] values):
+    int total = 0
+    int[] thresholds = [1, 2]
+    for (int threshold : thresholds):
+        int[] selected = values.filter(int item -> item > threshold)
+        total += selected.sum()
+    return total
+
+int catch_total(int[] values):
+    int total = 0
+    try:
+        throw 'x'
+    catch (string caught):
+        int threshold = caught.length()
+        int[] selected = values.filter(int item -> item > threshold)
+        total = selected.sum()
+    return total
+
+int main(string[] args):
+    int[] values = [1, 2, 3, 4]
+    int factor = args.length() + 1
+    int offset = 3
+    bool enabled = true
+    int[] transformed = transform_values(values, factor, offset, enabled)
+    print(transformed[1])
+
+    int item = 100
+    const int shift = 5
+    int[] shadowed = values.map_to(int item -> shift + item)
+    print(shadowed[0])
+
+    const int cutoff = 2
+    int[] selected = values.filter(int value -> enabled && value > cutoff)
+    print(selected.length())
+    print(selected.sum())
+    int[] pipeline = values.filter(int value -> value > GLOBAL_LIMIT).map_to(int value -> enabled ? value + offset : value)
+    print(pipeline.sum())
+
+    int[] source = [3, 4]
+    int[] copied = source.map_to(int value -> offset + value)
+    source[0] = 99
+    offset = 20
+    print(source[0])
+    print(copied[0])
+
+    const int[] fixed = [2, 4]
+    int[] fixed_result = fixed.filter(int value -> value > GLOBAL_LIMIT)
+    print(fixed_result.length())
+    print(fixed_result[0])
+    print(branch_total(values, 2))
+    print(loop_total(values))
+    print(foreach_total(values))
+    print(catch_total(values))
+
+    int outer_limit = 2
+    if (GLOBAL_ENABLED):
+        int[] outer_limit = values.map_to(int value -> outer_limit + value)
+        print(outer_limit[0])
+
+    int[] owned = make_values(2).map_to(int value -> offset + value)
+    print(owned[1])
+
+    GLOBAL_OFFSET = 1
+    int[] ordered = change_global_receiver().map_to(int value -> GLOBAL_ENABLED ? value + GLOBAL_OFFSET : value)
+    print(ordered[0])
+    print(GLOBAL_OFFSET)
+
+    int divisor = 0
+    int[] empty = []
+    int[] empty_map = empty.map_to(int value -> (value + 1) / divisor)
+    int[] empty_filter = empty.filter(int value -> value / divisor > 0)
+    print(empty_map.length())
+    print(empty_filter.length())
+
+    int dispatch_cutoff = 2
+    int[] dispatch_filtered = values.filter(int value -> value > dispatch_cutoff)
+    print(dispatch_filtered.sum())
+    int dispatch_delta = 3
+    int[] dispatch_mapped = values.map_to(int value -> dispatch_delta + value)
+    print(dispatch_mapped.sum())
+    print(filter(1))
+    print(map_to(1))
+    print(__tb_array_callback_2(1))
+    return 0
