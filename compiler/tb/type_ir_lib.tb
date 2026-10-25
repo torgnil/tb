@@ -347,6 +347,14 @@ bool record_type_exists(string[] record_names, string record_name):
         index -= 1
     return false
 
+bool is_supported_empty_map_array_value_type(string[] record_names, string type_name):
+    type_name = normalize_llvm_type_name(type_name)
+    if (type_name == 'int[]' || type_name == 'string[]'):
+        return true
+    if (!type_name.ends_with('[]')):
+        return false
+    return record_type_exists(record_names, array_item_type(type_name))
+
 bool is_checked_record_field_assignment_type(string[] record_names, string type_name):
     type_name = normalize_llvm_type_name(type_name)
     if (type_name == 'int' || type_name == 'bool' || type_name == 'num' || type_name == 'string'):
@@ -532,13 +540,13 @@ string infer_map_literal_type(string[] entry_types):
         return 'unknown'
     return 'map<' + key_type + ', ' + value_type + '>'
 
-RefineInstructionsResult contextualize_map_literal_rows(LinearInstruction[] instructions, string[] temp_types, string map_name, string expected_map_type):
+RefineInstructionsResult contextualize_map_literal_rows(LinearInstruction[] instructions, string[] temp_types, string map_name, string expected_map_type, string[] record_names):
     string normalized_expected_type = normalize_llvm_type_name(expected_map_type)
     if (!normalized_expected_type.starts_with('map<') || !normalized_expected_type.ends_with('>')):
         return RefineInstructionsResult(instructions, temp_types)
     string key_type = normalize_llvm_type_name(map_key_type(normalized_expected_type))
     string row_type = normalize_llvm_type_name(map_value_type(normalized_expected_type))
-    bool array_rows = row_type == 'int[]' || row_type == 'string[]'
+    bool array_rows = is_supported_empty_map_array_value_type(record_names, row_type)
     bool map_rows = row_type.starts_with('map<') && row_type.ends_with('>')
     if ((key_type != 'int' && key_type != 'string') || (!array_rows && !map_rows)):
         return RefineInstructionsResult(instructions, temp_types)
@@ -1803,7 +1811,7 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                             string arg_type_name = arg_types[index - 1]
                             string normalized_arg_type = normalize_llvm_type_name(arg_type_name)
                             if (normalized_arg_type.starts_with('map<') && current.result_type == current.args[0] && lookup_function_return_type(functions, current.args[0]) == 'unknown'):
-                                RefineInstructionsResult contextual_map = contextualize_map_literal_rows(block_refined, temp_types, current.args[index], normalized_arg_type)
+                                RefineInstructionsResult contextual_map = contextualize_map_literal_rows(block_refined, temp_types, current.args[index], normalized_arg_type, record_names)
                                 block_refined = contextual_map.instructions
                                 temp_types = contextual_map.temp_types
                             string arg_val_type = lookup_temp_type_slot(temp_types, current.args[index])
@@ -1840,6 +1848,11 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                             while (index < current.args.length()):
                                 string expected_type = normalize_llvm_type_name(call_sig.param_types[index - 1])
                                 string actual_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[index]))
+                                if (expected_type.starts_with('map<')):
+                                    RefineInstructionsResult contextual_map = contextualize_map_literal_rows(block_refined, temp_types, current.args[index], expected_type, record_names)
+                                    block_refined = contextual_map.instructions
+                                    temp_types = contextual_map.temp_types
+                                    actual_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[index]))
                                 if (is_untyped_array_shape(actual_type) && is_supported_call_array_type(expected_type)):
                                     RefineInstructionsResult contextual_array = contextualize_call_array_literal(block_refined, temp_types, current.args[index], expected_type)
                                     block_refined = contextual_array.instructions
@@ -1854,6 +1867,11 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                     while (index < current.args.length()):
                         string expected_type = normalize_llvm_type_name(method_sig.param_types[index - 1])
                         string actual_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[index]))
+                        if (expected_type.starts_with('map<')):
+                            RefineInstructionsResult contextual_map = contextualize_map_literal_rows(block_refined, temp_types, current.args[index], expected_type, record_names)
+                            block_refined = contextual_map.instructions
+                            temp_types = contextual_map.temp_types
+                            actual_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[index]))
                         if (is_untyped_array_shape(actual_type) && is_supported_call_array_type(expected_type)):
                             RefineInstructionsResult contextual_array = contextualize_call_array_literal(block_refined, temp_types, current.args[index], expected_type)
                             block_refined = contextual_array.instructions
@@ -1876,7 +1894,7 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                                 block_refined = set_temp_type(block_refined, current.args[0], declared_map_type)
                                 temp_types = set_temp_type_slot(temp_types, current.args[0], declared_map_type)
                 if (declared_map_type.starts_with('map<')):
-                    RefineInstructionsResult contextual_map = contextualize_map_literal_rows(block_refined, temp_types, current.args[0], declared_map_type)
+                    RefineInstructionsResult contextual_map = contextualize_map_literal_rows(block_refined, temp_types, current.args[0], declared_map_type, record_names)
                     block_refined = contextual_map.instructions
                     temp_types = contextual_map.temp_types
                 if (value_type == '[]' && binding.type_name.ends_with('[]')):
@@ -1917,7 +1935,7 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                                         block_refined = set_temp_type(block_refined, current.args[1], field_type)
                                         temp_types = set_temp_type_slot(temp_types, current.args[1], field_type)
                     if (field_type.starts_with('map<')):
-                        RefineInstructionsResult contextual_map = contextualize_map_literal_rows(block_refined, temp_types, current.args[1], field_type)
+                        RefineInstructionsResult contextual_map = contextualize_map_literal_rows(block_refined, temp_types, current.args[1], field_type, record_names)
                         block_refined = contextual_map.instructions
                         temp_types = contextual_map.temp_types
                     if (is_checked_record_field_assignment_type(record_names, field_type)):
@@ -1954,10 +1972,12 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                     string expected_value_type = normalize_llvm_type_name(map_value_type(base_type))
                     string value_name = current.args[2]
                     string actual_value_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, value_name))
-                    if ((actual_value_type == '[]' && (expected_value_type == 'int[]' || expected_value_type == 'string[]')) || (actual_value_type == 'unknown' && expected_value_type.starts_with('map<'))):
+                    bool empty_array_value = actual_value_type == '[]' && is_supported_empty_map_array_value_type(record_names, expected_value_type)
+                    bool empty_map_value = actual_value_type == 'unknown' && expected_value_type.starts_with('map<')
+                    if (empty_array_value || empty_map_value):
                         LinearInstruction candidate = lookup_instruction(block_refined, value_name)
                         if (candidate.lhs == value_name && candidate.kind == 'value' && candidate.args.is_empty()):
-                            if ((actual_value_type == '[]' && candidate.detail == 'array' && candidate.result_type == '[]') || (actual_value_type == 'unknown' && candidate.detail == 'map' && candidate.result_type == 'unknown')):
+                            if ((empty_array_value && candidate.detail == 'array' && candidate.result_type == '[]') || (empty_map_value && candidate.detail == 'map' && candidate.result_type == 'unknown')):
                                 block_refined = set_temp_type(block_refined, value_name, expected_value_type)
                                 temp_types = set_temp_type_slot(temp_types, value_name, expected_value_type)
                                 actual_value_type = expected_value_type
@@ -1980,7 +2000,7 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                                 temp_types = set_temp_type_slot(temp_types, current.args[0], binding_type)
                 string normalized_binding_type = normalize_llvm_type_name(binding_type)
                 if (normalized_binding_type.starts_with('map<')):
-                    RefineInstructionsResult contextual_map = contextualize_map_literal_rows(block_refined, temp_types, current.args[0], normalized_binding_type)
+                    RefineInstructionsResult contextual_map = contextualize_map_literal_rows(block_refined, temp_types, current.args[0], normalized_binding_type, record_names)
                     block_refined = contextual_map.instructions
                     temp_types = contextual_map.temp_types
                 if (value_type == '[]' && binding_type.ends_with('[]')):
@@ -2024,7 +2044,7 @@ GlobalDeclIR refine_global(GlobalDeclIR global_decl, BindingIR[] globals, Functi
     if (value_type == 'unknown' && declared_map_type.starts_with('map<')):
         refined = set_temp_type(refined, global_decl.value_name, declared_map_type)
     if (declared_map_type.starts_with('map<')):
-        RefineInstructionsResult contextual_map = contextualize_map_literal_rows(refined, refined_result.temp_types, global_decl.value_name, declared_map_type)
+        RefineInstructionsResult contextual_map = contextualize_map_literal_rows(refined, refined_result.temp_types, global_decl.value_name, declared_map_type, record_names)
         refined = contextual_map.instructions
     if (value_type == '[]' && binding.type_name.ends_with('[]')):
         refined = set_temp_type(refined, global_decl.value_name, binding.type_name)
@@ -2075,7 +2095,7 @@ ParsedFunction refine_function(ParsedFunction function_ir, BindingIR[] globals, 
                 refined_block = BlockIR(refined_block.label, set_temp_type(refined_block.instructions, return_temp, function_return_type), refined_block.terminator)
         if ((refined_block.terminator.kind == 'return' || refined_block.terminator.kind == 'return_owned') && refined_block.terminator.args.length() == 1 && normalized_return_type.starts_with('map<')):
             string return_temp = refined_block.terminator.args[0]
-            RefineInstructionsResult contextual_map = contextualize_map_literal_rows(refined_block.instructions, temp_types, return_temp, normalized_return_type)
+            RefineInstructionsResult contextual_map = contextualize_map_literal_rows(refined_block.instructions, temp_types, return_temp, normalized_return_type, record_names)
             LinearInstruction[] return_instructions = contextual_map.instructions
             temp_types = contextual_map.temp_types
             LinearInstruction return_op = lookup_instruction(return_instructions, return_temp)
@@ -2117,7 +2137,7 @@ ProgramIR refine_program_ir(ProgramIR program):
         if (value_type == 'unknown' && declared_map_type.starts_with('map<')):
             refined_global = GlobalDeclIR(refined_global.header, set_temp_type(refined_global.instructions, global_decl.value_name, declared_map_type), refined_global.value_name)
         if (declared_map_type.starts_with('map<')):
-            RefineInstructionsResult contextual_map = contextualize_map_literal_rows(refined_global.instructions, refined_global_result.temp_types, global_decl.value_name, declared_map_type)
+            RefineInstructionsResult contextual_map = contextualize_map_literal_rows(refined_global.instructions, refined_global_result.temp_types, global_decl.value_name, declared_map_type, record_names)
             refined_global = GlobalDeclIR(refined_global.header, contextual_map.instructions, refined_global.value_name)
             refined_global_result.temp_types = contextual_map.temp_types
         prior_global_temp_types = refined_global_result.temp_types
