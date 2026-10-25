@@ -4913,7 +4913,7 @@ string emit_map_value_instruction(ProgramIR program, ParsedFunction function_ir,
         else if (key_type == 'int'):
             lines.push('  call void ' + llvm_map_set_name(map_type) + '(ptr ' + lhs + ', i32 ' + item_index + ', i64 ' + stored_key + ', ' + llvm_type(value_type) + ' ' + stored_value + ', i1 ' + stored_owned + ')')
         else:
-            if (value_type == 'bool[]'):
+            if (is_backend_managed_type(value_type)):
                 lines.push('  call void ' + llvm_map_release_by_key_name(map_type) + '(ptr ' + lhs + ', ptr ' + stored_key + ')')
             lines.push('  call void ' + llvm_map_set_name(map_type) + '(ptr ' + lhs + ', i32 ' + item_index + ', ptr ' + stored_key + ', ' + llvm_type(value_type) + ' ' + stored_value + ', i1 ' + stored_owned + ')')
             if (key_type == 'string'):
