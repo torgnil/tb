@@ -2334,6 +2334,22 @@ string[] emit_int_set_materialize_if_needed(ParsedFunction function_ir, string t
         return []
     return ['  ' + emit_int_set_owned_value(function_ir, temp_name, temp_suffix) + ' = call ptr @tb_bootstrap_int_set_clone(ptr ' + temp_ref(temp_name) + ')']
 
+string emit_int_set_local_binding(ParsedFunction function_ir, BindingIR binding, string temp_name, string temp_suffix):
+    string stored_value = temp_ref(temp_name).substring(0)
+    string owned_flag = 'false'.substring(0)
+    string source_binding = transferable_local_binding_name(function_ir, temp_name)
+    string[] lines = []
+    if (temp_is_int_set(function_ir, temp_name)):
+        if (temp_can_transfer_to_local(function_ir, temp_name) && source_binding == ''):
+            owned_flag = 'true'.substring(0)
+        else:
+            lines = emit_int_set_materialize_if_needed(function_ir, temp_name, binding.name + '.' + temp_suffix)
+            stored_value = emit_int_set_owned_value(function_ir, temp_name, binding.name + '.' + temp_suffix)
+            owned_flag = 'true'.substring(0)
+    lines.push('  store ptr ' + stored_value + ', ptr ' + slot_ref(binding.name))
+    lines.push('  store i1 ' + owned_flag + ', ptr ' + owned_slot_ref(binding.name))
+    return join_llvm_strings(lines, '\n')
+
 string emit_int_array_array_owned_value(ParsedFunction function_ir, string temp_name, string temp_suffix):
     if (temp_needs_backend_free(function_ir, temp_name)):
         return temp_ref(temp_name)
@@ -7090,6 +7106,8 @@ string emit_set_instruction(ProgramIR program, ParsedFunction function_ir, Linea
         lines.push('  store ptr ' + stored_value + ', ptr ' + slot_ref(binding.name))
         lines.push('  store i1 ' + owned_flag + ', ptr ' + owned_slot_ref(binding.name))
         return join_llvm_strings(lines, '\n')
+    if (normalize_llvm_type_name(binding.type_name) == 'set<int>'):
+        return emit_int_set_local_binding(function_ir, binding, op.args[0], temp_suffix)
     if (normalize_llvm_type_name(binding.type_name) == 'string[][]'):
         string[] lines = []
         string stored_value = temp_ref(op.args[0]).substring(0)
@@ -7320,6 +7338,8 @@ string emit_assign_local_instruction(ProgramIR program, ParsedFunction function_
         lines.push('  store ptr ' + stored_value + ', ptr ' + slot_ref(binding.name))
         lines.push('  store i1 ' + owned_flag + ', ptr ' + owned_slot_ref(binding.name))
         return join_llvm_strings(lines, '\n')
+    if (normalize_llvm_type_name(binding.type_name) == 'set<int>' && lookup_named_local_binding(function_ir, binding.name).name != ''):
+        return emit_int_set_local_binding(function_ir, binding, op.args[0], temp_suffix)
     if (is_thread_pool_or_future_type(binding.type_name)):
         return emit_thread_pool_or_future_local_binding(function_ir, binding, op.args[0], temp_suffix)
     if (normalize_llvm_type_name(binding.type_name).starts_with('map<')):
