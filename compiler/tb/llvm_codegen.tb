@@ -6193,6 +6193,10 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
         return emit_call_value_instruction_core(program, function_ir, minmax_call)
     if (op.args.length() >= 2 && is_string_char_predicate_method_name(method_name) && temp_is_string_index_value(function_ir, op.args[1])):
         LinearInstruction index_op = lookup_temp_instruction(function_ir, op.args[1])
+        if (temp_needs_backend_free(function_ir, index_op.args[0])):
+            # String indexing releases an owned source after materializing the character.
+            string predicate_line = emit_string_method_call_value_instruction(program, function_ir, op, method_name, method_base_type)
+            return emit_owned_string_receiver_release(function_ir, op.args[1], op.lhs, predicate_line)
         return emit_string_char_predicate_fast_path(function_ir, lhs, method_name, index_op.args[0], index_op.args[1], op.lhs)
     string string_result = emit_string_method_call_value_instruction(program, function_ir, op, method_name, method_base_type)
     if (string_result != ''):

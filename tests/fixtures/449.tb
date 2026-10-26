@@ -1,0 +1,37 @@
+string token(int seed, int runtime):
+    return 'A7 x' + (runtime + seed - seed).to_string()
+
+string empty_token(int runtime):
+    return 'A'.substring(runtime)
+
+string GLOBAL_TOKEN = 'Q4'
+const string FIXED_TOKEN = 'Z5'
+
+record TextBox(string value);
+
+int main(string[] args):
+    print(token(1, args.length())[0].is_alpha())
+    print(token(2, args.length())[1].is_digit())
+    print(token(3, args.length())[1].is_alnum())
+    print(token(4, args.length())[2].is_whitespace())
+    print(token(5, args.length())[2].is_space())
+    print(token(7, args.length())[-1].is_alpha())
+    print(token(8, args.length())[99].is_digit())
+    print(empty_token(args.length())[0].is_alpha())
+
+    string retained = token(9, args.length())
+    print(retained[0].is_alpha())
+    print(retained.starts_with('A7'))
+    print(GLOBAL_TOKEN[0].is_alpha())
+    print(FIXED_TOKEN[0].is_alpha())
+    TextBox box = TextBox(token(10, args.length()))
+    print(box.value[0].is_alpha())
+    print(box.value.starts_with('A7'))
+
+    for (int index : range(2)):
+        print(token(11, args.length() + index)[0].is_alpha())
+    if (args.length() == 1):
+        print(token(12, args.length())[1].is_digit())
+    else:
+        print(token(13, args.length())[1].is_digit())
+    return 0
