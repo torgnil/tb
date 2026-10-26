@@ -83,7 +83,11 @@ the same string representation while preserving the const qualifier, so they
 can be forwarded to string helpers without becoming assignable. Enum locals use
 the existing string-local ownership and normal-exit cleanup rules. Their
 dynamic string values are released with other managed locals after a normal
-function exit. Enum values do not gain nominal type checking at calls.
+function exit. Assigning a dynamic enum value to a global preserves a borrowed
+string value before its local source is cleaned up; an owned string value keeps
+its existing transfer behavior. Global storage keeps its existing process
+lifetime and replacement behavior. Enum values do not gain nominal type
+checking at calls.
 
 5. Declarations
 
