@@ -1902,6 +1902,16 @@ string emit_owned_string_receiver_release(ParsedFunction function_ir, string val
         return consumer_line
     return consumer_line + '\n' + emit_backend_release_ptr('string', temp_ref(value_name))
 
+string emit_owned_print_container_release(ParsedFunction function_ir, string value_name, string consumer_temp_name, string consumer_line):
+    string value_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, value_name))
+    if (value_type != 'int[]' && value_type != 'string[]' && value_type != 'set<int>'):
+        return consumer_line
+    if (!temp_needs_backend_free(function_ir, value_name) || temp_is_moved(function_ir, value_name)):
+        return consumer_line
+    if (!temp_is_query_only_use_in_producing_block(function_ir, value_name, consumer_temp_name)):
+        return consumer_line
+    return consumer_line + '\n' + emit_backend_release_ptr(value_type, temp_ref(value_name))
+
 string backend_owned_flag_for_temp(ParsedFunction function_ir, string temp_name):
     if (temp_needs_backend_free(function_ir, temp_name)):
         return 'true'
@@ -5150,12 +5160,16 @@ string emit_call_value_instruction_core(ProgramIR program, ParsedFunction functi
             string print_line = '  ' + lhs + ' = call i32 @puts(ptr ' + temp_ref(op.args[1]) + ')'
             print_line = emit_owned_string_receiver_release(function_ir, op.args[1], op.lhs, print_line)
             return emit_tracked_builtin_call_line(print_line)
-        if (call_arg1_type == 'string[]'):
-            return emit_tracked_builtin_call_line('  ' + lhs + ' = call i32 @tb_bootstrap_print_string_array(ptr ' + temp_ref(op.args[1]) + ')')
-        if (call_arg1_type == 'int[]'):
-            return emit_tracked_builtin_call_line('  ' + lhs + ' = call i32 @tb_bootstrap_print_int_array(ptr ' + temp_ref(op.args[1]) + ')')
-        if (call_arg1_type == 'set<int>'):
-            return emit_tracked_builtin_call_line('  ' + lhs + ' = call i32 @tb_bootstrap_print_int_set(ptr ' + temp_ref(op.args[1]) + ')')
+        if (call_arg1_type == 'string[]' || call_arg1_type == 'int[]' || call_arg1_type == 'set<int>'):
+            string container_print_line = ''
+            if (call_arg1_type == 'string[]'):
+                container_print_line = '  ' + lhs + ' = call i32 @tb_bootstrap_print_string_array(ptr ' + temp_ref(op.args[1]) + ')'
+            else if (call_arg1_type == 'int[]'):
+                container_print_line = '  ' + lhs + ' = call i32 @tb_bootstrap_print_int_array(ptr ' + temp_ref(op.args[1]) + ')'
+            else:
+                container_print_line = '  ' + lhs + ' = call i32 @tb_bootstrap_print_int_set(ptr ' + temp_ref(op.args[1]) + ')'
+            container_print_line = emit_owned_print_container_release(function_ir, op.args[1], op.lhs, container_print_line)
+            return emit_tracked_builtin_call_line(container_print_line)
         throw 'unsupported llvm print arg type: ' + call_arg1_type
     if (call_name == 'read_lines'):
         if (op.args.length() != 2):

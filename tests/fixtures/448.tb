@@ -1,0 +1,117 @@
+record PrintBox(int[] values, string[] words);
+
+int[] numbers(int seed):
+    return [seed, seed + 1]
+
+string[] words(int seed):
+    return ['word-' + seed]
+
+set<int> ids(int seed):
+    return {seed, seed + 1}
+
+int[] empty_numbers():
+    return []
+
+string[] empty_words():
+    return []
+
+set<int> empty_ids():
+    set<int> values = {}
+    return values
+
+int compare_ascending(int left, int right):
+    return left - right
+
+int[] GLOBAL_NUMBERS = [90, 91]
+string[] GLOBAL_WORDS = ['global-word']
+set<int> GLOBAL_IDS = {70, 71}
+
+int main(string[] args):
+    int seed = args.length() + 2
+    print(numbers(seed))
+    print(words(seed))
+    print(ids(seed))
+    print([1, 2])
+    print(copy(numbers(seed)))
+    print(numbers(seed)[0:])
+    print(range(2))
+
+    int[] set_source = numbers(seed)
+    print(to_set(set_source))
+    print(set_source)
+    print(('left-' + seed.to_string() + ',right').split(','))
+    print(empty_numbers())
+    print(empty_words())
+    print(empty_ids())
+
+    for (int index : range(2)):
+        print(numbers(index))
+        print(words(index))
+        print(ids(index))
+
+    int[] retained_numbers = numbers(seed + 10)
+    print(retained_numbers)
+    print(retained_numbers)
+    print(retained_numbers[0])
+    const int[] fixed_numbers = numbers(seed + 20)
+    print(fixed_numbers)
+    print(fixed_numbers)
+    print(fixed_numbers[0])
+    string[] retained_words = words(seed + 30)
+    print(retained_words)
+    print(retained_words)
+    print(retained_words[0])
+    const string[] fixed_words = words(seed + 40)
+    print(fixed_words)
+    print(fixed_words)
+    print(fixed_words[0])
+    set<int> retained_ids = ids(seed + 50)
+    print(retained_ids)
+    print(retained_ids)
+    print(retained_ids.contains(seed + 50))
+    const set<int> fixed_ids = ids(seed + 60)
+    print(fixed_ids)
+    print(fixed_ids)
+    print(fixed_ids.contains(seed + 60))
+
+    print(GLOBAL_NUMBERS)
+    print(GLOBAL_NUMBERS)
+    print(GLOBAL_NUMBERS[0])
+    print(GLOBAL_WORDS)
+    print(GLOBAL_WORDS)
+    print(GLOBAL_WORDS[0])
+    print(GLOBAL_IDS)
+    print(GLOBAL_IDS)
+    print(GLOBAL_IDS.contains(70))
+
+    PrintBox box = PrintBox(numbers(seed + 70), words(seed + 70))
+    print(box.values)
+    print(box.values)
+    print(box.words)
+    print(box.words)
+    print(box.values[0])
+    print(box.words[0])
+
+    int[] sorted = [seed + 3, seed + 1, seed + 2]
+    print(sorted.sort(compare_ascending))
+    print(sorted)
+    print(sorted[0])
+
+    bool choose_owned = args.length() == 1
+    int[] borrowed_numbers = numbers(seed + 80)
+    string[] borrowed_words = words(seed + 100)
+    set<int> borrowed_ids = ids(seed + 120)
+    print(choose_owned ? numbers(seed + 90) : borrowed_numbers)
+    print(borrowed_numbers)
+    print(choose_owned ? words(seed + 110) : borrowed_words)
+    print(borrowed_words)
+    print(ids(seed + 130))
+    print(borrowed_ids)
+
+    thread_pool pool = thread_pool(1)
+    future<int[]> future_values = pool.submit(int value -> numbers(value), seed)
+    print(future_values.await())
+    print(future_values.await())
+    int[] awaited_again = future_values.await()
+    print(awaited_again[0])
+    return 0

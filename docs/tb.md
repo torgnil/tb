@@ -428,6 +428,7 @@ Core IO and string helpers
 
 - print(value) -> void
   - Print representation of `value` followed by newline. Works with `int`, `num`, `string`, `bool`, arrays and records (stringified).
+  - For `int[]`, `string[]`, and `set<int>`, a recognized owned temporary used only by `print` is released after the full container is printed. Named, borrowed, const, global, field, moved, reused, sort-result aliases, and borrowed future-array results remain with their owners.
 
 - read_lines(path: string) -> string[]
   - Read an entire file and split into lines at runtime.
