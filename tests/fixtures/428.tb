@@ -1,0 +1,122 @@
+int[] source_ints = [1]
+bool[] source_flags = [true]
+string[] source_words = ['source']
+int[][] source_int_rows = [[1, 2]]
+string[][] source_word_rows = [['source', 'row']]
+
+int[] initialized_ints = source_ints
+bool[] initialized_flags = source_flags
+string[] initialized_words = source_words
+int[][] initialized_int_rows = source_int_rows
+string[][] initialized_word_rows = source_word_rows
+
+int[] saved_ints = []
+bool[] saved_flags = []
+string[] saved_words = []
+int[][] saved_int_rows = []
+string[][] saved_word_rows = []
+
+void print_saved():
+    print(saved_ints[0])
+    print(saved_flags[0])
+    print(saved_words[0])
+    print(saved_int_rows[0][0])
+    print(saved_word_rows[0][0])
+
+void save_locals(int seed):
+    int[] ints = [seed]
+    bool[] flags = [true]
+    string[] words = ['local-' + seed.to_string()]
+    int[][] int_rows = [[seed, seed + 1]]
+    string[][] word_rows = [['nested-' + seed.to_string()]]
+    saved_ints = ints
+    saved_flags = flags
+    saved_words = words
+    saved_int_rows = int_rows
+    saved_word_rows = word_rows
+    ints[0] = 90
+    flags[0] = false
+    words[0] = 'changed-local'
+    int_rows[0][0] = 91
+    word_rows[0][0] = 'changed-nested'
+
+void save_parameters(const int[] ints, const bool[] flags, const string[] words, const int[][] int_rows, const string[][] word_rows):
+    saved_ints = ints
+    saved_flags = flags
+    saved_words = words
+    saved_int_rows = int_rows
+    saved_word_rows = word_rows
+
+void replace_ints(const int[] old_value):
+    saved_ints = [99]
+    print(old_value[0])
+
+void save_empty():
+    int[] ints = []
+    bool[] flags = []
+    string[] words = []
+    int[][] int_rows = []
+    string[][] word_rows = []
+    saved_ints = ints
+    saved_flags = flags
+    saved_words = words
+    saved_int_rows = int_rows
+    saved_word_rows = word_rows
+
+int main(string[] args):
+    int seed = args.length() + 10
+
+    print(initialized_ints[0])
+    print(initialized_flags[0])
+    print(initialized_words[0])
+    print(initialized_int_rows[0][0])
+    print(initialized_word_rows[0][0])
+    source_ints[0] = 2
+    source_flags[0] = false
+    source_words[0] = 'changed-source'
+    source_int_rows[0][0] = 3
+    source_word_rows[0][0] = 'changed-source-row'
+    print(initialized_ints[0])
+    print(initialized_flags[0])
+    print(initialized_words[0])
+    print(initialized_int_rows[0][0])
+    print(initialized_word_rows[0][0])
+
+    save_locals(seed)
+    print_saved()
+
+    int[] input_ints = [seed + 1]
+    bool[] input_flags = [false]
+    string[] input_words = ['parameter-' + seed.to_string()]
+    int[][] input_int_rows = [[seed + 2]]
+    string[][] input_word_rows = [['parameter-row-' + seed.to_string()]]
+    save_parameters(input_ints, input_flags, input_words, input_int_rows, input_word_rows)
+    input_ints[0] = 92
+    input_flags[0] = true
+    input_words[0] = 'changed-parameter'
+    input_int_rows[0][0] = 93
+    input_word_rows[0][0] = 'changed-parameter-row'
+    print_saved()
+
+    saved_ints = saved_ints
+    saved_flags = saved_flags
+    saved_words = saved_words
+    saved_int_rows = saved_int_rows
+    saved_word_rows = saved_word_rows
+    print_saved()
+    replace_ints(saved_ints)
+
+    saved_ints = [seed + 20]
+    saved_flags = [true]
+    saved_words = ['owned-' + seed.to_string()]
+    saved_int_rows = [[seed + 21]]
+    saved_word_rows = [['owned-row-' + seed.to_string()]]
+    print_saved()
+
+    save_empty()
+    print(saved_ints.length())
+    print(saved_flags.length())
+    print(saved_words.length())
+    print(saved_int_rows.length())
+    print(saved_word_rows.length())
+    return 0
