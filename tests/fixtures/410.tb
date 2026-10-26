@@ -1,0 +1,48 @@
+int offset = 2
+bool enabled = true
+int map_calls = 0
+int filter_calls = 0
+const bool stable = true
+const int bonus = 10
+int[] source = [7, 8, 9]
+int[] mapped = make_source().map_to(int item -> apply_delta(item, offset) + offset)
+int[] selected = source.filter(int item -> enabled && allow_item(item))
+int[] final_values = selected.map_to(int item -> stable ? item + bonus : item)
+int[] shadowed = selected.map_to(int enabled -> stable ? enabled + 1 : enabled)
+int[] empty_source = []
+int[] empty_mapped = empty_source.map_to(int item -> apply_delta(item, offset))
+int[] empty_filtered = empty_source.filter(int item -> item > 0 && item / zero_value() > offset)
+
+int main(string[] args):
+    print(mapped[0])
+    print(mapped[1])
+    print(mapped[2])
+    print(offset)
+    print(enabled)
+    print(map_calls)
+    print(filter_calls)
+    print(selected.length())
+    print(final_values[0])
+    print(final_values[1])
+    print(shadowed[0])
+    print(shadowed[1])
+    print(empty_mapped.length())
+    print(empty_filtered.length())
+    return 0
+
+int[] make_source():
+    offset = 5
+    return [1, 2, 3]
+
+int apply_delta(int item, int delta):
+    map_calls += 1
+    offset += 1
+    return item + delta
+
+bool allow_item(int item):
+    filter_calls += 1
+    enabled = false
+    return item >= offset
+
+int zero_value():
+    return 0
