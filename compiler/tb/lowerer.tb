@@ -352,7 +352,14 @@ string merge_submit_return_types(string left, string right):
         throw 'thread_pool.submit lambda block returns must all have the same type'
     return left
 
-SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements, SubmitLambdaScope initial_scope, Node[] functions, int loop_depth):
+string array_callback_block_expression_type(Node node, SubmitLambdaScope scope, Node[] functions, bool callback_context, string callback_name):
+    if (!callback_context):
+        return submit_lambda_expression_type(node, scope, functions)
+    if (!int_array_scalar_expression(node, scope.names, functions)):
+        return ''
+    return submit_lambda_expression_type_context(node, scope, functions, true, callback_name)
+
+SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements, SubmitLambdaScope initial_scope, Node[] functions, int loop_depth, bool callback_context, string callback_name):
     SubmitLambdaScope scope = initial_scope
     string return_type = ''
     bool previous_paths_return = false
@@ -370,7 +377,7 @@ SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements
                 throw 'thread_pool.submit lambda locals must have type int or bool'
             if (contains_name(scope.declared_names, binding.name)):
                 throw 'thread_pool.submit lambda local names must be unique, including the parameter'
-            string initializer_type = submit_lambda_expression_type(statement.children[0], scope, functions)
+            string initializer_type = array_callback_block_expression_type(statement.children[0], scope, functions, callback_context, callback_name)
             if (initializer_type == ''):
                 throw 'thread_pool.submit lambda local initializer must use only in-scope scalar values and declared scalar helper calls'
             if (initializer_type != local_type):
@@ -393,7 +400,7 @@ SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements
                 if (submit_lambda_managed_type(scope.types[target_index])):
                     throw 'thread_pool.submit lambda cannot assign to managed task parameter ' + target_name
                 throw 'thread_pool.submit lambda cannot assign to const local ' + target_name
-            string value_type = submit_lambda_expression_type(statement.children[1], scope, functions)
+            string value_type = array_callback_block_expression_type(statement.children[1], scope, functions, callback_context, callback_name)
             if (value_type == ''):
                 throw 'thread_pool.submit lambda assignment value must use only in-scope scalar values and declared scalar helper calls'
             if (value_type != scope.types[target_index]):
@@ -401,7 +408,9 @@ SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements
         else if (statement.kind == 'Return'):
             if (statement.children.length() != 1):
                 throw 'thread_pool.submit lambda block requires value returns'
-            current.return_type = submit_lambda_expression_type(statement.children[0], scope, functions)
+            current.return_type = array_callback_block_expression_type(statement.children[0], scope, functions, callback_context, callback_name)
+            if (callback_context && !(current.return_type == 'int' || current.return_type == 'bool')):
+                throw 'int[] ' + callback_name + ' callback return must use scalar int or bool expressions and declared scalar helper calls'
             if (!submit_lambda_result_type(current.return_type)):
                 throw 'thread_pool.submit lambda return must be an int, bool, string, int[], or int[][] expression using only in-scope values and declared helper calls'
             current.returns_all_paths = true
@@ -414,7 +423,7 @@ SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements
         else if (statement.kind == 'If'):
             if (statement.children.length() < 1):
                 throw 'thread_pool.submit lambda block contains an invalid if statement'
-            if (submit_lambda_expression_type(statement.children[0], scope, functions) != 'bool'):
+            if (array_callback_block_expression_type(statement.children[0], scope, functions, callback_context, callback_name) != 'bool'):
                 throw 'thread_pool.submit lambda condition must be a bool expression using only in-scope scalar values and declared scalar helper calls'
             Node[] then_statements = []
             Node[] else_statements = []
@@ -430,14 +439,14 @@ SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements
                 else:
                     then_statements.push(child)
                 child_index += 1
-            SubmitLambdaValidation then_validation = validate_submit_lambda_block_statements(then_statements, copy_submit_lambda_scope(scope), functions, loop_depth)
+            SubmitLambdaValidation then_validation = validate_submit_lambda_block_statements(then_statements, copy_submit_lambda_scope(scope), functions, loop_depth, callback_context, callback_name)
             SubmitLambdaBlockCheck then_check = then_validation.check
             return_type = merge_submit_return_types(return_type, then_check.return_type)
             current.returns_all_paths = false
             if (has_else):
                 SubmitLambdaScope else_scope = copy_submit_lambda_scope(scope)
                 else_scope.declared_names = then_validation.scope.declared_names
-                SubmitLambdaValidation else_validation = validate_submit_lambda_block_statements(else_statements, else_scope, functions, loop_depth)
+                SubmitLambdaValidation else_validation = validate_submit_lambda_block_statements(else_statements, else_scope, functions, loop_depth, callback_context, callback_name)
                 SubmitLambdaBlockCheck else_check = else_validation.check
                 return_type = merge_submit_return_types(return_type, else_check.return_type)
                 current.returns_all_paths = then_check.returns_all_paths && else_check.returns_all_paths
@@ -448,10 +457,10 @@ SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements
         else if (statement.kind == 'While'):
             if (statement.children.length() < 1):
                 throw 'thread_pool.submit lambda block contains an invalid while statement'
-            if (submit_lambda_expression_type(statement.children[0], scope, functions) != 'bool'):
+            if (array_callback_block_expression_type(statement.children[0], scope, functions, callback_context, callback_name) != 'bool'):
                 throw 'thread_pool.submit lambda while condition must be a bool expression using only in-scope scalar values and declared scalar helper calls'
             Node[] body_statements = tail_nodes(statement.children, 1)
-            SubmitLambdaValidation body_validation = validate_submit_lambda_block_statements(body_statements, copy_submit_lambda_scope(scope), functions, loop_depth + 1)
+            SubmitLambdaValidation body_validation = validate_submit_lambda_block_statements(body_statements, copy_submit_lambda_scope(scope), functions, loop_depth + 1, callback_context, callback_name)
             scope.declared_names = body_validation.scope.declared_names
             current.return_type = body_validation.check.return_type
         else if (statement.kind == 'For'):
@@ -460,16 +469,16 @@ SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements
             Node init_statement = statement.children[0]
             if (!(init_statement.kind == 'VarDecl' || init_statement.kind == 'Assign')):
                 throw 'thread_pool.submit lambda for initializer must be an initialized scalar declaration or assignment'
-            SubmitLambdaValidation init_validation = validate_submit_lambda_block_statements([init_statement], copy_submit_lambda_scope(scope), functions, loop_depth)
+            SubmitLambdaValidation init_validation = validate_submit_lambda_block_statements([init_statement], copy_submit_lambda_scope(scope), functions, loop_depth, callback_context, callback_name)
             SubmitLambdaScope loop_scope = init_validation.scope
-            if (submit_lambda_expression_type(statement.children[1], loop_scope, functions) != 'bool'):
+            if (array_callback_block_expression_type(statement.children[1], loop_scope, functions, callback_context, callback_name) != 'bool'):
                 throw 'thread_pool.submit lambda for condition must be a bool expression using only in-scope scalar values and declared scalar helper calls'
             Node update_statement = statement.children[2]
             if (update_statement.kind != 'Assign'):
                 throw 'thread_pool.submit lambda for update must assign to a mutable scalar local'
-            SubmitLambdaValidation update_validation = validate_submit_lambda_block_statements([update_statement], copy_submit_lambda_scope(loop_scope), functions, loop_depth)
+            SubmitLambdaValidation update_validation = validate_submit_lambda_block_statements([update_statement], copy_submit_lambda_scope(loop_scope), functions, loop_depth, callback_context, callback_name)
             Node[] body_statements = tail_nodes(statement.children, 3)
-            SubmitLambdaValidation body_validation = validate_submit_lambda_block_statements(body_statements, copy_submit_lambda_scope(loop_scope), functions, loop_depth + 1)
+            SubmitLambdaValidation body_validation = validate_submit_lambda_block_statements(body_statements, copy_submit_lambda_scope(loop_scope), functions, loop_depth + 1, callback_context, callback_name)
             scope.declared_names = body_validation.scope.declared_names
             current.return_type = body_validation.check.return_type
         else if (statement.kind == 'ForEach'):
@@ -481,7 +490,7 @@ SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements
                 if (!(range_call.children.length() == 1 || range_call.children.length() == 2)):
                     throw 'thread_pool.submit lambda range requires one or two int bounds'
                 for (Node bound : range_call.children):
-                    if (submit_lambda_expression_type(bound, scope, functions) != 'int'):
+                    if (array_callback_block_expression_type(bound, scope, functions, callback_context, callback_name) != 'int'):
                         throw 'thread_pool.submit lambda range bounds must be int expressions using only in-scope scalar values and declared scalar helper calls'
             else:
                 bool is_array_binding = false
@@ -508,13 +517,13 @@ SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements
             loop_scope.declared_names = append_lines(loop_scope.declared_names, [iterator.name])
             if (iterator_is_const):
                 loop_scope.const_names = append_lines(loop_scope.const_names, [iterator.name])
-            SubmitLambdaValidation body_validation = validate_submit_lambda_block_statements(tail_nodes(statement.children, 1), loop_scope, functions, loop_depth + 1)
+            SubmitLambdaValidation body_validation = validate_submit_lambda_block_statements(tail_nodes(statement.children, 1), loop_scope, functions, loop_depth + 1, callback_context, callback_name)
             scope.declared_names = body_validation.scope.declared_names
             current.return_type = body_validation.check.return_type
         else if (statement.kind == 'Switch'):
             if (statement.children.length() < 1):
                 throw 'thread_pool.submit lambda block contains an invalid switch statement'
-            if (submit_lambda_expression_type(statement.children[0], scope, functions) != 'int'):
+            if (array_callback_block_expression_type(statement.children[0], scope, functions, callback_context, callback_name) != 'int'):
                 throw 'thread_pool.submit lambda switch subject must be an int expression using only in-scope scalar values and declared scalar helper calls'
             bool has_default = false
             string[] declared_names = scope.declared_names
@@ -525,7 +534,7 @@ SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements
                 if (branch.kind == 'Case'):
                     if (branch.children.length() < 1):
                         throw 'thread_pool.submit lambda block contains an invalid switch case'
-                    if (submit_lambda_expression_type(branch.children[0], scope, functions) != 'int'):
+                    if (array_callback_block_expression_type(branch.children[0], scope, functions, callback_context, callback_name) != 'int'):
                         throw 'thread_pool.submit lambda switch case must be an int expression using only in-scope scalar values and declared scalar helper calls'
                     branch_statements = tail_nodes(branch.children, 1)
                 else if (branch.kind == 'Default'):
@@ -537,7 +546,7 @@ SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements
                     throw 'thread_pool.submit lambda block contains an invalid switch branch'
                 SubmitLambdaScope branch_scope = copy_submit_lambda_scope(scope)
                 branch_scope.declared_names = declared_names
-                SubmitLambdaValidation branch_validation = validate_submit_lambda_block_statements(branch_statements, branch_scope, functions, loop_depth)
+                SubmitLambdaValidation branch_validation = validate_submit_lambda_block_statements(branch_statements, branch_scope, functions, loop_depth, callback_context, callback_name)
                 return_type = merge_submit_return_types(return_type, branch_validation.check.return_type)
                 declared_names = branch_validation.scope.declared_names
                 child_index += 1
@@ -546,7 +555,7 @@ SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements
         else if (statement.kind == 'Try'):
             Node[] try_statements = try_body_nodes(statement)
             Node catch_clause = catch_node(statement)
-            SubmitLambdaValidation try_validation = validate_submit_lambda_block_statements(try_statements, copy_submit_lambda_scope(scope), functions, loop_depth)
+            SubmitLambdaValidation try_validation = validate_submit_lambda_block_statements(try_statements, copy_submit_lambda_scope(scope), functions, loop_depth, callback_context, callback_name)
             BindingIR catch_binding = ir_parse_binding_decl(catch_clause.value)
             if (!(catch_binding.type_name == 'exception' || catch_binding.type_name == 'string')):
                 throw 'thread_pool.submit lambda catch binding must have type exception or string'
@@ -554,7 +563,7 @@ SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements
                 throw 'thread_pool.submit lambda local names must be unique, including the parameter'
             SubmitLambdaScope catch_scope = copy_submit_lambda_scope(scope)
             catch_scope.declared_names = append_lines(try_validation.scope.declared_names, [catch_binding.name])
-            SubmitLambdaValidation catch_validation = validate_submit_lambda_block_statements(catch_clause.children, catch_scope, functions, loop_depth)
+            SubmitLambdaValidation catch_validation = validate_submit_lambda_block_statements(catch_clause.children, catch_scope, functions, loop_depth, callback_context, callback_name)
             return_type = merge_submit_return_types(return_type, try_validation.check.return_type)
             return_type = merge_submit_return_types(return_type, catch_validation.check.return_type)
             scope.declared_names = catch_validation.scope.declared_names
@@ -607,7 +616,7 @@ string validate_submit_lambda(Node lambda_node, Node[] functions, BindingIR[] ca
         initial_scope.declared_names = append_lines(initial_scope.declared_names, [binding.name])
     Node body = lambda_node.children[0]
     if (body.kind == 'Block'):
-        SubmitLambdaValidation validation = validate_submit_lambda_block_statements(body.children, initial_scope, functions, 0)
+        SubmitLambdaValidation validation = validate_submit_lambda_block_statements(body.children, initial_scope, functions, 0, false, '')
         SubmitLambdaBlockCheck block_check = validation.check
         if (!submit_lambda_result_type(block_check.return_type) || !block_check.returns_all_paths):
             throw 'thread_pool.submit lambda block must return a value on every path'
@@ -665,32 +674,32 @@ bool map_to_arithmetic_uses_same_item(Node lambda_node):
         return false
     return body.children[1].kind == 'Identifier' && body.children[1].value == binding.name
 
-bool int_array_scalar_expression(Node node, string parameter_name, string[] capture_names, Node[] functions):
+bool int_array_scalar_expression(Node node, string[] allowed_names, Node[] functions):
     if (node.kind == 'Int' || node.kind == 'Bool'):
         return true
     if (node.kind == 'Identifier'):
-        return node.value == parameter_name || contains_name(capture_names, node.value)
+        return contains_name(allowed_names, node.value)
     if (node.kind == 'Call'):
         if (submit_lambda_helper(functions, node.value).kind == ''):
             return false
         for (Node argument : node.children):
-            if (!int_array_scalar_expression(argument, parameter_name, capture_names, functions)):
+            if (!int_array_scalar_expression(argument, allowed_names, functions)):
                 return false
         return true
     if (node.kind == 'Unary'):
         if (node.children.length() != 1 || !(node.value == '-' || node.value == '!' || node.value == 'not')):
             return false
-        return int_array_scalar_expression(node.children[0], parameter_name, capture_names, functions)
+        return int_array_scalar_expression(node.children[0], allowed_names, functions)
     if (node.kind == 'Binary'):
         if (node.children.length() != 2):
             return false
         if (!(node.value == '+' || node.value == '-' || node.value == '*' || node.value == '/' || node.value == '%' || node.value == '&' || node.value == '|' || node.value == '^' || node.value == '<<' || node.value == '>>' || node.value == '==' || node.value == '!=' || node.value == '<' || node.value == '<=' || node.value == '>' || node.value == '>=' || node.value == '&&' || node.value == '||' || node.value == 'and' || node.value == 'or')):
             return false
-        return int_array_scalar_expression(node.children[0], parameter_name, capture_names, functions) && int_array_scalar_expression(node.children[1], parameter_name, capture_names, functions)
+        return int_array_scalar_expression(node.children[0], allowed_names, functions) && int_array_scalar_expression(node.children[1], allowed_names, functions)
     if (node.kind == 'Ternary'):
         if (node.children.length() != 3):
             return false
-        return int_array_scalar_expression(node.children[0], parameter_name, capture_names, functions) && int_array_scalar_expression(node.children[1], parameter_name, capture_names, functions) && int_array_scalar_expression(node.children[2], parameter_name, capture_names, functions)
+        return int_array_scalar_expression(node.children[0], allowed_names, functions) && int_array_scalar_expression(node.children[1], allowed_names, functions) && int_array_scalar_expression(node.children[2], allowed_names, functions)
     return false
 
 bool legacy_int_map_lambda(Node lambda_node):
@@ -745,7 +754,7 @@ SubmitLambdaRewrite rewrite_int_array_expression(Node node, string[] used_names,
                         string parameter_type = parameter.type_name
                         if (parameter_type.starts_with('const ')):
                             parameter_type = parameter_type.substring(6)
-                        if (parameter_type == 'int' && int_array_scalar_expression(lambda_node.children[0], parameter.name, [], functions)):
+                        if (parameter_type == 'int' && int_array_scalar_expression(lambda_node.children[0], [parameter.name], functions)):
                             SubmitLambdaScope scope = SubmitLambdaScope([parameter.name], ['int'], [], [parameter.name], parameter.name)
                             string callback_return_type = submit_lambda_expression_type_context(lambda_node.children[0], scope, functions, true, 'map_to')
                             if (callback_return_type == ''):
@@ -767,7 +776,7 @@ SubmitLambdaRewrite rewrite_int_array_expression(Node node, string[] used_names,
                     string parameter_type = parameter.type_name
                     if (parameter_type.starts_with('const ')):
                         parameter_type = parameter_type.substring(6)
-                    if (int_array_scalar_expression(lambda_node.children[0], parameter.name, [], functions)):
+                    if (int_array_scalar_expression(lambda_node.children[0], [parameter.name], functions)):
                         if (parameter_type != 'int'):
                             throw 'int[] filter expression requires int parameter; got ' + parameter_type
                         SubmitLambdaScope scope = SubmitLambdaScope([parameter.name], ['int'], [], [parameter.name], parameter.name)
@@ -898,13 +907,45 @@ SubmitLambdaScope int_array_scalar_capture_scope(Node lambda_node, BindingIR[] c
         parameter_type = parameter_type.substring(6)
     string[] names = [parameter.name]
     string[] types = [parameter_type]
+    string[] const_names = []
     for (BindingIR binding : captured):
         string capture_type = binding.type_name
         if (capture_type.starts_with('const ')):
             capture_type = capture_type.substring(6)
         names.push(binding.name)
         types.push(capture_type)
-    return SubmitLambdaScope(names, types, [], names, parameter.name)
+        const_names.push(binding.name)
+    return SubmitLambdaScope(names, types, const_names, names, parameter.name)
+
+SubmitLambdaValidation validate_int_array_callback_block_statements(Node[] statements, SubmitLambdaScope scope, Node[] functions, string callback_name):
+    try:
+        return validate_submit_lambda_block_statements(statements, scope, functions, 0, true, callback_name)
+    catch (string error):
+        string prefix = 'thread_pool.submit lambda '
+        if (error.starts_with(prefix)):
+            throw 'int[] ' + callback_name + ' callback ' + error.substring(prefix.length())
+        throw error
+    return SubmitLambdaValidation(SubmitLambdaBlockCheck('', false), scope)
+
+string validate_int_array_scalar_block_callback(Node lambda_node, BindingIR[] captured, Node[] functions, string callback_name):
+    if (lambda_node.kind != 'Lambda' || lambda_node.children.length() != 1):
+        return ''
+    if (lambda_node.children[0].kind != 'Block'):
+        return ''
+    BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+    if (parameter.type_name != 'int'):
+        throw 'int[] ' + callback_name + ' block requires a mutable int parameter'
+    SubmitLambdaScope scope = int_array_scalar_capture_scope(lambda_node, captured)
+    SubmitLambdaValidation validation = validate_int_array_callback_block_statements(lambda_node.children[0].children, scope, functions, callback_name)
+    SubmitLambdaBlockCheck check = validation.check
+    if (!submit_lambda_result_type(check.return_type) || !check.returns_all_paths):
+        throw 'int[] ' + callback_name + ' block must return a value on every path'
+    string required_type = 'int'
+    if (callback_name == 'filter'):
+        required_type = 'bool'
+    if (check.return_type != required_type):
+        throw 'int[] ' + callback_name + ' block must return ' + required_type + '; got ' + check.return_type
+    return check.return_type
 
 ArrayScalarCallbackRewrite int_array_scalar_callback_rewrite(Node node, BindingIR[] bindings, Node[] functions):
     if (node.kind != 'MethodCall' || !(node.value == 'map_to' || node.value == 'filter') || node.children.length() != 2):
@@ -915,7 +956,8 @@ ArrayScalarCallbackRewrite int_array_scalar_callback_rewrite(Node node, BindingI
     if (node.value == 'map_to' && legacy_int_map_lambda(lambda_node)):
         return ArrayScalarCallbackRewrite([], false)
     ArrayScalarCaptureResult capture_result = int_array_scalar_captures(lambda_node, bindings)
-    if (!capture_result.complete || capture_result.captures.is_empty()):
+    bool block_callback = lambda_node.children[0].kind == 'Block'
+    if (!capture_result.complete || (capture_result.captures.is_empty() && !block_callback)):
         return ArrayScalarCallbackRewrite([], false)
     BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
     string parameter_type = parameter.type_name
@@ -923,19 +965,31 @@ ArrayScalarCallbackRewrite int_array_scalar_callback_rewrite(Node node, BindingI
         parameter_type = parameter_type.substring(6)
     if (parameter_type != 'int'):
         return ArrayScalarCallbackRewrite([], false)
-    string[] capture_names = []
-    for (BindingIR binding : capture_result.captures):
-        capture_names.push(binding.name)
-    if (!int_array_scalar_expression(lambda_node.children[0], parameter.name, capture_names, functions)):
-        return ArrayScalarCallbackRewrite([], false)
-    SubmitLambdaScope scope = int_array_scalar_capture_scope(lambda_node, capture_result.captures)
-    string result_type = submit_lambda_expression_type_context(lambda_node.children[0], scope, functions, true, node.value)
+    string result_type = ''
+    if (block_callback):
+        result_type = validate_int_array_scalar_block_callback(lambda_node, capture_result.captures, functions, node.value)
+        if (result_type == ''):
+            return ArrayScalarCallbackRewrite([], false)
+    else:
+        string[] capture_names = []
+        for (BindingIR binding : capture_result.captures):
+            capture_names.push(binding.name)
+        string[] allowed_names = [parameter.name]
+        allowed_names = append_lines(allowed_names, capture_names)
+        if (!int_array_scalar_expression(lambda_node.children[0], allowed_names, functions)):
+            return ArrayScalarCallbackRewrite([], false)
+        SubmitLambdaScope scope = int_array_scalar_capture_scope(lambda_node, capture_result.captures)
+        result_type = submit_lambda_expression_type_context(lambda_node.children[0], scope, functions, true, node.value)
     string required_result = 'int'
     if (node.value == 'filter'):
         required_result = 'bool'
     if (result_type == ''):
+        if (block_callback):
+            throw 'int[] ' + node.value + ' block has invalid scalar operand types'
         throw 'int[] ' + node.value + ' captured expression has invalid scalar operand types'
     if (result_type != required_result):
+        if (block_callback):
+            throw 'int[] ' + node.value + ' block must return ' + required_result + '; got ' + result_type
         throw 'int[] ' + node.value + ' captured expression must return ' + required_result + '; got ' + result_type
     return ArrayScalarCallbackRewrite(capture_result.captures, true)
 
@@ -996,7 +1050,7 @@ Node rewrite_submit_packed_capture_reads(Node node, BindingIR[] captured, string
         children.push(rewrite_submit_packed_capture_reads(child, captured, environment_name, scalar_row))
     return Node(node.kind, node.value, children)
 
-# Called only after validate_submit_lambda accepted the original worker AST.
+# Called only after a supported worker or array-callback block passed validation.
 SubmitRangeListRewrite rewrite_submit_range_foreach_list(Node[] statements, string[] used_names, int next_index):
     Node[] rewritten = []
     string[] current_names = used_names
@@ -1345,6 +1399,7 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
             rewritten = Node(node.kind, node.value, rewritten_children)
     if (callback_rewrite.recognized):
         Node lambda_node = node.children[1]
+        bool block_callback = lambda_node.children[0].kind == 'Block'
         string receiver_name = submit_capture_name(current_names, '__tb_array_callback_receiver_', current_index)
         current_names = add_unique_name(current_names, receiver_name)
         current_index += 1
@@ -1362,16 +1417,39 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
                 capture_type = capture_type.substring(6)
             helper_children.push(Node('Param', 'const ' + capture_type + ' ' + binding.name, []))
             call_arguments.push(Node('Identifier', binding.name, []))
+        Node callback_value = lambda_node.children[0]
+        if (block_callback):
+            BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+            string callback_helper_name = submit_capture_name(current_names, '__tb_array_scalar_callback_', current_index)
+            current_names = add_unique_name(current_names, callback_helper_name)
+            current_index += 1
+            Node[] callback_children = [Node('Param', 'int ' + parameter.name, [])]
+            Node[] callback_arguments = [Node('Identifier', parameter.name, [])]
+            for (BindingIR binding : array_callback_captures):
+                string capture_type = binding.type_name
+                if (capture_type.starts_with('const ')):
+                    capture_type = capture_type.substring(6)
+                callback_children.push(Node('Param', 'const ' + capture_type + ' ' + binding.name, []))
+                callback_arguments.push(Node('Identifier', binding.name, []))
+            SubmitRangeListRewrite normalized_callback = rewrite_submit_range_foreach_list(lambda_node.children[0].children, current_names, current_index)
+            callback_children = append_nodes(callback_children, normalized_callback.nodes)
+            current_names = normalized_callback.used_names
+            current_index = normalized_callback.next_index
+            string callback_return_type = 'int'
+            if (node.value == 'filter'):
+                callback_return_type = 'bool'
+            generated.push(Node('Function', callback_return_type + ' ' + callback_helper_name, callback_children))
+            callback_value = Node('Call', callback_helper_name, callback_arguments)
         helper_children.push(Node('VarDecl', 'int[] ' + output_name, [Node('Array', '', [])]))
         Node output_ref = Node('Identifier', output_name, [])
-        Node append_item = lambda_node.children[0]
+        Node append_item = callback_value
         if (node.value == 'filter'):
             BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
             append_item = Node('Identifier', parameter.name, [])
         Node append_value = Node('ExprStmt', '', [Node('MethodCall', 'push', [output_ref, append_item])])
         Node[] loop_body = []
         if (node.value == 'filter'):
-            loop_body.push(Node('If', '', [lambda_node.children[0], append_value]))
+            loop_body.push(Node('If', '', [callback_value, append_value]))
         else:
             loop_body.push(append_value)
         helper_children.push(Node('ForEach', lambda_node.value, append_nodes([Node('Identifier', receiver_name, [])], loop_body)))
