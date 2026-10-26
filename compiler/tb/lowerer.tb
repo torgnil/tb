@@ -174,7 +174,7 @@ Node submit_lambda_helper(Node[] functions, string name):
         index -= 1
     return Node('', '', [])
 
-string submit_lambda_expression_type(Node node, SubmitLambdaScope scope, Node[] functions):
+string submit_lambda_expression_type_context(Node node, SubmitLambdaScope scope, Node[] functions, bool array_callback_context, string callback_name):
     if (node.kind == 'Int'):
         return 'int'
     if (node.kind == 'Bool'):
@@ -187,7 +187,7 @@ string submit_lambda_expression_type(Node node, SubmitLambdaScope scope, Node[] 
         string element_type = ''
         int index = 0
         while (index < node.children.length()):
-            string current_type = submit_lambda_expression_type(node.children[index], scope, functions)
+            string current_type = submit_lambda_expression_type_context(node.children[index], scope, functions, array_callback_context, callback_name)
             if (!(current_type == 'int' || current_type == 'int[]')):
                 return ''
             if (element_type == ''):
@@ -208,8 +208,8 @@ string submit_lambda_expression_type(Node node, SubmitLambdaScope scope, Node[] 
     if (node.kind == 'Index'):
         if (node.children.length() != 2):
             return ''
-        string base_type = submit_lambda_expression_type(node.children[0], scope, functions)
-        string index_type = submit_lambda_expression_type(node.children[1], scope, functions)
+        string base_type = submit_lambda_expression_type_context(node.children[0], scope, functions, array_callback_context, callback_name)
+        string index_type = submit_lambda_expression_type_context(node.children[1], scope, functions, array_callback_context, callback_name)
         if (index_type != 'int'):
             throw 'thread_pool.submit lambda array index must have type int'
         if (base_type == 'int[]'):
@@ -228,7 +228,7 @@ string submit_lambda_expression_type(Node node, SubmitLambdaScope scope, Node[] 
             return ''
         if (node.children.length() != 1):
             throw 'thread_pool.submit lambda ' + node.value + ' query takes no arguments'
-        string receiver_type = submit_lambda_expression_type(node.children[0], scope, functions)
+        string receiver_type = submit_lambda_expression_type_context(node.children[0], scope, functions, array_callback_context, callback_name)
         if (!(receiver_type == 'string' || receiver_type == 'int[]' || receiver_type == 'int[][]')):
             throw 'thread_pool.submit lambda ' + node.value + ' query requires string, int[], or int[][]'
         if (node.value == 'length'):
@@ -238,20 +238,20 @@ string submit_lambda_expression_type(Node node, SubmitLambdaScope scope, Node[] 
         if (node.children.length() != 1):
             return ''
         if (node.value == '-'):
-            if (submit_lambda_expression_type(node.children[0], scope, functions) == 'int'):
+            if (submit_lambda_expression_type_context(node.children[0], scope, functions, array_callback_context, callback_name) == 'int'):
                 return 'int'
             return ''
         if (node.value == '!' || node.value == 'not'):
-            if (submit_lambda_expression_type(node.children[0], scope, functions) == 'bool'):
+            if (submit_lambda_expression_type_context(node.children[0], scope, functions, array_callback_context, callback_name) == 'bool'):
                 return 'bool'
         return ''
     if (node.kind == 'Binary'):
         if (node.children.length() != 2):
             return ''
-        string left_type = submit_lambda_expression_type(node.children[0], scope, functions)
+        string left_type = submit_lambda_expression_type_context(node.children[0], scope, functions, array_callback_context, callback_name)
         if (left_type == ''):
             return ''
-        string right_type = submit_lambda_expression_type(node.children[1], scope, functions)
+        string right_type = submit_lambda_expression_type_context(node.children[1], scope, functions, array_callback_context, callback_name)
         if (right_type == ''):
             return ''
         if (node.value == '+'):
@@ -283,10 +283,10 @@ string submit_lambda_expression_type(Node node, SubmitLambdaScope scope, Node[] 
     if (node.kind == 'Ternary'):
         if (node.children.length() != 3):
             return ''
-        if (submit_lambda_expression_type(node.children[0], scope, functions) != 'bool'):
+        if (submit_lambda_expression_type_context(node.children[0], scope, functions, array_callback_context, callback_name) != 'bool'):
             return ''
-        string true_type = submit_lambda_expression_type(node.children[1], scope, functions)
-        string false_type = submit_lambda_expression_type(node.children[2], scope, functions)
+        string true_type = submit_lambda_expression_type_context(node.children[1], scope, functions, array_callback_context, callback_name)
+        string false_type = submit_lambda_expression_type_context(node.children[2], scope, functions, array_callback_context, callback_name)
         if (true_type == false_type && submit_lambda_result_type(true_type)):
             return true_type
         return ''
@@ -295,10 +295,11 @@ string submit_lambda_expression_type(Node node, SubmitLambdaScope scope, Node[] 
         if (function_node.kind == ''):
             return ''
         BindingIR signature = ir_parse_binding_decl(function_node.value)
-        if (!submit_lambda_result_type(signature.type_name)):
+        if (!array_callback_context && !submit_lambda_result_type(signature.type_name)):
             return ''
         int parameter_count = 0
         int index = 0
+        bool invalid_callback_parameter = false
         while (index < function_node.children.length()):
             if (function_node.children[index].kind != 'Param'):
                 break
@@ -306,26 +307,41 @@ string submit_lambda_expression_type(Node node, SubmitLambdaScope scope, Node[] 
             string helper_decl_type = parameter.type_name
             if (helper_decl_type.starts_with('const ')):
                 helper_decl_type = helper_decl_type.substring(6)
-            if (!(helper_decl_type == 'int' || helper_decl_type == 'bool' || submit_lambda_managed_type(helper_decl_type))):
+            if (array_callback_context):
+                if (!(helper_decl_type == 'int' || helper_decl_type == 'bool')):
+                    invalid_callback_parameter = true
+            else if (!(helper_decl_type == 'int' || helper_decl_type == 'bool' || submit_lambda_managed_type(helper_decl_type))):
                 return ''
             parameter_count += 1
             index += 1
         if (node.children.length() != parameter_count):
+            if (array_callback_context):
+                throw 'int[] ' + callback_name + ' callback helper ' + node.value + ' expects ' + parameter_count.to_string() + ' arguments but received ' + node.children.length().to_string()
             throw 'thread_pool.submit lambda helper ' + node.value + ' expects ' + parameter_count.to_string() + ' arguments but received ' + node.children.length().to_string()
+        if (array_callback_context):
+            if (!(signature.type_name == 'int' || signature.type_name == 'bool')):
+                throw 'int[] ' + callback_name + ' callback helper ' + node.value + ' must return int or bool; got ' + signature.type_name
+            if (invalid_callback_parameter):
+                throw 'int[] ' + callback_name + ' callback helper ' + node.value + ' parameters must use int or bool'
         index = 0
         while (index < parameter_count):
             BindingIR parameter = ir_parse_binding_decl(function_node.children[index].value)
             string helper_decl_type = parameter.type_name
             if (helper_decl_type.starts_with('const ')):
                 helper_decl_type = helper_decl_type.substring(6)
-            string argument_type = submit_lambda_expression_type(node.children[index], scope, functions)
+            string argument_type = submit_lambda_expression_type_context(node.children[index], scope, functions, array_callback_context, callback_name)
             if (argument_type == ''):
                 return ''
             if (argument_type != helper_decl_type):
+                if (array_callback_context):
+                    throw 'int[] ' + callback_name + ' callback helper ' + node.value + ' argument ' + (index + 1).to_string() + ' must have type ' + helper_decl_type + '; got ' + argument_type
                 throw 'thread_pool.submit lambda helper ' + node.value + ' argument ' + (index + 1).to_string() + ' must have type ' + helper_decl_type + '; got ' + argument_type
             index += 1
         return signature.type_name
     return ''
+
+string submit_lambda_expression_type(Node node, SubmitLambdaScope scope, Node[] functions):
+    return submit_lambda_expression_type_context(node, scope, functions, false, '')
 
 string merge_submit_return_types(string left, string right):
     if (left == ''):
@@ -649,25 +665,32 @@ bool map_to_arithmetic_uses_same_item(Node lambda_node):
         return false
     return body.children[1].kind == 'Identifier' && body.children[1].value == binding.name
 
-bool int_array_scalar_expression(Node node, string parameter_name, string[] capture_names):
+bool int_array_scalar_expression(Node node, string parameter_name, string[] capture_names, Node[] functions):
     if (node.kind == 'Int' || node.kind == 'Bool'):
         return true
     if (node.kind == 'Identifier'):
         return node.value == parameter_name || contains_name(capture_names, node.value)
+    if (node.kind == 'Call'):
+        if (submit_lambda_helper(functions, node.value).kind == ''):
+            return false
+        for (Node argument : node.children):
+            if (!int_array_scalar_expression(argument, parameter_name, capture_names, functions)):
+                return false
+        return true
     if (node.kind == 'Unary'):
         if (node.children.length() != 1 || !(node.value == '-' || node.value == '!' || node.value == 'not')):
             return false
-        return int_array_scalar_expression(node.children[0], parameter_name, capture_names)
+        return int_array_scalar_expression(node.children[0], parameter_name, capture_names, functions)
     if (node.kind == 'Binary'):
         if (node.children.length() != 2):
             return false
         if (!(node.value == '+' || node.value == '-' || node.value == '*' || node.value == '/' || node.value == '%' || node.value == '&' || node.value == '|' || node.value == '^' || node.value == '<<' || node.value == '>>' || node.value == '==' || node.value == '!=' || node.value == '<' || node.value == '<=' || node.value == '>' || node.value == '>=' || node.value == '&&' || node.value == '||' || node.value == 'and' || node.value == 'or')):
             return false
-        return int_array_scalar_expression(node.children[0], parameter_name, capture_names) && int_array_scalar_expression(node.children[1], parameter_name, capture_names)
+        return int_array_scalar_expression(node.children[0], parameter_name, capture_names, functions) && int_array_scalar_expression(node.children[1], parameter_name, capture_names, functions)
     if (node.kind == 'Ternary'):
         if (node.children.length() != 3):
             return false
-        return int_array_scalar_expression(node.children[0], parameter_name, capture_names) && int_array_scalar_expression(node.children[1], parameter_name, capture_names) && int_array_scalar_expression(node.children[2], parameter_name, capture_names)
+        return int_array_scalar_expression(node.children[0], parameter_name, capture_names, functions) && int_array_scalar_expression(node.children[1], parameter_name, capture_names, functions) && int_array_scalar_expression(node.children[2], parameter_name, capture_names, functions)
     return false
 
 bool legacy_int_map_lambda(Node lambda_node):
@@ -698,7 +721,7 @@ string filter_expression_helper_name(string[] used_names, int start_index):
         index += 1
     return '__tb_int_filter_expression_' + index.to_string()
 
-SubmitLambdaRewrite rewrite_int_array_expression(Node node, string[] used_names, int next_index):
+SubmitLambdaRewrite rewrite_int_array_expression(Node node, string[] used_names, int next_index, Node[] functions):
     if (node.kind == 'Lambda' || node.kind == 'Lambda0' || node.kind == 'Lambda2'):
         return SubmitLambdaRewrite(node, [], used_names, next_index)
     Node[] children = []
@@ -706,7 +729,7 @@ SubmitLambdaRewrite rewrite_int_array_expression(Node node, string[] used_names,
     string[] current_names = used_names
     int current_index = next_index
     for (Node child : node.children):
-        SubmitLambdaRewrite rewritten_child = rewrite_int_array_expression(child, current_names, current_index)
+        SubmitLambdaRewrite rewritten_child = rewrite_int_array_expression(child, current_names, current_index, functions)
         children.push(rewritten_child.node)
         generated = append_nodes(generated, rewritten_child.generated)
         current_names = rewritten_child.used_names
@@ -722,17 +745,19 @@ SubmitLambdaRewrite rewrite_int_array_expression(Node node, string[] used_names,
                         string parameter_type = parameter.type_name
                         if (parameter_type.starts_with('const ')):
                             parameter_type = parameter_type.substring(6)
-                        if (parameter_type == 'int' && int_array_scalar_expression(lambda_node.children[0], parameter.name, [])):
+                        if (parameter_type == 'int' && int_array_scalar_expression(lambda_node.children[0], parameter.name, [], functions)):
                             SubmitLambdaScope scope = SubmitLambdaScope([parameter.name], ['int'], [], [parameter.name], parameter.name)
-                            Node[] no_functions = []
-                            string callback_return_type = submit_lambda_expression_type(lambda_node.children[0], scope, no_functions)
-                            if (callback_return_type != ''):
-                                string helper_name = map_expression_helper_name(current_names, current_index)
-                                current_names = add_unique_name(current_names, helper_name)
-                                current_index += 1
-                                generated.push(Node('Function', callback_return_type + ' ' + helper_name, [Node('Param', 'int ' + parameter.name, []), Node('Return', '', [lambda_node.children[0]])]))
-                                children[1] = Node('MapIntExpression', lambda_node.value, [Node('Identifier', helper_name, [])])
-                                rewritten = Node(node.kind, node.value, children)
+                            string callback_return_type = submit_lambda_expression_type_context(lambda_node.children[0], scope, functions, true, 'map_to')
+                            if (callback_return_type == ''):
+                                throw 'int[] map_to expression has invalid scalar operand types'
+                            if (callback_return_type != 'int'):
+                                throw 'int[] map_to expression must return int; got ' + callback_return_type
+                            string helper_name = map_expression_helper_name(current_names, current_index)
+                            current_names = add_unique_name(current_names, helper_name)
+                            current_index += 1
+                            generated.push(Node('Function', callback_return_type + ' ' + helper_name, [Node('Param', 'int ' + parameter.name, []), Node('Return', '', [lambda_node.children[0]])]))
+                            children[1] = Node('MapIntExpression', lambda_node.value, [Node('Identifier', helper_name, [])])
+                            rewritten = Node(node.kind, node.value, children)
     if (node.kind == 'MethodCall' && node.value == 'filter'):
         if (children.length() == 2):
             if (children[1].kind == 'Lambda'):
@@ -742,14 +767,15 @@ SubmitLambdaRewrite rewrite_int_array_expression(Node node, string[] used_names,
                     string parameter_type = parameter.type_name
                     if (parameter_type.starts_with('const ')):
                         parameter_type = parameter_type.substring(6)
-                    if (int_array_scalar_expression(lambda_node.children[0], parameter.name, [])):
+                    if (int_array_scalar_expression(lambda_node.children[0], parameter.name, [], functions)):
                         if (parameter_type != 'int'):
                             throw 'int[] filter expression requires int parameter; got ' + parameter_type
                         SubmitLambdaScope scope = SubmitLambdaScope([parameter.name], ['int'], [], [parameter.name], parameter.name)
-                        Node[] no_functions = []
-                        string callback_return_type = submit_lambda_expression_type(lambda_node.children[0], scope, no_functions)
+                        string callback_return_type = submit_lambda_expression_type_context(lambda_node.children[0], scope, functions, true, 'filter')
                         if (callback_return_type == ''):
                             throw 'int[] filter expression has invalid scalar operand types'
+                        if (callback_return_type != 'bool'):
+                            throw 'int[] filter expression must return bool; got ' + callback_return_type
                         string helper_name = filter_expression_helper_name(current_names, current_index)
                         current_names = add_unique_name(current_names, helper_name)
                         current_index += 1
@@ -760,11 +786,15 @@ SubmitLambdaRewrite rewrite_int_array_expression(Node node, string[] used_names,
 
 SubmitLambdaRewrite rewrite_int_array_expressions_in_program(Node program):
     string[] used_names = collect_submit_unavailable_names(program, [])
+    Node[] functions = []
+    for (Node child : program.children):
+        if (child.kind == 'Function' || child.kind == 'CachedFunction'):
+            functions.push(child)
     Node[] children = []
     Node[] generated = []
     int next_index = 0
     for (Node child : program.children):
-        SubmitLambdaRewrite rewritten = rewrite_int_array_expression(child, used_names, next_index)
+        SubmitLambdaRewrite rewritten = rewrite_int_array_expression(child, used_names, next_index, functions)
         children.push(rewritten.node)
         generated = append_nodes(generated, rewritten.generated)
         used_names = rewritten.used_names
@@ -876,7 +906,7 @@ SubmitLambdaScope int_array_scalar_capture_scope(Node lambda_node, BindingIR[] c
         types.push(capture_type)
     return SubmitLambdaScope(names, types, [], names, parameter.name)
 
-ArrayScalarCallbackRewrite int_array_scalar_callback_rewrite(Node node, BindingIR[] bindings):
+ArrayScalarCallbackRewrite int_array_scalar_callback_rewrite(Node node, BindingIR[] bindings, Node[] functions):
     if (node.kind != 'MethodCall' || !(node.value == 'map_to' || node.value == 'filter') || node.children.length() != 2):
         return ArrayScalarCallbackRewrite([], false)
     Node lambda_node = node.children[1]
@@ -896,11 +926,10 @@ ArrayScalarCallbackRewrite int_array_scalar_callback_rewrite(Node node, BindingI
     string[] capture_names = []
     for (BindingIR binding : capture_result.captures):
         capture_names.push(binding.name)
-    if (!int_array_scalar_expression(lambda_node.children[0], parameter.name, capture_names)):
+    if (!int_array_scalar_expression(lambda_node.children[0], parameter.name, capture_names, functions)):
         return ArrayScalarCallbackRewrite([], false)
     SubmitLambdaScope scope = int_array_scalar_capture_scope(lambda_node, capture_result.captures)
-    Node[] no_functions = []
-    string result_type = submit_lambda_expression_type(lambda_node.children[0], scope, no_functions)
+    string result_type = submit_lambda_expression_type_context(lambda_node.children[0], scope, functions, true, node.value)
     string required_result = 'int'
     if (node.value == 'filter'):
         required_result = 'bool'
@@ -1070,7 +1099,7 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
     BindingIR[] captured = []
     string worker_return_type = ''
     bool rewrite_worker = false
-    ArrayScalarCallbackRewrite callback_rewrite = int_array_scalar_callback_rewrite(node, bindings)
+    ArrayScalarCallbackRewrite callback_rewrite = int_array_scalar_callback_rewrite(node, bindings, functions)
     BindingIR[] array_callback_captures = callback_rewrite.captures
     if (include_submit && node.kind == 'MethodCall' && node.value == 'submit' && node.children.length() > 1):
         Node lambda_node = node.children[1]
