@@ -54,6 +54,7 @@ Build and invocation details are documented in the repository or release `README
 - The entry wrapper copies process arguments into the `string[]` binding; the native backend releases that owned array and its copied strings when `main` returns normally.
 - There is currently no built-in “user args only” helper; use manual indexing/slicing patterns or helpers such as `has_flag(args, '--flag')` and `option_value(args, '--opt')` on the full `args` array.
 - Top-level variable declarations are allowed, including `const` globals; they run in the generated entry wrapper.
+- Known scalar global initializers and simple assignments validate matching `int`, `bool`, `num`, and `string` types before LLVM generation. An `int` may initialize or replace a `num`; const qualifiers and the existing exception/enum string representation are normalized, and unknown source types remain deferred. A mismatch reports the global name and expected/actual scalar types.
 - A global `num` may be initialized by a decimal literal such as `num RATE = 1.25` or an integer literal such as `num COUNT = 5`. Decimal literals keep their written scale; integer literals use scale zero. Runtime initializers remain supported.
 - Top-level executable statements are rejected: executable code belongs inside `main` or other functions.
 

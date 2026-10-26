@@ -6893,11 +6893,32 @@ void require_local_scalar_assignment_type(ParsedFunction function_ir, BindingIR 
     if (!is_scalar_type(target_type)):
         return
     string actual_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, source_temp))
-    if (actual_type == 'unknown' || target_type == actual_type || (target_type == 'num' && actual_type == 'int')):
+    if (scalar_assignment_types_compatible(target_type, actual_type)):
         return
     if (binding.name.starts_with('logic.')):
         throw 'logical operator requires bool operands; got ' + actual_type
     throw 'local ' + ir_source_binding_name(binding.name) + ' expected ' + target_type + ', actual ' + actual_type
+
+bool scalar_assignment_types_compatible(string target_type, string actual_type):
+    return actual_type == 'unknown' || target_type == actual_type || (target_type == 'num' && actual_type == 'int')
+
+string global_scalar_type(ProgramIR program, string type_name):
+    string normalized_type = normalize_llvm_type_name(type_name)
+    return normalize_enum_type_name(normalized_type, collect_enum_types(program.enums))
+
+void require_global_scalar_assignment_type(ProgramIR program, BindingIR binding, string source_type):
+    string target_type = global_scalar_type(program, binding.type_name)
+    if (!is_scalar_type(target_type)):
+        return
+    string actual_type = global_scalar_type(program, source_type)
+    if (scalar_assignment_types_compatible(target_type, actual_type)):
+        return
+    throw 'global ' + ir_source_binding_name(binding.name) + ' expected ' + target_type + ', actual ' + actual_type
+
+void require_global_scalar_initializer_type(ProgramIR program, GlobalDeclIR global_decl):
+    BindingIR binding = ir_parse_binding_decl(strip_prefix(global_decl.header, 'global '))
+    LinearInstruction initializer = lookup_global_instruction(global_decl, global_decl.value_name)
+    require_global_scalar_assignment_type(program, binding, initializer.result_type)
 
 # Ordinary map storage snapshots these array families, nested maps and records.
 # Other composite fields can still escape as raw borrowed pointers. Keep their
@@ -7099,6 +7120,7 @@ string emit_assign_local_instruction(ProgramIR program, ParsedFunction function_
     if (binding.name == ''):
         BindingIR global_binding = lookup_named_global(program, op.detail)
         require_backend_value_type(global_binding.type_name, 'assign_global')
+        require_global_scalar_assignment_type(program, global_binding, lookup_temp_llvm_type(function_ir, op.args[0]))
         string global_type = normalize_llvm_type_name(global_binding.type_name)
         string source_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0]))
         bool native_global_array = global_type == 'int[]' || global_type == 'bool[]' || global_type == 'string[]' || global_type == 'int[][]' || global_type == 'string[][]'
@@ -8715,6 +8737,7 @@ string[] emit_global_record_storage(ProgramIR program, GlobalDeclIR global_decl,
 string[] emit_global_lines(ProgramIR program, GlobalDeclIR global_decl):
     BindingIR binding = ir_parse_binding_decl(strip_prefix(global_decl.header, 'global '))
     require_backend_value_type(binding.type_name, 'global')
+    require_global_scalar_initializer_type(program, global_decl)
     if (!global_has_static_initializer(program, global_decl)):
         return [emit_runtime_global_placeholder(binding)]
     if (normalize_llvm_type_name(binding.type_name) == 'string[]'):
