@@ -7165,11 +7165,12 @@ string emit_assign_local_instruction(ProgramIR program, ParsedFunction function_
         bool global_record_array = temp_is_record_array(function_ir, op.args[0])
         bool global_string = global_type == 'string' && temp_is_string(function_ir, op.args[0])
         bool global_map = global_type.starts_with('map<') && temp_is_map(function_ir, op.args[0])
+        bool global_set = global_type == 'set<int>' && temp_is_int_set(function_ir, op.args[0])
         bool global_record = false
         if (record_name_from_type(global_type) == global_type):
             if (record_type_exists(collect_declared_record_names(program.records), global_type)):
                 global_record = temp_is_record(function_ir, op.args[0])
-        if (source_type == global_type && (native_global_array || global_record_array || global_string || global_map || global_record)):
+        if (source_type == global_type && (native_global_array || global_record_array || global_string || global_map || global_set || global_record)):
             LinearInstruction source = lookup_temp_instruction(function_ir, op.args[0])
             if (source.kind == 'value' && source.detail == 'identifier' && source.args.length() == 1):
                 if (source.args[0] == global_binding.name):
@@ -7202,6 +7203,9 @@ string emit_assign_local_instruction(ProgramIR program, ParsedFunction function_
             else if (global_map):
                 lines = emit_map_materialize_if_needed(function_ir, op.args[0], store_suffix)
                 stored_value = emit_map_owned_value(function_ir, op.args[0], store_suffix)
+            else if (global_set):
+                lines = emit_int_set_materialize_if_needed(function_ir, op.args[0], store_suffix)
+                stored_value = emit_int_set_owned_value(function_ir, op.args[0], store_suffix)
             else:
                 lines = emit_record_materialize_if_needed(program, function_ir, op.args[0], store_suffix)
                 stored_value = emit_record_owned_value(function_ir, op.args[0], store_suffix)
