@@ -7102,32 +7102,49 @@ string emit_assign_local_instruction(ProgramIR program, ParsedFunction function_
         string global_type = normalize_llvm_type_name(global_binding.type_name)
         string source_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0]))
         bool native_global_array = global_type == 'int[]' || global_type == 'bool[]' || global_type == 'string[]' || global_type == 'int[][]' || global_type == 'string[][]'
-        if (source_type == global_type && (native_global_array || temp_is_record_array(function_ir, op.args[0]))):
+        bool global_record_array = temp_is_record_array(function_ir, op.args[0])
+        bool global_string = (global_binding.type_name == 'string' || global_binding.type_name == 'const string') && global_type == 'string' && temp_is_string(function_ir, op.args[0])
+        bool global_map = global_type.starts_with('map<') && temp_is_map(function_ir, op.args[0])
+        bool global_record = false
+        if (record_name_from_type(global_type) == global_type):
+            if (record_type_exists(collect_declared_record_names(program.records), global_type)):
+                global_record = temp_is_record(function_ir, op.args[0])
+        if (source_type == global_type && (native_global_array || global_record_array || global_string || global_map || global_record)):
             LinearInstruction source = lookup_temp_instruction(function_ir, op.args[0])
             if (source.kind == 'value' && source.detail == 'identifier' && source.args.length() == 1):
                 if (source.args[0] == global_binding.name):
                     return '  store ptr ' + temp_ref(op.args[0]) + ', ptr ' + global_ref(global_binding.name)
-            string array_suffix = global_binding.name + '.' + temp_suffix
+            string store_suffix = global_binding.name + '.' + temp_suffix
             string[] lines = []
             string stored_value = temp_ref(op.args[0]).substring(0)
-            if (global_type == 'int[]'):
-                lines = emit_int_array_materialize_if_needed(function_ir, op.args[0], array_suffix)
-                stored_value = emit_int_array_owned_value(function_ir, op.args[0], array_suffix)
-            else if (global_type == 'bool[]'):
-                lines = emit_bool_array_materialize_if_needed(function_ir, op.args[0], array_suffix)
-                stored_value = emit_bool_array_owned_value(function_ir, op.args[0], array_suffix)
-            else if (global_type == 'string[]'):
-                lines = emit_string_array_materialize_if_needed(function_ir, op.args[0], array_suffix)
-                stored_value = emit_string_array_owned_value(function_ir, op.args[0], array_suffix)
-            else if (global_type == 'int[][]'):
-                lines = emit_int_array_array_materialize_if_needed(function_ir, op.args[0], array_suffix)
-                stored_value = emit_int_array_array_owned_value(function_ir, op.args[0], array_suffix)
-            else if (global_type == 'string[][]'):
-                lines = emit_string_array_array_materialize_if_needed(function_ir, op.args[0], array_suffix)
-                stored_value = emit_string_array_array_owned_value(function_ir, op.args[0], array_suffix)
+            if (native_global_array):
+                if (global_type == 'int[]'):
+                    lines = emit_int_array_materialize_if_needed(function_ir, op.args[0], store_suffix)
+                    stored_value = emit_int_array_owned_value(function_ir, op.args[0], store_suffix)
+                else if (global_type == 'bool[]'):
+                    lines = emit_bool_array_materialize_if_needed(function_ir, op.args[0], store_suffix)
+                    stored_value = emit_bool_array_owned_value(function_ir, op.args[0], store_suffix)
+                else if (global_type == 'string[]'):
+                    lines = emit_string_array_materialize_if_needed(function_ir, op.args[0], store_suffix)
+                    stored_value = emit_string_array_owned_value(function_ir, op.args[0], store_suffix)
+                else if (global_type == 'int[][]'):
+                    lines = emit_int_array_array_materialize_if_needed(function_ir, op.args[0], store_suffix)
+                    stored_value = emit_int_array_array_owned_value(function_ir, op.args[0], store_suffix)
+                else:
+                    lines = emit_string_array_array_materialize_if_needed(function_ir, op.args[0], store_suffix)
+                    stored_value = emit_string_array_array_owned_value(function_ir, op.args[0], store_suffix)
+            else if (global_record_array):
+                lines = emit_record_array_materialize_if_needed(function_ir, op.args[0], store_suffix)
+                stored_value = emit_record_array_owned_value(function_ir, op.args[0], store_suffix)
+            else if (global_string):
+                lines = emit_string_materialize_if_needed(function_ir, op.args[0], store_suffix)
+                stored_value = emit_string_owned_value(function_ir, op.args[0], store_suffix)
+            else if (global_map):
+                lines = emit_map_materialize_if_needed(function_ir, op.args[0], store_suffix)
+                stored_value = emit_map_owned_value(function_ir, op.args[0], store_suffix)
             else:
-                lines = emit_record_array_materialize_if_needed(function_ir, op.args[0], array_suffix)
-                stored_value = emit_record_array_owned_value(function_ir, op.args[0], array_suffix)
+                lines = emit_record_materialize_if_needed(program, function_ir, op.args[0], store_suffix)
+                stored_value = emit_record_owned_value(function_ir, op.args[0], store_suffix)
             lines.push('  store ptr ' + stored_value + ', ptr ' + global_ref(global_binding.name))
             return join_llvm_strings(lines, '\n')
         if (normalize_llvm_type_name(global_binding.type_name) == 'num'):
