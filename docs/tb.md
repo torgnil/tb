@@ -78,8 +78,10 @@ Build and invocation details are documented in the repository or release `README
 Enum values use their string representation in named function parameters and
 returns. A returned enum call can be printed, compared with an enum member,
 passed to a string helper, or used with string methods; helper functions may
-forward enum values through additional returns. Enum values do not gain
-nominal type checking at calls.
+forward enum values through additional returns. `const EnumName` bindings use
+the same string representation while preserving the const qualifier, so they
+can be forwarded to string helpers without becoming assignable. Enum values do
+not gain nominal type checking at calls.
 
 5. Declarations
 

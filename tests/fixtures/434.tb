@@ -1,0 +1,49 @@
+enum Mode {
+    READY,
+    DONE
+}
+
+string decorate(const Mode value):
+    return value + '!'
+
+string forward_mode(const Mode value):
+    return value
+
+Mode choose_mode(int seed):
+    if (seed > 1):
+        return Mode.DONE
+    return Mode.READY
+
+string dynamic_label(const Mode value, int seed):
+    string prefix = 'runtime-' + seed
+    return prefix + ':' + value
+
+string build_mode(int seed):
+    const Mode value = 'built-' + seed
+    return forward_mode(value)
+
+const Mode fixed_mode = Mode.READY
+const Mode runtime_mode = choose_mode(1)
+string global_label = decorate(forward_mode(runtime_mode))
+const Mode dynamic_global = build_mode(4)
+
+int main(string[] args):
+    const Mode local_mode = Mode.DONE
+    const Mode selected_mode = choose_mode(args.length())
+    print(fixed_mode)
+    print(runtime_mode)
+    print(global_label)
+    print(local_mode)
+    print(decorate(forward_mode(local_mode)))
+    print(Mode.READY.decorate())
+    print(selected_mode)
+    print(dynamic_label(selected_mode, args.length()))
+    print(selected_mode.length())
+    const Mode local_dynamic = build_mode(args.length())
+    print(local_dynamic)
+    print(decorate(local_dynamic))
+    print(dynamic_global)
+    Mode mutable_mode = Mode.READY
+    mutable_mode = Mode.DONE
+    print(mutable_mode)
+    return 0

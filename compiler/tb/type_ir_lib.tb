@@ -485,8 +485,13 @@ bool enum_has_value(EnumTypeIR[] enums, string enum_name, string value_name):
     return false
 
 string normalize_enum_type_name(string type_name, EnumTypeIR[] enums):
-    if (enum_name_exists(enums, type_name)):
-        return 'string'
+    string qualifier = ''
+    string base_type = type_name
+    if (type_name.starts_with('const ')):
+        qualifier = 'const '
+        base_type = type_name.substring(6)
+    if (enum_name_exists(enums, base_type)):
+        return qualifier + 'string'
     return type_name
 
 BindingIR normalize_enum_binding(BindingIR binding, EnumTypeIR[] enums):
