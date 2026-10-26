@@ -7099,6 +7099,17 @@ string emit_assign_local_instruction(ProgramIR program, ParsedFunction function_
     if (binding.name == ''):
         BindingIR global_binding = lookup_named_global(program, op.detail)
         require_backend_value_type(global_binding.type_name, 'assign_global')
+        string global_type = normalize_llvm_type_name(global_binding.type_name)
+        string source_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0]))
+        if (temp_is_record_array(function_ir, op.args[0]) && source_type == global_type):
+            LinearInstruction source = lookup_temp_instruction(function_ir, op.args[0])
+            if (source.kind == 'value' && source.detail == 'identifier' && source.args.length() == 1):
+                if (source.args[0] == global_binding.name):
+                    return '  store ptr ' + temp_ref(op.args[0]) + ', ptr ' + global_ref(global_binding.name)
+            string[] lines = emit_record_array_materialize_if_needed(function_ir, op.args[0], global_binding.name + '.' + temp_suffix)
+            string stored_value = emit_record_array_owned_value(function_ir, op.args[0], global_binding.name + '.' + temp_suffix)
+            lines.push('  store ptr ' + stored_value + ', ptr ' + global_ref(global_binding.name))
+            return join_llvm_strings(lines, '\n')
         if (normalize_llvm_type_name(global_binding.type_name) == 'num'):
             string[] lines = emit_num_materialize_if_needed(function_ir, op.args[0], global_binding.name + '.' + temp_suffix)
             lines.push('  store %tb_bootstrap_num ' + emit_num_store_value(function_ir, op.args[0], global_binding.name + '.' + temp_suffix) + ', ptr ' + global_ref(global_binding.name))
