@@ -503,6 +503,9 @@ BindingIR[] initialized_managed_locals(ParsedFunction function_ir, string[] reco
         is_main_args_parameter = normalize_llvm_type_name(function_ir.params[0].type_name) == 'string[]'
     if (is_main_args_parameter):
         result.push(function_ir.params[0])
+    for (BindingIR parameter in function_ir.params):
+        if (normalize_llvm_type_name(parameter.type_name) == 'string'):
+            result.push(parameter)
     for (BlockIR block in function_ir.blocks):
         for (LinearInstruction op in block.instructions):
             string binding_name = ''
