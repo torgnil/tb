@@ -7863,6 +7863,27 @@ string emit_instruction(ProgramIR program, ParsedFunction function_ir, string bl
         if (transferable_local_binding_name(function_ir, op.args[0]) != '' && temp_is_int_array(function_ir, op.args[0])):
             return '  ; return int[] local transfers directly'
         return join_llvm_strings(emit_int_array_materialize_if_needed(function_ir, op.args[0], 'return.' + block_label), '\n')
+    if (op.kind == 'prepare_return_int_set'):
+        string source_binding = transferable_local_binding_name(function_ir, op.args[0])
+        if (source_binding != '' && temp_is_int_set(function_ir, op.args[0])):
+            string owned_flag = '%return.int_set.owned.' + block_label
+            string transfer_label = 'return.int_set.transfer.' + block_label
+            string clone_label = 'return.int_set.clone.' + block_label
+            string done_label = 'return.int_set.done.' + block_label
+            return join_llvm_strings([
+                '  ' + owned_flag + ' = load i1, ptr ' + owned_slot_ref(source_binding),
+                '  br i1 ' + owned_flag + ', label %' + transfer_label + ', label %' + clone_label,
+                transfer_label + ':',
+                '  br label %' + done_label,
+                clone_label + ':',
+                '  %return.int_set.copy.' + block_label + ' = call ptr @tb_bootstrap_int_set_clone(ptr ' + temp_ref(op.args[0]) + ')',
+                '  br label %' + done_label,
+                done_label + ':',
+                '  %return.int_set.value.' + block_label + ' = phi ptr [' + temp_ref(op.args[0]) + ', %' + transfer_label + '], [%return.int_set.copy.' + block_label + ', %' + clone_label + ']'
+            ], '\n')
+        if (temp_needs_backend_free(function_ir, op.args[0])):
+            return '  ; return owned set<int> transfers directly'
+        return '  %return.int_set.copy.' + block_label + ' = call ptr @tb_bootstrap_int_set_clone(ptr ' + temp_ref(op.args[0]) + ')'
     if (op.kind == 'release_local'):
         BindingIR binding = ir_parse_binding_decl(op.detail)
         return emit_backend_release_binding(binding, temp_suffix)
@@ -8021,6 +8042,19 @@ string[] emit_terminator(ParsedFunction function_ir, BlockIR block, TerminatorIR
                 string[] lines = emit_try_restore_lines(try_suffix, temp_suffix)
                 lines.push('  ret ptr %choice.return.' + block.label)
                 return lines
+        if (normalize_llvm_type_name(result_type) == 'set<int>'):
+            for (LinearInstruction op in block.instructions):
+                if (op.kind == 'prepare_return_int_set'):
+                    if (!op.args.is_empty()):
+                        if (op.args[0] == terminator.args[0]):
+                            string returned_value = '%return.int_set.copy.' + block.label
+                            if (transferable_local_binding_name(function_ir, terminator.args[0]) != ''):
+                                returned_value = '%return.int_set.value.' + block.label
+                            else if (temp_needs_backend_free(function_ir, terminator.args[0])):
+                                returned_value = temp_ref(terminator.args[0])
+                            string[] lines = emit_try_restore_lines(try_suffix, temp_suffix)
+                            lines.push('  ret ptr ' + returned_value)
+                            return lines
         string normalized_return_type = normalize_llvm_type_name(result_type)
         if (normalized_return_type.ends_with('[]') && record_name_from_type(array_item_type(normalized_return_type)) != ''):
             for (LinearInstruction op in block.instructions):
