@@ -1,0 +1,81 @@
+set<int> global_ids = {5, 6}
+int helper_calls = 0
+
+record SetBox(set<int> values);
+record NestedBox(SetBox box);
+record ArrayBox(int[] values);
+
+SetBox global_box = SetBox(global_ids)
+SetBox global_copy = global_box
+
+set<int> make_set(int seed):
+    helper_calls += 1
+    return {seed, seed + 1, seed + 1}
+
+SetBox make_local_box(int seed):
+    set<int> local = {seed, seed + 1}
+    return SetBox(local)
+
+SetBox snapshot(const set<int> source):
+    return SetBox(source)
+
+set<int> read_current(set<int> values):
+    print(values.contains(9))
+    return {values.length(), 11}
+
+int main(string[] args):
+    int seed = args.length()
+    set<int> source = {1, 2}
+    SetBox from_local = SetBox(source)
+    source.add(99)
+    print(from_local.values.contains(99))
+
+    const set<int> fixed = {3, 4}
+    SetBox from_const = SetBox(fixed)
+    print(from_const.values.contains(4))
+    SetBox from_parameter = snapshot(fixed)
+    print(from_parameter.values.contains(3))
+    SetBox from_global = SetBox(global_ids)
+    print(from_global.values.contains(5))
+    global_box.values.add(13)
+    print(global_copy.values.contains(13))
+
+    SetBox from_owned = SetBox(make_set(seed))
+    print(from_owned.values.length())
+    SetBox from_local_owner = make_local_box(seed + 10)
+    print(from_local_owner.values.contains(seed + 11))
+
+    NestedBox nested = NestedBox(from_owned)
+    NestedBox copied = nested
+    nested.box.values.add(88)
+    print(copied.box.values.contains(88))
+    SetBox other_field = SetBox(from_owned.values)
+    from_owned.values.add(77)
+    print(other_field.values.contains(77))
+
+    SetBox replaced = SetBox({7, 8})
+    set<int> replacement = {9, 10}
+    replaced.values = replacement
+    replacement.add(11)
+    print(replaced.values.contains(11))
+    replaced.values = replaced.values
+    replaced.values = read_current(replaced.values)
+    print(replaced.values.length())
+    replaced.values = make_set(seed + 20)
+    print(replaced.values.length())
+
+    set<int> empty = {}
+    SetBox empty_box = SetBox(empty)
+    empty_box.values.add(seed)
+    print(empty_box.values.length())
+
+    for (int index : range(2)):
+        SetBox loop_box = SetBox(make_set(index + 30))
+        print(loop_box.values.length())
+    print(helper_calls)
+
+    int[] array_source = [5, 6]
+    ArrayBox array_box = ArrayBox(array_source)
+    array_source[0] = 99
+    print(array_box.values[0])
+    return 0
