@@ -1891,7 +1891,10 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                             temp_types = contextual_array.temp_types
                         index += 1
         if (current.kind == 'set'):
-            BindingIR binding = ir_parse_binding_decl(current.detail)
+            BindingIR parsed_binding = ir_parse_binding_decl(current.detail)
+            BindingIR binding = normalize_enum_binding(parsed_binding, enum_types)
+            if (binding.type_name != parsed_binding.type_name):
+                current = LinearInstruction(current.kind, current.lhs, current.result_type, current.ownership_mode, binding.type_name + ' ' + binding.name, clone_instruction_args(current.args))
             if (current.args.length() == 1):
                 string value_type = lookup_temp_type_slot(temp_types, current.args[0])
                 validate_future_binding_type(binding.name, binding.type_name, value_type)

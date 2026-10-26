@@ -80,8 +80,10 @@ returns. A returned enum call can be printed, compared with an enum member,
 passed to a string helper, or used with string methods; helper functions may
 forward enum values through additional returns. `const EnumName` bindings use
 the same string representation while preserving the const qualifier, so they
-can be forwarded to string helpers without becoming assignable. Enum values do
-not gain nominal type checking at calls.
+can be forwarded to string helpers without becoming assignable. Enum locals use
+the existing string-local ownership and normal-exit cleanup rules. Their
+dynamic string values are released with other managed locals after a normal
+function exit. Enum values do not gain nominal type checking at calls.
 
 5. Declarations
 
