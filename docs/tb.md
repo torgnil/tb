@@ -410,6 +410,7 @@ Submitted scalar lambda blocks also support `try` / `catch` with brace-delimited
 - Integer printing uses `printf` with `%lld\n` via an emitted LLVM format string.
 - Runtime string concatenation with `int` and `num` values is supported; the compiler automatically converts numeric values to strings when concatenating or printing. Explicit `to_string()` is also available for supported types.
 - A runtime string concatenation produces an owned string value. The compiler releases owned string operands after copying their text into the independent result; borrowed operands remain available to their owners. Returning the result transfers it to the caller, while an unused result is released when its expression is dropped.
+- `print` releases a recognized owned string temporary after writing it when the print is its only use in the producing block. Named, borrowed, const, global, record-field, moved, or reused strings remain with their owners.
 - A recognized owned string temporary used only by an index is released after producing the independent character result; borrowed receivers remain with their owners.
 - String `==` and `!=` compare by content. A recognized owned string temporary used only by the comparison is released after `strcmp` and the boolean result are computed. This includes owned helper results and copied string-array elements; named, borrowed, moved, reused, and otherwise owner-held strings remain with their owners.
 
