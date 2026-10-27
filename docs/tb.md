@@ -63,6 +63,7 @@ Build and invocation details are documented in the repository or release `README
 - int — 64-bit signed integer.
 - void — no return value; valid for function return types such as `void log(string s) { ... }`.
 - num — fixed-point numeric type (decimal stored as integer value + scale).
+- Numeric comparisons (`==`, `!=`, `<`, `<=`, `>`, `>=`) compare the represented decimal values exactly across scales. `min` and `max` use the same comparison and preserve the selected operand's scale; equal values select the right operand.
 - string — immutable text value (single-quoted literal).
 - bool — compile-time and runtime boolean values (`true`, `false`).
 - file — runtime file handle produced by `open(...)`.

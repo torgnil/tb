@@ -46,20 +46,90 @@ scale.up:
 done:
   ret i64 %value
 }
+define private i64 @tb_bootstrap_num_digits(i128 %magnitude) {
+entry:
+  br label %loop.cond
+loop.cond:
+  %value = phi i128 [%magnitude, %entry], [%next.value, %loop.body]
+  %digits = phi i64 [0, %entry], [%next.digits, %loop.body]
+  %needs.divide = icmp ugt i128 %value, 9
+  br i1 %needs.divide, label %loop.body, label %done
+loop.body:
+  %next.value = udiv i128 %value, 10
+  %next.digits = add i64 %digits, 1
+  br label %loop.cond
+done:
+  %result = add i64 %digits, 1
+  ret i64 %result
+}
+define private i64 @tb_bootstrap_num_cmp_magnitude(i128 %left, i64 %left.scale, i128 %right, i64 %right.scale) {
+entry:
+  %left.digits = call i64 @tb_bootstrap_num_digits(i128 %left)
+  %right.digits = call i64 @tb_bootstrap_num_digits(i128 %right)
+  %left.order = sub i64 %left.digits, %left.scale
+  %right.order = sub i64 %right.digits, %right.scale
+  %orders.equal = icmp eq i64 %left.order, %right.order
+  br i1 %orders.equal, label %align, label %compare.order
+compare.order:
+  %order.less = icmp slt i64 %left.order, %right.order
+  %order.result = select i1 %order.less, i64 -1, i64 1
+  ret i64 %order.result
+align:
+  %left.scale.less = icmp slt i64 %left.scale, %right.scale
+  %left.delta = sub i64 %right.scale, %left.scale
+  %right.delta = sub i64 %left.scale, %right.scale
+  %delta = select i1 %left.scale.less, i64 %left.delta, i64 %right.delta
+  ; Equal decimal order bounds the scale difference by 18 for i64 coefficients.
+  %delta.wide = sext i64 %delta to i128
+  %factor = call i128 @tb_bootstrap_num_pow10_i128(i128 %delta.wide)
+  %left.product = mul i128 %left, %factor
+  %right.product = mul i128 %right, %factor
+  %left.aligned = select i1 %left.scale.less, i128 %left.product, i128 %left
+  %right.aligned = select i1 %left.scale.less, i128 %right, i128 %right.product
+  %magnitude.less = icmp ult i128 %left.aligned, %right.aligned
+  %magnitude.greater = icmp ugt i128 %left.aligned, %right.aligned
+  %greater.or.equal = select i1 %magnitude.greater, i64 1, i64 0
+  %result = select i1 %magnitude.less, i64 -1, i64 %greater.or.equal
+  ret i64 %result
+}
 define private i64 @tb_bootstrap_num_cmp(%tb_bootstrap_num %left, %tb_bootstrap_num %right) {
 entry:
   %left.value = extractvalue %tb_bootstrap_num %left, 0
   %left.scale = extractvalue %tb_bootstrap_num %left, 1
   %right.value = extractvalue %tb_bootstrap_num %right, 0
   %right.scale = extractvalue %tb_bootstrap_num %right, 1
-  %left.scale.gt = icmp sgt i64 %left.scale, %right.scale
-  %target.scale = select i1 %left.scale.gt, i64 %left.scale, i64 %right.scale
-  %left.scaled = call i64 @tb_bootstrap_num_rescale_value(i64 %left.value, i64 %left.scale, i64 %target.scale)
-  %right.scaled = call i64 @tb_bootstrap_num_rescale_value(i64 %right.value, i64 %right.scale, i64 %target.scale)
-  %is.lt = icmp slt i64 %left.scaled, %right.scaled
-  %is.gt = icmp sgt i64 %left.scaled, %right.scaled
-  %gt.or.eq = select i1 %is.gt, i64 1, i64 0
-  %result = select i1 %is.lt, i64 -1, i64 %gt.or.eq
+  %left.negative = icmp slt i64 %left.value, 0
+  %right.negative = icmp slt i64 %right.value, 0
+  %signs.differ = icmp ne i1 %left.negative, %right.negative
+  br i1 %signs.differ, label %different.signs, label %same.sign
+different.signs:
+  %different.sign.result = select i1 %left.negative, i64 -1, i64 1
+  ret i64 %different.sign.result
+same.sign:
+  %left.zero = icmp eq i64 %left.value, 0
+  %right.zero = icmp eq i64 %right.value, 0
+  %both.zero = and i1 %left.zero, %right.zero
+  br i1 %both.zero, label %equal, label %check.left.zero
+equal:
+  ret i64 0
+check.left.zero:
+  br i1 %left.zero, label %less, label %check.right.zero
+less:
+  ret i64 -1
+check.right.zero:
+  br i1 %right.zero, label %greater, label %compare.magnitudes
+greater:
+  ret i64 1
+compare.magnitudes:
+  %left.ext = sext i64 %left.value to i128
+  %right.ext = sext i64 %right.value to i128
+  %left.negated = sub i128 0, %left.ext
+  %right.negated = sub i128 0, %right.ext
+  %left.magnitude = select i1 %left.negative, i128 %left.negated, i128 %left.ext
+  %right.magnitude = select i1 %right.negative, i128 %right.negated, i128 %right.ext
+  %magnitude.result = call i64 @tb_bootstrap_num_cmp_magnitude(i128 %left.magnitude, i64 %left.scale, i128 %right.magnitude, i64 %right.scale)
+  %negative.result = sub i64 0, %magnitude.result
+  %result = select i1 %left.negative, i64 %negative.result, i64 %magnitude.result
   ret i64 %result
 }
 define private %tb_bootstrap_num @tb_bootstrap_num_neg(%tb_bootstrap_num %value) {
