@@ -384,7 +384,7 @@ Submitted scalar lambda blocks also support `try` / `catch` with brace-delimited
 10. Compile-time vs runtime evaluation
 
 - Many helpers and expressions are folded at compile time when inputs are compile-time constants:
-  - `to_int(...)`, `to_num(...)` resolve at compile time for constant string inputs.
+  - `to_int(...)` may resolve at compile time for constant string inputs; native `to_num(...)` runs at runtime.
   - `substring(...)`, `split(...)`, `trim()` may fold at compile time for constant strings.
   - Record string fields that depend on runtime values are evaluated at runtime, including repeated reconstruction such as `box = Box(box.text);`.
   - Nested record fields that depend on runtime values remain runtime values when their containing records are repeatedly reconstructed, including field reads through function parameters.
@@ -487,7 +487,7 @@ Conversion and numeric helpers
   - Parse integer from string. If `s` is compile-time known, resolves at compile time.
 
 - to_num(s: string) -> num
-  - Parse decimal string into `num` representation (value + scale).
+  - Parse an ASCII decimal at runtime into a signed 64-bit coefficient and decimal scale, preserving fractional trailing zeroes. The input allows an optional `+` or `-`, digits, and at most one decimal point; at least one digit is required. Whitespace and exponents are not accepted. Invalid input, an out-of-range coefficient, or a scale above 2,147,483,647 raises `to_num: invalid number`. A declared function or record named `to_num` keeps precedence over the builtin.
 
 - to_string(value) -> string
   - Convert supported values to strings. Current overloads cover `string`, `int`, `num`, `bool`, `int[]`, `string[]`, `bool[]`, and `set<int>`.
