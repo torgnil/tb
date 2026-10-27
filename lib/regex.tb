@@ -2,7 +2,6 @@
 # Outgoing patch-list nodes encode the instruction and slot as 2 * pc + slot.
 record Regex(bool valid, int start, int[] operations, int[] out1, int[] out2, string[] characters);
 record RegexPostfix(bool valid, int[] kinds, string[] characters);
-record RegexClassToken(bool valid, bool escaped, bool predefined, string value, int next);
 record RegexRepeat(bool valid, int minimum, int maximum, int end);
 
 void regex_postfix_add(int[] kinds, string[] characters, int kind, string character):
@@ -36,27 +35,13 @@ bool regex_class_escape(string character):
 bool regex_escapable(string character):
     return regex_class_escape(character) || character == '\\' || character == '.' || character == '|' || character == '*' || character == '+' || character == '?' || character == '(' || character == ')' || regex_reserved(character)
 
-# Read one class member; only recognized regex escapes are accepted.
-RegexClassToken regex_class_token(string body, int index):
-    if (index >= body.length()):
-        return RegexClassToken(false, false, false, '', index)
-    string value = body[index]
-    if (value != '\\'):
-        return RegexClassToken(true, false, false, value, index + 1)
-    index += 1
-    if (index >= body.length()):
-        return RegexClassToken(false, false, false, '', index)
-    value = body[index]
-    if (!regex_escapable(value) && value != '-'):
-        return RegexClassToken(false, false, false, '', index)
-    return RegexClassToken(true, true, regex_class_escape(value), value, index + 1)
-
 # Returns 0 for invalid syntax, 1 for a valid nonmatch, and 2 for a match.
 # Class bodies are checked when compiled and again if a public Regex is mutated.
 int regex_bracket_check(string body, string character):
+    int length = body.length()
     int index = 0
     bool negate = false
-    if (body.is_empty()):
+    if (length == 0):
         return 0
     if (body[0] == '^'):
         negate = true
@@ -64,36 +49,58 @@ int regex_bracket_check(string body, string character):
     int first = index
     bool any = false
     bool matched = false
-    while (index < body.length()):
+    while (index < length):
         int start = index
-        RegexClassToken token = regex_class_token(body, index)
-        if (!token.valid):
-            return 0
-        index = token.next
-        if (!token.escaped && token.value == '-' && start != first && index != body.length()):
+        string value = body[index]
+        bool escaped = false
+        bool predefined = false
+        index += 1
+        if (value == '\\'):
+            escaped = true
+            if (index >= length):
+                return 0
+            value = body[index]
+            if (!regex_escapable(value) && value != '-'):
+                return 0
+            predefined = regex_class_escape(value)
+            index += 1
+        if (!escaped && value == '-' && start != first && index != length):
             return 0
         bool has_range = false
-        if (index < body.length()):
+        if (index < length):
             if (body[index] == '-'):
-                if (index + 1 < body.length()):
+                if (index + 1 < length):
                     has_range = true
         if (has_range):
-            if (token.predefined):
+            if (predefined):
                 return 0
-            RegexClassToken last = regex_class_token(body, index + 1)
-            if (!last.valid || last.predefined):
+            int last_index = index + 1
+            string last_value = body[last_index]
+            bool last_escaped = false
+            bool last_predefined = false
+            last_index += 1
+            if (last_value == '\\'):
+                last_escaped = true
+                if (last_index >= length):
+                    return 0
+                last_value = body[last_index]
+                if (!regex_escapable(last_value) && last_value != '-'):
+                    return 0
+                last_predefined = regex_class_escape(last_value)
+                last_index += 1
+            if (last_predefined):
                 return 0
-            if (!last.escaped && last.value == '-'):
+            if (!last_escaped && last_value == '-'):
                 return 0
-            if (token.value > last.value):
+            if (value > last_value):
                 return 0
-            if (character >= token.value && character <= last.value):
+            if (character >= value && character <= last_value):
                 matched = true
-            index = last.next
-        else if (token.predefined):
-            if (regex_class_matches(token.value, character)):
+            index = last_index
+        else if (predefined):
+            if (regex_class_matches(value, character)):
                 matched = true
-        else if (character == token.value):
+        else if (character == value):
             matched = true
         any = true
     if (!any):
