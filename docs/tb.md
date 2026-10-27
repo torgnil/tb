@@ -394,7 +394,7 @@ Submitted scalar lambda blocks also support `try` / `catch` with brace-delimited
   - `write_all(path, text)` always opens `path` with mode `w` and writes `text` without adding a newline.
   - The compiler emits the file path string, not the file contents, into the generated LLVM.
   - Missing `read_file` and `read_lines` inputs report the helper name and path and exit with status 1 when uncaught; inside a `try` block they can be caught as an exception. `write_all` raises the path when opening, writing, or closing fails, and an uncaught failure prints `write_all: <path>` and exits with status 1. After a successful open it closes the file once, including when writing fails.
-  - `open(path)` opens a file for writing and raises the path if opening fails; an uncaught failure prints `open: <path>` and exits with status 1. Use `read_file` and `read_lines` to read files. Call `close(file)` when finished. The `write_line`, `write_lines`, and `close` helpers do not consistently report write or close failures.
+  - `open(path)` opens a file for writing and raises the path if opening fails; an uncaught failure prints `open: <path>` and exits with status 1. Use `read_file` and `read_lines` to read files. Call `close(file)` when finished. `write_line` and `write_lines` report write failures and stop at the first failed operation; `close` reports flush and close failures and consumes the handle even when it raises.
 - Const enforcement is compile-time and applies to the binding:
   - reassigning a `const` variable and direct writes through its array, map, set, or record target are rejected during compilation
   - known mutating array, set, and priority-queue operations through a `const` binding are rejected, including UFCS and free-function forms
@@ -454,10 +454,20 @@ Core IO and string helpers
   - Open a file handle for writing at runtime. If opening fails, raise `path`; an uncaught failure prints `open: <path>` and exits with status 1. Use `read_file` or `read_lines` for reads.
 
 - write_line(f: file, line: string) -> void
-  - Append `line` with a newline to the file handle.
+  - Append `line` with a newline to the file handle. A write failure raises the
+    owned message `write_line failed`; if caught, the file remains open so the
+    caller can close it.
+
+- write_lines(f: file, lines: string[]) -> void
+  - Append each string in `lines` with a newline. The first write failure raises
+    `write_lines failed` and stops before writing further lines; if caught, the
+    file remains open so the caller can close it.
 
 - close(f: file) -> void
-  - Close a file handle after writing. Failures from writing with `write_line` or `write_lines`, and failures from closing, are not consistently reported.
+  - Close a file handle after writing. A flush or close failure raises the owned
+    message `close failed`. A close attempt consumes the handle even on failure;
+    do not use it again. Uncaught write and close failures print their message
+    and exit with status 1.
 
 Conversion and numeric helpers
 
