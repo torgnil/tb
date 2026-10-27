@@ -436,7 +436,10 @@ Core IO and string helpers
   - For `int[]`, `string[]`, and `set<int>`, a recognized owned temporary used only by `print` is released after the full container is printed. Named, borrowed, const, global, field, moved, reused, sort-result aliases, and borrowed future-array results remain with their owners.
 
 - read_lines(path: string) -> string[]
-  - Read an entire file and split into lines at runtime.
+  - Read lines in one pass and return them in a `string[]`, including from
+    non-seekable inputs such as `/dev/stdin`. A terminal LF is removed from
+    each line; blank lines are kept, CR in CRLF input is preserved, and a final
+    line without LF is returned.
 
 - read_file(path: string) -> string
   - Read the entire file contents at runtime and return them as one string.
