@@ -6470,6 +6470,8 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
         if (temp_needs_backend_free(function_ir, op.args[1]) && !temp_is_moved(function_ir, op.args[1]) && temp_is_query_only_use_in_producing_block(function_ir, op.args[1], op.lhs)):
             lines.push(emit_backend_release_ptr(method_base_type, temp_ref(op.args[1])))
         return join_llvm_strings(lines, '\n')
+    if (lookup_call_meta_index(method_name) < 0):
+        throw 'unsupported method ' + method_name + ' for receiver type ' + method_base_type
     validate_named_user_call_arguments(program, function_ir, method_name, op.args, 1)
     string result_type = lookup_temp_llvm_type(function_ir, op.lhs)
     require_backend_value_type(result_type, 'method-call result')
