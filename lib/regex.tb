@@ -524,3 +524,60 @@ bool regex_match(Regex program, string text):
         if (program.operations[state] == 4):
             return true
     return false
+
+# Search every possible start position in one NFA traversal. Injecting the start
+# closure at each input boundary avoids restarting the matcher on each suffix.
+bool regex_contains(Regex program, string text):
+    if (!program.valid):
+        return false
+    int count = program.operations.length()
+    if (count == 0):
+        return false
+    if (program.out1.length() != count || program.out2.length() != count || program.characters.length() != count):
+        return false
+    # Materialize bytes once. The specialized split helper caches the source
+    # length and walks it directly, so matching does not rescan borrowed text.
+    string[] text_bytes = text.split('')
+    int text_length = text_bytes.length()
+    int[] seen = range(count)
+    seen.fill(0)
+    int[] pending = []
+    int[] current = []
+    int[] next = []
+    int text_index = 0
+    while (text_index <= text_length):
+        seen.fill(0)
+        for (int state : current):
+            if (state < 0 || state >= count):
+                return false
+            seen[state] = 1
+        if (!regex_add_state(program, program.start, seen, pending, current)):
+            return false
+        for (int state : current):
+            if (program.operations[state] == 4):
+                return true
+        if (text_index == text_length):
+            return false
+        seen.fill(0)
+        next.clear()
+        string character = text_bytes[text_index]
+        int index = 0
+        while (index < current.length()):
+            int state = current[index]
+            int operation = program.operations[state]
+            bool matches = operation == 2
+            if (operation == 1):
+                matches = program.characters[state] == character
+            else if (operation == 5):
+                matches = regex_class_matches(program.characters[state], character)
+            else if (operation == 6):
+                matches = regex_bracket_check(program.characters[state], character) == 2
+            if (matches):
+                if (!regex_add_state(program, program.out1[state], seen, pending, next)):
+                    return false
+            index += 1
+        current.clear()
+        for (int state : next):
+            current.push(state)
+        text_index += 1
+    return false

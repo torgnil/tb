@@ -699,7 +699,9 @@ int main():
         print(regex_match(pattern, 'abc'))  # true
 ```
 
-`regex_match` checks the entire string. Compiled programs can be reused. Literal
+`regex_match` checks the entire string; `regex_contains` returns true when any
+substring, including an empty substring, matches. Both return false for an
+invalid compiled pattern. Compiled programs can be reused. Literal
 bytes, `.` (any byte, including newline), concatenation, `|`, parentheses, and
 the quantifiers `*`, `+`, `?`, `{n}`, `{n,}`, and `{n,m}` are supported.
 Parentheses group expressions; they do not capture. Counted repetition uses
@@ -725,7 +727,12 @@ byte endpoints in ascending order. Empty, unclosed, reversed, malformed, and
 unsupported-escape classes are invalid. Class matching scans its members for
 each active state; it does not use recursive backtracking.
 The `valid` field is false for an invalid pattern, and matching it returns false.
-Anchors, captures, and substring searching are not supported.
+Anchors and captures are not supported. `regex_contains` materializes the input
+as a temporary `string[]` of one-byte strings before scanning, using O(n)
+additional memory. The array is limited to 2,147,483,647 bytes; longer input
+aborts. Its NFA work is
+O(n * m), where n is the input byte length and m is the number of compiled
+states, plus scans of bracket-class members for matching active states.
 The compiler embeds the module, so it does not need a separate file at runtime.
 The name `regex` is reserved for this built-in module; other module imports
 continue to resolve relative to the importing source file.

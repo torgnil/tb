@@ -688,7 +688,11 @@ loop.cond:
   %keep.loop = icmp slt i64 %index, %len64
   br i1 %keep.loop, label %loop.body, label %done
 loop.body:
-  %item = call ptr @tb_bootstrap_string_char_at(ptr %src, i64 %index)
+  ; Read from the cached-length loop directly; calling string_char_at here
+  ; would recompute strlen for every character of a borrowed string.
+  %char.ptr = getelementptr inbounds i8, ptr %src, i64 %index
+  %char = load i8, ptr %char.ptr
+  %item = call ptr @tb_bootstrap_cached_char(i8 %char)
   %index32 = trunc i64 %index to i32
   call void @tb_bootstrap_string_array_set_owned(ptr %array, i32 %index32, ptr %item, i1 true)
   br label %loop.step
