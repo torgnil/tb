@@ -21,3 +21,14 @@ Python comparisons require Python 3.10 or newer. The runner uses `python3` from
 
 The runner compiles each benchmark as setup, but reports only executable runtime. Build outputs are written to `.build/benchmarks/`.
 
+The regex benchmarks use ASCII inputs and patterns supported by all three
+implementations. `regex_compile` compiles 1,000 distinct patterns, avoiding
+Python's reuse of a cached pattern. `regex_match` and `regex_contains` each
+compile a pattern once, then count full-string or substring matches respectively,
+including unsuccessful and longer inputs. The POSIX C full-match benchmark uses
+an anchored pattern. All three print counts
+checked against the same expected output. Timings include program startup and
+the work inside each benchmark, including regex compilation. The engines have
+different semantics and implementations, so these timings describe these
+workloads rather than all regex use.
+
