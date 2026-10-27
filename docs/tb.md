@@ -429,6 +429,11 @@ Submitted scalar lambda blocks also support `try` / `catch` with brace-delimited
 
 The reference below lists supported standard library behavior and typical signatures.
 
+Random values
+
+- `random() -> int` returns a uniformly distributed 64-bit bit pattern interpreted as a signed `int`. `uuid() -> string` returns a newly owned lowercase UUID v4 string in canonical 36-character form. Each call reads fresh bytes from the operating system random device (`/dev/urandom` on supported macOS and Linux systems); these calls are runtime operations and are not constant-folded.
+- Both functions take no arguments. If the random source cannot provide all required bytes or cannot be closed successfully, the call raises `random failed` or `uuid failed`. An uncaught error prints that message and exits with status 1. A declared user function or record named `random` or `uuid` keeps precedence over the builtin.
+
 Core IO and string helpers
 
 - print(value) -> void

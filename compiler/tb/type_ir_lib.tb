@@ -815,6 +815,10 @@ string infer_call_type(string name, FunctionSigIR[] functions):
         return 'void'
     if (name == 'time_ms'):
         return 'int'
+    if (name == 'random'):
+        return 'int'
+    if (name == 'uuid'):
+        return 'string'
     if (name == 'has_flag'):
         return 'bool'
     if (name == 'option_value'):
@@ -870,6 +874,10 @@ string lookup_cached_field_type(string[] keys, string[] types, string record_nam
     return lookup_cached_name_type(keys, types, record_name + '.' + field_name)
 
 string infer_call_type_cached(string name, FunctionSigIR[] functions, string[] cache_names, string[] cache_types):
+    if (name == 'random' || name == 'uuid'):
+        string user_result_type = lookup_function_return_type(functions, name)
+        if (user_result_type != 'unknown'):
+            return user_result_type
     if (name == 'write_all'):
         string user_result_type = lookup_function_return_type(functions, name)
         if (user_result_type != 'unknown'):
@@ -1335,6 +1343,8 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
     if (op.detail == 'call'):
         if (op.args.is_empty()):
             return op
+        if ((op.args[0] == 'random' || op.args[0] == 'uuid') && lookup_function_return_type(functions, op.args[0]) == 'unknown' && record_type_exists(record_names, op.args[0])):
+            return refined_value_op(op, op.args[0], refine_ownership_mode(op, op.args[0]))
         string result_type = infer_call_type_cached(op.args[0], functions, TYPE_IR_FUNCTION_TYPE_CACHE_NAMES, TYPE_IR_FUNCTION_TYPE_CACHE_VALUES)
         if (result_type == 'unknown'):
             if (op.args[0] == 'is_empty'):

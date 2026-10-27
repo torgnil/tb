@@ -127,12 +127,13 @@ runtime = repo_root / 'compiler/tb/runtime'
 header = source_text(runtime / 'thread_pool_composite_runtime.h')
 include = '#include "thread_pool_composite_runtime.h"'
 lines.extend(['', 'string llvm_embedded_runtime_text(string name):'])
-for name in ('thread_pool_runtime.c', 'thread_pool_composite_runtime.c'):
+for name in ('thread_pool_runtime.c', 'thread_pool_composite_runtime.c', 'secure_random_runtime.c'):
     text = source_text(runtime / name)
-    if text.count(include) != 1:
-        raise SystemExit(f'Expected one composite runtime header include: {name}')
-    # Each emitted C source is self-contained; no external header is needed.
-    text = text.replace(include, header)
+    if name != 'secure_random_runtime.c':
+        if text.count(include) != 1:
+            raise SystemExit(f'Expected one composite runtime header include: {name}')
+        # Each emitted C source is self-contained; no external header is needed.
+        text = text.replace(include, header)
     lines.append(f'    if (name == {tb_string(name)}):')
     lines.append(f'        return {tb_string(text)}')
 lines.append("    throw 'unknown embedded C runtime: ' + name")
