@@ -4235,6 +4235,8 @@ string[] emit_read_lines_helper():
     lines.push('  %file.ok = icmp ne ptr %file, null')
     lines.push('  br i1 %file.ok, label %read.setup, label %open.fail')
     lines.push('open.fail:')
+    lines.push('  br label %failure')
+    lines.push('failure:')
     lines.push('  %handler = load ptr, ptr ' + exception_handler_symbol())
     lines.push('  %has.handler = icmp ne ptr %handler, null')
     lines.push('  br i1 %has.handler, label %open.unwind, label %open.fatal')
@@ -4278,6 +4280,8 @@ string[] emit_read_lines_helper():
     lines.push('  %array.len = call i32 @tb_bootstrap_string_array_push(ptr %array, ptr %line.copy, i1 true)')
     lines.push('  br label %read.cond')
     lines.push('read.done:')
+    lines.push('  %read.error = call i32 @ferror(ptr %file)')
+    lines.push('  %read.failed = icmp ne i32 %read.error, 0')
     lines.push('  %line.final = load ptr, ptr %line.slot')
     lines.push('  %line.final.ok = icmp ne ptr %line.final, null')
     lines.push('  br i1 %line.final.ok, label %free.line, label %close.file')
@@ -4286,6 +4290,13 @@ string[] emit_read_lines_helper():
     lines.push('  br label %close.file')
     lines.push('close.file:')
     lines.push('  %close.result = call i32 @fclose(ptr %file)')
+    lines.push('  %close.failed = icmp ne i32 %close.result, 0')
+    lines.push('  %io.failed = or i1 %read.failed, %close.failed')
+    lines.push('  br i1 %io.failed, label %discard.result, label %success')
+    lines.push('discard.result:')
+    lines.push('  call void @tb_bootstrap_string_array_free(ptr %array)')
+    lines.push('  br label %failure')
+    lines.push('success:')
     lines.push('  ret ptr %array')
     lines.push('}')
     return lines
@@ -4302,6 +4313,8 @@ string[] emit_read_file_helper():
     lines.push('  %file.ok = icmp ne ptr %file, null')
     lines.push('  br i1 %file.ok, label %setup, label %open.fail')
     lines.push('open.fail:')
+    lines.push('  br label %failure')
+    lines.push('failure:')
     lines.push('  %handler = load ptr, ptr ' + exception_handler_symbol())
     lines.push('  %has.handler = icmp ne ptr %handler, null')
     lines.push('  br i1 %has.handler, label %open.unwind, label %open.fatal')
@@ -4337,6 +4350,8 @@ string[] emit_read_file_helper():
     lines.push('  store ptr %result.new, ptr %result.slot')
     lines.push('  br label %loop.cond')
     lines.push('done:')
+    lines.push('  %read.error = call i32 @ferror(ptr %file)')
+    lines.push('  %read.failed = icmp ne i32 %read.error, 0')
     lines.push('  %line.final = load ptr, ptr %line.slot')
     lines.push('  %line.final.ok = icmp ne ptr %line.final, null')
     lines.push('  br i1 %line.final.ok, label %free.line, label %close.file')
@@ -4345,6 +4360,14 @@ string[] emit_read_file_helper():
     lines.push('  br label %close.file')
     lines.push('close.file:')
     lines.push('  %close.result = call i32 @fclose(ptr %file)')
+    lines.push('  %close.failed = icmp ne i32 %close.result, 0')
+    lines.push('  %io.failed = or i1 %read.failed, %close.failed')
+    lines.push('  br i1 %io.failed, label %discard.result, label %success')
+    lines.push('discard.result:')
+    lines.push('  %result.partial = load ptr, ptr %result.slot')
+    lines.push('  call void @tb_release(ptr %result.partial)')
+    lines.push('  br label %failure')
+    lines.push('success:')
     lines.push('  %result.final = load ptr, ptr %result.slot')
     lines.push('  ret ptr %result.final')
     lines.push('}')
@@ -10130,6 +10153,8 @@ string[] llvm_codegen_ir(ProgramIR program):
     if (needs_read_lines || needs_read_file || needs_file_output || needs_write_all):
         lines.push('declare i32 @fclose(ptr)')
     if (needs_read_lines || needs_read_file):
+        lines.push('declare i32 @ferror(ptr)')
+    if (needs_read_lines || needs_read_file):
         lines.push('declare i64 @getline(ptr, ptr, ptr)')
     for (string declaration in foreign_module_llvm_declarations(foreign_modules)):
         lines.push(declaration)
@@ -10474,6 +10499,9 @@ void llvm_print_ir(ProgramIR program):
         emitted_any_header = true
     if (needs_read_lines || needs_read_file || needs_file_output || needs_write_all):
         print('declare i32 @fclose(ptr)')
+        emitted_any_header = true
+    if (needs_read_lines || needs_read_file):
+        print('declare i32 @ferror(ptr)')
         emitted_any_header = true
     if (needs_read_lines || needs_read_file):
         print('declare i64 @getline(ptr, ptr, ptr)')

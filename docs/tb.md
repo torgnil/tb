@@ -393,7 +393,7 @@ Submitted scalar lambda blocks also support `try` / `catch` with brace-delimited
   - `read_file(path)` always reads `path` when the compiled program runs.
   - `write_all(path, text)` always opens `path` with mode `w` and writes `text` without adding a newline.
   - The compiler emits the file path string, not the file contents, into the generated LLVM.
-  - Missing `read_file` and `read_lines` inputs report the helper name and path and exit with status 1 when uncaught; inside a `try` block they can be caught as an exception. `write_all` raises the path when opening, writing, or closing fails, and an uncaught failure prints `write_all: <path>` and exits with status 1. After a successful open it closes the file once, including when writing fails.
+  - Missing `read_file` and `read_lines` inputs, read errors, or close errors report the helper name and path and exit with status 1 when uncaught; inside a `try` block they can be caught as an exception. A failed read or close discards partial content and closes the stream once. `write_all` raises the path when opening, writing, or closing fails, and an uncaught failure prints `write_all: <path>` and exits with status 1. After a successful open it closes the file once, including when writing fails.
   - `open(path)` opens a file for writing and raises the path if opening fails; an uncaught failure prints `open: <path>` and exits with status 1. Use `read_file` and `read_lines` to read files. Call `close(file)` when finished. `write_line` and `write_lines` report write failures and stop at the first failed operation; `close` reports flush and close failures and consumes the handle even when it raises.
 - Const enforcement is compile-time and applies to the binding:
   - reassigning a `const` variable and direct writes through its array, map, set, or record target are rejected during compilation
@@ -439,11 +439,13 @@ Core IO and string helpers
   - Read lines in one pass and return them in a `string[]`, including from
     non-seekable inputs such as `/dev/stdin`. A terminal LF is removed from
     each line; blank lines are kept, CR in CRLF input is preserved, and a final
-    line without LF is returned.
+    line without LF is returned. Read or close errors raise `path`; failed
+    reads discard any partial array.
 
 - read_file(path: string) -> string
   - Read the entire file contents at runtime and return them as one string.
-  - Return file contents as a single string.
+  - Return file contents as a single string. Read or close errors raise
+    `path`; failed reads discard partial text.
 
 - split_lines(text: string) -> string[]
   - Split text efficiently at newline characters.
