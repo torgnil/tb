@@ -1527,6 +1527,8 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
                 throw 'bool[] clear requires no arguments'
             return refined_value_op(op, 'void', 'plain')
         string normalized_base_type = normalize_llvm_type_name(base_type)
+        if (method_name == 'slice' && (normalized_base_type == 'bool[]' || normalized_base_type == 'int[]' || normalized_base_type == 'string[]') && lookup_function_return_type(functions, method_name) == 'unknown'):
+            throw 'array slice methods are not supported; use values[start:end]'
         if (method_name == 'to_int' && normalized_base_type == 'string'):
             return refined_value_op(op, 'int', 'plain')
         if (method_name == 'push' && normalized_base_type.ends_with('[]')):
