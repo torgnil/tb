@@ -28,8 +28,11 @@ void regex_push_operator(int[] operators, int[] kinds, string[] characters, int 
 bool regex_reserved(string character):
     return character == '[' || character == ']' || character == '{' || character == '}' || character == '^' || character == '$'
 
+bool regex_class_escape(string character):
+    return character == 'd' || character == 'D' || character == 'w' || character == 'W' || character == 's' || character == 'S'
+
 bool regex_escapable(string character):
-    return character == '\\' || character == '.' || character == '|' || character == '*' || character == '+' || character == '?' || character == '(' || character == ')' || regex_reserved(character)
+    return regex_class_escape(character) || character == '\\' || character == '.' || character == '|' || character == '*' || character == '+' || character == '?' || character == '(' || character == ')' || regex_reserved(character)
 
 RegexPostfix regex_postfix(string pattern):
     int[] kinds = []
@@ -93,6 +96,8 @@ RegexPostfix regex_postfix(string pattern):
             int kind = 1
             if (!escaped && character == '.'):
                 kind = 2
+            else if (escaped && regex_class_escape(character)):
+                kind = 8
             regex_postfix_add(kinds, characters, kind, character)
             expect_atom = false
             can_quantify = true
@@ -159,8 +164,11 @@ Regex regex_compile(string pattern):
     int index = 0
     while (index < postfix.kinds.length()):
         int kind = postfix.kinds[index]
-        if (kind == 1 || kind == 2):
-            int state = regex_emit(operations, out1, out2, characters, kind, -1, -1, postfix.characters[index])
+        if (kind == 1 || kind == 2 || kind == 8):
+            int operation = kind
+            if (kind == 8):
+                operation = 5
+            int state = regex_emit(operations, out1, out2, characters, operation, -1, -1, postfix.characters[index])
             starts.push(state)
             patches.push(state * 2)
         else if (kind == 3 || kind == 4):
@@ -223,11 +231,24 @@ bool regex_add_state(Regex program, int state, int[] seen, int[] pending, int[] 
             if (operation == 3):
                 pending.push(program.out2[current])
                 pending.push(program.out1[current])
-            else if (operation == 1 || operation == 2 || operation == 4):
+            else if (operation == 1 || operation == 2 || operation == 4 || operation == 5):
                 active.push(current)
             else:
                 return false
     return true
+
+# ASCII classes operate on one byte; whitespace includes tab through CR and space.
+bool regex_class_matches(string kind, string character):
+    bool matches = false
+    if (kind == 'd' || kind == 'D'):
+        matches = character.is_digit()
+    else if (kind == 'w' || kind == 'W'):
+        matches = character.is_alpha() || character.is_digit() || character == '_'
+    else if (kind == 's' || kind == 'S'):
+        matches = character == ' ' || (character >= '\t' && character <= '\r')
+    if (kind == 'D' || kind == 'W' || kind == 'S'):
+        return !matches
+    return matches
 
 bool regex_match(Regex program, string text):
     if (!program.valid):
@@ -256,6 +277,8 @@ bool regex_match(Regex program, string text):
             bool matches = operation == 2
             if (operation == 1):
                 matches = program.characters[state] == character
+            else if (operation == 5):
+                matches = regex_class_matches(program.characters[state], character)
             if (matches):
                 if (!regex_add_state(program, program.out1[state], seen, pending, next)):
                     return false

@@ -706,9 +706,12 @@ they do not capture. An empty pattern matches only an empty string. Empty groups
 empty alternatives, stacked quantifiers, unmatched parentheses, and dangling
 backslashes are invalid. `[]{}^$` are reserved and invalid when unescaped. A
 backslash may escape `\`, `.`, `|`, `*`, `+`, `?`, `(`, `)`, `[`, `]`, `{`,
-`}`, `^`, or `$` to match that character literally; other escapes are invalid.
+`}`, `^`, or `$` to match that character literally. The escapes `\d`, `\w`,
+and `\s` match one ASCII digit, word byte (letter, digit, or underscore), and
+whitespace byte (space, tab, LF, VT, FF, or CR), respectively. `\D`, `\W`,
+and `\S` match the complements of those byte classes. Other escapes are invalid.
 The `valid` field is false for an invalid pattern, and matching it returns false.
-Character classes, anchors, captures, and substring searching are not supported.
+Bracket character classes, anchors, captures, and substring searching are not supported.
 The compiler embeds the module, so it does not need a separate file at runtime.
 The name `regex` is reserved for this built-in module; other module imports
 continue to resolve relative to the importing source file.
