@@ -686,11 +686,11 @@ Hashing, misc
 
 Regular expressions
 
-The repository includes a byte-oriented regular expression library in `lib/regex.tb`.
-Import it using a path relative to your source file, for example:
+The compiler includes a byte-oriented regular expression module. Import it with
+`import regex;`, for example:
 
 ```tb
-import ../../lib/regex;
+import regex;
 
 int main():
     RegexProgram pattern = regex_compile('(ab|c)+')
@@ -708,7 +708,9 @@ backslash may escape `\`, `.`, `|`, `*`, `+`, `?`, `(`, `)`, `[`, `]`, `{`,
 `}`, `^`, or `$` to match that character literally; other escapes are invalid.
 The `valid` field is false for an invalid pattern, and matching it returns false.
 Character classes, anchors, captures, and substring searching are not supported.
-The module is source-relative and is not currently bundled as a standard library.
+The compiler embeds the module, so it does not need a separate file at runtime.
+The name `regex` is reserved for this built-in module; other module imports
+continue to resolve relative to the importing source file.
 
 14. Examples
 

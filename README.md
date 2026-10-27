@@ -78,12 +78,20 @@ Compile a tb program with the self-hosted compiler:
 ./tb.sh path/to/program.tb
 ```
 
-`build_tb.sh` embeds the LLVM helper templates and C thread runtime into `bin/tb`.
+`build_tb.sh` embeds the LLVM helper templates, C runtime sources, and bundled
+tb library modules into `bin/tb`.
 The editable sources remain under `compiler/tb/llvm_helpers` and
-`compiler/tb/runtime`; rebuild the compiler after changing them. The generated
+`compiler/tb/runtime` for runtime support and `lib/` for tb library modules;
+rebuild the compiler after changing them. The generated
 `compiler/tb/llvm_helpers_generated.tb` module is an ignored build artifact.
 The resulting compiler needs no external tb runtime source files or
 `TB_RESOURCE_ROOT` setting when compiling other tb programs.
+
+Place reusable standard-library algorithms written in tb under `lib/` and bundle
+them as importable modules, such as `import regex;`. Keep compiler primitives,
+low-level runtime support, and platform integration under `compiler/tb/`. Existing
+built-ins can remain in the compiler or runtime until there is a practical reason
+to move them into a tb library module.
 
 When a threaded program is compiled to `output.ll`, the compiler also writes
 `output.ll.thread_pool_runtime.c` and `output.ll.thread_pool_composite_runtime.c`.

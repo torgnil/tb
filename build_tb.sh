@@ -122,6 +122,10 @@ for helper in helpers:
     lines.append(f'    if (name == {tb_string(helper.name)}):')
     lines.append(f'        return {tb_string(source_text(helper))}')
 lines.append("    throw 'unknown embedded LLVM helper: ' + name")
+lines.extend(['', 'string tb_builtin_module_text(string name):'])
+lines.append("    if (name == 'regex'):")
+lines.append(f"        return {tb_string(source_text(repo_root / 'lib/regex.tb'))}")
+lines.append("    throw 'unknown built-in module: ' + name")
 
 runtime = repo_root / 'compiler/tb/runtime'
 header = source_text(runtime / 'thread_pool_composite_runtime.h')
