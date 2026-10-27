@@ -1650,6 +1650,24 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             string result_type = infer_method_call_type_cached(method_name, base_type, functions, TYPE_IR_FUNCTION_TYPE_CACHE_NAMES, TYPE_IR_FUNCTION_TYPE_CACHE_VALUES)
             return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
         if (method_name == 'starts_with' || method_name == 'ends_with' || method_name == 'starts_with_at' || method_name == 'is_alpha' || method_name == 'is_digit' || method_name == 'is_alnum' || method_name == 'is_space' || method_name == 'is_whitespace'):
+            string predicate_receiver_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
+            if (predicate_receiver_type != 'string'):
+                throw method_name + ' requires string receiver; got ' + predicate_receiver_type
+            int expected_arity = 2
+            if (method_name == 'starts_with' || method_name == 'ends_with'):
+                expected_arity = 3
+            if (method_name == 'starts_with_at'):
+                expected_arity = 4
+            if (op.args.length() != expected_arity):
+                throw method_name + ' expects ' + (expected_arity - 2).to_string() + ' arguments; got ' + (op.args.length() - 2).to_string()
+            if (method_name == 'starts_with' || method_name == 'ends_with' || method_name == 'starts_with_at'):
+                string prefix_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2])), enum_types)
+                if (prefix_type != 'string'):
+                    throw method_name + ' argument 1 requires string; got ' + prefix_type
+            if (method_name == 'starts_with_at'):
+                string index_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[3]))
+                if (index_type != 'int'):
+                    throw 'starts_with_at argument 2 requires int; got ' + index_type
             return refined_value_op(op, 'bool', 'plain')
         if (method_name == 'char_at' || method_name == 'replace' || method_name == 'trim' || method_name == 'trim_left' || method_name == 'trim_right' || method_name == 'substring' || method_name == 'to_string'):
             return refined_value_op(op, 'string', 'managed')
