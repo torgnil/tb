@@ -494,7 +494,14 @@ Conversion and numeric helpers
   - Count the set bits in the 64-bit two's-complement representation of `value`.
 
 - round(n: num, target_scale: int) -> num
-  - Round `num` to `target_scale` using half-up rounding (compile-time for constant inputs).
+  - Round `num` to `target_scale` using half-away-from-zero tie handling. The
+    native backend performs the operation at runtime, including for literal
+    inputs. A negative target scale rounds to that power of ten and returns a
+    scale-zero `num`; for example, `round(123.45, -1)` is `120`. If that
+    rounded integer does not fit the signed 64-bit `num` value, the runtime
+    aborts. At target scale `-19`, magnitudes at or above the `5e18` tie can
+    round to an unrepresentable `1e19` result and abort. Negative target scales
+    of `-20` or less produce zero for the current representable `num` range.
 - Integer overflow is currently unchecked; tb does not yet expose widened integer types beyond 64-bit `int`.
 
 String helpers
