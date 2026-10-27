@@ -491,6 +491,7 @@ Conversion and numeric helpers
 
 - to_string(value) -> string
   - Convert supported values to strings. Current overloads cover `string`, `int`, `num`, `bool`, `int[]`, `string[]`, `bool[]`, and `set<int>`.
+  - `to_string(n)` and `n.to_string()` accept `num` values and preserve their decimal scale, including trailing zeroes.
 
 - popcount(value: int) -> int
   - Count the set bits in the 64-bit two's-complement representation of `value`.
