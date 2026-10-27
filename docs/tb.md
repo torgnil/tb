@@ -438,6 +438,7 @@ Core IO and string helpers
 
 - print(value) -> void
   - Print representation of `value` followed by newline. Works with `int`, `num`, `string`, `bool`, arrays and records (stringified).
+  - Native `num` printing and `num.hash()` format decimal scales from zero through 2,147,483,647. Negative scales or scales above that limit abort before formatting. Large scales produce proportionally long output; the general runtime allocation-failure behavior is unchanged.
   - For `int[]`, `string[]`, and `set<int>`, a recognized owned temporary used only by `print` is released after the full container is printed. Named, borrowed, const, global, field, moved, reused, sort-result aliases, and borrowed future-array results remain with their owners.
 
 - read_lines(path: string) -> string[]

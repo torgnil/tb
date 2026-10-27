@@ -285,6 +285,14 @@ define private i32 @tb_bootstrap_num_print(%tb_bootstrap_num %num) {
 entry:
   %value = extractvalue %tb_bootstrap_num %num, 0
   %scale = extractvalue %tb_bootstrap_num %num, 1
+  %scale.negative = icmp slt i64 %scale, 0
+  %scale.too.large = icmp sgt i64 %scale, 2147483647
+  %scale.invalid = or i1 %scale.negative, %scale.too.large
+  br i1 %scale.invalid, label %invalid.scale, label %valid.scale
+invalid.scale:
+  call void @abort()
+  unreachable
+valid.scale:
   %is.scale.zero = icmp eq i64 %scale, 0
   br i1 %is.scale.zero, label %whole, label %fractional
 whole:
@@ -294,9 +302,18 @@ fractional:
   %is.neg = icmp slt i64 %value, 0
   %neg.value = sub i64 0, %value
   %abs.value = select i1 %is.neg, i64 %neg.value, i64 %value
+  %large.scale = icmp sge i64 %scale, 20
+  br i1 %large.scale, label %large.fraction, label %small.fraction
+small.fraction:
   %factor = call i64 @tb_bootstrap_num_pow10(i64 %scale)
-  %whole.value = udiv i64 %abs.value, %factor
-  %fraction.value = urem i64 %abs.value, %factor
+  %small.whole.value = udiv i64 %abs.value, %factor
+  %small.fraction.value = urem i64 %abs.value, %factor
+  br label %fraction.ready
+large.fraction:
+  br label %fraction.ready
+fraction.ready:
+  %whole.value = phi i64 [%small.whole.value, %small.fraction], [0, %large.fraction]
+  %fraction.value = phi i64 [%small.fraction.value, %small.fraction], [%abs.value, %large.fraction]
   %minus.ptr = getelementptr inbounds [2 x i8], ptr @.num.minus, i32 0, i32 0
   %empty.ptr = getelementptr inbounds [1 x i8], ptr @.num.empty, i32 0, i32 0
   %sign.ptr = select i1 %is.neg, ptr %minus.ptr, ptr %empty.ptr

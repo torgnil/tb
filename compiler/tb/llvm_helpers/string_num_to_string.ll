@@ -2,6 +2,14 @@ define private ptr @tb_bootstrap_num_to_string(%tb_bootstrap_num %num) {
 entry:
   %value = extractvalue %tb_bootstrap_num %num, 0
   %scale = extractvalue %tb_bootstrap_num %num, 1
+  %scale.negative = icmp slt i64 %scale, 0
+  %scale.too.large = icmp sgt i64 %scale, 2147483647
+  %scale.invalid = or i1 %scale.negative, %scale.too.large
+  br i1 %scale.invalid, label %invalid.scale, label %valid.scale
+invalid.scale:
+  call void @abort()
+  unreachable
+valid.scale:
   %is.scale.zero = icmp eq i64 %scale, 0
   br i1 %is.scale.zero, label %whole, label %fractional
 whole:
@@ -11,13 +19,26 @@ fractional:
   %is.neg = icmp slt i64 %value, 0
   %neg.value = sub i64 0, %value
   %abs.value = select i1 %is.neg, i64 %neg.value, i64 %value
+  %large.scale = icmp sge i64 %scale, 20
+  br i1 %large.scale, label %large.fraction, label %small.fraction
+small.fraction:
   %factor = call i64 @tb_bootstrap_num_pow10(i64 %scale)
-  %whole.value = udiv i64 %abs.value, %factor
-  %fraction.value = urem i64 %abs.value, %factor
+  %small.whole.value = udiv i64 %abs.value, %factor
+  %small.fraction.value = urem i64 %abs.value, %factor
+  br label %fraction.ready
+large.fraction:
+  br label %fraction.ready
+fraction.ready:
+  %whole.value = phi i64 [%small.whole.value, %small.fraction], [0, %large.fraction]
+  %fraction.value = phi i64 [%small.fraction.value, %small.fraction], [%abs.value, %large.fraction]
   %whole.text = call ptr @tb_bootstrap_int_to_string(i64 %whole.value)
   %fraction.text = call ptr @tb_bootstrap_int_to_string(i64 %fraction.value)
   %whole.len = call i64 @strlen(ptr %whole.text)
-  %fraction.len = call i64 @strlen(ptr %fraction.text)
+  %fraction.raw.len = call i64 @strlen(ptr %fraction.text)
+  %fraction.is.min = icmp eq i64 %fraction.value, -9223372036854775808
+  %fraction.sign.len = select i1 %fraction.is.min, i64 1, i64 0
+  %fraction.len = sub i64 %fraction.raw.len, %fraction.sign.len
+  %fraction.data = getelementptr inbounds i8, ptr %fraction.text, i64 %fraction.sign.len
   %sign.len = select i1 %is.neg, i64 1, i64 0
   %scale.minus.fraction = sub i64 %scale, %fraction.len
   %body.len = add i64 %whole.len, 1
@@ -52,7 +73,7 @@ copy.fraction:
   %fraction.dst.base = add i64 %dot.index, 1
   %fraction.dst.offset = add i64 %fraction.dst.base, %scale.minus.fraction
   %fraction.dst = getelementptr inbounds i8, ptr %data, i64 %fraction.dst.offset
-  call void @llvm.memcpy.p0.p0.i64(ptr %fraction.dst, ptr %fraction.text, i64 %fraction.len, i1 false)
+  call void @llvm.memcpy.p0.p0.i64(ptr %fraction.dst, ptr %fraction.data, i64 %fraction.len, i1 false)
   %term.ptr = getelementptr inbounds i8, ptr %data, i64 %text.len
   store i8 0, ptr %term.ptr
   call void @tb_release(ptr %whole.text)
