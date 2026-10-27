@@ -7011,7 +7011,8 @@ string emit_set_instruction(ProgramIR program, ParsedFunction function_ir, Linea
             string owned_flag = 'false'
             string normalized_binding_type = normalize_llvm_type_name(binding.type_name)
             bool direct_array_owner = normalized_binding_type == 'bool[]' || normalized_binding_type == 'int[][]' || normalized_binding_type == 'string[][]'
-            if (temp_can_transfer_to_local(function_ir, op.args[0]) && (direct_array_owner || conditional_carrier_can_own(program, binding.type_name, 0))):
+            bool direct_set_owner = normalized_binding_type == 'set<int>'
+            if (temp_can_transfer_to_local(function_ir, op.args[0]) && (direct_array_owner || direct_set_owner || conditional_carrier_can_own(program, binding.type_name, 0))):
                 owned_flag = 'true'
             lines.push('  store i1 ' + owned_flag + ', ptr ' + owned_slot_ref(binding.name))
             if (normalize_llvm_type_name(binding.type_name) == 'string'):
@@ -7850,6 +7851,8 @@ string emit_instruction(ProgramIR program, ParsedFunction function_ir, string bl
             clone_function = '@tb_bootstrap_string_array_array_clone'
         else if (op.detail.starts_with('map<')):
             clone_function = llvm_map_clone_name(op.detail)
+        else if (op.detail == 'set<int>'):
+            clone_function = '@tb_bootstrap_int_set_clone'
         else if (record_name_from_type(op.detail) != ''):
             clone_function = '@tb_bootstrap_record_clone_' + record_name_from_type(op.detail)
         if (clone_function == ''):
