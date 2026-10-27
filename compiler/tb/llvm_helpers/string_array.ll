@@ -17,7 +17,19 @@
 @.fmt.rt.ah = private unnamed_addr constant [9 x i8] c"ah=%lld\0A\00"
 define private ptr @tb_bootstrap_string_array_new(i32 %len) {
 entry:
+  %len.negative = icmp slt i32 %len, 0
+  br i1 %len.negative, label %invalid.length, label %allocate.object
+invalid.length:
+  call void @abort()
+  unreachable
+allocate.object:
   %array = call ptr @malloc(i64 24)
+  %array.null = icmp eq ptr %array, null
+  br i1 %array.null, label %object.failed, label %allocate.data
+object.failed:
+  call void @abort()
+  unreachable
+allocate.data:
   %len64 = sext i32 %len to i64
   %has.items = icmp sgt i32 %len, 0
   %alloc.len64 = select i1 %has.items, i64 %len64, i64 1
@@ -25,7 +37,22 @@ entry:
   %as.old = atomicrmw add ptr @tb_rt_as, i64 %alloc.len64 seq_cst, align 8
   %bytes = mul i64 %alloc.len64, 8
   %data = call ptr @malloc(i64 %bytes)
+  %data.null = icmp eq ptr %data, null
+  br i1 %data.null, label %data.failed, label %allocate.owned
+data.failed:
+  call void @free(ptr %array)
+  call void @abort()
+  unreachable
+allocate.owned:
   %owned = call ptr @malloc(i64 %alloc.len64)
+  %owned.null = icmp eq ptr %owned, null
+  br i1 %owned.null, label %owned.failed, label %initialize
+owned.failed:
+  call void @free(ptr %data)
+  call void @free(ptr %array)
+  call void @abort()
+  unreachable
+initialize:
   call void @llvm.memset.p0.i64(ptr %data, i8 0, i64 %bytes, i1 false)
   call void @llvm.memset.p0.i64(ptr %owned, i8 0, i64 %alloc.len64, i1 false)
   %len.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 0
@@ -213,6 +240,12 @@ entry:
   %ap.old = atomicrmw add ptr @tb_rt_ap, i64 1 seq_cst, align 8
   %len.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 0
   %len = load i32, ptr %len.ptr
+  %at.limit = icmp eq i32 %len, 2147483647
+  br i1 %at.limit, label %length.failed, label %check.capacity
+length.failed:
+  call void @abort()
+  unreachable
+check.capacity:
   %cap.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 1
   %cap = load i32, ptr %cap.ptr
   %next.len = add i32 %len, 1
@@ -231,18 +264,35 @@ store.existing:
   store i32 %next.len, ptr %len.ptr
   ret i32 %next.len
 grow:
+  %cap64 = sext i32 %cap to i64
+  %cap.twice64 = mul i64 %cap64, 2
+  %cap.too.large = icmp sgt i64 %cap.twice64, 2147483647
+  %cap.doubled64 = select i1 %cap.too.large, i64 2147483647, i64 %cap.twice64
   %cap.is.zero = icmp eq i32 %cap, 0
-  %cap.twice = mul i32 %cap, 2
-  %cap.base = select i1 %cap.is.zero, i32 1, i32 %cap.twice
-  %cap.big.enough = icmp sge i32 %cap.base, %next.len
-  %new.cap = select i1 %cap.big.enough, i32 %cap.base, i32 %next.len
-  %new.cap64 = sext i32 %new.cap to i64
+  %cap.base64 = select i1 %cap.is.zero, i64 1, i64 %cap.doubled64
+  %next.len64 = sext i32 %next.len to i64
+  %cap.big.enough = icmp sge i64 %cap.base64, %next.len64
+  %new.cap64 = select i1 %cap.big.enough, i64 %cap.base64, i64 %next.len64
+  %new.cap = trunc i64 %new.cap64 to i32
   %ag.old = atomicrmw add ptr @tb_rt_ag, i64 1 seq_cst, align 8
   %ah.old = atomicrmw add ptr @tb_rt_ah, i64 %new.cap64 seq_cst, align 8
   %data.bytes = mul i64 %new.cap64, 8
   %owned.bytes = mul i64 %new.cap64, 1
   %data.new = call ptr @malloc(i64 %data.bytes)
+  %data.new.null = icmp eq ptr %data.new, null
+  br i1 %data.new.null, label %data.growth.failed, label %allocate.owned.growth
+data.growth.failed:
+  call void @abort()
+  unreachable
+allocate.owned.growth:
   %owned.new = call ptr @malloc(i64 %owned.bytes)
+  %owned.new.null = icmp eq ptr %owned.new, null
+  br i1 %owned.new.null, label %owned.growth.failed, label %initialize.growth
+owned.growth.failed:
+  call void @free(ptr %data.new)
+  call void @abort()
+  unreachable
+initialize.growth:
   call void @llvm.memset.p0.i64(ptr %data.new, i8 0, i64 %data.bytes, i1 false)
   call void @llvm.memset.p0.i64(ptr %owned.new, i8 0, i64 %owned.bytes, i1 false)
   %has.items = icmp sgt i32 %len, 0
@@ -624,11 +674,17 @@ shift.done:
 define private ptr @tb_bootstrap_split_chars(ptr %src) {
 entry:
   %len64 = call i64 @strlen(ptr %src)
+  %len.too.large = icmp ugt i64 %len64, 2147483647
+  br i1 %len.too.large, label %too.large, label %length.valid
+too.large:
+  call void @abort()
+  unreachable
+length.valid:
   %len32 = trunc i64 %len64 to i32
   %array = call ptr @tb_bootstrap_string_array_new(i32 %len32)
   br label %loop.cond
 loop.cond:
-  %index = phi i64 [0, %entry], [%next.index, %loop.step]
+  %index = phi i64 [0, %length.valid], [%next.index, %loop.step]
   %keep.loop = icmp slt i64 %index, %len64
   br i1 %keep.loop, label %loop.body, label %done
 loop.body:
