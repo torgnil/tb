@@ -1,0 +1,272 @@
+# A byte-oriented, full-match Thompson NFA. Instructions use parallel arrays.
+# Outgoing patch-list nodes encode the instruction and slot as 2 * pc + slot.
+record RegexProgram(bool valid, int start, int[] operations, int[] out1, int[] out2, string[] characters);
+record RegexPostfix(bool valid, int[] kinds, string[] characters);
+
+void regex_postfix_add(int[] kinds, string[] characters, int kind, string character):
+    kinds.push(kind)
+    characters.push(character)
+
+int regex_precedence(int operator):
+    if (operator == 2):
+        return 1
+    if (operator == 3):
+        return 2
+    return 0
+
+void regex_push_operator(int[] operators, int[] kinds, string[] characters, int operator):
+    while (!operators.is_empty()):
+        int top = operators[-1]
+        if (top == 1):
+            break
+        if (regex_precedence(top) < regex_precedence(operator)):
+            break
+        operators.pop()
+        regex_postfix_add(kinds, characters, 6 - top, '')
+    operators.push(operator)
+
+bool regex_reserved(string character):
+    return character == '[' || character == ']' || character == '{' || character == '}' || character == '^' || character == '$'
+
+bool regex_escapable(string character):
+    return character == '\\' || character == '.' || character == '|' || character == '*' || character == '+' || character == '?' || character == '(' || character == ')' || regex_reserved(character)
+
+RegexPostfix regex_postfix(string pattern):
+    int[] kinds = []
+    string[] characters = []
+    int[] operators = []
+    bool expect_atom = true
+    bool can_quantify = false
+    int index = 0
+    while (index < pattern.length()):
+        string character = pattern[index]
+        bool escaped = false
+        if (character == '\\'):
+            index += 1
+            if (index >= pattern.length()):
+                return RegexPostfix(false, [], [])
+            character = pattern[index]
+            if (!regex_escapable(character)):
+                return RegexPostfix(false, [], [])
+            escaped = true
+        if (!escaped && character == '('):
+            if (!expect_atom):
+                regex_push_operator(operators, kinds, characters, 3)
+            operators.push(1)
+            expect_atom = true
+            can_quantify = false
+        else if (!escaped && character == ')'):
+            if (expect_atom):
+                return RegexPostfix(false, [], [])
+            bool found_open = false
+            while (!operators.is_empty()):
+                int top = operators.pop()
+                if (top == 1):
+                    found_open = true
+                    break
+                regex_postfix_add(kinds, characters, 6 - top, '')
+            if (!found_open):
+                return RegexPostfix(false, [], [])
+            expect_atom = false
+            can_quantify = true
+        else if (!escaped && character == '|'):
+            if (expect_atom):
+                return RegexPostfix(false, [], [])
+            regex_push_operator(operators, kinds, characters, 2)
+            expect_atom = true
+            can_quantify = false
+        else if (!escaped && (character == '*' || character == '+' || character == '?')):
+            if (!can_quantify):
+                return RegexPostfix(false, [], [])
+            int kind = 5
+            if (character == '+'):
+                kind = 6
+            else if (character == '?'):
+                kind = 7
+            regex_postfix_add(kinds, characters, kind, '')
+            can_quantify = false
+        else:
+            if (!escaped && regex_reserved(character)):
+                return RegexPostfix(false, [], [])
+            if (!expect_atom):
+                regex_push_operator(operators, kinds, characters, 3)
+            int kind = 1
+            if (!escaped && character == '.'):
+                kind = 2
+            regex_postfix_add(kinds, characters, kind, character)
+            expect_atom = false
+            can_quantify = true
+        index += 1
+    if (expect_atom && !pattern.is_empty()):
+        return RegexPostfix(false, [], [])
+    while (!operators.is_empty()):
+        int top = operators.pop()
+        if (top == 1):
+            return RegexPostfix(false, [], [])
+        regex_postfix_add(kinds, characters, 6 - top, '')
+    return RegexPostfix(true, kinds, characters)
+
+int regex_emit(int[] operations, int[] out1, int[] out2, string[] characters, int operation, int first, int second, string character):
+    int position = operations.length()
+    operations.push(operation)
+    out1.push(first)
+    out2.push(second)
+    characters.push(character)
+    return position
+
+int regex_patch_next(int[] out1, int[] out2, int node):
+    int position = node / 2
+    if (node % 2 == 0):
+        return out1[position]
+    return out2[position]
+
+void regex_patch_set(int[] out1, int[] out2, int node, int value):
+    int position = node / 2
+    if (node % 2 == 0):
+        out1[position] = value
+    else:
+        out2[position] = value
+
+void regex_patch(int[] out1, int[] out2, int head, int target):
+    int node = head
+    while (node >= 0):
+        int next = regex_patch_next(out1, out2, node)
+        regex_patch_set(out1, out2, node, target)
+        node = next
+
+int regex_append_patch(int[] out1, int[] out2, int first, int second):
+    if (first < 0):
+        return second
+    int tail = first
+    while (regex_patch_next(out1, out2, tail) >= 0):
+        tail = regex_patch_next(out1, out2, tail)
+    regex_patch_set(out1, out2, tail, second)
+    return first
+
+RegexProgram regex_invalid():
+    return RegexProgram(false, -1, [], [], [], [])
+
+RegexProgram regex_compile(string pattern):
+    RegexPostfix postfix = regex_postfix(pattern)
+    if (!postfix.valid):
+        return regex_invalid()
+    int[] operations = []
+    int[] out1 = []
+    int[] out2 = []
+    string[] characters = []
+    int[] starts = []
+    int[] patches = []
+    int index = 0
+    while (index < postfix.kinds.length()):
+        int kind = postfix.kinds[index]
+        if (kind == 1 || kind == 2):
+            int state = regex_emit(operations, out1, out2, characters, kind, -1, -1, postfix.characters[index])
+            starts.push(state)
+            patches.push(state * 2)
+        else if (kind == 3 || kind == 4):
+            if (starts.length() < 2):
+                return regex_invalid()
+            int right_start = starts.pop()
+            int right_patch = patches.pop()
+            int left_start = starts.pop()
+            int left_patch = patches.pop()
+            if (kind == 3):
+                regex_patch(out1, out2, left_patch, right_start)
+                starts.push(left_start)
+                patches.push(right_patch)
+            else:
+                int split = regex_emit(operations, out1, out2, characters, 3, left_start, right_start, '')
+                starts.push(split)
+                patches.push(regex_append_patch(out1, out2, left_patch, right_patch))
+        else:
+            if (starts.is_empty()):
+                return regex_invalid()
+            int body_start = starts.pop()
+            int body_patch = patches.pop()
+            int split = regex_emit(operations, out1, out2, characters, 3, body_start, -1, '')
+            if (kind == 5 || kind == 6):
+                regex_patch(out1, out2, body_patch, split)
+                if (kind == 5):
+                    starts.push(split)
+                else:
+                    starts.push(body_start)
+                patches.push(split * 2 + 1)
+            else if (kind == 7):
+                starts.push(split)
+                patches.push(regex_append_patch(out1, out2, body_patch, split * 2 + 1))
+            else:
+                return regex_invalid()
+        index += 1
+    int match = regex_emit(operations, out1, out2, characters, 4, -1, -1, '')
+    int start = match
+    if (!starts.is_empty()):
+        if (starts.length() != 1):
+            return regex_invalid()
+        start = starts.pop()
+        regex_patch(out1, out2, patches.pop(), match)
+    return RegexProgram(true, start, operations, out1, out2, characters)
+
+# Add an epsilon closure once per input position. A state is visited at most
+# once even if repetition creates epsilon cycles. Invalid mutated programs
+# fail rather than indexing outside their instruction arrays.
+bool regex_add_state(RegexProgram program, int state, int[] seen, int[] pending, int[] active):
+    pending.push(state)
+    while (!pending.is_empty()):
+        int current = pending.pop()
+        if (current < 0):
+            return false
+        if (current >= program.operations.length()):
+            return false
+        if (seen[current] == 0):
+            seen[current] = 1
+            int operation = program.operations[current]
+            if (operation == 3):
+                pending.push(program.out2[current])
+                pending.push(program.out1[current])
+            else if (operation == 1 || operation == 2 || operation == 4):
+                active.push(current)
+            else:
+                return false
+    return true
+
+bool regex_match(RegexProgram program, string text):
+    if (!program.valid):
+        return false
+    int count = program.operations.length()
+    if (count == 0):
+        return false
+    if (program.out1.length() != count || program.out2.length() != count || program.characters.length() != count):
+        return false
+    int[] seen = range(count)
+    seen.fill(0)
+    int[] pending = []
+    int[] current = []
+    int[] next = []
+    if (!regex_add_state(program, program.start, seen, pending, current)):
+        return false
+    int text_index = 0
+    while (text_index < text.length()):
+        string character = text[text_index]
+        seen.fill(0)
+        next.clear()
+        int index = 0
+        while (index < current.length()):
+            int state = current[index]
+            int operation = program.operations[state]
+            bool matches = operation == 2
+            if (operation == 1):
+                matches = program.characters[state] == character
+            if (matches):
+                if (!regex_add_state(program, program.out1[state], seen, pending, next)):
+                    return false
+            index += 1
+        current.clear()
+        for (int state : next):
+            current.push(state)
+        if (current.is_empty()):
+            return false
+        text_index += 1
+    for (int state : current):
+        if (program.operations[state] == 4):
+            return true
+    return false

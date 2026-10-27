@@ -684,6 +684,32 @@ Hashing, misc
 - range(start, end) -> int[]
   - Yields `start`..`end-1`, including negative values. Equal or reversed bounds produce an empty array, including at the signed integer limits. The span must fit the supported `int[]` length (at most `2147483647` elements); a larger span aborts before allocating or filling the array. If `int[]` allocation fails, the process aborts before using the result.
 
+Regular expressions
+
+The repository includes a byte-oriented regular expression library in `lib/regex.tb`.
+Import it using a path relative to your source file, for example:
+
+```tb
+import ../../lib/regex;
+
+int main():
+    RegexProgram pattern = regex_compile('(ab|c)+')
+    if (pattern.valid):
+        print(regex_match(pattern, 'abc'))  # true
+```
+
+`regex_match` checks the entire string. Compiled programs can be reused. Literal
+bytes, `.` (any byte, including newline), concatenation, `|`, parentheses, and
+the quantifiers `*`, `+`, and `?` are supported. Parentheses group expressions;
+they do not capture. An empty pattern matches only an empty string. Empty groups,
+empty alternatives, stacked quantifiers, unmatched parentheses, and dangling
+backslashes are invalid. `[]{}^$` are reserved and invalid when unescaped. A
+backslash may escape `\`, `.`, `|`, `*`, `+`, `?`, `(`, `)`, `[`, `]`, `{`,
+`}`, `^`, or `$` to match that character literally; other escapes are invalid.
+The `valid` field is false for an invalid pattern, and matching it returns false.
+Character classes, anchors, captures, and substring searching are not supported.
+The module is source-relative and is not currently bundled as a standard library.
+
 14. Examples
 
 - Read lines and print numbered:
