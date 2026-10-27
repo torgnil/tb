@@ -1,6 +1,6 @@
 # A byte-oriented, full-match Thompson NFA. Instructions use parallel arrays.
 # Outgoing patch-list nodes encode the instruction and slot as 2 * pc + slot.
-record RegexProgram(bool valid, int start, int[] operations, int[] out1, int[] out2, string[] characters);
+record Regex(bool valid, int start, int[] operations, int[] out1, int[] out2, string[] characters);
 record RegexPostfix(bool valid, int[] kinds, string[] characters);
 
 void regex_postfix_add(int[] kinds, string[] characters, int kind, string character):
@@ -143,10 +143,10 @@ int regex_append_patch(int[] out1, int[] out2, int first, int second):
     regex_patch_set(out1, out2, tail, second)
     return first
 
-RegexProgram regex_invalid():
-    return RegexProgram(false, -1, [], [], [], [])
+Regex regex_invalid():
+    return Regex(false, -1, [], [], [], [])
 
-RegexProgram regex_compile(string pattern):
+Regex regex_compile(string pattern):
     RegexPostfix postfix = regex_postfix(pattern)
     if (!postfix.valid):
         return regex_invalid()
@@ -204,12 +204,12 @@ RegexProgram regex_compile(string pattern):
             return regex_invalid()
         start = starts.pop()
         regex_patch(out1, out2, patches.pop(), match)
-    return RegexProgram(true, start, operations, out1, out2, characters)
+    return Regex(true, start, operations, out1, out2, characters)
 
 # Add an epsilon closure once per input position. A state is visited at most
 # once even if repetition creates epsilon cycles. Invalid mutated programs
 # fail rather than indexing outside their instruction arrays.
-bool regex_add_state(RegexProgram program, int state, int[] seen, int[] pending, int[] active):
+bool regex_add_state(Regex program, int state, int[] seen, int[] pending, int[] active):
     pending.push(state)
     while (!pending.is_empty()):
         int current = pending.pop()
@@ -229,7 +229,7 @@ bool regex_add_state(RegexProgram program, int state, int[] seen, int[] pending,
                 return false
     return true
 
-bool regex_match(RegexProgram program, string text):
+bool regex_match(Regex program, string text):
     if (!program.valid):
         return false
     int count = program.operations.length()

@@ -694,7 +694,7 @@ The compiler includes a byte-oriented regular expression module. Import it with
 import regex;
 
 int main():
-    RegexProgram pattern = regex_compile('(ab|c)+')
+    Regex pattern = regex_compile('(ab|c)+')
     if (pattern.valid):
         print(regex_match(pattern, 'abc'))  # true
 ```
