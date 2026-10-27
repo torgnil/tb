@@ -701,11 +701,17 @@ int main():
 
 `regex_match` checks the entire string. Compiled programs can be reused. Literal
 bytes, `.` (any byte, including newline), concatenation, `|`, parentheses, and
-the quantifiers `*`, `+`, and `?` are supported. Parentheses group expressions;
-they do not capture. An empty pattern matches only an empty string. Empty groups,
-empty alternatives, stacked quantifiers, unmatched parentheses, and dangling
-backslashes are invalid. Outside bracket classes, `]{}^$` are reserved and invalid when unescaped. A
-backslash may escape `\`, `.`, `|`, `*`, `+`, `?`, `(`, `)`, `[`, `]`, `{`,
+the quantifiers `*`, `+`, `?`, `{n}`, `{n,}`, and `{n,m}` are supported.
+Parentheses group expressions; they do not capture. Counted repetition uses
+nonnegative decimal bounds: `{n}`
+requires exactly n matches, `{n,}` at least n, and `{n,m}` between n and m
+inclusive. Bounds must be at most 1,000 and the expanded postfix expression
+for a pattern containing counted repetition may have at most 20,000 tokens.
+Malformed, reversed, or stacked repetitions are invalid. An empty pattern matches
+only an empty string. Empty groups, empty alternatives, unmatched parentheses,
+and dangling backslashes are invalid. Outside bracket classes, `]}^$` are reserved
+and invalid when unescaped; `{` begins counted repetition. A backslash may escape
+`\`, `.`, `|`, `*`, `+`, `?`, `(`, `)`, `[`, `]`, `{`,
 `}`, `^`, or `$` to match that character literally. The escapes `\d`, `\w`,
 and `\s` match one ASCII digit, word byte (letter, digit, or underscore), and
 whitespace byte (space, tab, LF, VT, FF, or CR), respectively. `\D`, `\W`,

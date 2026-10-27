@@ -3,6 +3,7 @@
 record Regex(bool valid, int start, int[] operations, int[] out1, int[] out2, string[] characters);
 record RegexPostfix(bool valid, int[] kinds, string[] characters);
 record RegexClassToken(bool valid, bool escaped, bool predefined, string value, int next);
+record RegexRepeat(bool valid, int minimum, int maximum, int end);
 
 void regex_postfix_add(int[] kinds, string[] characters, int kind, string character):
     kinds.push(kind)
@@ -103,12 +104,128 @@ int regex_bracket_check(string body, string character):
         return 2
     return 1
 
+# A maximum of 1,000 repetitions per bound keeps expansion predictable.
+# A negative maximum denotes the open-ended form {n,}.
+RegexRepeat regex_repeat_parse(string pattern, int start):
+    int index = start + 1
+    int minimum = 0
+    bool has_minimum = false
+    while (index < pattern.length()):
+        string digit = pattern[index]
+        if (!digit.is_digit()):
+            break
+        has_minimum = true
+        minimum = minimum * 10 + digit.to_int()
+        if (minimum > 1000):
+            return RegexRepeat(false, 0, 0, index)
+        index += 1
+    if (!has_minimum || index >= pattern.length()):
+        return RegexRepeat(false, 0, 0, index)
+    if (pattern[index] == '}'):
+        return RegexRepeat(true, minimum, minimum, index)
+    if (pattern[index] != ','):
+        return RegexRepeat(false, 0, 0, index)
+    index += 1
+    int maximum = 0
+    bool has_maximum = false
+    while (index < pattern.length()):
+        string digit = pattern[index]
+        if (!digit.is_digit()):
+            break
+        has_maximum = true
+        maximum = maximum * 10 + digit.to_int()
+        if (maximum > 1000):
+            return RegexRepeat(false, 0, 0, index)
+        index += 1
+    if (index >= pattern.length()):
+        return RegexRepeat(false, 0, 0, index)
+    if (pattern[index] != '}'):
+        return RegexRepeat(false, 0, 0, index)
+    if (!has_maximum):
+        return RegexRepeat(true, minimum, -1, index)
+    if (maximum < minimum):
+        return RegexRepeat(false, 0, 0, index)
+    return RegexRepeat(true, minimum, maximum, index)
+
+# Expand counted postfix expressions inside out. The stack records the first
+# token of each complete operand, so a group can be copied without cloning an NFA.
+RegexPostfix regex_expand_counts(RegexPostfix postfix):
+    int[] kinds = []
+    string[] characters = []
+    int[] starts = []
+    int index = 0
+    while (index < postfix.kinds.length()):
+        int kind = postfix.kinds[index]
+        if (kind == 10):
+            if (starts.is_empty()):
+                return RegexPostfix(false, [], [])
+            int start = starts.pop()
+            string spec = postfix.characters[index]
+            RegexRepeat repeat = regex_repeat_parse(spec, 0)
+            if (!repeat.valid):
+                return RegexPostfix(false, [], [])
+            int[] fragment_kinds = []
+            string[] fragment_chars = []
+            int cursor = start
+            while (cursor < kinds.length()):
+                fragment_kinds.push(kinds[cursor])
+                fragment_chars.push(characters[cursor])
+                cursor += 1
+            int copies = repeat.maximum
+            if (copies < 0):
+                copies = repeat.minimum + 1
+            # Values are bounded before multiplication: 1,001 * 20,000.
+            int expanded_size = 1
+            if (copies > 0):
+                int optional = copies - repeat.minimum
+                expanded_size = copies * fragment_kinds.length() + copies - 1 + optional
+            if (start + expanded_size > 20000):
+                return RegexPostfix(false, [], [])
+            while (kinds.length() > start):
+                kinds.pop()
+                characters.pop()
+            bool emitted = false
+            int copy = 0
+            while (copy < copies):
+                cursor = 0
+                while (cursor < fragment_kinds.length()):
+                    regex_postfix_add(kinds, characters, fragment_kinds[cursor], fragment_chars[cursor])
+                    cursor += 1
+                if (copy >= repeat.minimum):
+                    if (repeat.maximum < 0):
+                        regex_postfix_add(kinds, characters, 5, '')
+                    else:
+                        regex_postfix_add(kinds, characters, 7, '')
+                if (emitted):
+                    regex_postfix_add(kinds, characters, 3, '')
+                emitted = true
+                copy += 1
+            if (!emitted):
+                regex_postfix_add(kinds, characters, 11, '')
+            starts.push(start)
+        else:
+            if (kind == 3 || kind == 4):
+                if (starts.length() < 2):
+                    return RegexPostfix(false, [], [])
+                starts.pop()
+            else if (kind == 5 || kind == 6 || kind == 7):
+                if (starts.is_empty()):
+                    return RegexPostfix(false, [], [])
+            else:
+                starts.push(kinds.length())
+            regex_postfix_add(kinds, characters, kind, postfix.characters[index])
+        if (kinds.length() > 20000):
+            return RegexPostfix(false, [], [])
+        index += 1
+    return RegexPostfix(true, kinds, characters)
+
 RegexPostfix regex_postfix(string pattern):
     int[] kinds = []
     string[] characters = []
     int[] operators = []
     bool expect_atom = true
     bool can_quantify = false
+    bool has_counts = false
     int index = 0
     while (index < pattern.length()):
         string character = pattern[index]
@@ -171,6 +288,16 @@ RegexPostfix regex_postfix(string pattern):
             regex_push_operator(operators, kinds, characters, 2)
             expect_atom = true
             can_quantify = false
+        else if (!escaped && character == '{'):
+            if (!can_quantify):
+                return RegexPostfix(false, [], [])
+            RegexRepeat repeat = regex_repeat_parse(pattern, index)
+            if (!repeat.valid):
+                return RegexPostfix(false, [], [])
+            regex_postfix_add(kinds, characters, 10, pattern.substring(index, repeat.end + 1))
+            has_counts = true
+            can_quantify = false
+            index = repeat.end
         else if (!escaped && (character == '*' || character == '+' || character == '?')):
             if (!can_quantify):
                 return RegexPostfix(false, [], [])
@@ -202,7 +329,10 @@ RegexPostfix regex_postfix(string pattern):
         if (top == 1):
             return RegexPostfix(false, [], [])
         regex_postfix_add(kinds, characters, 6 - top, '')
-    return RegexPostfix(true, kinds, characters)
+    RegexPostfix result = RegexPostfix(true, kinds, characters)
+    if (has_counts):
+        return regex_expand_counts(result)
+    return result
 
 int regex_emit(int[] operations, int[] out1, int[] out2, string[] characters, int operation, int first, int second, string character):
     int position = operations.length()
@@ -257,12 +387,14 @@ Regex regex_compile(string pattern):
     int index = 0
     while (index < postfix.kinds.length()):
         int kind = postfix.kinds[index]
-        if (kind == 1 || kind == 2 || kind == 8 || kind == 9):
+        if (kind == 1 || kind == 2 || kind == 8 || kind == 9 || kind == 11):
             int operation = kind
             if (kind == 8):
                 operation = 5
             if (kind == 9):
                 operation = 6
+            if (kind == 11):
+                operation = 7
             int state = regex_emit(operations, out1, out2, characters, operation, -1, -1, postfix.characters[index])
             starts.push(state)
             patches.push(state * 2)
@@ -323,7 +455,9 @@ bool regex_add_state(Regex program, int state, int[] seen, int[] pending, int[] 
         if (seen[current] == 0):
             seen[current] = 1
             int operation = program.operations[current]
-            if (operation == 3):
+            if (operation == 7):
+                pending.push(program.out1[current])
+            else if (operation == 3):
                 pending.push(program.out2[current])
                 pending.push(program.out1[current])
             else if (operation == 1 || operation == 2 || operation == 4 || operation == 5 || operation == 6):
