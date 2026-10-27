@@ -2,6 +2,7 @@
 # Outgoing patch-list nodes encode the instruction and slot as 2 * pc + slot.
 record Regex(bool valid, int start, int[] operations, int[] out1, int[] out2, string[] characters);
 record RegexPostfix(bool valid, int[] kinds, string[] characters);
+record RegexClassToken(bool valid, bool escaped, bool predefined, string value, int next);
 
 void regex_postfix_add(int[] kinds, string[] characters, int kind, string character):
     kinds.push(kind)
@@ -34,6 +35,74 @@ bool regex_class_escape(string character):
 bool regex_escapable(string character):
     return regex_class_escape(character) || character == '\\' || character == '.' || character == '|' || character == '*' || character == '+' || character == '?' || character == '(' || character == ')' || regex_reserved(character)
 
+# Read one class member; only recognized regex escapes are accepted.
+RegexClassToken regex_class_token(string body, int index):
+    if (index >= body.length()):
+        return RegexClassToken(false, false, false, '', index)
+    string value = body[index]
+    if (value != '\\'):
+        return RegexClassToken(true, false, false, value, index + 1)
+    index += 1
+    if (index >= body.length()):
+        return RegexClassToken(false, false, false, '', index)
+    value = body[index]
+    if (!regex_escapable(value) && value != '-'):
+        return RegexClassToken(false, false, false, '', index)
+    return RegexClassToken(true, true, regex_class_escape(value), value, index + 1)
+
+# Returns 0 for invalid syntax, 1 for a valid nonmatch, and 2 for a match.
+# Class bodies are checked when compiled and again if a public Regex is mutated.
+int regex_bracket_check(string body, string character):
+    int index = 0
+    bool negate = false
+    if (body.is_empty()):
+        return 0
+    if (body[0] == '^'):
+        negate = true
+        index = 1
+    int first = index
+    bool any = false
+    bool matched = false
+    while (index < body.length()):
+        int start = index
+        RegexClassToken token = regex_class_token(body, index)
+        if (!token.valid):
+            return 0
+        index = token.next
+        if (!token.escaped && token.value == '-' && start != first && index != body.length()):
+            return 0
+        bool has_range = false
+        if (index < body.length()):
+            if (body[index] == '-'):
+                if (index + 1 < body.length()):
+                    has_range = true
+        if (has_range):
+            if (token.predefined):
+                return 0
+            RegexClassToken last = regex_class_token(body, index + 1)
+            if (!last.valid || last.predefined):
+                return 0
+            if (!last.escaped && last.value == '-'):
+                return 0
+            if (token.value > last.value):
+                return 0
+            if (character >= token.value && character <= last.value):
+                matched = true
+            index = last.next
+        else if (token.predefined):
+            if (regex_class_matches(token.value, character)):
+                matched = true
+        else if (character == token.value):
+            matched = true
+        any = true
+    if (!any):
+        return 0
+    if (negate):
+        matched = !matched
+    if (matched):
+        return 2
+    return 1
+
 RegexPostfix regex_postfix(string pattern):
     int[] kinds = []
     string[] characters = []
@@ -52,7 +121,31 @@ RegexPostfix regex_postfix(string pattern):
             if (!regex_escapable(character)):
                 return RegexPostfix(false, [], [])
             escaped = true
-        if (!escaped && character == '('):
+        if (!escaped && character == '['):
+            int end = index + 1
+            bool closed = false
+            while (end < pattern.length()):
+                string item = pattern[end]
+                if (item == '\\'):
+                    end += 1
+                    if (end >= pattern.length()):
+                        return RegexPostfix(false, [], [])
+                else if (item == ']'):
+                    closed = true
+                    break
+                end += 1
+            if (!closed):
+                return RegexPostfix(false, [], [])
+            string body = pattern.substring(index + 1, end)
+            if (regex_bracket_check(body, '') == 0):
+                return RegexPostfix(false, [], [])
+            if (!expect_atom):
+                regex_push_operator(operators, kinds, characters, 3)
+            regex_postfix_add(kinds, characters, 9, body)
+            expect_atom = false
+            can_quantify = true
+            index = end
+        else if (!escaped && character == '('):
             if (!expect_atom):
                 regex_push_operator(operators, kinds, characters, 3)
             operators.push(1)
@@ -164,10 +257,12 @@ Regex regex_compile(string pattern):
     int index = 0
     while (index < postfix.kinds.length()):
         int kind = postfix.kinds[index]
-        if (kind == 1 || kind == 2 || kind == 8):
+        if (kind == 1 || kind == 2 || kind == 8 || kind == 9):
             int operation = kind
             if (kind == 8):
                 operation = 5
+            if (kind == 9):
+                operation = 6
             int state = regex_emit(operations, out1, out2, characters, operation, -1, -1, postfix.characters[index])
             starts.push(state)
             patches.push(state * 2)
@@ -231,7 +326,7 @@ bool regex_add_state(Regex program, int state, int[] seen, int[] pending, int[] 
             if (operation == 3):
                 pending.push(program.out2[current])
                 pending.push(program.out1[current])
-            else if (operation == 1 || operation == 2 || operation == 4 || operation == 5):
+            else if (operation == 1 || operation == 2 || operation == 4 || operation == 5 || operation == 6):
                 active.push(current)
             else:
                 return false
@@ -279,6 +374,8 @@ bool regex_match(Regex program, string text):
                 matches = program.characters[state] == character
             else if (operation == 5):
                 matches = regex_class_matches(program.characters[state], character)
+            else if (operation == 6):
+                matches = regex_bracket_check(program.characters[state], character) == 2
             if (matches):
                 if (!regex_add_state(program, program.out1[state], seen, pending, next)):
                     return false

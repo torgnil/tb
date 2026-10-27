@@ -704,14 +704,22 @@ bytes, `.` (any byte, including newline), concatenation, `|`, parentheses, and
 the quantifiers `*`, `+`, and `?` are supported. Parentheses group expressions;
 they do not capture. An empty pattern matches only an empty string. Empty groups,
 empty alternatives, stacked quantifiers, unmatched parentheses, and dangling
-backslashes are invalid. `[]{}^$` are reserved and invalid when unescaped. A
+backslashes are invalid. Outside bracket classes, `]{}^$` are reserved and invalid when unescaped. A
 backslash may escape `\`, `.`, `|`, `*`, `+`, `?`, `(`, `)`, `[`, `]`, `{`,
 `}`, `^`, or `$` to match that character literally. The escapes `\d`, `\w`,
 and `\s` match one ASCII digit, word byte (letter, digit, or underscore), and
 whitespace byte (space, tab, LF, VT, FF, or CR), respectively. `\D`, `\W`,
 and `\S` match the complements of those byte classes. Other escapes are invalid.
+Bracket classes match a single byte: `[abc]` matches any listed byte,
+`[a-z]` matches an inclusive byte range, and `[^0-9]` negates the class.
+Classes can contain the predefined escapes above. A hyphen is literal first or
+last, or when escaped as `\-`; `\]` and `\\` match a literal closing bracket
+and backslash. A caret is literal except at the beginning. Ranges require literal
+byte endpoints in ascending order. Empty, unclosed, reversed, malformed, and
+unsupported-escape classes are invalid. Class matching scans its members for
+each active state; it does not use recursive backtracking.
 The `valid` field is false for an invalid pattern, and matching it returns false.
-Bracket character classes, anchors, captures, and substring searching are not supported.
+Anchors, captures, and substring searching are not supported.
 The compiler embeds the module, so it does not need a separate file at runtime.
 The name `regex` is reserved for this built-in module; other module imports
 continue to resolve relative to the importing source file.
