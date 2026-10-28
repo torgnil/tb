@@ -703,9 +703,15 @@ int main():
 
 `regex_match` checks the entire string; `regex_contains` returns true when any
 substring, including an empty substring, matches. Both return false for an
-invalid compiled pattern. Compiled programs can be reused. Literal
+invalid compiled pattern. Compiled programs can be reused.
+`regex_escape(text)` returns regex source that matches the input bytes literally,
+escaping regex metacharacters, including anchors and bracket/count delimiters.
+It is useful when composing a pattern from dynamic text. For example,
+`regex_compile('^' + regex_escape('a.b') + '$')` matches `a.b` literally.
+The result is a sequence of literal atoms, so a quantifier appended afterward
+applies to its final atom. Empty input remains empty. Patterns support literal
 bytes, `.` (any byte, including newline), concatenation, `|`, parentheses, and
-the quantifiers `*`, `+`, `?`, `{n}`, `{n,}`, and `{n,m}` are supported.
+the quantifiers `*`, `+`, `?`, `{n}`, `{n,}`, and `{n,m}`.
 Parentheses group expressions; they do not capture. Counted repetition uses
 nonnegative decimal bounds: `{n}`
 requires exactly n matches, `{n,}` at least n, and `{n,m}` between n and m

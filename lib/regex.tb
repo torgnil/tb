@@ -390,6 +390,25 @@ int regex_append_patch(int[] out1, int[] out2, int first, int second):
 Regex regex_invalid():
     return Regex(false, -1, [], [], [], [])
 
+string regex_escape(string text):
+    string scan_text = text + ''
+    int text_length = scan_text.length()
+    string[] pieces = []
+    int segment_start = 0
+    int index = 0
+    while (index < text_length):
+        string character = scan_text[index]
+        if (character == '\\' || character == '.' || character == '|' || character == '*' || character == '+' || character == '?' || character == '(' || character == ')' || character == '[' || character == ']' || character == '{' || character == '}' || character == '^' || character == '$'):
+            if (segment_start < index):
+                pieces.push(scan_text.substring(segment_start, index))
+            pieces.push('\\')
+            pieces.push(character)
+            segment_start = index + 1
+        index += 1
+    if (segment_start < text_length):
+        pieces.push(scan_text.substring(segment_start))
+    return pieces.join('')
+
 Regex regex_compile(string pattern):
     RegexPostfix postfix = regex_postfix(pattern)
     if (!postfix.valid):

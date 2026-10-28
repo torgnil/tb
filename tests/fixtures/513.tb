@@ -1,0 +1,36 @@
+import regex;
+
+string literal_pattern(string text):
+    return '^' + regex_escape(text) + '$'
+
+int main(string[] args):
+    string special = '\\.|*+?()[]{}^$'
+    string escaped_special = regex_escape(special)
+    print(escaped_special)
+    print(regex_match(regex_compile(literal_pattern(special)), special))
+    print(regex_match(regex_compile(literal_pattern(special)), special + 'x'))
+
+    string class_escapes = '\\d\\w\\s\\D\\W\\S'
+    string escaped_classes = regex_escape(class_escapes)
+    print(escaped_classes)
+    print(regex_match(regex_compile(literal_pattern(class_escapes)), class_escapes))
+    print(regex_match(regex_compile(literal_pattern(class_escapes)), 'dwsDWS'))
+
+    string ordinary = 'Az09 _- /:'
+    print(regex_escape(ordinary) == ordinary)
+    print(regex_match(regex_compile(regex_escape(ordinary)), ordinary))
+    print(regex_escape('') == '')
+    print(regex_match(regex_compile(regex_escape('')), ''))
+    print(regex_match(regex_compile(regex_escape('')), 'x'))
+
+    Regex repeated_last_atom = regex_compile(regex_escape('ab') + '+')
+    print(regex_match(repeated_last_atom, 'abbb'))
+    print(regex_match(repeated_last_atom, 'aabb'))
+    print(regex_match(regex_compile(literal_pattern('line\nbreak')), 'line\nbreak'))
+
+    string dynamic = 'default.*[value]'
+    if (args.length() > 1):
+        dynamic = args[1]
+    print(regex_match(regex_compile(literal_pattern(dynamic)), dynamic))
+    print(regex_match(regex_compile(literal_pattern(dynamic)), dynamic + '!'))
+    return 0
