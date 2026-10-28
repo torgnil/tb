@@ -1345,6 +1345,18 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
     if (op.detail == 'call'):
         if (op.args.is_empty()):
             return op
+        if (op.args[0] == 'random'):
+            if (lookup_function_return_type(functions, 'random') == 'unknown'):
+                if (!record_type_exists(record_names, 'random')):
+                    int random_arg_count = op.args.length() - 1
+                    if (random_arg_count > 2):
+                        throw 'random accepts zero, one, or two integer arguments'
+                    int random_arg_index = 1
+                    while (random_arg_index < op.args.length()):
+                        string random_arg_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[random_arg_index])), enum_types)
+                        if (random_arg_type != 'int'):
+                            throw 'random requires integer arguments; got ' + random_arg_type
+                        random_arg_index += 1
         if ((op.args[0] == 'random' || op.args[0] == 'uuid') && lookup_function_return_type(functions, op.args[0]) == 'unknown' && record_type_exists(record_names, op.args[0])):
             return refined_value_op(op, op.args[0], refine_ownership_mode(op, op.args[0]))
         string result_type = infer_call_type_cached(op.args[0], functions, TYPE_IR_FUNCTION_TYPE_CACHE_NAMES, TYPE_IR_FUNCTION_TYPE_CACHE_VALUES)
