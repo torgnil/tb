@@ -660,3 +660,124 @@ bool regex_contains(Regex program, string text):
             current.push(state)
         text_index += 1
     return false
+
+# Add one start-origin's epsilon closure. Callers process seeds in increasing
+# origin order and share seen across the boundary, so the first visit to a
+# state always carries its earliest possible start.
+bool regex_add_start_state(Regex program, int state, int start, int[] seen, int[] pending, int[] active, int[] active_starts, bool at_start, bool at_end):
+    pending.push(state)
+    while (!pending.is_empty()):
+        int current = pending.pop()
+        if (current < 0 || current >= program.operations.length()):
+            return false
+        if (seen[current] == -1):
+            seen[current] = start
+            int operation = program.operations[current]
+            if (operation == 7):
+                pending.push(program.out1[current])
+            else if (operation == 8):
+                if (at_start):
+                    pending.push(program.out1[current])
+            else if (operation == 9):
+                if (at_end):
+                    pending.push(program.out1[current])
+            else if (operation == 3):
+                pending.push(program.out2[current])
+                pending.push(program.out1[current])
+            else if (operation == 5):
+                string kind = program.characters[current]
+                if (kind != 'd' && kind != 'D' && kind != 'w' && kind != 'W' && kind != 's' && kind != 'S'):
+                    return false
+                active.push(current)
+                active_starts.push(start)
+            else if (operation == 6):
+                if (regex_bracket_check(program.characters[current], '') == 0):
+                    return false
+                active.push(current)
+                active_starts.push(start)
+            else if (operation == 1 || operation == 2 || operation == 4):
+                active.push(current)
+                active_starts.push(start)
+            else:
+                return false
+    return true
+
+# Find the earliest accepted start in a single parallel NFA traversal. The
+# current state list stays grouped by increasing start offset; each closure is
+# exhausted before a later start is injected, making first-state deduplication
+# equivalent to retaining the minimum start for that state and boundary.
+int regex_find_start(Regex program, string text):
+    if (!program.valid):
+        return -1
+    int count = program.operations.length()
+    if (count == 0):
+        return -1
+    if (program.out1.length() != count || program.out2.length() != count || program.characters.length() != count):
+        return -1
+    string[] text_bytes = text.split('')
+    int text_length = text_bytes.length()
+    bool final_lf = false
+    if (text_length > 0):
+        final_lf = text_bytes[text_length - 1] == '\n'
+    int[] seen = range(count)
+    seen.fill(-1)
+    int[] pending = []
+    int[] current = []
+    int[] current_starts = []
+    int[] next = []
+    int[] next_starts = []
+    int best = -1
+    int text_index = 0
+    bool initial_end = text_length == 0 || (text_length == 1 && final_lf)
+    if (!regex_add_start_state(program, program.start, 0, seen, pending, current, current_starts, true, initial_end)):
+        return -1
+    while (true):
+        int index = 0
+        while (index < current.length()):
+            int state = current[index]
+            if (state < 0 || state >= count):
+                return -1
+            if (program.operations[state] == 4):
+                int match_start = current_starts[index]
+                if (best == -1 || match_start < best):
+                    best = match_start
+            index += 1
+        if (text_index == text_length):
+            return best
+        seen.fill(-1)
+        next.clear()
+        next_starts.clear()
+        string character = text_bytes[text_index]
+        index = 0
+        while (index < current.length()):
+            int state = current[index]
+            if (state < 0 || state >= count):
+                return -1
+            int operation = program.operations[state]
+            bool matches = operation == 2
+            if (operation == 1):
+                matches = program.characters[state] == character
+            else if (operation == 5):
+                matches = regex_class_matches(program.characters[state], character)
+            else if (operation == 6):
+                int class_result = regex_bracket_check(program.characters[state], character)
+                if (class_result == 0):
+                    return -1
+                matches = class_result == 2
+            if (matches):
+                int boundary = text_index + 1
+                bool at_end = boundary == text_length || (final_lf && boundary == text_length - 1)
+                if (!regex_add_start_state(program, program.out1[state], current_starts[index], seen, pending, next, next_starts, false, at_end)):
+                    return -1
+            index += 1
+        current.clear()
+        current_starts.clear()
+        for (int next_index = 0; next_index < next.length(); next_index += 1):
+            current.push(next[next_index])
+            current_starts.push(next_starts[next_index])
+        int boundary = text_index + 1
+        bool at_end = boundary == text_length || (final_lf && boundary == text_length - 1)
+        if (!regex_add_start_state(program, program.start, boundary, seen, pending, current, current_starts, false, at_end)):
+            return -1
+        text_index += 1
+    return best

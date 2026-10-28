@@ -702,8 +702,12 @@ int main():
 ```
 
 `regex_match` checks the entire string; `regex_contains` returns true when any
-substring, including an empty substring, matches. Both return false for an
-invalid compiled pattern. Compiled programs can be reused.
+substring, including an empty substring, matches. `regex_find_start` returns
+the earliest byte offset where a substring matches, including empty matches,
+or `-1` for no match or an invalid compiled program. Compiled programs can be
+reused. Search scans the input once with a parallel NFA and retains the earliest
+start that reaches each state at each boundary; it does not return the first
+match encountered if an earlier-start path may still match later.
 `regex_escape(text)` returns regex source that matches the input bytes literally,
 escaping regex metacharacters, including anchors and bracket/count delimiters.
 It is useful when composing a pattern from dynamic text. For example,
@@ -742,9 +746,10 @@ The `valid` field is false for an invalid pattern, and matching it returns false
 Captures are not supported. `regex_match` makes one managed copy of the input
 before scanning so indexed byte reads use cached length metadata. It uses O(n)
 additional memory and copies the whole input even when the first byte cannot
-match; it does not impose a separate array-length limit. `regex_contains`
-materializes the input as a temporary `string[]` of one-byte strings before
-scanning, also using O(n) additional memory. That array is limited to
+match; it does not impose a separate array-length limit. `regex_contains` and
+`regex_find_start` materialize the input as a temporary `string[]` of one-byte
+strings before scanning, also using O(n) additional memory. The NFA active and
+start-position arrays use O(m) additional memory. That array is limited to
 2,147,483,647 bytes; longer input aborts. The NFA work is
 O(n * m), where n is the input byte length and m is the number of compiled
 states, plus scans of bracket-class members for matching active states.
