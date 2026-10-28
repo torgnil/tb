@@ -114,11 +114,13 @@ int regex_bracket_check(string body, string character):
 # A maximum of 1,000 repetitions per bound keeps expansion predictable.
 # A negative maximum denotes the open-ended form {n,}.
 RegexRepeat regex_repeat_parse(string pattern, int start):
+    string scan_pattern = pattern + ''
+    int pattern_length = scan_pattern.length()
     int index = start + 1
     int minimum = 0
     bool has_minimum = false
-    while (index < pattern.length()):
-        string digit = pattern[index]
+    while (index < pattern_length):
+        string digit = scan_pattern[index]
         if (!digit.is_digit()):
             break
         has_minimum = true
@@ -126,17 +128,17 @@ RegexRepeat regex_repeat_parse(string pattern, int start):
         if (minimum > 1000):
             return RegexRepeat(false, 0, 0, index)
         index += 1
-    if (!has_minimum || index >= pattern.length()):
+    if (!has_minimum || index >= pattern_length):
         return RegexRepeat(false, 0, 0, index)
-    if (pattern[index] == '}'):
+    if (scan_pattern[index] == '}'):
         return RegexRepeat(true, minimum, minimum, index)
-    if (pattern[index] != ','):
+    if (scan_pattern[index] != ','):
         return RegexRepeat(false, 0, 0, index)
     index += 1
     int maximum = 0
     bool has_maximum = false
-    while (index < pattern.length()):
-        string digit = pattern[index]
+    while (index < pattern_length):
+        string digit = scan_pattern[index]
         if (!digit.is_digit()):
             break
         has_maximum = true
@@ -144,9 +146,9 @@ RegexRepeat regex_repeat_parse(string pattern, int start):
         if (maximum > 1000):
             return RegexRepeat(false, 0, 0, index)
         index += 1
-    if (index >= pattern.length()):
+    if (index >= pattern_length):
         return RegexRepeat(false, 0, 0, index)
-    if (pattern[index] != '}'):
+    if (scan_pattern[index] != '}'):
         return RegexRepeat(false, 0, 0, index)
     if (!has_maximum):
         return RegexRepeat(true, minimum, -1, index)
@@ -227,6 +229,9 @@ RegexPostfix regex_expand_counts(RegexPostfix postfix):
     return RegexPostfix(true, kinds, characters)
 
 RegexPostfix regex_postfix(string pattern):
+    # Index the managed copy so byte reads do not rescan borrowed input length.
+    string scan_pattern = pattern + ''
+    int pattern_length = scan_pattern.length()
     int[] kinds = []
     string[] characters = []
     int[] operators = []
@@ -234,25 +239,25 @@ RegexPostfix regex_postfix(string pattern):
     bool can_quantify = false
     bool has_counts = false
     int index = 0
-    while (index < pattern.length()):
-        string character = pattern[index]
+    while (index < pattern_length):
+        string character = scan_pattern[index]
         bool escaped = false
         if (character == '\\'):
             index += 1
-            if (index >= pattern.length()):
+            if (index >= pattern_length):
                 return RegexPostfix(false, [], [])
-            character = pattern[index]
+            character = scan_pattern[index]
             if (!regex_escapable(character)):
                 return RegexPostfix(false, [], [])
             escaped = true
         if (!escaped && character == '['):
             int end = index + 1
             bool closed = false
-            while (end < pattern.length()):
-                string item = pattern[end]
+            while (end < pattern_length):
+                string item = scan_pattern[end]
                 if (item == '\\'):
                     end += 1
-                    if (end >= pattern.length()):
+                    if (end >= pattern_length):
                         return RegexPostfix(false, [], [])
                 else if (item == ']'):
                     closed = true
@@ -260,7 +265,7 @@ RegexPostfix regex_postfix(string pattern):
                 end += 1
             if (!closed):
                 return RegexPostfix(false, [], [])
-            string body = pattern.substring(index + 1, end)
+            string body = scan_pattern.substring(index + 1, end)
             if (regex_bracket_check(body, '') == 0):
                 return RegexPostfix(false, [], [])
             if (!expect_atom):
@@ -307,13 +312,19 @@ RegexPostfix regex_postfix(string pattern):
         else if (!escaped && character == '{'):
             if (!can_quantify):
                 return RegexPostfix(false, [], [])
-            RegexRepeat repeat = regex_repeat_parse(pattern, index)
+            int repeat_end = index + 1
+            while (repeat_end < pattern_length && scan_pattern[repeat_end] != '}'):
+                repeat_end += 1
+            if (repeat_end < pattern_length):
+                repeat_end += 1
+            string repeat_source = scan_pattern.substring(index, repeat_end)
+            RegexRepeat repeat = regex_repeat_parse(repeat_source, 0)
             if (!repeat.valid):
                 return RegexPostfix(false, [], [])
-            regex_postfix_add(kinds, characters, 10, pattern.substring(index, repeat.end + 1))
+            regex_postfix_add(kinds, characters, 10, repeat_source)
             has_counts = true
             can_quantify = false
-            index = repeat.end
+            index = repeat_end - 1
         else if (!escaped && (character == '*' || character == '+' || character == '?')):
             if (!can_quantify):
                 return RegexPostfix(false, [], [])
@@ -338,7 +349,7 @@ RegexPostfix regex_postfix(string pattern):
             expect_atom = false
             can_quantify = true
         index += 1
-    if (expect_atom && !pattern.is_empty()):
+    if (expect_atom && pattern_length > 0):
         return RegexPostfix(false, [], [])
     while (!operators.is_empty()):
         int top = operators.pop()
@@ -378,14 +389,9 @@ void regex_patch(int[] out1, int[] out2, int head, int target):
         regex_patch_set(out1, out2, node, target)
         node = next
 
-int regex_append_patch(int[] out1, int[] out2, int first, int second):
-    if (first < 0):
-        return second
-    int tail = first
-    while (regex_patch_next(out1, out2, tail) >= 0):
-        tail = regex_patch_next(out1, out2, tail)
-    regex_patch_set(out1, out2, tail, second)
-    return first
+void regex_patch_link(int[] out1, int[] out2, int tail, int head):
+    if (tail >= 0):
+        regex_patch_set(out1, out2, tail, head)
 
 Regex regex_invalid():
     return Regex(false, -1, [], [], [], [])
@@ -419,6 +425,8 @@ Regex regex_compile(string pattern):
     string[] characters = []
     int[] starts = []
     int[] patches = []
+    # Each fragment carries the tail matching its unresolved patch-list head.
+    int[] patch_tails = []
     int index = 0
     while (index < postfix.kinds.length()):
         int kind = postfix.kinds[index]
@@ -437,26 +445,33 @@ Regex regex_compile(string pattern):
             int state = regex_emit(operations, out1, out2, characters, operation, -1, -1, postfix.characters[index])
             starts.push(state)
             patches.push(state * 2)
+            patch_tails.push(state * 2)
         else if (kind == 3 || kind == 4):
             if (starts.length() < 2):
                 return regex_invalid()
             int right_start = starts.pop()
             int right_patch = patches.pop()
+            int right_tail = patch_tails.pop()
             int left_start = starts.pop()
             int left_patch = patches.pop()
+            int left_tail = patch_tails.pop()
             if (kind == 3):
                 regex_patch(out1, out2, left_patch, right_start)
                 starts.push(left_start)
                 patches.push(right_patch)
+                patch_tails.push(right_tail)
             else:
                 int split = regex_emit(operations, out1, out2, characters, 3, left_start, right_start, '')
+                regex_patch_link(out1, out2, left_tail, right_patch)
                 starts.push(split)
-                patches.push(regex_append_patch(out1, out2, left_patch, right_patch))
+                patches.push(left_patch)
+                patch_tails.push(right_tail)
         else:
             if (starts.is_empty()):
                 return regex_invalid()
             int body_start = starts.pop()
             int body_patch = patches.pop()
+            int body_tail = patch_tails.pop()
             int split = regex_emit(operations, out1, out2, characters, 3, body_start, -1, '')
             if (kind == 5 || kind == 6):
                 regex_patch(out1, out2, body_patch, split)
@@ -465,9 +480,12 @@ Regex regex_compile(string pattern):
                 else:
                     starts.push(body_start)
                 patches.push(split * 2 + 1)
+                patch_tails.push(split * 2 + 1)
             else if (kind == 7):
                 starts.push(split)
-                patches.push(regex_append_patch(out1, out2, body_patch, split * 2 + 1))
+                regex_patch_link(out1, out2, body_tail, split * 2 + 1)
+                patches.push(body_patch)
+                patch_tails.push(split * 2 + 1)
             else:
                 return regex_invalid()
         index += 1
