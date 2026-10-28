@@ -68,25 +68,12 @@ string[] expand_source_lines_with_imports(string path, string[] lines, string[] 
     while (line_index < lines.length()):
         if (is_import_line(lines[line_index])):
             string module_name = import_module_name(lines[line_index])
-            if (module_name == 'regex'):
-                string module_key = '<builtin:regex>'
+            if (module_name == 'regex' || module_name == 'random' || module_name == 'uuid'):
+                string module_key = '<builtin:' + module_name + '>'
                 if (!string_in_array(seen, module_key)):
                     seen.push(module_key)
-                    string[] imported = tb_builtin_module_text('regex').split_lines()
-                    for (string line in imported):
-                        merged.push(line)
-            else if (module_name == 'random'):
-                string module_key = '<builtin:random>'
-                if (!string_in_array(seen, module_key)):
-                    seen.push(module_key)
-                    string[] imported = tb_builtin_module_text('random').split_lines()
-                    for (string line in imported):
-                        merged.push(line)
-            else if (module_name == 'uuid'):
-                string module_key = '<builtin:uuid>'
-                if (!string_in_array(seen, module_key)):
-                    seen.push(module_key)
-                    string[] imported = tb_builtin_module_text('uuid').split_lines()
+                    string[] module_lines = tb_builtin_module_text(module_name).split_lines()
+                    string[] imported = expand_source_lines_with_imports(path, module_lines, seen, foreign_modules)
                     for (string line in imported):
                         merged.push(line)
             else if (is_foreign_module(module_name)):

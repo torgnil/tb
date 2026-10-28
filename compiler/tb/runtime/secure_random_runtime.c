@@ -61,31 +61,3 @@ int tb_secure_random_i64(int64_t *result) {
     memcpy(result, &bits, sizeof(bits));
     return 0;
 }
-
-int tb_secure_random_uuid_v4(char *output) {
-    if (output == NULL) {
-        return -1;
-    }
-
-    unsigned char bytes[16];
-    if (tb_secure_random_bytes(bytes, sizeof(bytes)) != 0) {
-        return -1;
-    }
-
-    bytes[6] = (unsigned char)((bytes[6] & 0x0f) | 0x40);
-    bytes[8] = (unsigned char)((bytes[8] & 0x3f) | 0x80);
-    static const char hex[] = "0123456789abcdef";
-    size_t output_index = 0;
-    for (size_t index = 0; index < sizeof(bytes); index += 1) {
-        if (index == 4 || index == 6 || index == 8 || index == 10) {
-            output[output_index] = '-';
-            output_index += 1;
-        }
-        output[output_index] = hex[bytes[index] >> 4];
-        output_index += 1;
-        output[output_index] = hex[bytes[index] & 0x0f];
-        output_index += 1;
-    }
-    output[output_index] = '\0';
-    return 0;
-}

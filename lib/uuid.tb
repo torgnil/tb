@@ -1,14 +1,40 @@
+import random;
+
+# Generate a UUID v4 from two independent random 64-bit values.
+string uuid():
+    int first = random()
+    int second = random()
+    string digits = '0123456789abcdef'
+    string[] parts = []
+    const int[] hyphen_positions = [8, 12, 16, 20]
+    for (int index = 0; index < 32; index++):
+        if (index in hyphen_positions):
+            parts.push('-')
+        int value = first
+        int digit_index = index
+        if (index >= 16):
+            value = second
+            digit_index = index - 16
+        int nibble = (value >> ((15 - digit_index) * 4)) & 15
+        if (index == 12):
+            nibble = 4
+        else if (index == 16):
+            nibble = (nibble & 3) | 8
+        parts.push(digits[nibble])
+    return parts.join('')
+
 # Validate the canonical 8-4-4-4-12 hexadecimal UUID text representation.
 # Version and variant bits are intentionally unrestricted.
 bool uuid_is_valid(string text):
     if (text.length() != 36):
         return false
     string scan_text = text + ''
+    const int[] hyphen_positions = [8, 13, 18, 23]
     for (int index = 0; index < 36; index++):
         string character = scan_text[index]
-        if (index == 8 || index == 13 || index == 18 || index == 23):
+        if (index in hyphen_positions):
             if (character != '-'):
                 return false
-        else if (!((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f') || (character >= 'A' && character <= 'F'))):
+        else if (!(character.is_digit() || (character >= 'a' && character <= 'f') || (character >= 'A' && character <= 'F'))):
             return false
     return true

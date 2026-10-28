@@ -815,10 +815,8 @@ string infer_call_type(string name, FunctionSigIR[] functions):
         return 'void'
     if (name == 'time_ms'):
         return 'int'
-    if (name == 'random'):
+    if (name == 'random_bits'):
         return 'int'
-    if (name == 'uuid'):
-        return 'string'
     if (name == 'has_flag'):
         return 'bool'
     if (name == 'option_value'):
@@ -876,7 +874,7 @@ string lookup_cached_field_type(string[] keys, string[] types, string record_nam
     return lookup_cached_name_type(keys, types, record_name + '.' + field_name)
 
 string infer_call_type_cached(string name, FunctionSigIR[] functions, string[] cache_names, string[] cache_types):
-    if (name == 'random' || name == 'uuid' || name == 'to_num'):
+    if (name == 'random_bits' || name == 'to_num'):
         string user_result_type = lookup_function_return_type(functions, name)
         if (user_result_type != 'unknown'):
             return user_result_type
@@ -1345,19 +1343,7 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
     if (op.detail == 'call'):
         if (op.args.is_empty()):
             return op
-        if (op.args[0] == 'random'):
-            if (lookup_function_return_type(functions, 'random') == 'unknown'):
-                if (!record_type_exists(record_names, 'random')):
-                    int random_arg_count = op.args.length() - 1
-                    if (random_arg_count > 2):
-                        throw 'random accepts zero, one, or two integer arguments'
-                    int random_arg_index = 1
-                    while (random_arg_index < op.args.length()):
-                        string random_arg_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[random_arg_index])), enum_types)
-                        if (random_arg_type != 'int'):
-                            throw 'random requires integer arguments; got ' + random_arg_type
-                        random_arg_index += 1
-        if ((op.args[0] == 'random' || op.args[0] == 'uuid') && lookup_function_return_type(functions, op.args[0]) == 'unknown' && record_type_exists(record_names, op.args[0])):
+        if (op.args[0] == 'random_bits' && lookup_function_return_type(functions, op.args[0]) == 'unknown' && record_type_exists(record_names, op.args[0])):
             return refined_value_op(op, op.args[0], refine_ownership_mode(op, op.args[0]))
         string result_type = infer_call_type_cached(op.args[0], functions, TYPE_IR_FUNCTION_TYPE_CACHE_NAMES, TYPE_IR_FUNCTION_TYPE_CACHE_VALUES)
         if (result_type == 'unknown'):
