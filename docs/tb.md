@@ -83,10 +83,11 @@ but duplicate member names are rejected. Explicit and unassigned members may
 not be mixed. Integer enum members and scalar bindings use the `int`
 representation, including for arguments, returns, arithmetic, and `switch`;
 this does not add nominal type checking or restrict assignments to declared
-members. Integer enum members can be used in `int[]` arrays. Enum-typed arrays,
-other composite types, and enum record fields are not yet supported for
-integer-backed enums. Bare enums continue to use their existing string
-representation.
+members. Integer enum members can be used in `int[]` arrays. Integer-backed
+enum fields in records use the same `int` representation and assignment rules,
+including in nested records and records with managed fields. Enum-typed arrays
+and other enum composite types are not yet supported. Bare enums continue to
+use their existing string representation.
 
 String-backed enum values use their string representation in named function parameters and
 returns. A returned enum call can be printed, compared with an enum member,

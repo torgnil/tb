@@ -552,38 +552,55 @@ bool type_contains_integer_enum(string type_name, EnumTypeIR[] enums):
             index += 1
     return false
 
-void validate_integer_enum_declared_type(string type_name, EnumTypeIR[] enums, bool record_field):
+void validate_integer_enum_declared_type(string type_name, EnumTypeIR[] enums):
     string base_type = type_name
     if (base_type.starts_with('const ')):
         base_type = base_type.substring(6)
     if (integer_enum_exists(enums, base_type)):
-        if (record_field):
-            throw 'integer enum record fields are not yet supported: ' + type_name
         return
     if (type_contains_integer_enum(base_type, enums)):
         throw 'integer enum composite types are not yet supported: ' + type_name
 
-void validate_integer_enum_declared_types(ProgramIR program, EnumTypeIR[] enums):
+RecordDeclIR[] normalize_integer_enum_record_fields(RecordDeclIR[] records, EnumTypeIR[] enums):
     bool has_integer_enum = false
     for (EnumTypeIR enum_type : enums):
         if (enum_type.integer_backed):
             has_integer_enum = true
             break
     if (!has_integer_enum):
-        return
+        return records
+    RecordDeclIR[] result = []
+    for (RecordDeclIR record_decl : records):
+        string[] fields = []
+        for (string field : record_decl.fields):
+            BindingIR binding = ir_parse_binding_decl(strip_prefix(field, 'field '))
+            string type_name = normalize_integer_enum_type_name(binding.type_name, enums)
+            fields.push('field ' + type_name + ' ' + binding.name)
+        result.push(RecordDeclIR(record_decl.header, fields))
+    return result
+
+bool validate_integer_enum_declared_types(ProgramIR program, EnumTypeIR[] enums):
+    bool has_integer_enum = false
+    for (EnumTypeIR enum_type : enums):
+        if (enum_type.integer_backed):
+            has_integer_enum = true
+            break
+    if (!has_integer_enum):
+        return false
     for (GlobalDeclIR global_decl : program.globals):
         BindingIR binding = ir_parse_binding_decl(strip_prefix(global_decl.header, 'global '))
-        validate_integer_enum_declared_type(binding.type_name, enums, false)
+        validate_integer_enum_declared_type(binding.type_name, enums)
     for (RecordDeclIR record_decl : program.records):
         for (string field : record_decl.fields):
             BindingIR binding = ir_parse_binding_decl(strip_prefix(field, 'field '))
-            validate_integer_enum_declared_type(binding.type_name, enums, true)
+            validate_integer_enum_declared_type(binding.type_name, enums)
     for (ParsedFunction function_ir : program.functions):
-        validate_integer_enum_declared_type(function_ir.return_type, enums, false)
+        validate_integer_enum_declared_type(function_ir.return_type, enums)
         for (BindingIR param : function_ir.params):
-            validate_integer_enum_declared_type(param.type_name, enums, false)
+            validate_integer_enum_declared_type(param.type_name, enums)
         for (BindingIR local : function_ir.locals):
-            validate_integer_enum_declared_type(local.type_name, enums, false)
+            validate_integer_enum_declared_type(local.type_name, enums)
+    return true
 
 BindingIR normalize_enum_binding(BindingIR binding, EnumTypeIR[] enums):
     return BindingIR(normalize_enum_type_name(binding.type_name, enums), binding.name)
@@ -2295,11 +2312,16 @@ ParsedFunction refine_function(ParsedFunction function_ir, BindingIR[] globals, 
 
 ProgramIR refine_program_ir(ProgramIR program):
     EnumTypeIR[] enum_types = collect_enum_types(program.enums)
-    validate_integer_enum_declared_types(program, enum_types)
-    BindingIR[] globals = normalize_enum_bindings(collect_global_bindings(program.globals), enum_types)
-    FunctionSigIR[] functions = collect_function_sigs(program.functions, enum_types)
+    bool has_integer_enum = validate_integer_enum_declared_types(program, enum_types)
+    RecordDeclIR[] records = []
     RecordFieldIR[] record_fields = collect_record_fields(program.records)
     string[] record_names = collect_declared_record_names(program.records)
+    if (has_integer_enum):
+        records = normalize_integer_enum_record_fields(program.records, enum_types)
+        record_fields = collect_record_fields(records)
+        record_names = collect_declared_record_names(records)
+    BindingIR[] globals = normalize_enum_bindings(collect_global_bindings(program.globals), enum_types)
+    FunctionSigIR[] functions = collect_function_sigs(program.functions, enum_types)
 
     GlobalDeclIR[] refined_globals = []
     LinearInstruction[] prior_global_instructions = []
@@ -2342,6 +2364,8 @@ ProgramIR refine_program_ir(ProgramIR program):
     ParsedFunction[] refined_functions = []
     for (ParsedFunction function_ir in program.functions):
         refined_functions.push(refine_function(function_ir, globals, functions, record_fields, record_names, enum_types))
+    if (has_integer_enum):
+        return ProgramIR(program.imports, refined_globals, records, program.enums, refined_functions)
     return ProgramIR(program.imports, refined_globals, program.records, program.enums, refined_functions)
 
 ProgramIR typed_source_ir(string source):
