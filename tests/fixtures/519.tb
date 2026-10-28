@@ -1,0 +1,51 @@
+import uuid;
+import uuid;
+
+int main(string[] args):
+    Uuid nil = uuid_parse('00000000-0000-0000-0000-000000000000')
+    print(nil.high)
+    print(nil.low)
+    print(uuid_format(nil))
+
+    Uuid constructed = Uuid(1, 2)
+    print(uuid_format(constructed))
+
+    Uuid all_bits = uuid_parse('FFFFFFFF-FFFF-FFFF-FFFF-FFFFFFFFFFFF')
+    print(all_bits.high)
+    print(all_bits.low)
+    print(all_bits.uuid_format())
+
+    Uuid signed_edges = uuid_parse('80000000-0000-0000-8000-000000000000')
+    print(signed_edges.high == -9223372036854775807 - 1)
+    print(signed_edges.low == -9223372036854775807 - 1)
+    Uuid mixed = '550E8400-E29B-01D4-0716-446655440000'.uuid_parse()
+    print(mixed.high)
+    print(mixed.low)
+    print(uuid_format(mixed))
+
+    string generated = uuid()
+    print(uuid_format(uuid_parse(generated)) == generated)
+
+    try:
+        Uuid invalid_length = uuid_parse('not-a-uuid')
+        print(uuid_format(invalid_length))
+    catch (string error):
+        print(error)
+
+    try:
+        Uuid invalid_hex = uuid_parse('550e8400-e29b-41d4-a716-44665544000g')
+        print(uuid_format(invalid_hex))
+    catch (string error):
+        print(error)
+
+    try:
+        Uuid invalid_hyphen = uuid_parse('550e8400e29b-41d4-a716-446655440000')
+        print(uuid_format(invalid_hyphen))
+    catch (string error):
+        print(error)
+
+    string runtime_value = '550e8400-e29b-41d4-a716-446655440000'
+    if (args.length() > 1):
+        runtime_value = args[1]
+    print(uuid_format(uuid_parse(runtime_value)))
+    return 0
