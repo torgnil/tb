@@ -1,0 +1,18 @@
+# A deterministic xorshift64 generator. State is stored as a signed int, but
+# every operation is defined on its 64-bit two's-complement bit pattern.
+record RandomGenerator(int state);
+
+RandomGenerator seeded_random(int seed):
+    if (seed == 0):
+        seed = -7046029254386353131
+    return RandomGenerator(seed)
+
+int random_next(RandomGenerator generator):
+    int value = generator.state
+    if (value == 0):
+        value = -7046029254386353131
+    value ^= value << 13
+    value ^= (value >> 7) & 144115188075855871
+    value ^= value << 17
+    generator.state = value
+    return value

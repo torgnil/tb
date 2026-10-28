@@ -125,6 +125,8 @@ lines.append("    throw 'unknown embedded LLVM helper: ' + name")
 lines.extend(['', 'string tb_builtin_module_text(string name):'])
 lines.append("    if (name == 'regex'):")
 lines.append(f"        return {tb_string(source_text(repo_root / 'lib/regex.tb'))}")
+lines.append("    if (name == 'random'):")
+lines.append(f"        return {tb_string(source_text(repo_root / 'lib/random.tb'))}")
 lines.append("    throw 'unknown built-in module: ' + name")
 
 runtime = repo_root / 'compiler/tb/runtime'
