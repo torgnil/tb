@@ -82,6 +82,22 @@ loop.body:
 done:
   ret ptr %result
 }
+; Validate a direct range loop using the same length limit as range arrays.
+define private void @tb_bootstrap_range_guard(i64 %start, i64 %end) {
+entry:
+  %reversed = icmp sle i64 %end, %start
+  br i1 %reversed, label %done, label %check.length
+check.length:
+  %delta = sub i64 %end, %start
+  %too.large = icmp ugt i64 %delta, 2147483647
+  br i1 %too.large, label %invalid.length, label %done
+invalid.length:
+  call void @abort()
+  unreachable
+done:
+  ret void
+}
+
 define private ptr @tb_bootstrap_range(i64 %start, i64 %end) {
 entry:
   %reversed = icmp sle i64 %end, %start

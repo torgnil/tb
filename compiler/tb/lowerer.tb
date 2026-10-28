@@ -35,6 +35,9 @@ record SubmitRangeListRewrite(Node[] nodes, string[] used_names, int next_index)
 record ArrayScalarCaptureResult(BindingIR[] captures, bool complete);
 record ArrayScalarCallbackRewrite(BindingIR[] captures, bool recognized);
 
+# Set once per program after checking for declarations named `range`.
+bool LOWER_DIRECT_RANGE_FOREACH = false;
+
 bool submit_lambda_managed_type(string type_name):
     return type_name == 'string' || type_name == 'int[]' || type_name == 'int[][]'
 
@@ -3018,6 +3021,52 @@ LinearIRListResult lower_linear_statement_list_ir_from(Node[] nodes, int start, 
         instructions = append_instructions(instructions, rest.instructions)
         return LinearIRListResult(instructions, rest.next_temp, rest.next_label)
 
+    if (node.kind == 'ForEach' && LOWER_DIRECT_RANGE_FOREACH):
+        Node range_call_node = node.children[0]
+        BindingIR iterator = ir_parse_binding_decl(node.value)
+        if ((iterator.type_name == 'int' || iterator.type_name == 'const int') && range_call_node.kind == 'Call' && range_call_node.value == 'range' && (range_call_node.children.length() == 1 || range_call_node.children.length() == 2)):
+            Node lower_bound = Node('Int', '0', [])
+            Node upper_bound = range_call_node.children[0]
+            if (range_call_node.children.length() == 2):
+                lower_bound = range_call_node.children[0]
+                upper_bound = range_call_node.children[1]
+            TempIRResult first = lower_linear_value_ir(lower_bound, next_temp)
+            TempIRResult last = lower_linear_value_ir(upper_bound, first.next_temp)
+            string cond_label = label_name(next_label)
+            string body_label = label_name(next_label + 1)
+            string end_label = label_name(next_label + 2)
+            string update_label = label_name(next_label + 3)
+            string counter_name = 'range.counter.' + next_label.to_string()
+            string counter_value = temp_name(last.next_temp)
+            string condition_value = temp_name(last.next_temp + 1)
+            string item_value = temp_name(last.next_temp + 2)
+            LinearIRListResult body = lower_linear_statement_list_ir_from(node.children, 1, last.next_temp + 3, next_label + 4, end_label, update_label)
+            string update_value = temp_name(body.next_temp)
+            string one_value = temp_name(body.next_temp + 1)
+            string incremented = temp_name(body.next_temp + 2)
+            LinearIRListResult rest = lower_linear_statement_list_ir_from(nodes, start + 1, body.next_temp + 3, body.next_label, break_label, continue_label)
+            LinearInstruction[] instructions = append_instructions(first.instructions, last.instructions)
+            instructions.push(LinearInstruction('range_guard', '', '', '', '', [first.name, last.name]))
+            instructions.push(LinearInstruction('set', '', '', '', 'int ' + counter_name, [first.name]))
+            instructions.push(LinearInstruction('jump', '', '', '', cond_label, []))
+            instructions.push(LinearInstruction('label', '', '', '', cond_label, []))
+            instructions.push(LinearInstruction('value', counter_value, 'int', 'plain', 'identifier', [counter_name]))
+            instructions.push(LinearInstruction('value', condition_value, 'bool', 'plain', 'binary', ['<', counter_value, last.name]))
+            instructions.push(LinearInstruction('branch_if', '', '', '', '', [condition_value, body_label, end_label]))
+            instructions.push(LinearInstruction('label', '', '', '', body_label, []))
+            instructions.push(LinearInstruction('value', item_value, 'int', 'plain', 'identifier', [counter_name]))
+            instructions.push(LinearInstruction('set', '', '', '', node.value, [item_value]))
+            instructions = append_instructions(instructions, body.instructions)
+            instructions.push(LinearInstruction('label', '', '', '', update_label, []))
+            instructions.push(LinearInstruction('value', update_value, 'int', 'plain', 'identifier', [counter_name]))
+            instructions.push(LinearInstruction('value', one_value, 'int', 'plain', 'int', ['1']))
+            instructions.push(LinearInstruction('value', incremented, 'int', 'plain', 'binary', ['+', update_value, one_value]))
+            instructions.push(LinearInstruction('assign_local', '', '', '', counter_name, [incremented]))
+            instructions.push(LinearInstruction('jump', '', '', '', cond_label, []))
+            instructions.push(LinearInstruction('label', '', '', '', end_label, []))
+            instructions = append_instructions(instructions, rest.instructions)
+            return LinearIRListResult(instructions, rest.next_temp, rest.next_label)
+
     if (node.kind == 'ForEach'):
         string cond_label = label_name(next_label)
         string body_label = label_name(next_label + 1)
@@ -3936,7 +3985,26 @@ ProgramIR lower_program_ir(Node program):
             throw 'unsupported top-level node in shared bootstrap IR: ' + child.kind
     return ProgramIR(imports, globals, records, enums, functions)
 
+# Check only the direct source spelling of a range foreach; other forms keep
+# the ordinary array path unless a direct loop already required the prepass.
+bool tokens_have_direct_range_foreach(Token[] tokens):
+    for (int index = 1; index + 1 < tokens.length(); index += 1):
+        if (token_is(tokens[index], 'IDENTIFIER', 'range') && token_is(tokens[index + 1], 'SYMBOL', '(')):
+            if (token_is(tokens[index - 1], 'SYMBOL', ':') || token_is(tokens[index - 1], 'KEYWORD', 'in')):
+                return true
+    return false
+
+bool program_declares_range(Node program):
+    for (Node child : program.children):
+        if (child.kind == 'RecordDecl' && child.value == 'range'):
+            return true
+        if (child.kind == 'Function' || child.kind == 'CachedFunction'):
+            if (ir_parse_binding_decl(child.value).name == 'range'):
+                return true
+    return false
+
 ProgramIR lower_tokens_ir(Token[] tokens):
+    LOWER_DIRECT_RANGE_FOREACH = false
     bool has_submit_identifier = false
     bool has_map_to_identifier = false
     bool has_filter_identifier = false
@@ -3950,15 +4018,20 @@ ProgramIR lower_tokens_ir(Token[] tokens):
             has_map_to_identifier = true
         if (token_is(token, 'IDENTIFIER', 'filter')):
             has_filter_identifier = true
-    if ((has_submit_identifier || has_map_to_identifier || has_filter_identifier) && has_arrow_symbol):
-        return lower_program_ir(parse_program(tokens))
-
     bool has_const = false
     for (Token token : tokens):
         if (token_is(token, 'KEYWORD', 'const')):
             has_const = true
-    if (has_const):
-        validate_const_bindings(parse_program(tokens))
+    bool needs_program = (has_submit_identifier || has_map_to_identifier || has_filter_identifier) && has_arrow_symbol
+    bool has_range_foreach = tokens_have_direct_range_foreach(tokens)
+    if (needs_program || has_const || has_range_foreach):
+        Node parsed = parse_program(tokens)
+        if (has_range_foreach && !program_declares_range(parsed)):
+            LOWER_DIRECT_RANGE_FOREACH = true
+        if (needs_program):
+            return lower_program_ir(parsed)
+        if (has_const):
+            validate_const_bindings(parsed)
     ImportDeclIR[] imports = []
     GlobalDeclIR[] globals = []
     RecordDeclIR[] records = []

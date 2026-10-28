@@ -3273,6 +3273,8 @@ void analyze_program_features(ProgramIR program, string[] map_types):
                     needs_record_array = true
                 if (op.kind == 'try' || op.kind == 'catch'):
                     needs_try_catch = true
+                if (op.kind == 'range_guard'):
+                    needs_int_array = true
                 if (op.kind == 'release_local'):
                     BindingIR binding = ir_parse_binding_decl(op.detail)
                     if (is_backend_managed_type(binding.type_name)):
@@ -8189,6 +8191,8 @@ string emit_instruction(ProgramIR program, ParsedFunction function_ir, string bl
             LLVM_EMIT_ASSIGN_INDEX_COUNT += 1
             return line
         return emit_assign_index_add_instruction(program, function_ir, op, temp_suffix)
+    if (op.kind == 'range_guard'):
+        return '  call void @tb_bootstrap_range_guard(i64 ' + temp_ref(op.args[0]) + ', i64 ' + temp_ref(op.args[1]) + ')'
     if (op.kind == 'drop'):
         if (normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0])) == 'void'):
             return '  ; drop void ' + temp_ref(op.args[0])

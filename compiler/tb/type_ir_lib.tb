@@ -1844,6 +1844,11 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
     int op_index = 0
     while (op_index < instructions.length()):
         LinearInstruction op = instructions[op_index]
+        if (op.kind == 'range_guard'):
+            for (string bound in op.args):
+                string bound_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, bound)), enum_types)
+                if (bound_type != 'int' && bound_type != 'unknown'):
+                    throw 'range requires integer bounds; got ' + bound_type
         if (op.kind == 'value' && (op.detail == 'index' || op.detail == 'target-index' || op.detail == 'assign-index-key') && op.args.length() >= 2):
             string index_base_type = lookup_temp_type_slot(temp_types, op.args[0])
             string index_type = lookup_temp_type_slot(temp_types, op.args[1])
