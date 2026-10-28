@@ -67,13 +67,13 @@ void regex_push_operator(int[] operators, int[] kinds, string[] characters, int 
     operators.push(operator)
 
 bool regex_reserved(string character):
-    return character == '[' || character == ']' || character == '{' || character == '}' || character == '^' || character == '$'
+    return character.length() == 1 && '[]{}^$'.contains(character)
 
 bool regex_class_escape(string character):
-    return character == 'd' || character == 'D' || character == 'w' || character == 'W' || character == 's' || character == 'S'
+    return character.length() == 1 && 'dDwWsS'.contains(character)
 
 bool regex_escapable(string character):
-    return regex_class_escape(character) || character == '\\' || character == '.' || character == '|' || character == '*' || character == '+' || character == '?' || character == '(' || character == ')' || regex_reserved(character)
+    return character.length() == 1 && 'dDwWsS\\.|*+?()[]{}^$'.contains(character)
 
 # Returns 0 for invalid syntax, 1 for a valid nonmatch, and 2 for a match.
 # Class bodies are checked when compiled and again if a public Regex is mutated.
@@ -314,7 +314,7 @@ RegexPostfix regex_postfix(string pattern):
             expect_atom = false
             can_quantify = true
             index = end
-        else if (!escaped && (character == '^' || character == '$')):
+        else if (!escaped && '^$'.contains(character)):
             if (!expect_atom):
                 regex_push_operator(operators, kinds, characters, REGEX_OPERATOR_CONCAT)
             int kind = REGEX_POSTFIX_START
@@ -365,7 +365,7 @@ RegexPostfix regex_postfix(string pattern):
             has_counts = true
             can_quantify = false
             index = repeat_end - 1
-        else if (!escaped && (character == '*' || character == '+' || character == '?')):
+        else if (!escaped && '*+?'.contains(character)):
             if (!can_quantify):
                 return RegexPostfix(false, [], [])
             int kind = REGEX_POSTFIX_STAR
@@ -444,7 +444,7 @@ string regex_escape(string text):
     int index = 0
     while (index < text_length):
         string character = scan_text[index]
-        if (character == '\\' || character == '.' || character == '|' || character == '*' || character == '+' || character == '?' || character == '(' || character == ')' || character == '[' || character == ']' || character == '{' || character == '}' || character == '^' || character == '$'):
+        if ('\\.|*+?()[]{}^$'.contains(character)):
             if (segment_start < index):
                 pieces.push(scan_text.substring(segment_start, index))
             pieces.push('\\')
@@ -592,14 +592,16 @@ bool regex_add_state(Regex program, int state, int[] seen, int[] pending, int[] 
 
 # ASCII classes operate on one byte; whitespace includes tab through CR and space.
 bool regex_class_matches(string kind, string character):
+    if (kind.length() != 1):
+        return false
     bool matches = false
-    if (kind == 'd' || kind == 'D'):
+    if ('dD'.contains(kind)):
         matches = character.is_digit()
-    else if (kind == 'w' || kind == 'W'):
+    else if ('wW'.contains(kind)):
         matches = character.is_alpha() || character.is_digit() || character == '_'
-    else if (kind == 's' || kind == 'S'):
+    else if ('sS'.contains(kind)):
         matches = character == ' ' || (character >= '\t' && character <= '\r')
-    if (kind == 'D' || kind == 'W' || kind == 'S'):
+    if ('DWS'.contains(kind)):
         return !matches
     return matches
 
@@ -738,7 +740,7 @@ bool regex_add_start_state(Regex program, int state, int start, int[] seen, int[
                 continue
             if (operation == REGEX_NFA_CLASS):
                 string kind = program.characters[current]
-                if (kind != 'd' && kind != 'D' && kind != 'w' && kind != 'W' && kind != 's' && kind != 'S'):
+                if (!regex_class_escape(kind)):
                     return false
                 active.push(current)
                 active_starts.push(start)
