@@ -435,6 +435,7 @@ Random values
 - `random() -> int` returns a uniformly distributed 64-bit bit pattern interpreted as a signed `int`. `random(upper) -> int` returns a uniformly distributed value in `[0, upper)`, and `random(lower, upper) -> int` returns one in `[lower, upper)`. The bounds are evaluated once, from left to right, and must be integers; `upper` must be positive and `lower` must be less than `upper`. Invalid bounds raise the catchable `random: invalid range` exception. `uuid() -> string` returns a newly owned lowercase UUID v4 string in canonical 36-character form. Each call reads fresh bytes from the operating system random device (`/dev/urandom` on supported macOS and Linux systems); these calls are runtime operations and are not constant-folded.
 - If the random source cannot provide all required bytes or cannot be closed successfully, the call raises `random failed` or `uuid failed`. An uncaught error prints that message and exits with status 1. A declared user function or record named `random` or `uuid` keeps precedence over the builtin.
 - `import random;` embeds a deterministic generator module with `RandomGenerator seeded_random(int seed)` and `int random_next(RandomGenerator generator)`. Each generator keeps its own mutable state; advancing a record updates that record, and assigning a generator to another variable copies its current state so the two can advance independently. The sequence uses xorshift64 with left shifts by 13 and 17 and a logical right shift by 7, returning the signed interpretation of each 64-bit state. A zero seed, or a state changed to zero, is replaced with the fixed nonzero state `-7046029254386353131`; consequently seed zero intentionally shares a sequence with that seed. This generator is for repeatable results; it does not replace the fresh operating-system-backed `random()` and `uuid()` calls. The name `random` is reserved as a built-in module import, and the module is embedded in the compiler, so no separate file is needed at runtime.
+- `import uuid;` embeds `bool uuid_is_valid(string text)` (also `text.uuid_is_valid()`). It accepts exactly 36 ASCII bytes in the canonical `8-4-4-4-12` hexadecimal form, with hyphens in the four standard positions; hexadecimal letters may be upper or lower case. This validates the text representation only: it accepts nil UUIDs and does not restrict version or variant bits. It does not parse, normalize, or generate a UUID. The module is embedded in the compiler, so no separate file is needed at runtime; the name `uuid` is reserved as a built-in module import.
 
 Core IO and string helpers
 
@@ -749,8 +750,8 @@ scanning, also using O(n) additional memory. That array is limited to
 O(n * m), where n is the input byte length and m is the number of compiled
 states, plus scans of bracket-class members for matching active states.
 The compiler embeds the module, so it does not need a separate file at runtime.
-The name `regex` is reserved for this built-in module; other module imports
-continue to resolve relative to the importing source file.
+The names `regex`, `random`, and `uuid` are reserved for these built-in modules;
+other module imports continue to resolve relative to the importing source file.
 
 14. Examples
 
