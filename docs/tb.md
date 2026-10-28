@@ -488,6 +488,7 @@ Conversion and numeric helpers
 
 - to_num(s: string) -> num
   - Parse an ASCII decimal at runtime into a signed 64-bit coefficient and decimal scale, preserving fractional trailing zeroes. The input allows an optional `+` or `-`, digits, and at most one decimal point; at least one digit is required. Whitespace and exponents are not accepted. Invalid input, an out-of-range coefficient, or a scale above 2,147,483,647 raises `to_num: invalid number`. A declared function or record named `to_num` keeps precedence over the builtin.
+  - The same conversion is available as `s.to_num()` with no explicit arguments.
 
 - to_string(value) -> string
   - Convert supported values to strings. Current overloads cover `string`, `int`, `num`, `bool`, `int[]`, `string[]`, `bool[]`, and `set<int>`.

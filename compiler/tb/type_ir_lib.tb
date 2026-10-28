@@ -1543,6 +1543,14 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             throw 'array slice methods are not supported; use values[start:end]'
         if (method_name == 'to_int' && normalized_base_type == 'string'):
             return refined_value_op(op, 'int', 'plain')
+        if (method_name == 'to_num'):
+            if (lookup_function_return_type(functions, method_name) == 'unknown'):
+                if (!record_type_exists(record_names, method_name)):
+                    if (normalized_base_type != 'string'):
+                        throw 'to_num requires string receiver; got ' + normalized_base_type
+                    if (op.args.length() != 2):
+                        throw 'to_num expects no arguments'
+                    return refined_value_op(op, 'num', 'plain')
         if (method_name == 'push' && normalized_base_type.ends_with('[]')):
             string push_item_type = array_item_type(normalized_base_type)
             bool supported_push_type = push_item_type == 'int' || push_item_type == 'bool' || push_item_type == 'string' || push_item_type == 'int[]' || push_item_type == 'string[]'

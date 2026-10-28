@@ -3141,6 +3141,11 @@ void analyze_program_features(ProgramIR program, string[] map_types):
                         needs_secure_random = true
                         needs_runtime_string_copy = true
                         needs_throw = true
+            if (op.kind == 'value' && op.detail == 'method-call' && !op.args.is_empty()):
+                if (op.args[0] == 'to_num'):
+                    if (lookup_named_function_decl(program, 'to_num').header == ''):
+                        if (lookup_record_decl(program, 'to_num').header == ''):
+                            needs_to_num = true
             if (op.kind == 'value' && op.detail == 'binary'):
                 if (!op.args.is_empty()):
                     if (op.args[0] == '<<' || op.args[0] == '>>'):
@@ -3356,6 +3361,11 @@ void analyze_program_features(ProgramIR program, string[] map_types):
                         if (base_type.starts_with('map<') && normalize_llvm_type_name(map_value_type(base_type)) == 'int'):
                             needs_int_to_string = true
                     string method_base_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[1]))
+                    if (op.args[0] == 'to_num'):
+                        if (method_base_type == 'string'):
+                            if (lookup_named_function_decl(program, 'to_num').header == ''):
+                                if (lookup_record_decl(program, 'to_num').header == ''):
+                                    needs_to_num = true
                     if (op.args.length() >= 2):
                         if (op.args[0] == 'to_string'):
                             if (normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[1])) == 'num'):
@@ -6305,6 +6315,14 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
     if (op.args.length() < 2):
         throw 'unsupported llvm method-call arity: ' + method_name
     string method_base_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[1]))
+    if (method_name == 'to_num'):
+        if (method_base_type == 'string'):
+            if (lookup_named_function_decl(program, method_name).header == ''):
+                if (lookup_record_decl(program, method_name).header == ''):
+                    if (op.args.length() != 2):
+                        throw 'unsupported llvm to_num method arity'
+                    string to_num_line = '  ' + lhs + ' = call %tb_bootstrap_num @tb_bootstrap_to_num(ptr ' + temp_ref(op.args[1]) + ')'
+                    return emit_tracked_builtin_call_line(emit_owned_string_receiver_release(function_ir, op.args[1], op.lhs, to_num_line))
     if (method_name == 'index_of' && lookup_call_meta_index(method_name) < 0 && (method_base_type == 'int[]' || method_base_type == 'bool[]' || method_base_type == 'string[]')):
         RecordDeclIR index_of_record = lookup_record_decl(program, method_name)
         if (index_of_record.header != ''):
