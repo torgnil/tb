@@ -561,20 +561,26 @@ void validate_integer_enum_declared_type(string type_name, EnumTypeIR[] enums):
     if (type_contains_integer_enum(base_type, enums)):
         throw 'integer enum composite types are not yet supported: ' + type_name
 
-RecordDeclIR[] normalize_integer_enum_record_fields(RecordDeclIR[] records, EnumTypeIR[] enums):
-    bool has_integer_enum = false
-    for (EnumTypeIR enum_type : enums):
-        if (enum_type.integer_backed):
-            has_integer_enum = true
-            break
-    if (!has_integer_enum):
-        return records
+bool has_string_enum_record_fields(RecordDeclIR[] records, EnumTypeIR[] enums):
+    if (enums.is_empty()):
+        return false
+    for (RecordDeclIR record_decl : records):
+        for (string field : record_decl.fields):
+            BindingIR binding = ir_parse_binding_decl(strip_prefix(field, 'field '))
+            string field_type = binding.type_name
+            if (field_type.starts_with('const ')):
+                field_type = field_type.substring(6)
+            if (enum_name_exists(enums, field_type) && !integer_enum_exists(enums, field_type)):
+                return true
+    return false
+
+RecordDeclIR[] normalize_enum_record_fields(RecordDeclIR[] records, EnumTypeIR[] enums):
     RecordDeclIR[] result = []
     for (RecordDeclIR record_decl : records):
         string[] fields = []
         for (string field : record_decl.fields):
             BindingIR binding = ir_parse_binding_decl(strip_prefix(field, 'field '))
-            string type_name = normalize_integer_enum_type_name(binding.type_name, enums)
+            string type_name = normalize_enum_type_name(binding.type_name, enums)
             fields.push('field ' + type_name + ' ' + binding.name)
         result.push(RecordDeclIR(record_decl.header, fields))
     return result
@@ -2313,11 +2319,13 @@ ParsedFunction refine_function(ParsedFunction function_ir, BindingIR[] globals, 
 ProgramIR refine_program_ir(ProgramIR program):
     EnumTypeIR[] enum_types = collect_enum_types(program.enums)
     bool has_integer_enum = validate_integer_enum_declared_types(program, enum_types)
+    bool has_string_enum_record_field = has_string_enum_record_fields(program.records, enum_types)
+    bool normalize_records = has_integer_enum || has_string_enum_record_field
     RecordDeclIR[] records = []
     RecordFieldIR[] record_fields = collect_record_fields(program.records)
     string[] record_names = collect_declared_record_names(program.records)
-    if (has_integer_enum):
-        records = normalize_integer_enum_record_fields(program.records, enum_types)
+    if (normalize_records):
+        records = normalize_enum_record_fields(program.records, enum_types)
         record_fields = collect_record_fields(records)
         record_names = collect_declared_record_names(records)
     BindingIR[] globals = normalize_enum_bindings(collect_global_bindings(program.globals), enum_types)
@@ -2364,7 +2372,7 @@ ProgramIR refine_program_ir(ProgramIR program):
     ParsedFunction[] refined_functions = []
     for (ParsedFunction function_ir in program.functions):
         refined_functions.push(refine_function(function_ir, globals, functions, record_fields, record_names, enum_types))
-    if (has_integer_enum):
+    if (normalize_records):
         return ProgramIR(program.imports, refined_globals, records, program.enums, refined_functions)
     return ProgramIR(program.imports, refined_globals, program.records, program.enums, refined_functions)
 

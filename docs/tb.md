@@ -85,9 +85,9 @@ representation, including for arguments, returns, arithmetic, and `switch`;
 this does not add nominal type checking or restrict assignments to declared
 members. Integer enum members can be used in `int[]` arrays. Integer-backed
 enum fields in records use the same `int` representation and assignment rules,
-including in nested records and records with managed fields. Enum-typed arrays
-and other enum composite types are not yet supported. Bare enums continue to
-use their existing string representation.
+including in nested records and records with managed fields. Integer-enum-typed
+arrays and other integer-enum composite types are not yet supported. Bare enums
+continue to use their existing string representation.
 
 String-backed enum values use their string representation in named function parameters and
 returns. A returned enum call can be printed, compared with an enum member,
@@ -102,6 +102,13 @@ string value before its local source is cleaned up; an owned string value keeps
 its existing transfer behavior. Global storage keeps its existing process
 lifetime and replacement behavior. Enum values do not gain nominal type
 checking at calls.
+
+String-backed enum fields in records use the same `string` representation and
+ownership behavior as ordinary string fields, including when nested in another
+record or returned from a function. This support covers direct record fields;
+enum composite types retain their existing behavior. A static global record
+initializer may use a string literal for such a field, but an enum-member
+expression such as `Mode.READY` remains unsupported there.
 
 5. Declarations
 
