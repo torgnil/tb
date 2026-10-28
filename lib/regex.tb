@@ -525,9 +525,12 @@ bool regex_match(Regex program, string text):
     bool initial_end = text_length == 0 || (text_length == 1 && final_lf)
     if (!regex_add_state(program, program.start, seen, pending, current, true, initial_end)):
         return false
+    # Copy once into a managed string so indexed byte reads use its cached
+    # length instead of rescanning the borrowed input with strlen each time.
+    string scan_text = text + ''
     int text_index = 0
     while (text_index < text_length):
-        string character = text[text_index]
+        string character = scan_text[text_index]
         seen.fill(0)
         next.clear()
         int index = 0

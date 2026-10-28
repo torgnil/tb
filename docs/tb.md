@@ -732,10 +732,13 @@ byte endpoints in ascending order. Empty, unclosed, reversed, malformed, and
 unsupported-escape classes are invalid. Class matching scans its members for
 each active state; it does not use recursive backtracking.
 The `valid` field is false for an invalid pattern, and matching it returns false.
-Captures are not supported. `regex_contains` materializes the input
-as a temporary `string[]` of one-byte strings before scanning, using O(n)
-additional memory. The array is limited to 2,147,483,647 bytes; longer input
-aborts. Its NFA work is
+Captures are not supported. `regex_match` makes one managed copy of the input
+before scanning so indexed byte reads use cached length metadata. It uses O(n)
+additional memory and copies the whole input even when the first byte cannot
+match; it does not impose a separate array-length limit. `regex_contains`
+materializes the input as a temporary `string[]` of one-byte strings before
+scanning, also using O(n) additional memory. That array is limited to
+2,147,483,647 bytes; longer input aborts. The NFA work is
 O(n * m), where n is the input byte length and m is the number of compiled
 states, plus scans of bracket-class members for matching active states.
 The compiler embeds the module, so it does not need a separate file at runtime.
