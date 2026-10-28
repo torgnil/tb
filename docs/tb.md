@@ -711,8 +711,12 @@ inclusive. Bounds must be at most 1,000 and the expanded postfix expression
 for a pattern containing counted repetition may have at most 20,000 tokens.
 Malformed, reversed, or stacked repetitions are invalid. An empty pattern matches
 only an empty string. Empty groups, empty alternatives, unmatched parentheses,
-and dangling backslashes are invalid. Outside bracket classes, `]}^$` are reserved
-and invalid when unescaped; `{` begins counted repetition. A backslash may escape
+and dangling backslashes are invalid. Outside bracket classes, `]}` are reserved
+and invalid when unescaped; `{` begins counted repetition. `^` and `$` are
+zero-width assertions: `^` matches the absolute start of the input, and `$`
+matches its absolute end or the position immediately before a final LF. They
+can appear in groups and alternations. Bare assertions cannot be quantified,
+but a grouped assertion can be. Multiline mode is not supported. A backslash may escape
 `\`, `.`, `|`, `*`, `+`, `?`, `(`, `)`, `[`, `]`, `{`,
 `}`, `^`, or `$` to match that character literally. The escapes `\d`, `\w`,
 and `\s` match one ASCII digit, word byte (letter, digit, or underscore), and
@@ -727,7 +731,7 @@ byte endpoints in ascending order. Empty, unclosed, reversed, malformed, and
 unsupported-escape classes are invalid. Class matching scans its members for
 each active state; it does not use recursive backtracking.
 The `valid` field is false for an invalid pattern, and matching it returns false.
-Anchors and captures are not supported. `regex_contains` materializes the input
+Captures are not supported. `regex_contains` materializes the input
 as a temporary `string[]` of one-byte strings before scanning, using O(n)
 additional memory. The array is limited to 2,147,483,647 bytes; longer input
 aborts. Its NFA work is

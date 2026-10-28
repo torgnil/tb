@@ -269,6 +269,15 @@ RegexPostfix regex_postfix(string pattern):
             expect_atom = false
             can_quantify = true
             index = end
+        else if (!escaped && (character == '^' || character == '$')):
+            if (!expect_atom):
+                regex_push_operator(operators, kinds, characters, 3)
+            int kind = 12
+            if (character == '$'):
+                kind = 13
+            regex_postfix_add(kinds, characters, kind, '')
+            expect_atom = false
+            can_quantify = false
         else if (!escaped && character == '('):
             if (!expect_atom):
                 regex_push_operator(operators, kinds, characters, 3)
@@ -394,7 +403,7 @@ Regex regex_compile(string pattern):
     int index = 0
     while (index < postfix.kinds.length()):
         int kind = postfix.kinds[index]
-        if (kind == 1 || kind == 2 || kind == 8 || kind == 9 || kind == 11):
+        if (kind == 1 || kind == 2 || kind == 8 || kind == 9 || kind == 11 || kind == 12 || kind == 13):
             int operation = kind
             if (kind == 8):
                 operation = 5
@@ -402,6 +411,10 @@ Regex regex_compile(string pattern):
                 operation = 6
             if (kind == 11):
                 operation = 7
+            if (kind == 12):
+                operation = 8
+            if (kind == 13):
+                operation = 9
             int state = regex_emit(operations, out1, out2, characters, operation, -1, -1, postfix.characters[index])
             starts.push(state)
             patches.push(state * 2)
@@ -451,7 +464,7 @@ Regex regex_compile(string pattern):
 # Add an epsilon closure once per input position. A state is visited at most
 # once even if repetition creates epsilon cycles. Invalid mutated programs
 # fail rather than indexing outside their instruction arrays.
-bool regex_add_state(Regex program, int state, int[] seen, int[] pending, int[] active):
+bool regex_add_state(Regex program, int state, int[] seen, int[] pending, int[] active, bool at_start, bool at_end):
     pending.push(state)
     while (!pending.is_empty()):
         int current = pending.pop()
@@ -464,6 +477,12 @@ bool regex_add_state(Regex program, int state, int[] seen, int[] pending, int[] 
             int operation = program.operations[current]
             if (operation == 7):
                 pending.push(program.out1[current])
+            else if (operation == 8):
+                if (at_start):
+                    pending.push(program.out1[current])
+            else if (operation == 9):
+                if (at_end):
+                    pending.push(program.out1[current])
             else if (operation == 3):
                 pending.push(program.out2[current])
                 pending.push(program.out1[current])
@@ -499,10 +518,15 @@ bool regex_match(Regex program, string text):
     int[] pending = []
     int[] current = []
     int[] next = []
-    if (!regex_add_state(program, program.start, seen, pending, current)):
+    int text_length = text.length()
+    bool final_lf = false
+    if (text_length > 0):
+        final_lf = text[text_length - 1] == '\n'
+    bool initial_end = text_length == 0 || (text_length == 1 && final_lf)
+    if (!regex_add_state(program, program.start, seen, pending, current, true, initial_end)):
         return false
     int text_index = 0
-    while (text_index < text.length()):
+    while (text_index < text_length):
         string character = text[text_index]
         seen.fill(0)
         next.clear()
@@ -518,7 +542,9 @@ bool regex_match(Regex program, string text):
             else if (operation == 6):
                 matches = regex_bracket_check(program.characters[state], character) == 2
             if (matches):
-                if (!regex_add_state(program, program.out1[state], seen, pending, next)):
+                int boundary = text_index + 1
+                bool at_end = boundary == text_length || (final_lf && boundary == text_length - 1)
+                if (!regex_add_state(program, program.out1[state], seen, pending, next, false, at_end)):
                     return false
             index += 1
         current.clear()
@@ -546,6 +572,9 @@ bool regex_contains(Regex program, string text):
     # length and walks it directly, so matching does not rescan borrowed text.
     string[] text_bytes = text.split('')
     int text_length = text_bytes.length()
+    bool final_lf = false
+    if (text_length > 0):
+        final_lf = text_bytes[text_length - 1] == '\n'
     int[] seen = range(count)
     seen.fill(0)
     int[] pending = []
@@ -558,7 +587,8 @@ bool regex_contains(Regex program, string text):
             if (state < 0 || state >= count):
                 return false
             seen[state] = 1
-        if (!regex_add_state(program, program.start, seen, pending, current)):
+        bool at_end = text_index == text_length || (final_lf && text_index == text_length - 1)
+        if (!regex_add_state(program, program.start, seen, pending, current, text_index == 0, at_end)):
             return false
         for (int state : current):
             if (program.operations[state] == 4):
@@ -580,7 +610,9 @@ bool regex_contains(Regex program, string text):
             else if (operation == 6):
                 matches = regex_bracket_check(program.characters[state], character) == 2
             if (matches):
-                if (!regex_add_state(program, program.out1[state], seen, pending, next)):
+                int boundary = text_index + 1
+                bool next_end = boundary == text_length || (final_lf && boundary == text_length - 1)
+                if (!regex_add_state(program, program.out1[state], seen, pending, next, false, next_end)):
                     return false
             index += 1
         current.clear()
