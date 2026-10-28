@@ -18,7 +18,7 @@ import foreign_modules;
 
 record FunctionSigIR(string name, string return_type, string[] param_types);
 record RecordFieldIR(string record_name, string field_name, string field_type);
-record EnumTypeIR(string name, string[] values);
+record EnumTypeIR(string name, string[] values, bool integer_backed);
 record RefineInstructionsResult(LinearInstruction[] instructions, string[] temp_types);
 
 int TYPE_IR_PROFILE_ACTIVE = 0;
@@ -409,13 +409,14 @@ LinearInstruction[] set_temp_type(LinearInstruction[] instructions, string name,
         index += 1
     return rewritten
 
-FunctionSigIR[] collect_function_sigs(ParsedFunction[] functions):
+FunctionSigIR[] collect_function_sigs(ParsedFunction[] functions, EnumTypeIR[] enum_types):
     FunctionSigIR[] result = []
     for (ParsedFunction function_ir in functions):
         string[] param_types = []
         for (BindingIR param in function_ir.params):
-            param_types.push(param.type_name)
-        result.push(FunctionSigIR(function_name_from_header(function_ir.header), function_return_type_from_header(function_ir.header), param_types))
+            param_types.push(normalize_integer_enum_type_name(param.type_name, enum_types))
+        string return_type = normalize_integer_enum_type_name(function_return_type_from_header(function_ir.header), enum_types)
+        result.push(FunctionSigIR(function_name_from_header(function_ir.header), return_type, param_types))
     return result
 
 string thread_pool_submit_result_type(FunctionSigIR[] functions, string function_name, int argument_count):
@@ -458,8 +459,31 @@ EnumTypeIR[] collect_enum_types(EnumDeclIR[] enums):
         string[] values = []
         for (string value in enum_decl.values):
             values.push(strip_prefix(value, 'value '))
-        result.push(EnumTypeIR(enum_name, values))
+        bool integer_backed = false
+        if (!values.is_empty()):
+            integer_backed = values[0].contains('=')
+        result.push(EnumTypeIR(enum_name, values, integer_backed))
     return result
+
+string enum_value_name(string value):
+    int separator = value.index_of('=')
+    if (separator >= 0):
+        return value.substring(0, separator)
+    return value
+
+bool integer_enum_exists(EnumTypeIR[] enums, string name):
+    for (EnumTypeIR enum_type : enums):
+        if (enum_type.name == name):
+            return enum_type.integer_backed
+    return false
+
+string integer_enum_value(EnumTypeIR[] enums, string enum_name, string value_name):
+    for (EnumTypeIR enum_type : enums):
+        if (enum_type.name == enum_name && enum_type.integer_backed):
+            for (string value : enum_type.values):
+                if (enum_value_name(value) == value_name):
+                    return value.substring(value.index_of('=') + 1)
+    return ''
 
 bool enum_name_exists(EnumTypeIR[] enums, string name):
     int name_length = name.length()
@@ -478,7 +502,8 @@ bool enum_has_value(EnumTypeIR[] enums, string enum_name, string value_name):
         EnumTypeIR enum_type = enums[index]
         if (enum_type.name.length() == enum_name_length && enum_type.name == enum_name):
             for (string value in enum_type.values):
-                if (value.length() == value_name_length && value == value_name):
+                string member_name = enum_value_name(value)
+                if (member_name.length() == value_name_length && member_name == value_name):
                     return true
             return false
         index -= 1
@@ -491,8 +516,74 @@ string normalize_enum_type_name(string type_name, EnumTypeIR[] enums):
         qualifier = 'const '
         base_type = type_name.substring(6)
     if (enum_name_exists(enums, base_type)):
+        if (integer_enum_exists(enums, base_type)):
+            return qualifier + 'int'
         return qualifier + 'string'
     return type_name
+
+# Normalize only integer enums when building function signatures. Existing
+# string-enum signature handling retains its established representation path.
+string normalize_integer_enum_type_name(string type_name, EnumTypeIR[] enums):
+    string qualifier = ''
+    string base_type = type_name
+    if (type_name.starts_with('const ')):
+        qualifier = 'const '
+        base_type = type_name.substring(6)
+    if (integer_enum_exists(enums, base_type)):
+        return qualifier + 'int'
+    return type_name
+
+# Composite enum declarations need separate array, map and record layout work.
+# Scan complete identifier tokens, so an unrelated longer type name is allowed.
+bool type_contains_integer_enum(string type_name, EnumTypeIR[] enums):
+    int index = 0
+    while (index < type_name.length()):
+        string character = type_name[index]
+        if (character.is_alnum() || character == '_'):
+            int start = index
+            while (index < type_name.length()):
+                string item = type_name[index]
+                if (!(item.is_alnum() || item == '_')):
+                    break
+                index += 1
+            if (integer_enum_exists(enums, type_name.substring(start, index))):
+                return true
+        else:
+            index += 1
+    return false
+
+void validate_integer_enum_declared_type(string type_name, EnumTypeIR[] enums, bool record_field):
+    string base_type = type_name
+    if (base_type.starts_with('const ')):
+        base_type = base_type.substring(6)
+    if (integer_enum_exists(enums, base_type)):
+        if (record_field):
+            throw 'integer enum record fields are not yet supported: ' + type_name
+        return
+    if (type_contains_integer_enum(base_type, enums)):
+        throw 'integer enum composite types are not yet supported: ' + type_name
+
+void validate_integer_enum_declared_types(ProgramIR program, EnumTypeIR[] enums):
+    bool has_integer_enum = false
+    for (EnumTypeIR enum_type : enums):
+        if (enum_type.integer_backed):
+            has_integer_enum = true
+            break
+    if (!has_integer_enum):
+        return
+    for (GlobalDeclIR global_decl : program.globals):
+        BindingIR binding = ir_parse_binding_decl(strip_prefix(global_decl.header, 'global '))
+        validate_integer_enum_declared_type(binding.type_name, enums, false)
+    for (RecordDeclIR record_decl : program.records):
+        for (string field : record_decl.fields):
+            BindingIR binding = ir_parse_binding_decl(strip_prefix(field, 'field '))
+            validate_integer_enum_declared_type(binding.type_name, enums, true)
+    for (ParsedFunction function_ir : program.functions):
+        validate_integer_enum_declared_type(function_ir.return_type, enums, false)
+        for (BindingIR param : function_ir.params):
+            validate_integer_enum_declared_type(param.type_name, enums, false)
+        for (BindingIR local : function_ir.locals):
+            validate_integer_enum_declared_type(local.type_name, enums, false)
 
 BindingIR normalize_enum_binding(BindingIR binding, EnumTypeIR[] enums):
     return BindingIR(normalize_enum_type_name(binding.type_name, enums), binding.name)
@@ -1508,6 +1599,11 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
         if (op.args.length() < 2):
             return op
         string base_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+        if (could_be_named_type(base_type) && integer_enum_exists(enum_types, base_type)):
+            string integer_value = integer_enum_value(enum_types, base_type, op.args[0])
+            if (integer_value == ''):
+                throw 'unknown integer enum member: ' + base_type + '.' + op.args[0]
+            return LinearInstruction('value', op.lhs, 'int', 'plain', 'int', [integer_value])
         if (could_be_named_type(base_type) && enum_name_exists(enum_types, base_type) && enum_has_value(enum_types, base_type, op.args[0])):
             return refined_value_op(op, 'string', 'borrowed')
         string record_name = record_name_from_type(base_type)
@@ -1840,10 +1936,25 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
     for (BindingIR binding in locals):
         bindings.push(binding)
 
+    bool has_integer_enum = false
+    for (EnumTypeIR enum_type : enum_types):
+        if (enum_type.integer_backed):
+            has_integer_enum = true
+            break
     LinearInstruction[] block_refined = []
     int op_index = 0
     while (op_index < instructions.length()):
         LinearInstruction op = instructions[op_index]
+        if (has_integer_enum && op.kind == 'value' && op.detail == 'identifier' && !op.args.is_empty()):
+            string identifier = op.args[0]
+            if (integer_enum_exists(enum_types, identifier) && lookup_binding_type(bindings, identifier) == 'unknown'):
+                if (op_index + 1 >= instructions.length()):
+                    throw 'integer enum name requires a member: ' + identifier
+                LinearInstruction member_access = instructions[op_index + 1]
+                if (member_access.kind != 'value' || member_access.detail != 'field' || member_access.args.length() < 2):
+                    throw 'integer enum name requires a member: ' + identifier
+                if (member_access.args[1] != op.lhs):
+                    throw 'integer enum name requires a member: ' + identifier
         if (op.kind == 'range_guard'):
             for (string bound in op.args):
                 string bound_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, bound)), enum_types)
@@ -1856,7 +1967,8 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
             validate_map_index_type(index_base_type, index_type)
         LinearInstruction current = refine_value_instruction(op, bindings, functions, record_fields, record_names, enum_types, temp_types)
         if (current.kind == 'value' && (current.detail == 'call' || current.detail == 'method-call') && enum_name_exists(enum_types, current.result_type)):
-            current = refined_value_op(current, 'string', refine_ownership_mode(current, 'string'))
+            string enum_result_type = normalize_enum_type_name(current.result_type, enum_types)
+            current = refined_value_op(current, enum_result_type, refine_ownership_mode(current, enum_result_type))
         if (current.kind == 'value'):
             if (current.detail == 'call'):
                 if (!current.args.is_empty()):
@@ -2183,8 +2295,9 @@ ParsedFunction refine_function(ParsedFunction function_ir, BindingIR[] globals, 
 
 ProgramIR refine_program_ir(ProgramIR program):
     EnumTypeIR[] enum_types = collect_enum_types(program.enums)
+    validate_integer_enum_declared_types(program, enum_types)
     BindingIR[] globals = normalize_enum_bindings(collect_global_bindings(program.globals), enum_types)
-    FunctionSigIR[] functions = collect_function_sigs(program.functions)
+    FunctionSigIR[] functions = collect_function_sigs(program.functions, enum_types)
     RecordFieldIR[] record_fields = collect_record_fields(program.records)
     string[] record_names = collect_declared_record_names(program.records)
 
@@ -2196,8 +2309,13 @@ ProgramIR refine_program_ir(ProgramIR program):
         BindingIR[] empty_params = []
         BindingIR[] empty_locals = []
         RefineInstructionsResult refined_global_result = refine_instructions(global_decl.instructions, globals, empty_params, empty_locals, functions, record_fields, record_names, enum_types, prior_global_instructions, prior_global_temp_types)
-        GlobalDeclIR refined_global = GlobalDeclIR(global_decl.header.substring(0), refined_global_result.instructions, global_decl.value_name.substring(0))
         BindingIR binding = ir_parse_binding_decl(strip_prefix(global_decl.header, 'global '))
+        string normalized_global_type = normalize_integer_enum_type_name(binding.type_name, enum_types)
+        string global_header = global_decl.header
+        if (normalized_global_type != binding.type_name):
+            global_header = 'global ' + normalized_global_type + ' ' + binding.name
+            binding = BindingIR(normalized_global_type, binding.name)
+        GlobalDeclIR refined_global = GlobalDeclIR(global_header.substring(0), refined_global_result.instructions, global_decl.value_name.substring(0))
         string value_type = lookup_temp_type(refined_global.instructions, global_decl.value_name)
         validate_future_binding_type(binding.name, binding.type_name, value_type)
         if (value_type == 'unknown' && binding.type_name.starts_with('set<')):

@@ -76,7 +76,19 @@ Build and invocation details are documented in the repository or release `README
 - record — user-defined record types with named fields.
 - enum — named constants.
 
-Enum values use their string representation in named function parameters and
+Enums whose members all have explicit signed decimal integer values are
+integer-backed, for example `enum Opcode { CHAR = 1, ANY = 2 }`. Each value
+must fit a signed 64-bit `int`; duplicate numeric values may be used as aliases,
+but duplicate member names are rejected. Explicit and unassigned members may
+not be mixed. Integer enum members and scalar bindings use the `int`
+representation, including for arguments, returns, arithmetic, and `switch`;
+this does not add nominal type checking or restrict assignments to declared
+members. Integer enum members can be used in `int[]` arrays. Enum-typed arrays,
+other composite types, and enum record fields are not yet supported for
+integer-backed enums. Bare enums continue to use their existing string
+representation.
+
+String-backed enum values use their string representation in named function parameters and
 returns. A returned enum call can be printed, compared with an enum member,
 passed to a string helper, or used with string methods; helper functions may
 forward enum values through additional returns. `const EnumName` bindings use

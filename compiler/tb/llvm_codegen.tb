@@ -2899,6 +2899,9 @@ StringConstIR[] collect_string_constants(ProgramIR program):
     prepare_call_llvm_metadata(program)
     StringConstIR[] constants = []
     for (EnumDeclIR enum_decl in program.enums):
+        if (!enum_decl.values.is_empty()):
+            if (enum_decl.values[0].contains('=')):
+                continue
         string enum_name = strip_prefix(enum_decl.header, 'enum ')
         for (string value in enum_decl.values):
             string value_name = strip_prefix(value, 'value ')

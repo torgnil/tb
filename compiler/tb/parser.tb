@@ -608,6 +608,33 @@ ParseResult parse_record_declaration(Token[] tokens, int index):
         current += 1
     return ParseResult(Node('RecordDecl', name_token.value, fields), current)
 
+# Canonicalize a decimal enum literal without converting an out-of-range value
+# through the host integer representation. The lexer supplies decimal digits.
+string enum_integer_text(Token token, bool negative):
+    string digits = token.value
+    int first = 0
+    while (first + 1 < digits.length() && digits[first] == '0'):
+        first += 1
+    digits = digits.substring(first)
+    string limit = '9223372036854775807'
+    if (negative):
+        limit = '9223372036854775808'
+    if (digits.length() > limit.length()):
+        throw parser_error(token, 'integer enum value out of range')
+    if (digits.length() == limit.length()):
+        for (int digit_index = 0; digit_index < digits.length(); digit_index++):
+            string digit_char = digits[digit_index]
+            string limit_char = limit[digit_index]
+            int digit_value = digit_char.to_int()
+            int limit_value = limit_char.to_int()
+            if (digit_value > limit_value):
+                throw parser_error(token, 'integer enum value out of range')
+            if (digit_value < limit_value):
+                break
+    if (negative && digits != '0'):
+        return '-' + digits
+    return digits
+
 ParseResult parse_enum_declaration(Token[] tokens, int index):
     int current = index + 1
     Token name_token = token_at(tokens, current)
@@ -617,12 +644,35 @@ ParseResult parse_enum_declaration(Token[] tokens, int index):
     current = expect_symbol(tokens, current, '{')
 
     Node[] values = []
+    int member_kind = 0
     while (!token_is(token_at(tokens, current), 'SYMBOL', '}')):
         Token value_token = token_at(tokens, current)
         if (value_token.kind != 'IDENTIFIER'):
             throw parser_error(value_token, 'expected enum value')
-        values.push(Node('EnumValue', value_token.value, []))
         current += 1
+        bool assigned = token_is(token_at(tokens, current), 'SYMBOL', '=')
+        int this_kind = 1
+        string encoded_value = value_token.value
+        if (assigned):
+            this_kind = 2
+            current += 1
+            bool negative = token_is(token_at(tokens, current), 'SYMBOL', '-')
+            if (negative):
+                current += 1
+            Token number_token = token_at(tokens, current)
+            if (number_token.kind != 'INT'):
+                throw parser_error(number_token, 'expected integer enum value')
+            encoded_value += '=' + enum_integer_text(number_token, negative)
+            current += 1
+        if (member_kind != 0 && member_kind != this_kind):
+            throw parser_error(value_token, 'integer enum members must all have explicit values')
+        member_kind = this_kind
+        if (member_kind == 2):
+            for (Node previous : values):
+                int separator = previous.value.index_of('=')
+                if (separator >= 0 && previous.value.substring(0, separator) == value_token.value):
+                    throw parser_error(value_token, 'duplicate integer enum member')
+        values.push(Node('EnumValue', encoded_value, []))
         if (token_is(token_at(tokens, current), 'SYMBOL', ',')):
             current += 1
             continue
