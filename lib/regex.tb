@@ -3,6 +3,7 @@
 record Regex(bool valid, int start, int[] operations, int[] out1, int[] out2, string[] characters);
 record RegexPostfix(bool valid, int[] kinds, string[] characters);
 record RegexRepeat(bool valid, int minimum, int maximum, int end);
+record RegexMatch(bool matched, int start, int end);
 
 # The operator stack, postfix stream, and NFA use separate integer codes.
 const int REGEX_OPERATOR_OPEN = 1
@@ -22,6 +23,9 @@ const int REGEX_POSTFIX_REPEAT = 10
 const int REGEX_POSTFIX_EMPTY = 11
 const int REGEX_POSTFIX_START = 12
 const int REGEX_POSTFIX_END = 13
+const int REGEX_POSTFIX_REPEAT_OPEN = 14
+const int REGEX_POSTFIX_REPEAT_CLOSE = 15
+const int REGEX_POSTFIX_REPEAT_OPTIONAL = 16
 
 const int REGEX_NFA_CHAR = 1
 const int REGEX_NFA_ANY = 2
@@ -32,6 +36,8 @@ const int REGEX_NFA_BRACKET = 6
 const int REGEX_NFA_EMPTY = 7
 const int REGEX_NFA_START = 8
 const int REGEX_NFA_END = 9
+const int REGEX_NFA_REPEAT_ENTER = 10
+const int REGEX_NFA_REPEAT_END = 11
 
 const int REGEX_CLASS_INVALID = 0
 const int REGEX_CLASS_NO_MATCH = 1
@@ -202,6 +208,9 @@ RegexPostfix regex_expand_counts(RegexPostfix postfix):
     int[] kinds = []
     string[] characters = []
     int[] starts = []
+    # Repeat markers preserve priority but do not count toward the existing
+    # 20,000-token limit on the expanded expression.
+    int logical_length = 0
     int index = 0
     while (index < postfix.kinds.length()):
         int kind = postfix.kinds[index]
@@ -215,10 +224,14 @@ RegexPostfix regex_expand_counts(RegexPostfix postfix):
                 return RegexPostfix(false, [], [])
             int[] fragment_kinds = []
             string[] fragment_chars = []
+            int fragment_length = 0
             int cursor = start
             while (cursor < kinds.length()):
                 fragment_kinds.push(kinds[cursor])
                 fragment_chars.push(characters[cursor])
+                int fragment_kind = kinds[cursor]
+                if (fragment_kind != REGEX_POSTFIX_REPEAT_OPEN && fragment_kind != REGEX_POSTFIX_REPEAT_CLOSE):
+                    fragment_length += 1
                 cursor += 1
             int copies = repeat.maximum
             if (copies < 0):
@@ -227,14 +240,18 @@ RegexPostfix regex_expand_counts(RegexPostfix postfix):
             int expanded_size = 1
             if (copies > 0):
                 int optional = copies - repeat.minimum
-                expanded_size = copies * fragment_kinds.length() + copies - 1 + optional
-            if (start + expanded_size > 20000):
+                expanded_size = copies * fragment_length + copies - 1 + optional
+            if (logical_length - fragment_length + expanded_size > 20000):
                 return RegexPostfix(false, [], [])
+            logical_length = logical_length - fragment_length + expanded_size
             while (kinds.length() > start):
                 kinds.pop()
                 characters.pop()
             bool emitted = false
             int copy = 0
+            bool has_optional = repeat.maximum < 0 || repeat.maximum > repeat.minimum
+            if (has_optional):
+                regex_postfix_add(kinds, characters, REGEX_POSTFIX_REPEAT_OPEN, '')
             while (copy < copies):
                 cursor = 0
                 while (cursor < fragment_kinds.length()):
@@ -244,13 +261,15 @@ RegexPostfix regex_expand_counts(RegexPostfix postfix):
                     if (repeat.maximum < 0):
                         regex_postfix_add(kinds, characters, REGEX_POSTFIX_STAR, '')
                     else:
-                        regex_postfix_add(kinds, characters, REGEX_POSTFIX_OPTIONAL, '')
+                        regex_postfix_add(kinds, characters, REGEX_POSTFIX_REPEAT_OPTIONAL, '')
                 if (emitted):
                     regex_postfix_add(kinds, characters, REGEX_POSTFIX_CONCAT, '')
                 emitted = true
                 copy += 1
             if (!emitted):
                 regex_postfix_add(kinds, characters, REGEX_POSTFIX_EMPTY, '')
+            if (has_optional):
+                regex_postfix_add(kinds, characters, REGEX_POSTFIX_REPEAT_CLOSE, '')
             starts.push(start)
         else:
             if (kind == REGEX_POSTFIX_CONCAT || kind == REGEX_POSTFIX_ALTERNATE):
@@ -263,7 +282,8 @@ RegexPostfix regex_expand_counts(RegexPostfix postfix):
             else:
                 starts.push(kinds.length())
             regex_postfix_add(kinds, characters, kind, postfix.characters[index])
-        if (kinds.length() > 20000):
+            logical_length += 1
+        if (logical_length > 20000):
             return RegexPostfix(false, [], [])
         index += 1
     return RegexPostfix(true, kinds, characters)
@@ -486,11 +506,27 @@ Regex regex_compile(string pattern):
     int[] patches = []
     # Each fragment carries the tail matching its unresolved patch-list head.
     int[] patch_tails = []
+    # Counted optional iterations share one exit: a zero-width iteration must
+    # stop the whole counted repetition, not just the current optional copy.
+    int[] repeat_heads = []
+    int[] repeat_tails = []
     int index = 0
     while (index < postfix.kinds.length()):
         int kind = postfix.kinds[index]
         int operation = regex_postfix_operation(kind)
-        if (operation != 0):
+        if (kind == REGEX_POSTFIX_REPEAT_OPEN):
+            repeat_heads.push(-1)
+            repeat_tails.push(-1)
+        else if (kind == REGEX_POSTFIX_REPEAT_CLOSE):
+            if (repeat_heads.is_empty() || patches.is_empty()):
+                return regex_invalid()
+            int group_head = repeat_heads.pop()
+            int group_tail = repeat_tails.pop()
+            if (group_head >= 0):
+                int tail = patch_tails.pop()
+                regex_patch_link(out1, out2, tail, group_head)
+                patch_tails.push(group_tail)
+        else if (operation != 0):
             int state = regex_emit(operations, out1, out2, characters, operation, -1, -1, postfix.characters[index])
             starts.push(state)
             patches.push(state * 2)
@@ -521,20 +557,46 @@ Regex regex_compile(string pattern):
             int body_start = starts.pop()
             int body_patch = patches.pop()
             int body_tail = patch_tails.pop()
-            int split = regex_emit(operations, out1, out2, characters, REGEX_NFA_SPLIT, body_start, -1, '')
             if (kind == REGEX_POSTFIX_STAR || kind == REGEX_POSTFIX_PLUS):
-                regex_patch(out1, out2, body_patch, split)
+                int enter = regex_emit(operations, out1, out2, characters, REGEX_NFA_REPEAT_ENTER, body_start, -1, '')
+                int end = regex_emit(operations, out1, out2, characters, REGEX_NFA_REPEAT_END, enter, -1, '')
+                regex_patch(out1, out2, body_patch, end)
                 if (kind == REGEX_POSTFIX_STAR):
+                    int split = regex_emit(operations, out1, out2, characters, REGEX_NFA_SPLIT, enter, -1, '')
                     starts.push(split)
+                    regex_patch_link(out1, out2, end * 2 + 1, split * 2 + 1)
+                    patches.push(end * 2 + 1)
+                    patch_tails.push(split * 2 + 1)
                 else:
-                    starts.push(body_start)
-                patches.push(split * 2 + 1)
-                patch_tails.push(split * 2 + 1)
+                    starts.push(enter)
+                    patches.push(end * 2 + 1)
+                    patch_tails.push(end * 2 + 1)
             else if (kind == REGEX_POSTFIX_OPTIONAL):
+                int split = regex_emit(operations, out1, out2, characters, REGEX_NFA_SPLIT, body_start, -1, '')
                 starts.push(split)
                 regex_patch_link(out1, out2, body_tail, split * 2 + 1)
                 patches.push(body_patch)
                 patch_tails.push(split * 2 + 1)
+            else if (kind == REGEX_POSTFIX_REPEAT_OPTIONAL):
+                if (repeat_heads.is_empty()):
+                    return regex_invalid()
+                int enter = regex_emit(operations, out1, out2, characters, REGEX_NFA_REPEAT_ENTER, body_start, -1, '')
+                int end = regex_emit(operations, out1, out2, characters, REGEX_NFA_REPEAT_END, -1, -1, '')
+                regex_patch(out1, out2, body_patch, end)
+                int group_index = repeat_heads.length() - 1
+                int exit_head = end * 2 + 1
+                int exit_tail = exit_head
+                int split = regex_emit(operations, out1, out2, characters, REGEX_NFA_SPLIT, enter, -1, '')
+                starts.push(split)
+                regex_patch_link(out1, out2, exit_tail, split * 2 + 1)
+                exit_tail = split * 2 + 1
+                if (repeat_heads[group_index] < 0):
+                    repeat_heads[group_index] = exit_head
+                else:
+                    regex_patch_link(out1, out2, repeat_tails[group_index], exit_head)
+                repeat_tails[group_index] = exit_tail
+                patches.push(end * 2)
+                patch_tails.push(end * 2)
             else:
                 return regex_invalid()
         index += 1
@@ -563,6 +625,13 @@ bool regex_queue_epsilon(Regex program, int state, int[] pending, bool at_start,
                 pending.push(program.out1[state])
             return true
         case REGEX_NFA_SPLIT:
+            pending.push(program.out2[state])
+            pending.push(program.out1[state])
+            return true
+        case REGEX_NFA_REPEAT_ENTER:
+            pending.push(program.out1[state])
+            return true
+        case REGEX_NFA_REPEAT_END:
             pending.push(program.out2[state])
             pending.push(program.out1[state])
             return true
@@ -832,3 +901,158 @@ int regex_find_start_from(Regex program, string text, int start):
 
 int regex_find_start(Regex program, string text):
     return regex_find_start_from(program, text, 0)
+
+void regex_search_push(int[] threads, int state, int depth, int progress, int start):
+    threads.push(state)
+    threads.push(depth)
+    threads.push(progress)
+    threads.push(start)
+
+# Validate the whole graph before priority pruning can hide a malformed
+# lower-priority branch. Unused outgoing slots need not contain valid states.
+bool regex_search_program_valid(Regex program):
+    if (!program.valid):
+        return false
+    int count = program.operations.length()
+    if (count == 0 || program.start < 0 || program.start >= count):
+        return false
+    if (program.out1.length() != count || program.out2.length() != count || program.characters.length() != count):
+        return false
+    for (int state = 0; state < count; state += 1):
+        int operation = program.operations[state]
+        if (operation == REGEX_NFA_MATCH):
+            continue
+        if (operation == REGEX_NFA_CLASS):
+            if (!regex_class_escape(program.characters[state])):
+                return false
+        else if (operation == REGEX_NFA_BRACKET):
+            if (regex_bracket_check(program.characters[state], '') == REGEX_CLASS_INVALID):
+                return false
+        else if (operation == REGEX_NFA_CHAR):
+            if (program.characters[state].length() != 1):
+                return false
+        else if (operation != REGEX_NFA_ANY && operation != REGEX_NFA_EMPTY && operation != REGEX_NFA_START && operation != REGEX_NFA_END && operation != REGEX_NFA_SPLIT && operation != REGEX_NFA_REPEAT_ENTER && operation != REGEX_NFA_REPEAT_END):
+            return false
+        if (program.out1[state] < 0 || program.out1[state] >= count):
+            return false
+        if (operation == REGEX_NFA_SPLIT || operation == REGEX_NFA_REPEAT_END):
+            if (program.out2[state] < 0 || program.out2[state] >= count):
+                return false
+    return true
+
+# Threads execute in backtracking priority order, but are merged when their
+# future behavior is identical. At a single input boundary, a thread's active
+# repeat iterations are nested and entered from outermost to innermost. Those
+# entered before this boundary therefore form a prefix: progress is the depth
+# of the innermost iteration in that prefix. A byte consumption advances every
+# active iteration, whereas an empty iteration exits its repetition.
+#
+# For compiler-generated programs each state has one lexical repeat depth.
+# Deduplicating (state, progress) at a boundary retains the earliest and most
+# preferred path with the same future. Opcode, edge and class validity is
+# checked across the entire graph; inconsistent depth and unbalanced repeat
+# instructions are rejected when the search visits them.
+RegexMatch regex_find_from(Regex program, string text, int start):
+    if (!regex_search_program_valid(program)):
+        return RegexMatch(false, -1, -1)
+    int count = program.operations.length()
+    string[] text_bytes = text.split('')
+    int text_length = text_bytes.length()
+    if (start < 0 || start > text_length):
+        return RegexMatch(false, -1, -1)
+    bool final_lf = false
+    if (text_length > 0):
+        final_lf = text_bytes[text_length - 1] == '\n'
+
+    int[] active = []
+    int[] pending = []
+    int[] next = []
+    int[] state_depth = range(count)
+    state_depth.fill(-1)
+    map<int, int> seen = {}
+    bool found = false
+    int best_start = -1
+    int best_end = -1
+    int position = start
+    while (position <= text_length):
+        pending.clear()
+        next.clear()
+        # New starts have lower priority than all paths already in flight.
+        if (!found):
+            regex_search_push(pending, program.start, 0, 0, position)
+        int index = active.length() - 4
+        while (index >= 0):
+            regex_search_push(pending, active[index], active[index + 1], active[index + 2], active[index + 3])
+            index -= 4
+        while (!pending.is_empty()):
+            int origin = pending.pop()
+            int progress = pending.pop()
+            int depth = pending.pop()
+            int state = pending.pop()
+            if (state < 0 || state >= count || depth < 0 || depth > count || progress < 0 || progress > depth):
+                return RegexMatch(false, -1, -1)
+            if (state_depth[state] == -1):
+                state_depth[state] = depth
+            else if (state_depth[state] != depth):
+                return RegexMatch(false, -1, -1)
+            int key = state * (count + 1) + progress
+            if (seen.contains(key)):
+                if (seen[key] == position):
+                    continue
+            seen[key] = position
+            int operation = program.operations[state]
+            if (operation == REGEX_NFA_MATCH):
+                if (depth != 0):
+                    return RegexMatch(false, -1, -1)
+                found = true
+                best_start = origin
+                best_end = position
+                # Every remaining thread is lower priority than this match.
+                # Higher-priority consuming threads in next remain eligible.
+                break
+            if (operation == REGEX_NFA_EMPTY):
+                regex_search_push(pending, program.out1[state], depth, progress, origin)
+            else if (operation == REGEX_NFA_START):
+                if (position == 0):
+                    regex_search_push(pending, program.out1[state], depth, progress, origin)
+            else if (operation == REGEX_NFA_END):
+                if (position == text_length || (final_lf && position == text_length - 1)):
+                    regex_search_push(pending, program.out1[state], depth, progress, origin)
+            else if (operation == REGEX_NFA_SPLIT):
+                regex_search_push(pending, program.out2[state], depth, progress, origin)
+                regex_search_push(pending, program.out1[state], depth, progress, origin)
+            else if (operation == REGEX_NFA_REPEAT_ENTER):
+                if (depth == count):
+                    return RegexMatch(false, -1, -1)
+                regex_search_push(pending, program.out1[state], depth + 1, progress, origin)
+            else if (operation == REGEX_NFA_REPEAT_END):
+                if (depth == 0):
+                    return RegexMatch(false, -1, -1)
+                int outer_depth = depth - 1
+                int outer_progress = progress
+                if (outer_progress > outer_depth):
+                    outer_progress = outer_depth
+                regex_search_push(pending, program.out2[state], outer_depth, outer_progress, origin)
+                if (progress == depth):
+                    regex_search_push(pending, program.out1[state], outer_depth, outer_progress, origin)
+            else if (operation == REGEX_NFA_CHAR || operation == REGEX_NFA_ANY || operation == REGEX_NFA_CLASS || operation == REGEX_NFA_BRACKET):
+                if (position < text_length):
+                    int match_result = regex_state_match(program, state, text_bytes[position])
+                    if (match_result == REGEX_CLASS_INVALID):
+                        return RegexMatch(false, -1, -1)
+                    if (match_result == REGEX_CLASS_MATCH):
+                        regex_search_push(next, program.out1[state], depth, depth, origin)
+            else:
+                return RegexMatch(false, -1, -1)
+        active.clear()
+        for (int item : next):
+            active.push(item)
+        if (found && active.is_empty()):
+            return RegexMatch(true, best_start, best_end)
+        position += 1
+    if (found):
+        return RegexMatch(true, best_start, best_end)
+    return RegexMatch(false, -1, -1)
+
+RegexMatch regex_find(Regex program, string text):
+    return regex_find_from(program, text, 0)

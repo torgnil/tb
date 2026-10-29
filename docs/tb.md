@@ -743,6 +743,19 @@ substring. `^` and `$` remain anchored to the complete original text, including
 `$` immediately before a final LF. `regex_find_start` is equivalent to calling
 `regex_find_start_from` with offset 0. Each call uses O(n*m) time and O(n+m)
 additional memory; repeated calls may rescan the text.
+`regex_find(program, text)` returns a `RegexMatch` record containing `matched`,
+`start`, and `end`. The positions are byte offsets and `end` is exclusive.
+`regex_find_from(program, text, start)` searches from the specified byte
+offset, with the same valid offsets and whole-text anchor rules as
+`regex_find_start_from`. Both return `RegexMatch(false, -1, -1)` for an invalid
+program, an invalid offset, or no match. An empty match has equal start and end.
+They choose the earliest starting position, then the first alternative and
+greedy repetition according to their pattern order. For example, `a|aa`
+matches one byte of `aa`, while `aa|a` matches two. Captures are not returned.
+The span search uses ordered NFA paths and tracks progress through nested
+repetitions. It processes at most O(m^2) distinct states at each input boundary;
+with amortized constant-time map operations this is O(n*m^2) work, plus bracket
+class scans, and O(n+m^2) additional memory. Repeated calls can rescan the text.
 `regex_escape(text)` returns regex source that matches the input bytes literally,
 escaping regex metacharacters, including anchors and bracket/count delimiters.
 It is useful when composing a pattern from dynamic text. For example,
