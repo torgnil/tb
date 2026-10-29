@@ -106,9 +106,11 @@ checking at calls.
 String-backed enum fields in records use the same `string` representation and
 ownership behavior as ordinary string fields, including when nested in another
 record or returned from a function. This support covers direct record fields;
-enum composite types retain their existing behavior. A static global record
-initializer may use a string literal for such a field, but an enum-member
-expression such as `Mode.READY` remains unsupported there.
+enum composite types retain their existing behavior. Static global record
+initializers accept either a string literal or a string-backed enum member for
+such a field, including in nested records. The enum member reuses its static
+string storage, while ordinary string fields retain their existing literal
+storage behavior.
 
 5. Declarations
 

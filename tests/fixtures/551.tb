@@ -1,0 +1,25 @@
+enum Mode { READY, BUSY }
+enum Code { FIRST = 1, LAST = -1 }
+record State(string label, Mode mode);
+record Envelope(State state, string note, Mode mode);
+record NumberBox(Code code);
+
+const Envelope CONFIG = Envelope(State(Mode.BUSY, Mode.READY), 'literal-note', Mode.BUSY);
+Envelope mutable_config = Envelope(State('nested-busy', Mode.BUSY), Mode.READY, Mode.READY);
+const NumberBox INTEGER_CONFIG = NumberBox(Code.LAST);
+
+int main():
+    print(CONFIG.state.label)
+    print(CONFIG.state.mode)
+    print(CONFIG.note)
+    print(CONFIG.mode)
+    print(mutable_config.state.label)
+    print(mutable_config.state.mode)
+    print(mutable_config.note)
+    string original_mode = mutable_config.mode
+    mutable_config.mode = Mode.BUSY
+    print(original_mode)
+    print(mutable_config.mode)
+    print(mutable_config.state.label)
+    print(INTEGER_CONFIG.code)
+    return 0

@@ -8958,6 +8958,18 @@ string[] emit_global_string_array_storage(GlobalDeclIR global_decl, string globa
         value_symbol + ' = global %tb_bootstrap_string_array { i32 ' + array_op.args.length() + ', i32 ' + array_op.args.length() + ', ptr getelementptr inbounds ([' + array_op.args.length() + ' x ptr], ptr ' + data_symbol + ', i32 0, i32 0), ptr getelementptr inbounds ([' + array_op.args.length() + ' x i8], ptr ' + owned_symbol + ', i32 0, i32 0) }'
     ]
 
+bool global_enum_has_string_member(ProgramIR program, string enum_name, string member_name):
+    for (EnumDeclIR enum_decl in program.enums):
+        if (strip_prefix(enum_decl.header, 'enum ') != enum_name):
+            continue
+        if (!enum_decl.values.is_empty() && enum_decl.values[0].contains('=')):
+            return false
+        for (string value in enum_decl.values):
+            if (strip_prefix(value, 'value ') == member_name):
+                return true
+        return false
+    return false
+
 string global_value_symbol_from_prefix(string symbol_prefix):
     return symbol_prefix + '.value'
 
@@ -8976,10 +8988,18 @@ string[] emit_global_record_storage(ProgramIR program, GlobalDeclIR global_decl,
         string arg_name = record_op.args[arg_index]
         LinearInstruction arg_op = lookup_global_instruction(global_decl, arg_name)
         if (field.type_name == 'string'):
-            if (!(arg_op.kind == 'value' && arg_op.detail == 'string')):
+            if (arg_op.kind == 'value' && arg_op.detail == 'string'):
+                StringConstIR constant = encode_tb_string_literal(global_string_symbol(global_name, arg_op.lhs), arg_op.args[0])
+                field_values.push('ptr getelementptr inbounds ([' + constant.length + ' x i8], ptr ' + string_symbol_ref(constant.symbol) + ', i32 0, i32 0)')
+            else if (arg_op.kind == 'value' && arg_op.detail == 'field' && arg_op.args.length() == 2):
+                LinearInstruction enum_op = lookup_global_instruction(global_decl, arg_op.args[1])
+                if (!(enum_op.kind == 'value' && enum_op.detail == 'identifier' && enum_op.args.length() == 1 && global_enum_has_string_member(program, enum_op.args[0], arg_op.args[0]))):
+                    throw 'unsupported llvm record global string field'
+                string enum_symbol = enum_string_symbol(enum_op.args[0], arg_op.args[0])
+                int enum_length = tb_string_literal_data_length('\'' + arg_op.args[0] + '\'')
+                field_values.push('ptr getelementptr inbounds ([' + enum_length + ' x i8], ptr ' + string_symbol_ref(enum_symbol) + ', i32 0, i32 0)')
+            else:
                 throw 'unsupported llvm record global string field'
-            StringConstIR constant = encode_tb_string_literal(global_string_symbol(global_name, arg_op.lhs), arg_op.args[0])
-            field_values.push('ptr getelementptr inbounds ([' + constant.length + ' x i8], ptr ' + string_symbol_ref(constant.symbol) + ', i32 0, i32 0)')
         else if (field.type_name == 'string[]'):
             string nested_prefix = symbol_prefix + '.' + field.name + '.' + arg_name
             for (string line in emit_global_string_array_storage(global_decl, global_name, nested_prefix, arg_name)):
