@@ -8389,6 +8389,11 @@ string[] emit_terminator(ParsedFunction function_ir, BlockIR block, TerminatorIR
             lines.push('  ret ptr ' + returned_value)
             return lines
         if (record_name_from_type(normalize_llvm_type_name(result_type)) != ''):
+            string local_name = transferable_local_binding_name(function_ir, terminator.args[0])
+            if (local_name != ''):
+                string[] lines = emit_try_restore_lines(try_suffix, temp_suffix)
+                lines.push('  ret ptr ' + temp_ref(terminator.args[0]))
+                return lines
             string[] lines = emit_record_materialize_if_needed(ProgramIR([], [], [], [], []), function_ir, terminator.args[0], 'return.' + temp_suffix)
             string returned_value = temp_ref(terminator.args[0])
             if (temp_is_record(function_ir, terminator.args[0]) && !temp_needs_backend_free(function_ir, terminator.args[0])):
