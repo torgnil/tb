@@ -1627,7 +1627,9 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             if (integer_value == ''):
                 throw 'unknown integer enum member: ' + base_type + '.' + op.args[0]
             return LinearInstruction('value', op.lhs, 'int', 'plain', 'int', [integer_value])
-        if (could_be_named_type(base_type) && enum_name_exists(enum_types, base_type) && enum_has_value(enum_types, base_type, op.args[0])):
+        if (could_be_named_type(base_type) && enum_name_exists(enum_types, base_type)):
+            if (!enum_has_value(enum_types, base_type, op.args[0])):
+                throw 'unknown enum member: ' + base_type + '.' + op.args[0]
             return refined_value_op(op, 'string', 'borrowed')
         string record_name = record_name_from_type(base_type)
         string result_type = lookup_cached_field_type(TYPE_IR_FIELD_TYPE_CACHE_KEYS, TYPE_IR_FIELD_TYPE_CACHE_VALUES, record_name, op.args[0])
