@@ -515,9 +515,10 @@ string normalize_enum_type_name(string type_name, EnumTypeIR[] enums):
     if (type_name.starts_with('const ')):
         qualifier = 'const '
         base_type = type_name.substring(6)
+    string integer_type = normalize_integer_enum_type_name(base_type, enums)
+    if (integer_type != base_type):
+        return qualifier + integer_type
     if (enum_name_exists(enums, base_type)):
-        if (integer_enum_exists(enums, base_type)):
-            return qualifier + 'int'
         return qualifier + 'string'
     return type_name
 
@@ -531,7 +532,9 @@ string normalize_integer_enum_type_name(string type_name, EnumTypeIR[] enums):
         base_type = type_name.substring(6)
     if (integer_enum_exists(enums, base_type)):
         return qualifier + 'int'
-    return type_name
+    if (base_type.ends_with('[]') && integer_enum_exists(enums, array_item_type(base_type))):
+        return qualifier + 'int[]'
+    return qualifier + base_type
 
 # Composite enum declarations need separate array, map and record layout work.
 # Scan complete identifier tokens, so an unrelated longer type name is allowed.
@@ -557,6 +560,8 @@ void validate_integer_enum_declared_type(string type_name, EnumTypeIR[] enums):
     if (base_type.starts_with('const ')):
         base_type = base_type.substring(6)
     if (integer_enum_exists(enums, base_type)):
+        return
+    if (base_type.ends_with('[]') && integer_enum_exists(enums, array_item_type(base_type))):
         return
     if (type_contains_integer_enum(base_type, enums)):
         throw 'integer enum composite types are not yet supported: ' + type_name
@@ -2277,7 +2282,7 @@ ParsedFunction resolve_conditional_bindings(ParsedFunction function_ir):
 
 ParsedFunction refine_function(ParsedFunction function_ir, BindingIR[] globals, FunctionSigIR[] functions, RecordFieldIR[] record_fields, string[] record_names, EnumTypeIR[] enum_types):
     string function_return_type = function_return_type_from_header(function_ir.header)
-    string normalized_return_type = normalize_llvm_type_name(function_return_type)
+    string normalized_return_type = normalize_llvm_type_name(normalize_integer_enum_type_name(function_return_type, enum_types))
     BindingIR[] params = normalize_enum_bindings(function_ir.params, enum_types)
     BindingIR[] locals = normalize_enum_bindings(function_ir.locals, enum_types)
     BlockIR[] blocks = []
@@ -2288,10 +2293,10 @@ ParsedFunction refine_function(ParsedFunction function_ir, BindingIR[] globals, 
         RefineInstructionsResult refined_result = refine_instructions(block.instructions, globals, params, locals, functions, record_fields, record_names, enum_types, prior_instructions, temp_types)
         BlockIR refined_block = BlockIR(block.label.substring(0), refined_result.instructions, clone_terminator_ir(block.terminator))
         temp_types = refined_result.temp_types
-        if ((refined_block.terminator.kind == 'return' || refined_block.terminator.kind == 'return_owned') && refined_block.terminator.args.length() == 1 && function_return_type.ends_with('[]')):
+        if ((refined_block.terminator.kind == 'return' || refined_block.terminator.kind == 'return_owned') && refined_block.terminator.args.length() == 1 && normalized_return_type.ends_with('[]')):
             string return_temp = refined_block.terminator.args[0]
             if (is_untyped_array_shape(lookup_temp_type(refined_block.instructions, return_temp))):
-                refined_block = BlockIR(refined_block.label, set_temp_type(refined_block.instructions, return_temp, function_return_type), refined_block.terminator)
+                refined_block = BlockIR(refined_block.label, set_temp_type(refined_block.instructions, return_temp, normalized_return_type), refined_block.terminator)
         if ((refined_block.terminator.kind == 'return' || refined_block.terminator.kind == 'return_owned') && refined_block.terminator.args.length() == 1 && normalized_return_type.starts_with('map<')):
             string return_temp = refined_block.terminator.args[0]
             RefineInstructionsResult contextual_map = contextualize_map_literal_rows(refined_block.instructions, temp_types, return_temp, normalized_return_type, record_names)
@@ -2361,10 +2366,10 @@ ProgramIR refine_program_ir(ProgramIR program):
             refined_global_result.temp_types = contextual_map.temp_types
         validate_map_binding_type(binding.name, binding.type_name, lookup_temp_type(refined_global.instructions, global_decl.value_name))
         prior_global_temp_types = refined_global_result.temp_types
-        if (value_type == '[]' && binding.type_name.ends_with('[]')):
-            refined_global = GlobalDeclIR(refined_global.header, set_temp_type(refined_global.instructions, global_decl.value_name, binding.type_name), refined_global.value_name)
-        else if (is_untyped_array_shape(value_type) && binding.type_name.ends_with('[]')):
-            refined_global = GlobalDeclIR(refined_global.header, set_temp_type(refined_global.instructions, global_decl.value_name, binding.type_name), refined_global.value_name)
+        if (value_type == '[]' && normalized_global_type.ends_with('[]')):
+            refined_global = GlobalDeclIR(refined_global.header, set_temp_type(refined_global.instructions, global_decl.value_name, normalized_global_type), refined_global.value_name)
+        else if (is_untyped_array_shape(value_type) && normalized_global_type.ends_with('[]')):
+            refined_global = GlobalDeclIR(refined_global.header, set_temp_type(refined_global.instructions, global_decl.value_name, normalized_global_type), refined_global.value_name)
         refined_globals.push(refined_global)
         int global_op_index = 0
         while (global_op_index < refined_global.instructions.length()):

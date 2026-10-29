@@ -85,9 +85,14 @@ representation, including for arguments, returns, arithmetic, and `switch`;
 this does not add nominal type checking or restrict assignments to declared
 members. Integer enum members can be used in `int[]` arrays. Integer-backed
 enum fields in records use the same `int` representation and assignment rules,
-including in nested records and records with managed fields. Integer-enum-typed
-arrays and other integer-enum composite types are not yet supported. Bare enums
-continue to use their existing string representation.
+including in nested records and records with managed fields. A one-dimensional
+`Code[]` uses the same representation and behavior as `int[]`: it supports
+locals, globals, const bindings, function parameters and results, direct record
+fields, indexing, iteration, and mutation. Integer enum values and ordinary
+integers can be mixed in these arrays because enum names are not nominally
+checked. Nested arrays such as `Code[][]` and enum arrays inside maps or other
+composites are not supported. Bare enums continue to use their existing string
+representation.
 
 String-backed enum values use their string representation in named function parameters and
 returns. A returned enum call can be printed, compared with an enum member,
