@@ -760,7 +760,7 @@ bool regex_add_start_state(Regex program, int state, int start, int[] seen, int[
 # current state list stays grouped by increasing start offset; each closure is
 # exhausted before a later start is injected, making first-state deduplication
 # equivalent to retaining the minimum start for that state and boundary.
-int regex_find_start(Regex program, string text):
+int regex_find_start_from(Regex program, string text, int start):
     if (!program.valid):
         return -1
     int count = program.operations.length()
@@ -770,6 +770,8 @@ int regex_find_start(Regex program, string text):
         return -1
     string[] text_bytes = text.split('')
     int text_length = text_bytes.length()
+    if (start < 0 || start > text_length):
+        return -1
     bool final_lf = false
     if (text_length > 0):
         final_lf = text_bytes[text_length - 1] == '\n'
@@ -781,9 +783,9 @@ int regex_find_start(Regex program, string text):
     int[] next = []
     int[] next_starts = []
     int best = -1
-    int text_index = 0
-    bool initial_end = text_length == 0 || (text_length == 1 && final_lf)
-    if (!regex_add_start_state(program, program.start, 0, seen, pending, current, current_starts, true, initial_end)):
+    int text_index = start
+    bool initial_end = text_index == text_length || (final_lf && text_index == text_length - 1)
+    if (!regex_add_start_state(program, program.start, start, seen, pending, current, current_starts, start == 0, initial_end)):
         return -1
     while (true):
         int index = 0
@@ -827,3 +829,6 @@ int regex_find_start(Regex program, string text):
             return -1
         text_index += 1
     return best
+
+int regex_find_start(Regex program, string text):
+    return regex_find_start_from(program, text, 0)

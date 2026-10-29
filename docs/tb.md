@@ -730,6 +730,14 @@ or `-1` for no match or an invalid compiled program. Compiled programs can be
 reused. Search scans the input once with a parallel NFA and retains the earliest
 start that reaches each state at each boundary; it does not return the first
 match encountered if an earlier-start path may still match later.
+`regex_find_start_from(program, text, start)` applies the same search while
+accepting matches only at or after the byte offset `start`. It returns `-1` if
+the program is invalid, no match qualifies, or `start` is outside
+`[0, text byte length]`. An offset equal to the text length can match an empty
+substring. `^` and `$` remain anchored to the complete original text, including
+`$` immediately before a final LF. `regex_find_start` is equivalent to calling
+`regex_find_start_from` with offset 0. Each call uses O(n*m) time and O(n+m)
+additional memory; repeated calls may rescan the text.
 `regex_escape(text)` returns regex source that matches the input bytes literally,
 escaping regex metacharacters, including anchors and bracket/count delimiters.
 It is useful when composing a pattern from dynamic text. For example,
