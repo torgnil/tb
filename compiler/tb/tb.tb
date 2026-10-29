@@ -20,7 +20,7 @@ import ownership_ir_lib;
 import llvm_codegen;
 import foreign_modules;
 
-record LoadedSourceBundle(string text, string[] foreign_modules);
+record LoadedSourceBundle(string text, string[] foreign_modules, bool regex_imported);
 record CompileOptions(string source_path, string output_path, bool profile_phases);
 
 string path_dirname(string path):
@@ -101,10 +101,11 @@ LoadedSourceBundle load_source_bundle_with_imports(string path, string source, s
     string[] foreign_modules = []
     if (!source.contains('import ')):
         if (string_in_array(seen, path)):
-            return LoadedSourceBundle('', foreign_modules)
+            return LoadedSourceBundle('', foreign_modules, false)
         seen.push(path)
-        return LoadedSourceBundle(source, foreign_modules)
-    return LoadedSourceBundle(join_lines(expand_source_lines_with_imports(path, source.split_lines(), seen, foreign_modules)), foreign_modules)
+        return LoadedSourceBundle(source, foreign_modules, false)
+    string text = join_lines(expand_source_lines_with_imports(path, source.split_lines(), seen, foreign_modules))
+    return LoadedSourceBundle(text, foreign_modules, string_in_array(seen, '<builtin:regex>'))
 
 void write_lines_file(string path, string[] lines):
     file out = open(path)
@@ -166,18 +167,20 @@ int run_compiler(CompileOptions options):
         t0 = time_ms()
     string source = read_file(options.source_path)
     string[] active_foreign_modules = []
+    bool regex_imported = false
     if (source.contains('import ')):
         string[] seen = []
         LoadedSourceBundle loaded = load_source_bundle_with_imports(options.source_path, source, seen)
         source = loaded.text
         active_foreign_modules = loaded.foreign_modules
+        regex_imported = loaded.regex_imported
     string injected = injected_foreign_module_declarations(active_foreign_modules)
     if (injected != ''):
         source = injected + '\n' + source
     if (!active_foreign_modules.is_empty()):
         source = rewrite_foreign_module_uses(source, active_foreign_modules)
     if (!options.profile_phases):
-        string[] lines = llvm_codegen_source(source)
+        string[] lines = llvm_codegen_source_with_regex(source, regex_imported)
         if (options.output_path != ''):
             write_lines_file(options.output_path, lines)
             write_build_metadata(options.output_path, active_foreign_modules)
@@ -197,7 +200,7 @@ int run_compiler(CompileOptions options):
     int t4 = time_ms()
 
     reset_type_ir_profile_stats()
-    ProgramIR typed = refine_program_ir(lowered)
+    ProgramIR typed = refine_program_ir_with_regex(lowered, regex_imported)
     int t5 = time_ms()
 
     reset_ownership_profile_stats()

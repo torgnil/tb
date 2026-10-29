@@ -1056,3 +1056,24 @@ RegexMatch regex_find_from(Regex program, string text, int start):
 
 RegexMatch regex_find(Regex program, string text):
     return regex_find_from(program, text, 0)
+
+# Called by the compiler's split overload after evaluating both arguments.
+string[] __tb_regex_split(string text, Regex program):
+    string[] parts = []
+    int length = text.length()
+    int field_start = 0
+    int search_start = 0
+    while (search_start <= length):
+        RegexMatch match = regex_find_from(program, text, search_start)
+        if (!match.matched):
+            break
+        parts.push(text.substring(field_start, match.start))
+        field_start = match.end
+        if (match.start == match.end):
+            if (match.end == length):
+                break
+            search_start = match.end + 1
+        else:
+            search_start = match.end
+    parts.push(text.substring(field_start, length))
+    return parts

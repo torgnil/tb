@@ -1,0 +1,42 @@
+import regex;
+
+record Holder(string text, Regex separator);
+
+string[] GLOBAL = split('g,,h', regex_compile(',+'));
+
+void show(string[] values):
+    print(values.length())
+    for (string value : values):
+        print('[' + value + ']')
+
+string make_text():
+    print('text')
+    return 'x,y'
+
+Regex make_separator():
+    print('separator')
+    return regex_compile(',')
+
+int main():
+    show(GLOBAL)
+    show(split(',a,,b,', regex_compile(',')))
+    show(',a,,b,'.split(regex_compile(',+')))
+    show('abc'.split(regex_compile('z')))
+    show('abc'.split(regex_compile('')))
+    show('abb'.split(regex_compile('a*|b')))
+    show('abc\n'.split(regex_compile('$')))
+    show('abc'.split(regex_compile('(')))
+    Regex bad = Regex(true, 0, [3, 4], [1, -1], [99, -1], ['', ''])
+    show('abc'.split(bad))
+    string[] bytes = 'é'.split(regex_compile(''))
+    print(bytes.length())
+    print(bytes[1].length())
+    print(bytes[2].length())
+    Holder holder = Holder('p:q', regex_compile(':'))
+    string[] result = holder.text.split(holder.separator)
+    holder.text = 'changed'
+    show(result)
+    show(make_text().split(make_separator()))
+    show(split(make_text(), make_separator()))
+    show('a,b'.split(','))
+    return 0

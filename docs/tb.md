@@ -541,6 +541,7 @@ String helpers
 - split(s: string, sep: string) -> string[]
   - Split string on `sep`. Also available as UFCS: `s.split(',')`.
   - UFCS helpers can be used in assignments too, for example `parts = text.split(',');` and `text = text.trim();`.
+  - With `import regex;`, `split(s, pattern)` and `s.split(pattern)` also accept a compiled `Regex`. They preserve empty fields and use the match priority described below. An invalid regex acts as no separator and returns one field containing `s`.
 
 - trim(s: string) -> string
   - Remove leading and trailing whitespace. UFCS sugar `s.trim()` supported.
@@ -756,6 +757,15 @@ The span search uses ordered NFA paths and tracks progress through nested
 repetitions. It processes at most O(m^2) distinct states at each input boundary;
 with amortized constant-time map operations this is O(n*m^2) work, plus bracket
 class scans, and O(n+m^2) additional memory. Repeated calls can rescan the text.
+Splitting with a regex repeatedly searches the original text, so anchors retain
+their whole-text meaning. Empty matches split at that byte boundary, then the
+next search begins one byte later; that byte remains in the next field. An
+empty match at the end is processed once. A nonempty alternative at the same
+boundary after an empty match is skipped. For example, splitting `abc` with an
+empty regex gives `['', 'a', 'b', 'c', '']`. Captures are not included in the
+result. Because repeated searches materialize the original text and may rescan
+it, k matches can take O((k+1)*n*m^2) work, plus bracket scans, and O(n+m^2)
+working space in addition to the output.
 `regex_escape(text)` returns regex source that matches the input bytes literally,
 escaping regex metacharacters, including anchors and bracket/count delimiters.
 It is useful when composing a pattern from dynamic text. For example,

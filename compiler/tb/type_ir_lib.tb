@@ -1957,7 +1957,7 @@ void validate_map_binding_type(string binding_name, string expected_type, string
             if (normalized_actual_type != normalized_expected_type):
                 throw 'map binding ' + ir_source_binding_name(binding_name) + ' requires ' + normalized_expected_type + '; got ' + normalized_actual_type
 
-RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, BindingIR[] globals, BindingIR[] params, BindingIR[] locals, FunctionSigIR[] functions, RecordFieldIR[] record_fields, string[] record_names, EnumTypeIR[] enum_types, LinearInstruction[] prior_instructions, string[] temp_types):
+RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, BindingIR[] globals, BindingIR[] params, BindingIR[] locals, FunctionSigIR[] functions, RecordFieldIR[] record_fields, string[] record_names, EnumTypeIR[] enum_types, LinearInstruction[] prior_instructions, string[] temp_types, bool regex_imported):
     BindingIR[] bindings = []
     for (BindingIR binding in globals):
         bindings.push(binding)
@@ -1996,6 +1996,16 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
             validate_sequence_index_type(index_base_type, index_type)
             validate_map_index_type(index_base_type, index_type)
         LinearInstruction current = refine_value_instruction(op, bindings, functions, record_fields, record_names, enum_types, temp_types)
+        if (current.kind == 'value' && (current.detail == 'call' || current.detail == 'method-call')):
+            if (current.args.length() == 3):
+                if (current.args[0] == 'split'):
+                    string receiver_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[1]))
+                    if (receiver_type == 'string'):
+                        string separator_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[2]))
+                        if (separator_type == 'Regex' && regex_imported):
+                            current = LinearInstruction('value', current.lhs, 'string[]', 'owned', 'call', ['__tb_regex_split', current.args[1], current.args[2]])
+                        else if (separator_type != 'string' && separator_type != 'unknown'):
+                            throw 'split separator requires string or imported Regex; got ' + separator_type
         if (current.kind == 'value' && (current.detail == 'call' || current.detail == 'method-call') && enum_name_exists(enum_types, current.result_type)):
             string enum_result_type = normalize_enum_type_name(current.result_type, enum_types)
             current = refined_value_op(current, enum_result_type, refine_ownership_mode(current, enum_result_type))
@@ -2228,7 +2238,7 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
 BlockIR refine_block(BlockIR block, BindingIR[] globals, BindingIR[] params, BindingIR[] locals, FunctionSigIR[] functions, RecordFieldIR[] record_fields, string[] record_names, EnumTypeIR[] enum_types, LinearInstruction[] prior_instructions):
     string[] temp_types = collect_temp_type_slots(prior_instructions)
     reset_type_ir_lookup_caches()
-    RefineInstructionsResult refined = refine_instructions(block.instructions, globals, params, locals, functions, record_fields, record_names, enum_types, prior_instructions, temp_types)
+    RefineInstructionsResult refined = refine_instructions(block.instructions, globals, params, locals, functions, record_fields, record_names, enum_types, prior_instructions, temp_types, false)
     return BlockIR(block.label.substring(0), refined.instructions, clone_terminator_ir(block.terminator))
 
 GlobalDeclIR refine_global(GlobalDeclIR global_decl, BindingIR[] globals, FunctionSigIR[] functions, RecordFieldIR[] record_fields, string[] record_names, EnumTypeIR[] enum_types, LinearInstruction[] prior_instructions):
@@ -2236,7 +2246,7 @@ GlobalDeclIR refine_global(GlobalDeclIR global_decl, BindingIR[] globals, Functi
     BindingIR[] empty_locals = []
     reset_type_ir_lookup_caches()
     string[] temp_types = collect_temp_type_slots(prior_instructions)
-    RefineInstructionsResult refined_result = refine_instructions(global_decl.instructions, globals, empty_params, empty_locals, functions, record_fields, record_names, enum_types, prior_instructions, temp_types)
+    RefineInstructionsResult refined_result = refine_instructions(global_decl.instructions, globals, empty_params, empty_locals, functions, record_fields, record_names, enum_types, prior_instructions, temp_types, false)
     LinearInstruction[] refined = refined_result.instructions
     BindingIR binding = ir_parse_binding_decl(strip_prefix(global_decl.header, 'global '))
     string value_type = lookup_temp_type(refined, global_decl.value_name)
@@ -2280,7 +2290,7 @@ ParsedFunction resolve_conditional_bindings(ParsedFunction function_ir):
         blocks.push(BlockIR(block.label, instructions, block.terminator))
     return ParsedFunction(function_ir.header, function_ir.name, function_ir.return_type, function_ir.params, locals, blocks)
 
-ParsedFunction refine_function(ParsedFunction function_ir, BindingIR[] globals, FunctionSigIR[] functions, RecordFieldIR[] record_fields, string[] record_names, EnumTypeIR[] enum_types):
+ParsedFunction refine_function(ParsedFunction function_ir, BindingIR[] globals, FunctionSigIR[] functions, RecordFieldIR[] record_fields, string[] record_names, EnumTypeIR[] enum_types, bool regex_imported):
     string function_return_type = function_return_type_from_header(function_ir.header)
     string normalized_return_type = normalize_llvm_type_name(normalize_integer_enum_type_name(function_return_type, enum_types))
     BindingIR[] params = normalize_enum_bindings(function_ir.params, enum_types)
@@ -2290,7 +2300,7 @@ ParsedFunction refine_function(ParsedFunction function_ir, BindingIR[] globals, 
     string[] temp_types = []
     reset_type_ir_lookup_caches()
     for (BlockIR block in function_ir.blocks):
-        RefineInstructionsResult refined_result = refine_instructions(block.instructions, globals, params, locals, functions, record_fields, record_names, enum_types, prior_instructions, temp_types)
+        RefineInstructionsResult refined_result = refine_instructions(block.instructions, globals, params, locals, functions, record_fields, record_names, enum_types, prior_instructions, temp_types, regex_imported)
         BlockIR refined_block = BlockIR(block.label.substring(0), refined_result.instructions, clone_terminator_ir(block.terminator))
         temp_types = refined_result.temp_types
         if ((refined_block.terminator.kind == 'return' || refined_block.terminator.kind == 'return_owned') && refined_block.terminator.args.length() == 1 && normalized_return_type.ends_with('[]')):
@@ -2323,7 +2333,14 @@ ParsedFunction refine_function(ParsedFunction function_ir, BindingIR[] globals, 
     string normalized_header = normalize_enum_function_header(function_ir.header, enum_types).substring(0)
     return resolve_conditional_bindings(ParsedFunction(normalized_header, function_name_from_header(normalized_header).substring(0), function_return_type_from_header(normalized_header).substring(0), clone_binding_irs(params), clone_binding_irs(locals), blocks))
 
-ProgramIR refine_program_ir(ProgramIR program):
+ProgramIR refine_program_ir_with_regex(ProgramIR program, bool regex_imported):
+    if (regex_imported):
+        int helper_count = 0
+        for (ParsedFunction function_ir : program.functions):
+            if (function_ir.name == '__tb_regex_split'):
+                helper_count += 1
+        if (helper_count != 1):
+            throw 'regex split internal helper must be declared exactly once'
     EnumTypeIR[] enum_types = collect_enum_types(program.enums)
     bool has_integer_enum = validate_integer_enum_declared_types(program, enum_types)
     bool has_string_enum_record_field = has_string_enum_record_fields(program.records, enum_types)
@@ -2345,7 +2362,7 @@ ProgramIR refine_program_ir(ProgramIR program):
         reset_type_ir_lookup_caches()
         BindingIR[] empty_params = []
         BindingIR[] empty_locals = []
-        RefineInstructionsResult refined_global_result = refine_instructions(global_decl.instructions, globals, empty_params, empty_locals, functions, record_fields, record_names, enum_types, prior_global_instructions, prior_global_temp_types)
+        RefineInstructionsResult refined_global_result = refine_instructions(global_decl.instructions, globals, empty_params, empty_locals, functions, record_fields, record_names, enum_types, prior_global_instructions, prior_global_temp_types, regex_imported)
         BindingIR binding = ir_parse_binding_decl(strip_prefix(global_decl.header, 'global '))
         string normalized_global_type = normalize_integer_enum_type_name(binding.type_name, enum_types)
         string global_header = global_decl.header
@@ -2378,10 +2395,13 @@ ProgramIR refine_program_ir(ProgramIR program):
 
     ParsedFunction[] refined_functions = []
     for (ParsedFunction function_ir in program.functions):
-        refined_functions.push(refine_function(function_ir, globals, functions, record_fields, record_names, enum_types))
+        refined_functions.push(refine_function(function_ir, globals, functions, record_fields, record_names, enum_types, regex_imported))
     if (normalize_records):
         return ProgramIR(program.imports, refined_globals, records, program.enums, refined_functions)
     return ProgramIR(program.imports, refined_globals, program.records, program.enums, refined_functions)
+
+ProgramIR refine_program_ir(ProgramIR program):
+    return refine_program_ir_with_regex(program, false)
 
 ProgramIR typed_source_ir(string source):
     ProgramIR lowered = lower_source_ir(source)
