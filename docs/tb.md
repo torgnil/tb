@@ -752,11 +752,37 @@ offset, with the same valid offsets and whole-text anchor rules as
 program, an invalid offset, or no match. An empty match has equal start and end.
 They choose the earliest starting position, then the first alternative and
 greedy repetition according to their pattern order. For example, `a|aa`
-matches one byte of `aa`, while `aa|a` matches two. Captures are not returned.
+matches one byte of `aa`, while `aa|a` matches two. These functions return
+the whole-match span without captures.
 The span search uses ordered NFA paths and tracks progress through nested
 repetitions. It processes at most O(m^2) distinct states at each input boundary;
 with amortized constant-time map operations this is O(n*m^2) work, plus bracket
 class scans, and O(n+m^2) additional memory. Repeated calls can rescan the text.
+`regex_find_captures(program, text)` and
+`regex_find_captures_from(program, text, start)` return a `RegexCapture` with
+`matched`, `starts`, and `ends` fields. Group 0 is the whole match; parentheses
+are numbered from 1 in opening order. Each position is a byte offset, and end
+positions are exclusive. A group that did not participate has start and end
+`-1`; repeated groups retain their last participating capture. An invalid
+program or offset, or no match, returns `matched = false` and empty position
+arrays. `regex_group(capture, text, index)` extracts a group's bytes from the
+original text. It returns an empty string for a nonparticipating group, an
+invalid index, or invalid positions; inspect the offsets to distinguish these
+from a successfully captured empty string. Capture matching supports at most
+12 simultaneously active repetitions. If matching visits a path that enters a
+13th repetition, it raises `regex captures: repeat nesting exceeds 12`. A path
+discarded by match priority is not visited. The existing boolean and span APIs
+do not have this capture-specific limit. Capture matching also raises
+`regex captures: program too large` or `regex captures: thread buffer too large`
+if its checked index or buffer limits are exceeded. It tracks positions and
+first-iteration flags separately for matching paths. With at most 4,096 flag
+combinations it uses O(n*m^2*g) work, plus bracket scans, and O(n+m^2*g)
+additional memory, where g includes group 0. The fixed factor 4,096 can matter
+for deeply nested repetitions. As with span search, the hash-map bound assumes
+amortized constant-time operations.
+`regex_match_captures(program, text)` uses the same result type but requires a
+full-string match. It considers later alternatives when an earlier one matches
+only a prefix; for example `(a|ab)` captures `ab` when matching `ab` in full.
 Splitting with a regex repeatedly searches the original text, so anchors retain
 their whole-text meaning. Empty matches split at that byte boundary, then the
 next search begins one byte later; that byte remains in the next field. An
@@ -774,7 +800,8 @@ The result is a sequence of literal atoms, so a quantifier appended afterward
 applies to its final atom. Empty input remains empty. Patterns support literal
 bytes, `.` (any byte, including newline), concatenation, `|`, parentheses, and
 the quantifiers `*`, `+`, `?`, `{n}`, `{n,}`, and `{n,m}`.
-Parentheses group expressions; they do not capture. Counted repetition uses
+Parentheses group expressions and supply captures to the capture-search
+functions. Counted repetition uses
 nonnegative decimal bounds: `{n}`
 requires exactly n matches, `{n,}` at least n, and `{n,m}` between n and m
 inclusive. Bounds must be at most 1,000 and the expanded postfix expression
@@ -801,7 +828,7 @@ byte endpoints in ascending order. Empty, unclosed, reversed, malformed, and
 unsupported-escape classes are invalid. Class matching scans its members for
 each active state; it does not use recursive backtracking.
 The `valid` field is false for an invalid pattern, and matching it returns false.
-Captures are not supported. `regex_match` makes one managed copy of the input
+`regex_match` makes one managed copy of the input
 before scanning so indexed byte reads use cached length metadata. It uses O(n)
 additional memory and copies the whole input even when the first byte cannot
 match; it does not impose a separate array-length limit. `regex_contains` and

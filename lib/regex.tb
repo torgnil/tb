@@ -4,6 +4,7 @@ record Regex(bool valid, int start, int[] operations, int[] out1, int[] out2, st
 record RegexPostfix(bool valid, int[] kinds, string[] characters);
 record RegexRepeat(bool valid, int minimum, int maximum, int end);
 record RegexMatch(bool matched, int start, int end);
+record RegexCapture(bool matched, int[] starts, int[] ends);
 
 # The operator stack, postfix stream, and NFA use separate integer codes.
 const int REGEX_OPERATOR_OPEN = 1
@@ -26,6 +27,8 @@ const int REGEX_POSTFIX_END = 13
 const int REGEX_POSTFIX_REPEAT_OPEN = 14
 const int REGEX_POSTFIX_REPEAT_CLOSE = 15
 const int REGEX_POSTFIX_REPEAT_OPTIONAL = 16
+const int REGEX_POSTFIX_GROUP = 17
+const int REGEX_POSTFIX_GROUP_COUNT = 18
 
 const int REGEX_NFA_CHAR = 1
 const int REGEX_NFA_ANY = 2
@@ -38,6 +41,8 @@ const int REGEX_NFA_START = 8
 const int REGEX_NFA_END = 9
 const int REGEX_NFA_REPEAT_ENTER = 10
 const int REGEX_NFA_REPEAT_END = 11
+const int REGEX_NFA_SAVE = 12
+const int REGEX_NFA_REPEAT_FIRST = 13
 
 const int REGEX_CLASS_INVALID = 0
 const int REGEX_CLASS_NO_MATCH = 1
@@ -230,7 +235,7 @@ RegexPostfix regex_expand_counts(RegexPostfix postfix):
                 fragment_kinds.push(kinds[cursor])
                 fragment_chars.push(characters[cursor])
                 int fragment_kind = kinds[cursor]
-                if (fragment_kind != REGEX_POSTFIX_REPEAT_OPEN && fragment_kind != REGEX_POSTFIX_REPEAT_CLOSE):
+                if (fragment_kind != REGEX_POSTFIX_REPEAT_OPEN && fragment_kind != REGEX_POSTFIX_REPEAT_CLOSE && fragment_kind != REGEX_POSTFIX_GROUP):
                     fragment_length += 1
                 cursor += 1
             int copies = repeat.maximum
@@ -276,13 +281,14 @@ RegexPostfix regex_expand_counts(RegexPostfix postfix):
                 if (starts.length() < 2):
                     return RegexPostfix(false, [], [])
                 starts.pop()
-            else if (kind == REGEX_POSTFIX_STAR || kind == REGEX_POSTFIX_PLUS || kind == REGEX_POSTFIX_OPTIONAL):
+            else if (kind == REGEX_POSTFIX_STAR || kind == REGEX_POSTFIX_PLUS || kind == REGEX_POSTFIX_OPTIONAL || kind == REGEX_POSTFIX_GROUP):
                 if (starts.is_empty()):
                     return RegexPostfix(false, [], [])
             else:
                 starts.push(kinds.length())
             regex_postfix_add(kinds, characters, kind, postfix.characters[index])
-            logical_length += 1
+            if (kind != REGEX_POSTFIX_GROUP):
+                logical_length += 1
         if (logical_length > 20000):
             return RegexPostfix(false, [], [])
         index += 1
@@ -295,6 +301,8 @@ RegexPostfix regex_postfix(string pattern):
     int[] kinds = []
     string[] characters = []
     int[] operators = []
+    int[] groups = []
+    int group_count = 0
     bool expect_atom = true
     bool can_quantify = false
     bool has_counts = false
@@ -347,6 +355,8 @@ RegexPostfix regex_postfix(string pattern):
             if (!expect_atom):
                 regex_push_operator(operators, kinds, characters, REGEX_OPERATOR_CONCAT)
             operators.push(REGEX_OPERATOR_OPEN)
+            group_count += 1
+            groups.push(group_count)
             expect_atom = true
             can_quantify = false
         else if (!escaped && character == ')'):
@@ -361,6 +371,7 @@ RegexPostfix regex_postfix(string pattern):
                 regex_postfix_add(kinds, characters, regex_operator_postfix(top), '')
             if (!found_open):
                 return RegexPostfix(false, [], [])
+            regex_postfix_add(kinds, characters, REGEX_POSTFIX_GROUP, groups.pop().to_string())
             expect_atom = false
             can_quantify = true
         else if (!escaped && character == '|'):
@@ -418,7 +429,10 @@ RegexPostfix regex_postfix(string pattern):
         regex_postfix_add(kinds, characters, regex_operator_postfix(top), '')
     RegexPostfix result = RegexPostfix(true, kinds, characters)
     if (has_counts):
-        return regex_expand_counts(result)
+        result = regex_expand_counts(result)
+        if (!result.valid):
+            return result
+    regex_postfix_add(result.kinds, result.characters, REGEX_POSTFIX_GROUP_COUNT, group_count.to_string())
     return result
 
 int regex_emit(int[] operations, int[] out1, int[] out2, string[] characters, int operation, int first, int second, string character):
@@ -510,11 +524,14 @@ Regex regex_compile(string pattern):
     # stop the whole counted repetition, not just the current optional copy.
     int[] repeat_heads = []
     int[] repeat_tails = []
+    string group_count = '0'
     int index = 0
     while (index < postfix.kinds.length()):
         int kind = postfix.kinds[index]
         int operation = regex_postfix_operation(kind)
-        if (kind == REGEX_POSTFIX_REPEAT_OPEN):
+        if (kind == REGEX_POSTFIX_GROUP_COUNT):
+            group_count = postfix.characters[index]
+        else if (kind == REGEX_POSTFIX_REPEAT_OPEN):
             repeat_heads.push(-1)
             repeat_tails.push(-1)
         else if (kind == REGEX_POSTFIX_REPEAT_CLOSE):
@@ -557,7 +574,15 @@ Regex regex_compile(string pattern):
             int body_start = starts.pop()
             int body_patch = patches.pop()
             int body_tail = patch_tails.pop()
-            if (kind == REGEX_POSTFIX_STAR || kind == REGEX_POSTFIX_PLUS):
+            if (kind == REGEX_POSTFIX_GROUP):
+                int group = postfix.characters[index].to_int()
+                int entry = regex_emit(operations, out1, out2, characters, REGEX_NFA_SAVE, body_start, -1, (group * 2).to_string())
+                int exit = regex_emit(operations, out1, out2, characters, REGEX_NFA_SAVE, -1, -1, (group * 2 + 1).to_string())
+                regex_patch(out1, out2, body_patch, exit)
+                starts.push(entry)
+                patches.push(exit * 2)
+                patch_tails.push(exit * 2)
+            else if (kind == REGEX_POSTFIX_STAR || kind == REGEX_POSTFIX_PLUS):
                 int enter = regex_emit(operations, out1, out2, characters, REGEX_NFA_REPEAT_ENTER, body_start, -1, '')
                 int end = regex_emit(operations, out1, out2, characters, REGEX_NFA_REPEAT_END, enter, -1, '')
                 regex_patch(out1, out2, body_patch, end)
@@ -568,7 +593,11 @@ Regex regex_compile(string pattern):
                     patches.push(end * 2 + 1)
                     patch_tails.push(split * 2 + 1)
                 else:
-                    starts.push(enter)
+                    # A plus has one mandatory iteration before its repeat.
+                    # Captures preserve an empty mandatory iteration if a
+                    # later iteration then consumes input.
+                    int first = regex_emit(operations, out1, out2, characters, REGEX_NFA_REPEAT_FIRST, body_start, -1, '')
+                    starts.push(first)
                     patches.push(end * 2 + 1)
                     patch_tails.push(end * 2 + 1)
             else if (kind == REGEX_POSTFIX_OPTIONAL):
@@ -600,7 +629,7 @@ Regex regex_compile(string pattern):
             else:
                 return regex_invalid()
         index += 1
-    int match = regex_emit(operations, out1, out2, characters, REGEX_NFA_MATCH, -1, -1, '')
+    int match = regex_emit(operations, out1, out2, characters, REGEX_NFA_MATCH, -1, -1, group_count)
     int start = match
     if (!starts.is_empty()):
         if (starts.length() != 1):
@@ -629,6 +658,12 @@ bool regex_queue_epsilon(Regex program, int state, int[] pending, bool at_start,
             pending.push(program.out1[state])
             return true
         case REGEX_NFA_REPEAT_ENTER:
+            pending.push(program.out1[state])
+            return true
+        case REGEX_NFA_REPEAT_FIRST:
+            pending.push(program.out1[state])
+            return true
+        case REGEX_NFA_SAVE:
             pending.push(program.out1[state])
             return true
         case REGEX_NFA_REPEAT_END:
@@ -931,7 +966,7 @@ bool regex_search_program_valid(Regex program):
         else if (operation == REGEX_NFA_CHAR):
             if (program.characters[state].length() != 1):
                 return false
-        else if (operation != REGEX_NFA_ANY && operation != REGEX_NFA_EMPTY && operation != REGEX_NFA_START && operation != REGEX_NFA_END && operation != REGEX_NFA_SPLIT && operation != REGEX_NFA_REPEAT_ENTER && operation != REGEX_NFA_REPEAT_END):
+        else if (operation != REGEX_NFA_ANY && operation != REGEX_NFA_EMPTY && operation != REGEX_NFA_START && operation != REGEX_NFA_END && operation != REGEX_NFA_SPLIT && operation != REGEX_NFA_REPEAT_ENTER && operation != REGEX_NFA_REPEAT_END && operation != REGEX_NFA_REPEAT_FIRST && operation != REGEX_NFA_SAVE):
             return false
         if (program.out1[state] < 0 || program.out1[state] >= count):
             return false
@@ -952,6 +987,8 @@ bool regex_search_program_valid(Regex program):
 # preferred path with the same future. Opcode, edge and class validity is
 # checked across the entire graph; inconsistent depth and unbalanced repeat
 # instructions are rejected when the search visits them.
+# Keep priority and repeat handling aligned with regex_capture_search; this
+# span-only path intentionally avoids allocating per-thread capture vectors.
 RegexMatch regex_find_from(Regex program, string text, int start):
     if (!regex_search_program_valid(program)):
         return RegexMatch(false, -1, -1)
@@ -1010,7 +1047,7 @@ RegexMatch regex_find_from(Regex program, string text, int start):
                 # Every remaining thread is lower priority than this match.
                 # Higher-priority consuming threads in next remain eligible.
                 break
-            if (operation == REGEX_NFA_EMPTY):
+            if (operation == REGEX_NFA_EMPTY || operation == REGEX_NFA_SAVE):
                 regex_search_push(pending, program.out1[state], depth, progress, origin)
             else if (operation == REGEX_NFA_START):
                 if (position == 0):
@@ -1021,7 +1058,7 @@ RegexMatch regex_find_from(Regex program, string text, int start):
             else if (operation == REGEX_NFA_SPLIT):
                 regex_search_push(pending, program.out2[state], depth, progress, origin)
                 regex_search_push(pending, program.out1[state], depth, progress, origin)
-            else if (operation == REGEX_NFA_REPEAT_ENTER):
+            else if (operation == REGEX_NFA_REPEAT_ENTER || operation == REGEX_NFA_REPEAT_FIRST):
                 if (depth == count):
                     return RegexMatch(false, -1, -1)
                 regex_search_push(pending, program.out1[state], depth + 1, progress, origin)
@@ -1056,6 +1093,239 @@ RegexMatch regex_find_from(Regex program, string text, int start):
 
 RegexMatch regex_find(Regex program, string text):
     return regex_find_from(program, text, 0)
+
+# Decimal metadata is validated before conversion, including for programs
+# manually constructed or modified by a caller.
+int regex_capture_number(string text, int limit):
+    if (text.is_empty()):
+        return -1
+    int value = 0
+    for (int index = 0; index < text.length(); index += 1):
+        string character = text[index]
+        if (!character.is_digit()):
+            return -1
+        int digit = character.to_int()
+        if (digit > limit):
+            return -1
+        if (value > (limit - digit) / 10):
+            return -1
+        value = value * 10 + digit
+    return value
+
+int regex_capture_group_count(Regex program):
+    int count = -1
+    for (int state = 0; state < program.operations.length(); state += 1):
+        if (program.operations[state] == REGEX_NFA_MATCH):
+            string metadata = program.characters[state]
+            int groups = 0
+            if (!metadata.is_empty()):
+                groups = regex_capture_number(metadata, 1073741819)
+            if (groups < 0):
+                return -1
+            if (count >= 0 && count != groups):
+                return -1
+            count = groups
+    return count
+
+void regex_capture_push(int[] threads, int state, int depth, int progress, int start, int first_flags, int[] positions):
+    if (threads.length() > 2147483647 - positions.length() - 5):
+        throw 'regex captures: thread buffer too large'
+    threads.push(state)
+    threads.push(depth)
+    threads.push(progress)
+    threads.push(start)
+    threads.push(first_flags)
+    for (int position : positions):
+        threads.push(position)
+
+RegexCapture regex_capture_result(int[] positions):
+    int[] starts = []
+    int[] ends = []
+    for (int index = 0; index < positions.length(); index += 2):
+        starts.push(positions[index])
+        ends.push(positions[index + 1])
+    return RegexCapture(true, starts, ends)
+
+# Internal sentinel: a depth limit is reported only after the scanner's local
+# arrays and map have been cleaned up by a normal return.
+RegexCapture regex_capture_depth_limit():
+    return RegexCapture(false, [-2], [])
+
+bool regex_capture_is_depth_limit(RegexCapture result):
+    if (result.matched || result.starts.length() != 1):
+        return false
+    return result.starts[0] == -2
+
+# The key includes (state, progress, first_flags): capture values do not
+# affect future transitions, so the first thread at a key dominates later
+# histories. A bit records an active plus's first mandatory iteration. An
+# empty first iteration may be followed by another; later empty iterations
+# stop. Each queued frame owns a copy of its capture positions. Keep ordering
+# and repeat-progress handling aligned with regex_find_from above.
+RegexCapture regex_capture_search(Regex program, string text, int start, bool full):
+    if (!regex_search_program_valid(program)):
+        return RegexCapture(false, [], [])
+    int count = program.operations.length()
+    # key = ((state * (count + 1) + progress) * 4096) + first_flags.
+    # This bound keeps that calculation within signed 64-bit integers.
+    if (count > 47000000):
+        throw 'regex captures: program too large'
+    int groups = regex_capture_group_count(program)
+    if (groups < 0):
+        return RegexCapture(false, [], [])
+    int slots = (groups + 1) * 2
+    int frame_size = slots + 5
+    int[] save_slots = range(program.operations.length())
+    save_slots.fill(-1)
+    for (int state = 0; state < program.operations.length(); state += 1):
+        if (program.operations[state] == REGEX_NFA_SAVE):
+            int slot = regex_capture_number(program.characters[state], slots - 1)
+            if (slot < 2):
+                return RegexCapture(false, [], [])
+            save_slots[state] = slot
+    string[] text_bytes = text.split('')
+    int text_length = text_bytes.length()
+    if (start < 0 || start > text_length):
+        return RegexCapture(false, [], [])
+    bool final_lf = false
+    if (text_length > 0):
+        final_lf = text_bytes[text_length - 1] == '\n'
+    int[] active = []
+    int[] pending = []
+    int[] next = []
+    int[] state_depth = range(program.operations.length())
+    state_depth.fill(-1)
+    map<int, int> seen = {}
+    int[] best = []
+    bool found = false
+    int position = start
+    while (position <= text_length):
+        pending.clear()
+        next.clear()
+        if (!found && (!full || position == start)):
+            int[] initial = range(slots)
+            initial.fill(-1)
+            regex_capture_push(pending, program.start, 0, 0, position, 0, initial)
+        int index = active.length() - frame_size
+        while (index >= 0):
+            int[] saved = []
+            for (int item = 0; item < slots; item += 1):
+                saved.push(active[index + 5 + item])
+            regex_capture_push(pending, active[index], active[index + 1], active[index + 2], active[index + 3], active[index + 4], saved)
+            index -= frame_size
+        while (!pending.is_empty()):
+            int[] positions = range(slots)
+            int item = slots - 1
+            while (item >= 0):
+                positions[item] = pending.pop()
+                item -= 1
+            int first_flags = pending.pop()
+            int origin = pending.pop()
+            int progress = pending.pop()
+            int depth = pending.pop()
+            int state = pending.pop()
+            if (state < 0 || state >= count || depth < 0 || depth > count || progress < 0 || progress > depth):
+                return RegexCapture(false, [], [])
+            if (state_depth[state] == -1):
+                state_depth[state] = depth
+            else if (state_depth[state] != depth):
+                return RegexCapture(false, [], [])
+            int key = (state * (count + 1) + progress) * 4096 + first_flags
+            if (seen.contains(key)):
+                if (seen[key] == position):
+                    continue
+            seen[key] = position
+            int operation = program.operations[state]
+            if (operation == REGEX_NFA_MATCH):
+                if (depth != 0):
+                    return RegexCapture(false, [], [])
+                if (full && position != text_length):
+                    continue
+                positions[0] = origin
+                positions[1] = position
+                best = positions.copy()
+                found = true
+                break
+            if (operation == REGEX_NFA_EMPTY):
+                regex_capture_push(pending, program.out1[state], depth, progress, origin, first_flags, positions)
+            else if (operation == REGEX_NFA_SAVE):
+                positions[save_slots[state]] = position
+                regex_capture_push(pending, program.out1[state], depth, progress, origin, first_flags, positions)
+            else if (operation == REGEX_NFA_START):
+                if (position == 0):
+                    regex_capture_push(pending, program.out1[state], depth, progress, origin, first_flags, positions)
+            else if (operation == REGEX_NFA_END):
+                if (position == text_length || (final_lf && position == text_length - 1)):
+                    regex_capture_push(pending, program.out1[state], depth, progress, origin, first_flags, positions)
+            else if (operation == REGEX_NFA_SPLIT):
+                regex_capture_push(pending, program.out2[state], depth, progress, origin, first_flags, positions)
+                regex_capture_push(pending, program.out1[state], depth, progress, origin, first_flags, positions)
+            else if (operation == REGEX_NFA_REPEAT_ENTER || operation == REGEX_NFA_REPEAT_FIRST):
+                if (depth >= 12):
+                    return regex_capture_depth_limit()
+                int flag = 1 << depth
+                int entered_flags = first_flags & (4095 ^ flag)
+                if (operation == REGEX_NFA_REPEAT_FIRST):
+                    entered_flags = entered_flags | flag
+                regex_capture_push(pending, program.out1[state], depth + 1, progress, origin, entered_flags, positions)
+            else if (operation == REGEX_NFA_REPEAT_END):
+                if (depth == 0):
+                    return RegexCapture(false, [], [])
+                int outer_depth = depth - 1
+                int outer_progress = progress
+                if (outer_progress > outer_depth):
+                    outer_progress = outer_depth
+                int flag = 1 << outer_depth
+                bool first = (first_flags & flag) != 0
+                int outer_flags = first_flags & (4095 ^ flag)
+                regex_capture_push(pending, program.out2[state], outer_depth, outer_progress, origin, outer_flags, positions)
+                if (progress == depth || first):
+                    regex_capture_push(pending, program.out1[state], outer_depth, outer_progress, origin, outer_flags, positions)
+            else if (operation == REGEX_NFA_CHAR || operation == REGEX_NFA_ANY || operation == REGEX_NFA_CLASS || operation == REGEX_NFA_BRACKET):
+                if (position < text_length):
+                    int match_result = regex_state_match(program, state, text_bytes[position])
+                    if (match_result == REGEX_CLASS_INVALID):
+                        return RegexCapture(false, [], [])
+                    if (match_result == REGEX_CLASS_MATCH):
+                        regex_capture_push(next, program.out1[state], depth, depth, origin, first_flags, positions)
+            else:
+                return RegexCapture(false, [], [])
+        active.clear()
+        for (int value : next):
+            active.push(value)
+        if (found && active.is_empty()):
+            return regex_capture_result(best)
+        position += 1
+    if (found):
+        return regex_capture_result(best)
+    return RegexCapture(false, [], [])
+
+RegexCapture regex_find_captures_from(Regex program, string text, int start):
+    RegexCapture result = regex_capture_search(program, text, start, false)
+    if (regex_capture_is_depth_limit(result)):
+        throw 'regex captures: repeat nesting exceeds 12'
+    return result
+
+RegexCapture regex_find_captures(Regex program, string text):
+    RegexCapture result = regex_capture_search(program, text, 0, false)
+    if (regex_capture_is_depth_limit(result)):
+        throw 'regex captures: repeat nesting exceeds 12'
+    return result
+
+RegexCapture regex_match_captures(Regex program, string text):
+    RegexCapture result = regex_capture_search(program, text, 0, true)
+    if (regex_capture_is_depth_limit(result)):
+        throw 'regex captures: repeat nesting exceeds 12'
+    return result
+
+string regex_group(RegexCapture capture, string text, int index):
+    if (!capture.matched || index < 0 || index >= capture.starts.length() || index >= capture.ends.length()):
+        return ''
+    int start = capture.starts[index]
+    int end = capture.ends[index]
+    if (start < 0 || end < start || end > text.length()):
+        return ''
+    return text.substring(start, end)
 
 # Called by the compiler's split overload after evaluating both arguments.
 string[] __tb_regex_split(string text, Regex program):
