@@ -1309,6 +1309,65 @@ BlockIR clone_block_ir(BlockIR block):
 GlobalDeclIR clone_global_decl_ir(GlobalDeclIR global_decl):
     return GlobalDeclIR(global_decl.header.substring(0), clone_linear_instructions(global_decl.instructions), global_decl.value_name.substring(0))
 
+bool is_string_signature_method(string method_name):
+    return method_name == 'trim' || method_name == 'trim_left' || method_name == 'trim_right' || method_name == 'char_at' || method_name == 'substring' || method_name == 'replace'
+
+bool has_matching_ufcs_signature(LinearInstruction op, string method_name, FunctionSigIR[] functions, EnumTypeIR[] enum_types, string[] temp_types):
+    FunctionSigIR method_sig = lookup_function_sig(functions, method_name)
+    if (method_sig.name == '' || op.args.length() != method_sig.param_types.length() + 1):
+        return false
+    int index = 0
+    while (index < method_sig.param_types.length()):
+        string expected_type = normalize_enum_type_name(normalize_llvm_type_name(method_sig.param_types[index]), enum_types)
+        string actual_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[index + 1])), enum_types)
+        if (expected_type != actual_type):
+            return false
+        index += 1
+    return true
+
+LinearInstruction refine_string_method_signature(LinearInstruction op, string method_name, EnumTypeIR[] enum_types, string[] temp_types):
+    if (method_name == 'trim' || method_name == 'trim_left' || method_name == 'trim_right'):
+        if (op.args.length() != 2):
+            throw method_name + ' expects 0 arguments; got ' + (op.args.length() - 2).to_string()
+        return refined_value_op(op, 'string', 'managed')
+    if (method_name == 'char_at'):
+        if (op.args.length() != 3):
+            throw 'char_at expects 1 argument; got ' + (op.args.length() - 2).to_string()
+        string char_at_index_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2])), enum_types)
+        if (char_at_index_type != 'int'):
+            throw 'char_at argument 1 requires int; got ' + char_at_index_type
+        return refined_value_op(op, 'string', 'managed')
+    if (method_name == 'substring'):
+        if (op.args.length() != 3 && op.args.length() != 4):
+            throw 'substring expects 1 or 2 arguments; got ' + (op.args.length() - 2).to_string()
+        int substring_arg_index = 2
+        while (substring_arg_index < op.args.length()):
+            string substring_bound_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[substring_arg_index])), enum_types)
+            if (substring_bound_type != 'int'):
+                throw 'substring argument ' + (substring_arg_index - 1).to_string() + ' requires int; got ' + substring_bound_type
+            substring_arg_index += 1
+        return refined_value_op(op, 'string', 'managed')
+    if (method_name == 'replace'):
+        if (op.args.length() != 4):
+            throw 'replace expects 2 arguments; got ' + (op.args.length() - 2).to_string()
+        int replace_arg_index = 2
+        while (replace_arg_index < op.args.length()):
+            string replace_arg_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[replace_arg_index])), enum_types)
+            if (replace_arg_type != 'string'):
+                throw 'replace argument ' + (replace_arg_index - 1).to_string() + ' requires string; got ' + replace_arg_type
+            replace_arg_index += 1
+        return refined_value_op(op, 'string', 'managed')
+    if (method_name == 'contains' || method_name == 'index_of'):
+        if (op.args.length() != 3):
+            throw method_name + ' expects 1 argument; got ' + (op.args.length() - 2).to_string()
+        string query_needle_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2])), enum_types)
+        if (query_needle_type != 'string'):
+            throw method_name + ' argument 1 requires string; got ' + query_needle_type
+        if (method_name == 'contains'):
+            return refined_value_op(op, 'bool', 'plain')
+        return refined_value_op(op, 'int', 'plain')
+    return op
+
 LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bindings, FunctionSigIR[] functions, RecordFieldIR[] record_fields, string[] record_names, EnumTypeIR[] enum_types, string[] temp_types):
     if (op.kind != 'value'):
         return op
@@ -1319,6 +1378,18 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
         return refined_value_op(op, iterable_type, 'borrowed')
     if (op.detail == 'method-call'):
         if (op.args.length() >= 2):
+            string method_name = op.args[0]
+            if (is_string_signature_method(method_name)):
+                string method_receiver_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
+                if (method_receiver_type == 'string'):
+                    return refine_string_method_signature(op, method_name, enum_types, temp_types)
+                if (method_receiver_type != 'unknown'):
+                    if ((method_name == 'char_at' || method_name == 'substring') && !record_type_exists(record_names, method_name) && has_matching_ufcs_signature(op, method_name, functions, enum_types, temp_types)):
+                        FunctionSigIR method_sig = lookup_function_sig(functions, method_name)
+                        return refined_value_op(op, method_sig.return_type, refine_ownership_mode(op, method_sig.return_type))
+                    throw method_name + ' requires string receiver; got ' + method_receiver_type
+            if ((method_name == 'contains' || method_name == 'index_of') && normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types) == 'string'):
+                return refine_string_method_signature(op, method_name, enum_types, temp_types)
             if (op.args[0] == 'last'):
                 string last_receiver_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
                 if (last_receiver_type == 'string'):
