@@ -1198,15 +1198,43 @@ RegexMatch[] regex_find_all_from(Regex program, string text, int start):
 RegexMatch[] regex_find_all(Regex program, string text):
     return regex_find_all_from(program, text, 0)
 
+bool __tb_regex_replacement_uses_captures(string replacement):
+    int index = 0
+    while (index < replacement.length()):
+        if (replacement[index] == '$' && index + 1 < replacement.length()):
+            string next = replacement[index + 1]
+            if (next == '$'):
+                index += 2
+                continue
+            if (next.is_digit()):
+                return true
+        index += 1
+    return false
+
+string __tb_regex_replacement_literal(string replacement):
+    string[] parts = []
+    int index = 0
+    while (index < replacement.length()):
+        if (replacement[index] == '$' && index + 1 < replacement.length() && replacement[index + 1] == '$'):
+            parts.push('$')
+            index += 2
+        else:
+            parts.push(replacement[index])
+            index += 1
+    return parts.join('')
+
 string regex_replace(Regex program, string text, string replacement):
+    if (__tb_regex_replacement_uses_captures(replacement)):
+        return __tb_regex_replace_captures(program, text, replacement)
     RegexMatch[] matches = regex_find_all(program, text)
     if (matches.is_empty()):
         return text
     string[] parts = []
+    string literal = __tb_regex_replacement_literal(replacement)
     int copied_until = 0
     for (RegexMatch match : matches):
         parts.push(text.substring(copied_until, match.start))
-        parts.push(replacement)
+        parts.push(literal)
         copied_until = match.end
     parts.push(text.substring(copied_until))
     return parts.join('')
@@ -1443,6 +1471,67 @@ string regex_group(RegexCapture capture, string text, int index):
     if (start < 0 || end < start || end > text.length()):
         return ''
     return text.substring(start, end)
+
+string __tb_regex_replacement_expand(string replacement, RegexCapture capture, string text):
+    string[] parts = []
+    int index = 0
+    int group_count = capture.starts.length() - 1
+    while (index < replacement.length()):
+        string character = replacement[index]
+        if (character != '$' || index + 1 >= replacement.length()):
+            parts.push(character)
+            index += 1
+            continue
+        string next = replacement[index + 1]
+        if (next == '$'):
+            parts.push('$')
+            index += 2
+            continue
+        if (!next.is_digit()):
+            parts.push('$')
+            index += 1
+            continue
+        int group = 0
+        bool in_range = true
+        while (index + 1 < replacement.length() && replacement[index + 1].is_digit()):
+            int digit = replacement[index + 1].to_int()
+            if (in_range):
+                if (group > group_count / 10 || (group == group_count / 10 && digit > group_count % 10)):
+                    in_range = false
+                else:
+                    group = group * 10 + digit
+            index += 1
+        if (in_range):
+            parts.push(regex_group(capture, text, group))
+        index += 1
+    return parts.join('')
+
+string __tb_regex_replace_captures(Regex program, string text, string replacement):
+    string[] parts = []
+    int text_length = text.length()
+    int search_start = 0
+    int copied_until = 0
+    bool found = false
+    while (search_start <= text_length):
+        RegexCapture capture = regex_find_captures_from(program, text, search_start)
+        if (!capture.matched):
+            break
+        found = true
+        int match_start = capture.starts[0]
+        int match_end = capture.ends[0]
+        parts.push(text.substring(copied_until, match_start))
+        parts.push(__tb_regex_replacement_expand(replacement, capture, text))
+        copied_until = match_end
+        if (match_start == match_end):
+            if (match_start == text_length):
+                break
+            search_start = match_start + 1
+        else:
+            search_start = match_end
+    if (!found):
+        return text
+    parts.push(text.substring(copied_until))
+    return parts.join('')
 
 # Called by the compiler's split overload after evaluating both arguments.
 string[] __tb_regex_split(string text, Regex program):
