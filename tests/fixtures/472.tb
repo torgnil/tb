@@ -1,0 +1,58 @@
+map<int[], bool[]> GLOBAL_FLAGS = {[1, 2]: [true, false], [3]: []}
+const map<int[], bool[]> FIXED_FLAGS = {[4, 5]: [false, true]}
+
+record FlagBox(map<int[], bool[]> flags);
+
+map<int[], bool[]> make_flags(int seed):
+    return {[seed]: [true, false]}
+
+map<int[], bool[]> pass_flags(map<int[], bool[]> flags):
+    return flags
+
+int main(string[] args):
+    int seed = args.length()
+    int[] source_key = [seed, seed + 1]
+    bool[] source_row = [true, false]
+    map<int[], bool[]> flags = {}
+    flags[source_key] = source_row
+    source_key[0] = 99
+    source_row[0] = false
+    print(flags.contains([seed, seed + 1]))
+    print(flags.contains(source_key))
+
+    bool[] read_row = flags[[seed, seed + 1]]
+    read_row[0] = false
+    print(flags[[seed, seed + 1]][0])
+    print(flags[[seed, seed + 1]][1])
+    flags[[seed, seed + 1]] = flags[[seed, seed + 1]]
+    flags[[seed, seed + 1]] = [false, true]
+    flags[[seed, seed + 1]] = [true, false]
+    print(flags.length())
+    int[][] ordered_keys = flags.keys()
+    print(ordered_keys[0][0])
+
+    flags[[]] = []
+    bool[] empty_row = flags[[]]
+    empty_row.push(true)
+    print(flags[[]].length())
+    bool[] missing_row = flags[[404]]
+    missing_row.push(true)
+    print(missing_row.length())
+    print(flags.contains([404]))
+
+    map<int[], bool[]> copied = pass_flags(flags)
+    copied[[seed, seed + 1]] = [false, false]
+    print(flags[[seed, seed + 1]][0])
+    print(copied[[seed, seed + 1]][0])
+
+    FlagBox box = FlagBox(flags)
+    flags[[seed, seed + 1]] = [false, false]
+    print(box.flags[[seed, seed + 1]][0])
+    print(flags[[seed, seed + 1]][0])
+
+    bool[] temporary_read = make_flags(seed)[[seed]]
+    print(temporary_read[0])
+    print(temporary_read[1])
+    print(GLOBAL_FLAGS[[1, 2]][0])
+    print(FIXED_FLAGS[[4, 5]][1])
+    return 0
