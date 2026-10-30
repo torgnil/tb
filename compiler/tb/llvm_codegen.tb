@@ -2038,6 +2038,242 @@ bool llvm_named_call_arg_types_compatible(string expected_type, string actual_ty
         return true
     return expected_type == actual_type
 
+bool record_array_cleanup_scalar_type(string type_name):
+    type_name = normalize_llvm_type_name(type_name)
+    return type_name == 'int' || type_name == 'bool' || type_name == 'num'
+
+# This is deliberately a closed proof over the small read-only IR vocabulary below.
+# In particular, a scalar result does not make forwarding, storage, or throwing safe.
+bool consumer_array_identifier_is_parameter(ParsedFunction function_ir, string temp_name, string record_array_type):
+    LinearInstruction identifier = lookup_temp_instruction(function_ir, temp_name)
+    if (identifier.kind != 'value' || identifier.detail != 'identifier' || identifier.args.length() != 1):
+        return false
+    return identifier.args[0] == function_ir.params[0].name && normalize_llvm_type_name(identifier.result_type) == record_array_type
+
+bool consumer_index_is_parameter_record(ParsedFunction function_ir, string temp_name, string record_array_type):
+    LinearInstruction index = lookup_temp_instruction(function_ir, temp_name)
+    if (index.kind != 'value' || index.detail != 'index' || index.args.length() != 2 || index.ownership_mode != 'borrowed'):
+        return false
+    if (normalize_llvm_type_name(index.result_type) != array_item_type(record_array_type)):
+        return false
+    if (!consumer_array_identifier_is_parameter(function_ir, index.args[0], record_array_type)):
+        return false
+    LinearInstruction index_value = lookup_temp_instruction(function_ir, index.args[1])
+    return index_value.kind == 'value' && index_value.detail == 'int' && index_value.args.length() == 1 && normalize_llvm_type_name(index_value.result_type) == 'int'
+
+bool record_field_is_unmanaged_scalar(ProgramIR program, string record_name, string field_name, string result_type):
+    RecordDeclIR record_decl = lookup_record_decl(program, record_name)
+    if (record_decl.header == ''):
+        return false
+    for (string field_decl in record_decl.fields):
+        BindingIR field = ir_parse_binding_decl(strip_prefix(field_decl, 'field '))
+        if (field.name == field_name):
+            return record_array_cleanup_scalar_type(field.type_name) && normalize_llvm_type_name(field.type_name) == normalize_llvm_type_name(result_type)
+    return false
+
+bool record_array_consumer_proves_non_escape(ProgramIR program, ParsedFunction consumer, string array_type):
+    array_type = normalize_llvm_type_name(array_type)
+    string record_name = record_name_from_type(array_item_type(array_type))
+    if (record_name == '' || consumer.params.length() != 1):
+        return false
+    if (normalize_llvm_type_name(consumer.params[0].type_name) != array_type || !record_array_cleanup_scalar_type(consumer.return_type)):
+        return false
+    if (consumer.blocks.length() != 1):
+        return false
+    BlockIR block = consumer.blocks[0]
+    if (block.terminator.kind != 'return' || block.terminator.args.length() != 1):
+        return false
+    for (LinearInstruction op in block.instructions):
+        if (op.kind != 'value'):
+            return false
+        string result_type = normalize_llvm_type_name(op.result_type)
+        if (op.detail == 'identifier'):
+            if (op.args.length() != 1):
+                return false
+            if (op.args[0] != consumer.params[0].name || result_type != array_type):
+                return false
+        else if (op.detail == 'int'):
+            if (op.args.length() != 1 || result_type != 'int'):
+                return false
+        else if (op.detail == 'index'):
+            if (op.args.length() != 2 || result_type != array_item_type(array_type) || !consumer_index_is_parameter_record(consumer, op.lhs, array_type)):
+                return false
+        else if (op.detail == 'field'):
+            if (op.args.length() != 2):
+                return false
+            LinearInstruction base = lookup_temp_instruction(consumer, op.args[1])
+            if (base.kind != 'value' || base.detail != 'index' || !consumer_index_is_parameter_record(consumer, base.lhs, array_type)):
+                return false
+            if (!record_field_is_unmanaged_scalar(program, record_name, op.args[0], result_type)):
+                return false
+        else if (op.detail == 'binary'):
+            if (op.args.length() != 3):
+                return false
+            if (op.args[0] != '+' || (result_type != 'int' && result_type != 'num')):
+                return false
+            if (normalize_llvm_type_name(lookup_temp_llvm_type(consumer, op.args[1])) != result_type || normalize_llvm_type_name(lookup_temp_llvm_type(consumer, op.args[2])) != result_type):
+                return false
+        else:
+            return false
+    string return_temp = block.terminator.args[0]
+    return normalize_llvm_type_name(lookup_temp_llvm_type(consumer, return_temp)) == normalize_llvm_type_name(consumer.return_type)
+
+bool producer_scalar_argument_type(string type_name):
+    type_name = normalize_llvm_type_name(type_name)
+    return type_name == 'int' || type_name == 'bool' || type_name == 'num' || type_name == 'string'
+
+int record_array_producer_semantic_use_count(ParsedFunction producer, string temp_name):
+    int count = 0
+    for (BlockIR block in producer.blocks):
+        for (LinearInstruction op in block.instructions):
+            if (op.kind == 'value' && op.detail == 'binary' && op.args.length() == 3):
+                if (op.args[1] == temp_name):
+                    count += 1
+                if (op.args[2] == temp_name):
+                    count += 1
+            else if (op.kind == 'value' && op.detail == 'call'):
+                int index = 1
+                while (index < op.args.length()):
+                    if (op.args[index] == temp_name):
+                        count += 1
+                    index += 1
+            else if (op.kind == 'value' && op.detail == 'array'):
+                for (string item_name in op.args):
+                    if (item_name == temp_name):
+                        count += 1
+            else if (op.kind == 'prepare_return_record_array' && op.args.length() == 1):
+                if (op.args[0] == temp_name):
+                    count += 1
+        if (block.terminator.kind == 'return_owned' || block.terminator.kind == 'return'):
+            if (block.terminator.args.length() == 1):
+                if (block.terminator.args[0] == temp_name):
+                    count += 1
+    return count
+
+# Accept only a single owned literal return. The record-array literal emitter
+# marks inserted record slots owned; this check requires fresh, single-use
+# constructor results and the ownership IR's array return transfer.
+bool record_array_producer_literal_is_owned(ProgramIR program, ParsedFunction caller, string producer_temp, string expected_array_type):
+    LinearInstruction producer_call = lookup_temp_instruction(caller, producer_temp)
+    if (producer_call.kind != 'value' || producer_call.detail != 'call' || producer_call.args.is_empty() || normalize_llvm_type_name(producer_call.result_type) != normalize_llvm_type_name(expected_array_type)):
+        return false
+    string producer_name = producer_call.args[0]
+    ParsedFunction producer = lookup_named_function_decl(program, producer_name)
+    if (producer.header == '' || normalize_llvm_type_name(producer.return_type) != normalize_llvm_type_name(expected_array_type) || producer.locals.length() != 0 || producer.blocks.length() != 1):
+        return false
+    if (producer_call.args.length() != producer.params.length() + 1):
+        return false
+    BlockIR block = producer.blocks[0]
+    if (block.terminator.kind != 'return_owned' || block.terminator.args.length() != 1):
+        return false
+    string return_temp = block.terminator.args[0]
+    LinearInstruction array = lookup_block_instruction(block, return_temp)
+    if (array.kind != 'value' || array.detail != 'array' || normalize_llvm_type_name(array.result_type) != normalize_llvm_type_name(expected_array_type) || array.ownership_mode != 'owned' || array.args.is_empty()):
+        return false
+    string record_name = record_name_from_type(array_item_type(expected_array_type))
+    if (record_name == ''):
+        return false
+    bool saw_return_prepare = false
+    bool saw_array_move = false
+    bool saw_array_instruction = false
+    for (LinearInstruction op in block.instructions):
+        if (op.kind == 'value' && op.detail == 'identifier'):
+            if (op.args.length() != 1):
+                return false
+            bool is_parameter = false
+            for (BindingIR param in producer.params):
+                if (param.name == op.args[0] && normalize_llvm_type_name(param.type_name) == normalize_llvm_type_name(op.result_type)):
+                    is_parameter = true
+            if (!is_parameter):
+                return false
+        else if (op.kind == 'value' && (op.detail == 'int' || op.detail == 'bool' || op.detail == 'num' || op.detail == 'string')):
+            if (op.args.length() != 1 || !producer_scalar_argument_type(op.result_type)):
+                return false
+        else if (op.kind == 'value' && op.detail == 'binary'):
+            if (op.args.length() != 3):
+                return false
+            if (op.args[0] != '+' || (normalize_llvm_type_name(op.result_type) != 'int' && normalize_llvm_type_name(op.result_type) != 'num')):
+                return false
+            if (normalize_llvm_type_name(lookup_temp_llvm_type(producer, op.args[1])) != normalize_llvm_type_name(op.result_type) || normalize_llvm_type_name(lookup_temp_llvm_type(producer, op.args[2])) != normalize_llvm_type_name(op.result_type)):
+                return false
+        else if (op.kind == 'value' && op.detail == 'call'):
+            string ctor_name = ''
+            if (!op.args.is_empty()):
+                ctor_name = op.args[0]
+            RecordDeclIR ctor_decl = lookup_record_decl(program, ctor_name)
+            if (op.args.is_empty() || lookup_named_function_decl(program, ctor_name).header != '' || ctor_decl.header == '' || ctor_name != record_name_from_type(op.result_type) || op.ownership_mode != 'owned' || op.args.length() != ctor_decl.fields.length() + 1):
+                return false
+            int field_index = 0
+            while (field_index < ctor_decl.fields.length()):
+                BindingIR field = ir_parse_binding_decl(strip_prefix(ctor_decl.fields[field_index], 'field '))
+                if (normalize_llvm_type_name(lookup_temp_llvm_type(producer, op.args[field_index + 1])) != normalize_llvm_type_name(field.type_name)):
+                    return false
+                field_index += 1
+            if (!temp_needs_backend_free(producer, op.lhs) || record_array_producer_semantic_use_count(producer, op.lhs) != 1):
+                return false
+        else if (op.kind == 'value' && op.detail == 'array'):
+            if (op.lhs == return_temp):
+                if (saw_array_instruction || op.args.length() != array.args.length()):
+                    return false
+                saw_array_instruction = true
+                string[] seen_elements = []
+                for (string item_name in op.args):
+                    bool repeated_element = false
+                    for (string seen_element in seen_elements):
+                        if (seen_element == item_name):
+                            repeated_element = true
+                    if (repeated_element):
+                        return false
+                    seen_elements.push(item_name)
+                    LinearInstruction element = lookup_block_instruction(block, item_name)
+                    if (element.kind != 'value' || element.detail != 'call' || element.args.is_empty()):
+                        return false
+                    if (lookup_named_function_decl(program, element.args[0]).header != '' || lookup_record_decl(program, element.args[0]).header == '' || record_name_from_type(element.result_type) != record_name || !temp_needs_backend_free(producer, item_name) || record_array_producer_semantic_use_count(producer, item_name) != 1):
+                        return false
+            else:
+                if (normalize_llvm_type_name(op.result_type) != 'int[]' || op.ownership_mode != 'owned' || !temp_needs_backend_free(producer, op.lhs) || record_array_producer_semantic_use_count(producer, op.lhs) != 1):
+                    return false
+                for (string item_name in op.args):
+                    if (normalize_llvm_type_name(lookup_temp_llvm_type(producer, item_name)) != 'int'):
+                        return false
+        else if (op.kind == 'move_temp'):
+            if (op.args.length() != 1):
+                return false
+            if (op.args[0] == return_temp && normalize_llvm_type_name(op.detail) == normalize_llvm_type_name(expected_array_type)):
+                if (!saw_array_instruction || saw_array_move):
+                    return false
+                saw_array_move = true
+            else:
+                return false
+        else if (op.kind == 'prepare_return_record_array'):
+            if (op.args.length() != 1):
+                return false
+            if (op.args[0] != return_temp || !saw_array_move || saw_return_prepare):
+                return false
+            saw_return_prepare = true
+        else:
+            return false
+    if (!saw_array_instruction || !saw_array_move || !saw_return_prepare || !temp_needs_backend_free(producer, return_temp) || record_array_producer_semantic_use_count(producer, return_temp) != 2):
+        return false
+    return true
+
+bool record_array_call_temporary_is_releasable(ProgramIR program, ParsedFunction caller, string call_name, string[] call_args, int first_arg_index, string call_result_temp):
+    int call_meta_index = lookup_call_meta_index(call_name)
+    if (call_meta_index < 0 || call_meta_index >= program.functions.length() || call_args.length() - first_arg_index != 1):
+        return false
+    ParsedFunction consumer = lookup_named_function_decl(program, call_name)
+    if (consumer.header == ''):
+        return false
+    string argument_temp = call_args[first_arg_index]
+    string array_type = normalize_llvm_type_name(lookup_temp_llvm_type(caller, argument_temp))
+    if (!temp_is_record_array(caller, argument_temp) || !temp_needs_backend_free(caller, argument_temp) || temp_is_moved(caller, argument_temp)):
+        return false
+    if (call_result_temp == '' || !temp_is_query_only_use_in_producing_block(caller, argument_temp, call_result_temp)):
+        return false
+    if (!record_array_consumer_proves_non_escape(program, consumer, array_type) || !record_array_producer_literal_is_owned(program, caller, argument_temp, array_type)):
+        return false
+    return true
+
 void validate_named_user_call_arguments(ProgramIR program, ParsedFunction caller, string call_name, string[] call_args, int first_arg_index):
     int call_meta_index = lookup_call_meta_index(call_name)
     if (call_meta_index < 0 || call_meta_index >= program.functions.length()):
@@ -2057,7 +2293,7 @@ void validate_named_user_call_arguments(ProgramIR program, ParsedFunction caller
         arg_index += 1
         param_index += 1
 
-string emit_user_call_managed_argument_releases(ProgramIR program, ParsedFunction function_ir, string call_name, string[] call_args, int first_arg_index):
+string emit_user_call_managed_argument_releases(ProgramIR program, ParsedFunction function_ir, string call_name, string[] call_args, int first_arg_index, bool direct_named_call, string call_result_temp):
     int call_meta_index = lookup_call_meta_index(call_name)
     if (call_meta_index < 0 || call_meta_index >= program.functions.length()):
         return ''
@@ -2072,15 +2308,19 @@ string emit_user_call_managed_argument_releases(ProgramIR program, ParsedFunctio
                 already_released = true
         if (!already_released):
             string arg_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, temp_name))
+            bool record_array = temp_is_record_array(function_ir, temp_name)
             bool supported_managed = arg_type == 'string' || arg_type == 'int[]' || arg_type == 'bool[]' || arg_type == 'string[]' || arg_type == 'int[][]' || arg_type == 'string[][]' || temp_is_record(function_ir, temp_name)
-            if (supported_managed && temp_needs_backend_free(function_ir, temp_name)):
+            if (record_array && direct_named_call && record_array_call_temporary_is_releasable(program, function_ir, call_name, call_args, first_arg_index, call_result_temp)):
+                lines.push(emit_backend_release_ptr(arg_type, temp_ref(temp_name)))
+                released_temps.push(temp_name)
+            else if (supported_managed && temp_needs_backend_free(function_ir, temp_name)):
                 lines.push(emit_backend_release_ptr(arg_type, temp_ref(temp_name)))
                 released_temps.push(temp_name)
         index += 1
     return join_llvm_strings(lines, '\n')
 
-string append_user_call_managed_argument_releases(ProgramIR program, ParsedFunction function_ir, string call_name, string[] call_args, int first_arg_index, string call_line):
-    string releases = emit_user_call_managed_argument_releases(program, function_ir, call_name, call_args, first_arg_index)
+string append_user_call_managed_argument_releases(ProgramIR program, ParsedFunction function_ir, string call_name, string[] call_args, int first_arg_index, string call_line, bool direct_named_call, string call_result_temp):
+    string releases = emit_user_call_managed_argument_releases(program, function_ir, call_name, call_args, first_arg_index, direct_named_call, call_result_temp)
     if (releases == ''):
         return call_line
     return call_line + '\n' + releases
@@ -5853,7 +6093,7 @@ string emit_call_value_instruction_core(ProgramIR program, ParsedFunction functi
         if (LLVM_USER_CALL_STATS_ACTIVE != 0):
             LLVM_USER_CALL_VOID_LINE_BYTES += line.length()
         record_llvm_user_call_stats(op.args.length() - 1, param_count, true, false, line.length())
-        return append_user_call_managed_argument_releases(program, function_ir, call_name, op.args, 1, line)
+        return append_user_call_managed_argument_releases(program, function_ir, call_name, op.args, 1, line, true, op.lhs)
     if (LLVM_USER_CALL_STATS_ACTIVE != 0):
         LLVM_USER_CALL_TEMP_REF_CALLS += 1
         LLVM_USER_CALL_NONVOID_LHS_TEMP_REF_CALLS += 1
@@ -5862,7 +6102,7 @@ string emit_call_value_instruction_core(ProgramIR program, ParsedFunction functi
     if (LLVM_USER_CALL_STATS_ACTIVE != 0):
         LLVM_USER_CALL_NONVOID_LINE_BYTES += line.length()
     record_llvm_user_call_stats(op.args.length() - 1, param_count, false, false, line.length())
-    return append_user_call_managed_argument_releases(program, function_ir, call_name, op.args, 1, line)
+    return append_user_call_managed_argument_releases(program, function_ir, call_name, op.args, 1, line, true, op.lhs)
 
 string emit_call_value_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op):
     if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
@@ -6756,9 +6996,9 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
         index += 1
     if (normalize_llvm_type_name(result_type) == 'void'):
         string void_line = '  call void @' + op.args[0] + '(' + join_llvm_strings(args, ', ') + ')'
-        return append_user_call_managed_argument_releases(program, function_ir, op.args[0], op.args, 1, void_line)
+        return append_user_call_managed_argument_releases(program, function_ir, op.args[0], op.args, 1, void_line, false, op.lhs)
     string call_line = '  ' + lhs + ' = call ' + llvm_type(result_type) + ' @' + op.args[0] + '(' + join_llvm_strings(args, ', ') + ')'
-    return append_user_call_managed_argument_releases(program, function_ir, op.args[0], op.args, 1, call_line)
+    return append_user_call_managed_argument_releases(program, function_ir, op.args[0], op.args, 1, call_line, false, op.lhs)
 
 string emit_method_call_value_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op):
     if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
