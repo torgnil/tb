@@ -523,10 +523,18 @@ string normalize_enum_type_name(string type_name, EnumTypeIR[] enums):
     return type_name
 
 # Normalize integer enums in native map types without changing other
-# composite types. Nested maps may contain scalar enums; arrays remain intact.
-string normalize_integer_enum_map_component(string type_name, EnumTypeIR[] enums):
+# composite types. Nested maps may contain scalar enums and one-dimensional
+# enum arrays as values.
+string normalize_integer_enum_map_key_type(string type_name, EnumTypeIR[] enums):
     if (integer_enum_exists(enums, type_name)):
         return 'int'
+    return type_name
+
+string normalize_integer_enum_map_value_type(string type_name, EnumTypeIR[] enums):
+    if (integer_enum_exists(enums, type_name)):
+        return 'int'
+    if (type_name.ends_with('[]') && integer_enum_exists(enums, array_item_type(type_name))):
+        return 'int[]'
     if (type_name.starts_with('map<') && type_name.ends_with('>')):
         return normalize_integer_enum_map_type_name(type_name, enums)
     return type_name
@@ -536,8 +544,8 @@ string normalize_integer_enum_map_type_name(string type_name, EnumTypeIR[] enums
     string value_type = map_value_type(type_name)
     if (key_type == 'unknown' || value_type == 'unknown'):
         return type_name
-    string normalized_key_type = normalize_integer_enum_map_component(key_type, enums)
-    string normalized_value_type = normalize_integer_enum_map_component(value_type, enums)
+    string normalized_key_type = normalize_integer_enum_map_key_type(key_type, enums)
+    string normalized_value_type = normalize_integer_enum_map_value_type(value_type, enums)
     return 'map<' + normalized_key_type + ', ' + normalized_value_type + '>'
 
 string normalize_integer_enum_type_name(string type_name, EnumTypeIR[] enums):
@@ -582,12 +590,23 @@ bool integer_enum_map_component_is_supported(string type_name, EnumTypeIR[] enum
         return integer_enum_map_type_is_supported(type_name, enums)
     return false
 
+bool integer_enum_map_value_is_supported(string type_name, EnumTypeIR[] enums):
+    if (!type_contains_integer_enum(type_name, enums)):
+        return true
+    if (integer_enum_exists(enums, type_name)):
+        return true
+    if (type_name.ends_with('[]') && integer_enum_exists(enums, array_item_type(type_name))):
+        return true
+    if (type_name.starts_with('map<') && type_name.ends_with('>')):
+        return integer_enum_map_type_is_supported(type_name, enums)
+    return false
+
 bool integer_enum_map_type_is_supported(string type_name, EnumTypeIR[] enums):
     string key_type = map_key_type(type_name)
     string value_type = map_value_type(type_name)
     if (key_type == 'unknown' || value_type == 'unknown'):
         return false
-    return integer_enum_map_component_is_supported(key_type, enums) && integer_enum_map_component_is_supported(value_type, enums)
+    return integer_enum_map_component_is_supported(key_type, enums) && integer_enum_map_value_is_supported(value_type, enums)
 
 void validate_integer_enum_declared_type(string type_name, EnumTypeIR[] enums):
     string base_type = type_name
