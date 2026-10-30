@@ -1224,9 +1224,14 @@ string __tb_regex_replacement_literal(string replacement):
     return parts.join('')
 
 string regex_replace(Regex program, string text, string replacement):
+    return regex_replace_from(program, text, replacement, 0)
+
+string regex_replace_from(Regex program, string text, string replacement, int start):
+    if (start < 0 || start > text.length()):
+        return text
     if (__tb_regex_replacement_uses_captures(replacement)):
-        return __tb_regex_replace_captures(program, text, replacement)
-    RegexMatch[] matches = regex_find_all(program, text)
+        return __tb_regex_replace_captures(program, text, replacement, start)
+    RegexMatch[] matches = regex_find_all_from(program, text, start)
     if (matches.is_empty()):
         return text
     string[] parts = []
@@ -1506,10 +1511,10 @@ string __tb_regex_replacement_expand(string replacement, RegexCapture capture, s
         index += 1
     return parts.join('')
 
-string __tb_regex_replace_captures(Regex program, string text, string replacement):
+string __tb_regex_replace_captures(Regex program, string text, string replacement, int start):
     string[] parts = []
     int text_length = text.length()
-    int search_start = 0
+    int search_start = start
     int copied_until = 0
     bool found = false
     while (search_start <= text_length):

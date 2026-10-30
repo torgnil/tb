@@ -773,6 +773,11 @@ for k matches, the work can be O((k+1)*n*m^2), plus bracket scans, with
 O(n+m^2) working space in addition to the output.
 `regex_replace(program, text, replacement)` replaces every prioritized,
 non-overlapping match from left to right and preserves the intervening text.
+`regex_replace_from(program, text, replacement, start)` begins searching at the
+specified byte offset and leaves all earlier bytes unchanged; offset validation
+and whole-text anchor rules match `regex_find_all_from`. An invalid offset,
+invalid program, or no matches returns the original text. `regex_replace` is
+equivalent to `regex_replace_from` with offset 0.
 `$0` expands to the whole match; `$1`, `$2`, and later decimal references
 expand captures numbered in opening-parenthesis order. References consume all
 following digits, so `$12` means group 12. A missing or nonparticipating group
@@ -788,6 +793,8 @@ the original text. Empty matches use the same byte-boundary progress as
 `regex_find_all`, including one insertion at the end boundary. Anchors continue
 to refer to the complete original input. For example,
 `regex_replace(regex_compile('a+'), 'aa baaa', 'X')` returns `'X bX'`.
+For example, `regex_replace_from(regex_compile('a'), 'baac', 'X', 2)` returns
+`'baXc'`.
 The span search uses ordered NFA paths and tracks progress through nested
 repetitions. It processes at most O(m^2) distinct states at each input boundary;
 with amortized constant-time map operations this is O(n*m^2) work, plus bracket
