@@ -130,6 +130,59 @@ loop.body:
 done:
   ret ptr %array
 }
+define private ptr @tb_bootstrap_range_step(i64 %start, i64 %end, i64 %step) {
+entry:
+  %step.zero = icmp eq i64 %step, 0
+  br i1 %step.zero, label %invalid.step, label %direction
+invalid.step:
+  call void @abort()
+  unreachable
+direction:
+  %step.positive = icmp sgt i64 %step, 0
+  %ascending = icmp slt i64 %start, %end
+  %descending = icmp sgt i64 %start, %end
+  %active.direction = select i1 %step.positive, i1 %ascending, i1 %descending
+  br i1 %active.direction, label %count, label %empty
+count:
+  %distance.up = sub i64 %end, %start
+  %distance.down = sub i64 %start, %end
+  %distance = select i1 %step.positive, i64 %distance.up, i64 %distance.down
+  %step.negative.magnitude = sub i64 0, %step
+  %step.magnitude = select i1 %step.positive, i64 %step, i64 %step.negative.magnitude
+  %quotient = udiv i64 %distance, %step.magnitude
+  %remainder = urem i64 %distance, %step.magnitude
+  %has.remainder = icmp ne i64 %remainder, 0
+  %quotient.too.large = icmp ugt i64 %quotient, 2147483647
+  %quotient.at.limit = icmp eq i64 %quotient, 2147483647
+  %rounded.too.large = and i1 %has.remainder, %quotient.at.limit
+  %too.large = or i1 %quotient.too.large, %rounded.too.large
+  br i1 %too.large, label %invalid.length, label %allocate
+invalid.length:
+  call void @abort()
+  unreachable
+allocate:
+  %remainder.count = zext i1 %has.remainder to i64
+  %count64 = add i64 %quotient, %remainder.count
+  %count32 = trunc i64 %count64 to i32
+  %array = call ptr @tb_bootstrap_int_array_new(i32 %count32)
+  br label %loop.cond
+loop.cond:
+  %index = phi i32 [0, %allocate], [%next.index, %loop.body]
+  %keep.loop = icmp slt i32 %index, %count32
+  br i1 %keep.loop, label %loop.body, label %done
+loop.body:
+  %index64 = sext i32 %index to i64
+  %offset = mul i64 %index64, %step
+  %value = add i64 %start, %offset
+  call void @tb_bootstrap_int_array_set(ptr %array, i32 %index, i64 %value)
+  %next.index = add i32 %index, 1
+  br label %loop.cond
+empty:
+  %empty.array = call ptr @tb_bootstrap_int_array_new(i32 0)
+  ret ptr %empty.array
+done:
+  ret ptr %array
+}
 define private i64 @tb_bootstrap_int_array_get(ptr %array, i32 %index) {
 entry:
   %data.ptr = getelementptr inbounds %tb_bootstrap_int_array, ptr %array, i32 0, i32 2

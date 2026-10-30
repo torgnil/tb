@@ -720,6 +720,9 @@ Hashing, misc
 - range(start, end) -> int[]
   - Yields `start`..`end-1`, including negative values. Equal or reversed bounds produce an empty array, including at the signed integer limits. The span must fit the supported `int[]` length (at most `2147483647` elements); a larger span aborts before allocating or filling the array. If `int[]` allocation fails, the process aborts before using the result.
 
+- range(start, end, step) -> int[]
+  - Evaluates the three integer arguments once from left to right and yields values from `start` toward the exclusive `end`, advancing by `step`. A positive step yields an ascending sequence; a negative step yields a descending sequence. A zero step aborts. Equal bounds or a step pointing away from the end produce an empty array. The resulting length must fit the supported `int[]` length (at most `2147483647` elements); a larger result aborts before allocating or filling the array. Count and value arithmetic handle the full signed 64-bit domain, including a step of `-9223372036854775808`. In ordinary `for` loops, this form uses the array-producing path.
+
 Regular expressions
 
 The compiler includes a byte-oriented regular expression module. Import it with

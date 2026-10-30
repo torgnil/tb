@@ -5397,7 +5397,9 @@ string emit_call_value_instruction_core(ProgramIR program, ParsedFunction functi
             return emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_range(i64 0, i64 ' + temp_ref(op.args[1]) + ')')
         if (op.args.length() == 3):
             return emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_range(i64 ' + temp_ref(op.args[1]) + ', i64 ' + temp_ref(op.args[2]) + ')')
-        throw 'bootstrap range currently requires one or two integer arguments'
+        if (op.args.length() == 4):
+            return emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_range_step(i64 ' + temp_ref(op.args[1]) + ', i64 ' + temp_ref(op.args[2]) + ', i64 ' + temp_ref(op.args[3]) + ')')
+        throw 'bootstrap range currently requires one, two, or three integer arguments'
     if (call_name == 'to_set'):
         if (op.args.length() != 2):
             throw 'unsupported llvm to_set arity'
