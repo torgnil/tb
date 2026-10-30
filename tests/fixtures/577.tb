@@ -1,0 +1,46 @@
+enum Opcode { READ = 3, WRITE = 7 }
+
+map<Opcode, int> GLOBAL_COUNTS = {Opcode.READ: 2}
+
+record Tables(map<Opcode, int> by_opcode, map<int, Opcode> reverse, map<string, Opcode> labels);
+
+map<Opcode, int> pass_counts(map<Opcode, int> counts):
+    return counts
+
+map<int, Opcode> make_reverse(Opcode opcode):
+    return {1: opcode}
+
+int main(string[] args):
+    Opcode chosen = args.length() == 1 ? Opcode.WRITE : Opcode.READ
+    map<Opcode, int> counts = {Opcode.READ: 4}
+    counts[chosen] = 5
+    print(counts[Opcode.READ])
+    print(counts[chosen])
+
+    map<int, int> integer_counts = counts
+    print(integer_counts[Opcode.READ])
+    map<Opcode, int> copied_counts = pass_counts(counts)
+    print(copied_counts[chosen])
+    print(GLOBAL_COUNTS[Opcode.READ])
+
+    map<int, Opcode> reverse = make_reverse(chosen)
+    Opcode selected = reverse[1]
+    print(selected)
+    int raw_opcode = reverse[1]
+    print(raw_opcode)
+
+    map<int, map<Opcode, Opcode>> nested = {9: {chosen: chosen}}
+    print(nested[9][chosen])
+
+    map<string, Opcode> labels = {'chosen': chosen}
+    labels['last'] = Opcode.WRITE
+    print(labels['chosen'])
+    print(labels['last'])
+    const map<int, Opcode> fixed = {4: Opcode.READ}
+    print(fixed[4])
+
+    Tables tables = Tables(counts, reverse, labels)
+    print(tables.by_opcode[chosen])
+    print(tables.reverse[1])
+    print(tables.labels['last'])
+    return 0

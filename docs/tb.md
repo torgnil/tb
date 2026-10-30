@@ -69,7 +69,7 @@ Build and invocation details are documented in the repository or release `README
 - file — runtime file handle produced by `open(...)`.
 - T[] — arrays of T (e.g. `string[]`, `int[]`, `string[][]`).
 - map<K, V> — use `{}` or `{'key': value}` in a typed context such as `map<string, int> counts = {};`.
-  - The native backend supports `int` and `string` keys. Map subscript reads and writes require the key expression to match `K`; assignments require the stored expression to match `V`. A bare empty `[]` assigned to an `int[]`, `bool[]`, or `string[]` map value, and a bare empty `{}` assigned to a map value, receive that value type from the target. A bare empty row inside a map literal also receives `int[]`, `bool[]`, or `string[]` when the literal initializes or reassigns a typed map, initializes or replaces a matching record map field, or is returned directly from a function declared to return one of the corresponding `map<int, V>` or `map<string, V>` types. This applies to local and global declarations, including const maps. Const string and integer keys and const stored values use their underlying types for matching. Const maps support reads but cannot be mutated.
+  - The native backend supports `int` and `string` keys. A scalar integer-backed enum used as a map key or value has the same `int` representation as an ordinary integer, so enum maps interoperate with maps that use the equivalent `int` type. This applies at each level of nested maps and to local and global bindings, function parameters and results, and direct record fields. Integer-backed enum arrays inside maps remain unsupported. Map subscript reads and writes require the key expression to match `K`; assignments require the stored expression to match `V`. A bare empty `[]` assigned to an `int[]`, `bool[]`, or `string[]` map value, and a bare empty `{}` assigned to a map value, receive that value type from the target. A bare empty row inside a map literal also receives `int[]`, `bool[]`, or `string[]` when the literal initializes or reassigns a typed map, initializes or replaces a matching record map field, or is returned directly from a function declared to return one of the corresponding `map<int, V>` or `map<string, V>` types. This applies to local and global declarations, including const maps. Const string and integer keys and const stored values use their underlying types for matching. Const maps support reads but cannot be mutated.
   - A known map used to initialize or reassign a map binding must have the same complete normalized type, including key, value, nested container, array rank, and declared record identity. A top-level `const` qualifier is ignored. This applies to local and global bindings and mutable parameters; an unknown type remains deferred. Empty maps and supported empty map-literal rows first receive their existing target context, then undergo the same type check. For example, `map<int, int> numbers = source;` rejects a known `map<int, string>` source.
   - Native maps copy string keys on insertion, so keys remain valid if their source strings change or leave scope. A string used as both a key and a value keeps an independent map-owned reference for each role.
   - Owned string temporaries used as subscript keys are released after reads and writes. Compound updates keep an owned key alive through the read and final write, then release it once.
@@ -90,9 +90,10 @@ including in nested records and records with managed fields. A one-dimensional
 locals, globals, const bindings, function parameters and results, direct record
 fields, indexing, iteration, and mutation. Integer enum values and ordinary
 integers can be mixed in these arrays because enum names are not nominally
-checked. Nested arrays such as `Code[][]` and enum arrays inside maps or other
-composites are not supported. Bare enums continue to use their existing string
-representation.
+checked. Scalar integer-backed enum map keys and values use the same `int` map
+representation and can interoperate with equivalent integer maps. Nested arrays
+such as `Code[][]` and enum arrays inside maps or other composites are not
+supported. Bare enums continue to use their existing string representation.
 
 String-backed enum values use their string representation in named function parameters and
 returns. A returned enum call can be printed, compared with an enum member,
