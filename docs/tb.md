@@ -754,6 +754,18 @@ They choose the earliest starting position, then the first alternative and
 greedy repetition according to their pattern order. For example, `a|aa`
 matches one byte of `aa`, while `aa|a` matches two. These functions return
 the whole-match span without captures.
+`regex_find_all(program, text)` returns all non-overlapping `RegexMatch` spans
+in increasing byte-offset order. `regex_find_all_from(program, text, start)`
+starts the first search at that byte offset and follows the same offset
+validation and whole-text anchor rules as `regex_find_from`. Invalid programs,
+invalid offsets, and no matches produce an empty array. After a nonempty match,
+the next search starts at its exclusive end. After an empty match before the
+text end, it starts one byte after the match start; an empty match at the text
+end is included once and ends the search. Thus an empty regex on `abc` yields
+spans `[0, 0)`, `[1, 1)`, `[2, 2)`, and `[3, 3)`. Captured groups are not
+included. Each later search reuses `regex_find_from` and may rescan the input;
+for k matches, the work can be O((k+1)*n*m^2), plus bracket scans, with
+O(n+m^2) working space in addition to the output.
 The span search uses ordered NFA paths and tracks progress through nested
 repetitions. It processes at most O(m^2) distinct states at each input boundary;
 with amortized constant-time map operations this is O(n*m^2) work, plus bracket

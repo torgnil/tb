@@ -1176,6 +1176,28 @@ RegexMatch regex_find_from(Regex program, string text, int start):
 RegexMatch regex_find(Regex program, string text):
     return regex_find_from(program, text, 0)
 
+RegexMatch[] regex_find_all_from(Regex program, string text, int start):
+    RegexMatch[] matches = []
+    int text_length = text.length()
+    if (start < 0 || start > text_length):
+        return matches
+    int search_start = start
+    while (search_start <= text_length):
+        RegexMatch match = regex_find_from(program, text, search_start)
+        if (!match.matched):
+            break
+        matches.push(match)
+        if (match.start == match.end):
+            if (match.start == text_length):
+                break
+            search_start = match.start + 1
+        else:
+            search_start = match.end
+    return matches
+
+RegexMatch[] regex_find_all(Regex program, string text):
+    return regex_find_all_from(program, text, 0)
+
 # Decimal metadata is validated before conversion, including for programs
 # manually constructed or modified by a caller.
 int regex_capture_number(string text, int limit):
