@@ -1293,6 +1293,9 @@ string try_env_ptr_ref(string temp_suffix):
 string try_continue_label(string temp_suffix):
     return 'tb.try.cont.' + temp_suffix
 
+string map_key_guard_snapshot_slot_ref(string try_suffix):
+    return '%tb.map.key.guard.snapshot.' + try_suffix
+
 string exception_handler_symbol():
     return '@__tb_exception_handler'
 
@@ -1804,6 +1807,10 @@ bool temp_is_owned_managed_method_result(ParsedFunction function_ir, LinearInstr
         return true
     if (method_name == 'values' && result_type == 'int[][]' && receiver_type.starts_with('map<') && normalize_llvm_type_name(map_value_type(receiver_type)) == 'int[]'):
         return true
+    if (method_name == 'keys' && result_type == 'int[][]' && receiver_type.starts_with('map<') && normalize_llvm_type_name(map_key_type(receiver_type)) == 'int[]'):
+        return true
+    if (method_name == 'values' && result_type == 'int[]' && receiver_type == 'map<int[], int>'):
+        return true
     if (method_name == 'values' && result_type == 'string[][]' && receiver_type.starts_with('map<') && normalize_llvm_type_name(map_value_type(receiver_type)) == 'string[]'):
         return true
     if (method_name == 'values' && result_type == 'bool[]' && receiver_type.starts_with('map<') && normalize_llvm_type_name(map_value_type(receiver_type)) == 'bool'):
@@ -1864,6 +1871,12 @@ bool temp_needs_backend_free(ParsedFunction function_ir, string temp_name):
     if (result_type == 'bool[]'):
         return op.detail == 'array' || op.detail == 'call' || op.detail == 'slice'
     if (result_type == 'int[]'):
+        if (op.detail == 'map-key-snapshot'):
+            return true
+        if ((op.detail == 'target-index' || op.detail == 'assign-index-key') && op.args.length() >= 1):
+            string target_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0]))
+            if (target_type == 'map<int[], int>'):
+                return true
         if (op.detail == 'method-call-lambda'):
             if (op.args.length() == 4):
                 if (op.args[0] == 'map_to_self' || op.args[0] == 'map_to_expr' || op.args[0] == 'filter_int_expr'):
@@ -2267,6 +2280,9 @@ string emit_owned_map_target_key_release(ParsedFunction function_ir, string key_
         return ''
     if (key_instruction.args.length() < 2):
         return ''
+    string target_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, key_instruction.args[0]))
+    if (target_type == 'map<int[], int>' && temp_needs_backend_free(function_ir, key_temp)):
+        return emit_backend_release_ptr('int[]', temp_ref(key_temp))
     string source_temp = key_instruction.args[1]
     if (!temp_is_string(function_ir, source_temp) || !temp_needs_backend_free(function_ir, source_temp)):
         return ''
@@ -2277,6 +2293,8 @@ string map_assignment_key_source_temp(ParsedFunction function_ir, string key_tem
     if (key_instruction.kind != 'value' || key_instruction.detail != 'assign-index-key'):
         return key_temp
     if (key_instruction.args.length() < 2):
+        return key_temp
+    if (normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, key_instruction.args[0])) == 'map<int[], int>'):
         return key_temp
     return key_instruction.args[1]
 
@@ -2388,6 +2406,8 @@ string mangle_backend_type(string type_name):
         return 'int_array'
     if (type_name == 'int[][]'):
         return 'int_array_array'
+    if (type_name == 'map<int[], int>'):
+        return 'map_int_array_int'
     if (type_name.starts_with('set<') && record_name_from_type(set_item_type(type_name)) != ''):
         return 'record_set_' + record_name_from_type(set_item_type(type_name))
     if (type_name.ends_with('[]') && record_name_from_type(array_item_type(type_name)) != ''):
@@ -2401,7 +2421,7 @@ string mangle_backend_type(string type_name):
 string llvm_map_suffix(string type_name):
     string key_type = normalize_llvm_type_name(map_key_type(type_name))
     string value_type = normalize_llvm_type_name(map_value_type(type_name))
-    if (key_type != 'string' && key_type != 'int'):
+    if (key_type != 'string' && key_type != 'int' && key_type != 'int[]'):
         throw 'unsupported llvm map key type: ' + key_type
     return 'tb_bootstrap_map_' + mangle_backend_type(key_type) + '_' + mangle_backend_type(value_type)
 
@@ -3049,6 +3069,9 @@ void analyze_program_features(ProgramIR program, string[] map_types):
     bool has_edges_for_point = false
     bool uses_edges_for_point_mapper = false
     for (string map_type in map_types):
+        if (normalize_llvm_type_name(map_key_type(map_type)) == 'int[]'):
+            needs_int_array = true
+            needs_int_array_array = true
         string map_value = normalize_llvm_type_name(map_value_type(map_type))
         if (map_value == 'string[][]'):
             needs_string_array = true
@@ -5110,6 +5133,8 @@ string emit_map_value_instruction(ProgramIR program, ParsedFunction function_ir,
             lines.push('  call void ' + llvm_map_set_name(map_type) + '(ptr ' + lhs + ', i32 ' + item_index + ', ptr ' + stored_key + ', ' + llvm_type(value_type) + ' ' + stored_value + ', i1 ' + stored_owned + ')')
             if (key_type == 'string'):
                 lines.push('  call void @tb_release(ptr ' + stored_key + ')')
+            else if (key_type == 'int[]' && temp_needs_backend_free(function_ir, key_name) && !temp_is_moved(function_ir, key_name) && temp_is_query_only_use_in_producing_block(function_ir, key_name, op.lhs)):
+                lines.push(emit_backend_release_ptr('int[]', temp_ref(key_name)))
         index += 2
         item_index += 1
     return join_llvm_strings(lines, '\n')
@@ -5964,7 +5989,7 @@ string emit_builtin_query_call_value_instruction(ProgramIR program, ParsedFuncti
         if (call_arg1_type.starts_with('map<')):
             if (op.args.length() != 3):
                 throw 'unsupported llvm map contains arity'
-            return emit_map_contains_value(function_ir, op.lhs, call_arg1_type, op.args[1], op.args[2])
+            return emit_map_contains_value(function_ir, op.lhs, call_arg1_type, op.args[1], op.args[2], op.lhs)
         if (call_arg1_type == 'int[]' || call_arg1_type == 'bool[]' || call_arg1_type == 'string[]'):
             if (op.args.length() != 3):
                 throw 'unsupported llvm array contains arity'
@@ -6102,12 +6127,27 @@ string emit_string_byte_at_or_zero_value(ParsedFunction function_ir, string sour
         return '  ' + managed_name + ' = load i1, ptr ' + managed_slot_ref(local_binding.name) + '\n  br i1 ' + managed_name + ', label %' + managed_label + ', label %' + fallback_label + '\n' + managed_label + ':\n  ' + managed_value + ' = call i8 @tb_managed_string_byte_at_or_zero(ptr ' + temp_ref(source_name) + ', i64 ' + temp_ref(index_name) + ')\n  br label %' + done_label + '\n' + fallback_label + ':\n  ' + fallback_value + ' = call i8 @tb_bootstrap_string_byte_at_or_zero(ptr ' + temp_ref(source_name) + ', i64 ' + temp_ref(index_name) + ')\n  br label %' + done_label + '\n' + done_label + ':\n  ' + result_name + ' = phi i8 [' + managed_value + ', %' + managed_label + '], [' + fallback_value + ', %' + fallback_label + ']'
     return '  ' + result_name + ' = call i8 @tb_bootstrap_string_byte_at_or_zero(ptr ' + temp_ref(source_name) + ', i64 ' + temp_ref(index_name) + ')'
 
-string emit_map_contains_value(ParsedFunction function_ir, string result_name, string map_type, string map_name, string key_name):
+string emit_owned_int_array_key_map_receiver_release(ParsedFunction function_ir, string map_type, string map_name, string query_temp_name):
+    if (normalize_llvm_type_name(map_type) != 'map<int[], int>'):
+        return ''
+    if (!temp_needs_backend_free(function_ir, map_name) || temp_is_moved(function_ir, map_name)):
+        return ''
+    if (!temp_is_query_only_use_in_producing_block(function_ir, map_name, query_temp_name)):
+        return ''
+    return emit_backend_release_ptr(map_type, temp_ref(map_name))
+
+string emit_map_contains_value(ParsedFunction function_ir, string result_name, string map_type, string map_name, string key_name, string query_temp_name):
     string key_type = normalize_llvm_type_name(map_key_type(map_type))
     string actual_key_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, key_name))
     if (actual_key_type != key_type):
         throw 'unsupported llvm map contains key type: ' + actual_key_type + '; expected ' + key_type
-    return '  ' + temp_ref(result_name) + ' = call i1 ' + llvm_map_contains_name(map_type) + '(ptr ' + temp_ref(map_name) + ', ' + llvm_type(key_type) + ' ' + temp_ref(key_name) + ')'
+    string line = '  ' + temp_ref(result_name) + ' = call i1 ' + llvm_map_contains_name(map_type) + '(ptr ' + temp_ref(map_name) + ', ' + llvm_type(key_type) + ' ' + temp_ref(key_name) + ')'
+    if (key_type == 'int[]' && temp_needs_backend_free(function_ir, key_name) && !temp_is_moved(function_ir, key_name) && temp_is_query_only_use_in_producing_block(function_ir, key_name, query_temp_name)):
+        line += '\n' + emit_backend_release_ptr('int[]', temp_ref(key_name))
+    string receiver_release = emit_owned_int_array_key_map_receiver_release(function_ir, map_type, map_name, query_temp_name)
+    if (receiver_release != ''):
+        line += '\n' + receiver_release
+    return line
 
 string emit_array_contains_value(ParsedFunction function_ir, string result_name, string array_type, string array_name, string item_name):
     string expected_item_type = array_item_type(array_type)
@@ -6176,13 +6216,25 @@ string emit_map_method_call_value_instruction(ParsedFunction function_ir, Linear
     if (method_name == 'contains'):
         if (op.args.length() != 3):
             throw 'unsupported llvm map contains arity'
-        return emit_map_contains_value(function_ir, op.lhs, method_base_type, op.args[1], op.args[2])
+        return emit_map_contains_value(function_ir, op.lhs, method_base_type, op.args[1], op.args[2], op.lhs)
     if (method_name == 'length'):
-        return '  ' + lhs + '.len32 = call i32 ' + llvm_map_length_name(method_base_type) + '(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64'
+        string result = '  ' + lhs + '.len32 = call i32 ' + llvm_map_length_name(method_base_type) + '(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64'
+        string receiver_release = emit_owned_int_array_key_map_receiver_release(function_ir, method_base_type, op.args[1], op.lhs)
+        if (receiver_release != ''):
+            result += '\n' + receiver_release
+        return result
     if (method_name == 'is_empty'):
-        return '  ' + lhs + '.len32 = call i32 ' + llvm_map_length_name(method_base_type) + '(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = icmp eq i32 ' + temp_ref(op.lhs + '.len32') + ', 0'
+        string result = '  ' + lhs + '.len32 = call i32 ' + llvm_map_length_name(method_base_type) + '(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = icmp eq i32 ' + temp_ref(op.lhs + '.len32') + ', 0'
+        string receiver_release = emit_owned_int_array_key_map_receiver_release(function_ir, method_base_type, op.args[1], op.lhs)
+        if (receiver_release != ''):
+            result += '\n' + receiver_release
+        return result
     if (method_name == 'keys'):
-        return '  ' + lhs + ' = call ptr ' + llvm_map_keys_name(method_base_type) + '(ptr ' + temp_ref(op.args[1]) + ')'
+        string result = '  ' + lhs + ' = call ptr ' + llvm_map_keys_name(method_base_type) + '(ptr ' + temp_ref(op.args[1]) + ')'
+        string receiver_release = emit_owned_int_array_key_map_receiver_release(function_ir, method_base_type, op.args[1], op.lhs)
+        if (receiver_release != ''):
+            result += '\n' + receiver_release
+        return result
     if (method_name == 'values'):
         string value_type = normalize_llvm_type_name(map_value_type(method_base_type))
         if (value_type == 'int[]' || value_type == 'string[]' || value_type == 'bool'):
@@ -6192,7 +6244,11 @@ string emit_map_method_call_value_instruction(ParsedFunction function_ir, Linear
             if (temp_needs_backend_free(function_ir, op.args[1]) && !temp_is_moved(function_ir, op.args[1])):
                 result += '\n' + emit_backend_release_ptr(method_base_type, temp_ref(op.args[1]))
             return result
-        return '  ' + lhs + ' = call ptr ' + llvm_map_values_name(method_base_type) + '(ptr ' + temp_ref(op.args[1]) + ')'
+        string result = '  ' + lhs + ' = call ptr ' + llvm_map_values_name(method_base_type) + '(ptr ' + temp_ref(op.args[1]) + ')'
+        string receiver_release = emit_owned_int_array_key_map_receiver_release(function_ir, method_base_type, op.args[1], op.lhs)
+        if (receiver_release != ''):
+            result += '\n' + receiver_release
+        return result
     return ''
 
 string emit_prio_q_method_call_value_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op, string method_name, string method_base_type):
@@ -6713,6 +6769,14 @@ string emit_index_value_instruction(ParsedFunction function_ir, LinearInstructio
         string record_name = record_name_from_type(array_item_type(base_type))
         return emit_array_index_materialize(base_type, op.args[0], op.args[1], op.lhs) + '\n  ' + lhs + ' = call ptr @tb_bootstrap_record_array_get_' + record_name + '(ptr ' + temp_ref(op.args[0]) + ', i32 ' + llvm_i32_index_temp(op.lhs) + ')'
     if (base_type.starts_with('map<')):
+        if (normalize_llvm_type_name(map_key_type(base_type)) == 'int[]'):
+            string line = '  ' + lhs + ' = call ' + llvm_type(map_value_type(base_type)) + ' ' + llvm_map_get_name(base_type) + '(ptr ' + temp_ref(op.args[0]) + ', ptr ' + temp_ref(op.args[1]) + ')'
+            if (temp_needs_backend_free(function_ir, op.args[1]) && !temp_is_moved(function_ir, op.args[1]) && temp_is_query_only_use_in_producing_block(function_ir, op.args[1], op.lhs)):
+                line += '\n' + emit_backend_release_ptr('int[]', temp_ref(op.args[1]))
+            string receiver_release = emit_owned_int_array_key_map_receiver_release(function_ir, base_type, op.args[0], op.lhs)
+            if (receiver_release != ''):
+                line += '\n' + receiver_release
+            return line
         if (normalize_llvm_type_name(map_key_type(base_type)) == 'int'):
             return '  ' + lhs + ' = call ' + llvm_type(map_value_type(base_type)) + ' ' + llvm_map_get_name(base_type) + '(ptr ' + temp_ref(op.args[0]) + ', i64 ' + temp_ref(op.args[1]) + ')'
         string[] lines = emit_map_key_string_materialize_if_needed(function_ir, op.args[1], 'get.' + op.lhs)
@@ -7019,7 +7083,7 @@ string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, Lin
             return track_scalar_binary('  ' + lhs + ' = or i1 ' + temp_ref(op.args[1]) + ', ' + temp_ref(op.args[2]))
         if (op_name == 'in'):
             if (right_type_normalized.starts_with('map<')):
-                return emit_map_contains_value(function_ir, op.lhs, right_type_normalized, op.args[2], op.args[1])
+                return emit_map_contains_value(function_ir, op.lhs, right_type_normalized, op.args[2], op.args[1], op.lhs)
             if (left_type_normalized == 'string' && right_type_normalized == 'string[]'):
                 string query_line = '  ' + lhs + ' = call i1 @tb_bootstrap_string_array_contains(ptr ' + temp_ref(op.args[2]) + ', ptr ' + temp_ref(op.args[1]) + ')'
                 return emit_array_scalar_query_with_release(function_ir, op.args[2], op.lhs, query_line)
@@ -7034,7 +7098,7 @@ string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, Lin
             throw 'unsupported llvm in operand types: ' + left_type + ' in ' + right_type
         if (op_name == 'not in'):
             if (right_type_normalized.starts_with('map<')):
-                return emit_map_contains_value(function_ir, op.lhs + '.in', right_type_normalized, op.args[2], op.args[1]) + '\n  ' + lhs + ' = xor i1 ' + temp_ref(op.lhs + '.in') + ', true'
+                return emit_map_contains_value(function_ir, op.lhs + '.in', right_type_normalized, op.args[2], op.args[1], op.lhs) + '\n  ' + lhs + ' = xor i1 ' + temp_ref(op.lhs + '.in') + ', true'
             if (left_type_normalized == 'string' && right_type_normalized == 'string[]'):
                 string query_line = '  ' + lhs + '.in = call i1 @tb_bootstrap_string_array_contains(ptr ' + temp_ref(op.args[2]) + ', ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = xor i1 ' + temp_ref(op.lhs + '.in') + ', true'
                 return emit_array_scalar_query_with_release(function_ir, op.args[2], op.lhs, query_line)
@@ -7100,6 +7164,11 @@ string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, Lin
         return track_method_value(method_line)
     if (op.detail == 'target-index'):
         string base_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0]))
+        if (base_type == 'map<int[], int>'):
+            string line = '  ' + lhs + ' = call ptr @tb_bootstrap_int_array_clone(ptr ' + temp_ref(op.args[1]) + ')'
+            if (temp_needs_backend_free(function_ir, op.args[1]) && !temp_is_moved(function_ir, op.args[1]) && temp_is_query_only_use_in_producing_block(function_ir, op.args[1], op.lhs)):
+                line += '\n' + emit_backend_release_ptr('int[]', temp_ref(op.args[1]))
+            return line
         if (base_type.starts_with('map<') && normalize_llvm_type_name(map_key_type(base_type)) == 'string'):
             string map_value = normalize_llvm_type_name(map_value_type(base_type))
             if (map_value == 'bool[]' || llvm_map_value_is_grid_or_record_array(map_value)):
@@ -7110,12 +7179,22 @@ string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, Lin
         return '  ' + lhs + ' = select i1 true, ' + index_type + ' ' + temp_ref(op.args[1]) + ', ' + index_type + ' ' + temp_ref(op.args[1])
     if (op.detail == 'assign-index-key'):
         string base_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0]))
+        if (base_type == 'map<int[], int>'):
+            string line = '  ' + lhs + ' = call ptr @tb_bootstrap_int_array_clone(ptr ' + temp_ref(op.args[1]) + ')'
+            if (temp_needs_backend_free(function_ir, op.args[1]) && !temp_is_moved(function_ir, op.args[1]) && temp_is_query_only_use_in_producing_block(function_ir, op.args[1], op.lhs)):
+                line += '\n' + emit_backend_release_ptr('int[]', temp_ref(op.args[1]))
+            return line
         if (base_type.starts_with('map<') && normalize_llvm_type_name(map_key_type(base_type)) == 'string'):
             string map_value = normalize_llvm_type_name(map_value_type(base_type))
             if (map_value == 'bool[]' || llvm_map_value_is_grid_or_record_array(map_value)):
                 return '  ' + lhs + ' = call ptr @tb_bootstrap_string_copy(ptr ' + temp_ref(op.args[1]) + ')'
         string index_type = llvm_type(normalize_llvm_type_name(op.result_type))
         return '  ' + lhs + ' = select i1 true, ' + index_type + ' ' + temp_ref(op.args[1]) + ', ' + index_type + ' ' + temp_ref(op.args[1])
+    if (op.detail == 'map-key-snapshot'):
+        string line = '  ' + lhs + ' = call ptr @tb_bootstrap_int_array_clone(ptr ' + temp_ref(op.args[0]) + ')'
+        if (temp_needs_backend_free(function_ir, op.args[0]) && !temp_is_moved(function_ir, op.args[0]) && temp_is_query_only_use_in_producing_block(function_ir, op.args[0], op.lhs)):
+            line += '\n' + emit_backend_release_ptr('int[]', temp_ref(op.args[0]))
+        return line
     if (op.detail == 'index'):
         return emit_index_value_instruction(function_ir, op)
     if (op.detail == 'slice'):
@@ -7165,7 +7244,7 @@ bool conditional_carrier_can_own(ProgramIR program, string type_name, int record
         return true
     if (type_name.starts_with('map<')):
         string key_type = map_key_type(type_name)
-        if (key_type != 'int' && key_type != 'string'):
+        if (key_type != 'int' && key_type != 'string' && key_type != 'int[]'):
             return false
         return conditional_carrier_can_own(program, map_value_type(type_name), record_depth)
     string record_name = record_name_from_type(type_name)
@@ -7831,6 +7910,18 @@ string emit_assign_index_add_instruction(ProgramIR program, ParsedFunction funct
         return emit_array_index_materialize(base_type, op.args[0], op.args[1], 'assign.add.' + temp_suffix) + '\n  %assign.add.old.' + temp_suffix + ' = call i64 @tb_bootstrap_int_array_get(ptr ' + temp_ref(op.args[0]) + ', i32 ' + index_name + ')\n  %assign.add.new.' + temp_suffix + ' = add i64 %assign.add.old.' + temp_suffix + ', ' + temp_ref(op.args[2]) + '\n  call void @tb_bootstrap_int_array_set(ptr ' + temp_ref(op.args[0]) + ', i32 ' + index_name + ', i64 %assign.add.new.' + temp_suffix + ')'
     if (base_type == 'map<int, int>'):
         return '  call void ' + llvm_map_increment_by_key_name(base_type) + '(ptr ' + temp_ref(op.args[0]) + ', i64 ' + temp_ref(op.args[1]) + ', i64 ' + temp_ref(op.args[2]) + ')'
+    if (base_type == 'map<int[], int>'):
+        string old_name = temp_ref('assign.add.old.' + temp_suffix)
+        string new_name = temp_ref('assign.add.new.' + temp_suffix)
+        string[] lines = [
+            '  ' + old_name + ' = call i64 ' + llvm_map_get_name(base_type) + '(ptr ' + temp_ref(op.args[0]) + ', ptr ' + temp_ref(op.args[1]) + ')',
+            '  ' + new_name + ' = add i64 ' + old_name + ', ' + temp_ref(op.args[2]),
+            '  call void ' + llvm_map_set_by_key_name(base_type) + '(ptr ' + temp_ref(op.args[0]) + ', ptr ' + temp_ref(op.args[1]) + ', i64 ' + new_name + ', i1 false)'
+        ]
+        string key_release = emit_owned_map_target_key_release(function_ir, op.args[1])
+        if (key_release != ''):
+            lines.push(key_release)
+        return join_llvm_strings(lines, '\n')
     return emit_assign_index_instruction(program, function_ir, LinearInstruction('assign_index', '', '', '', '', op.args), temp_suffix)
 
 string emit_assign_index_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op, string temp_suffix):
@@ -7940,7 +8031,7 @@ string emit_assign_index_instruction(ProgramIR program, ParsedFunction function_
                 if (temp_is_record_array(function_ir, op.args[2]) && !temp_needs_backend_free(function_ir, op.args[2])):
                     stored_value = emit_record_array_owned_value(function_ir, op.args[2], 'index.' + temp_suffix)
             stored_owned = 'true'.substring(0)
-            if (normalize_llvm_type_name(map_key_type(base_type)) == 'int'):
+            if (normalize_llvm_type_name(map_key_type(base_type)) == 'int' || normalize_llvm_type_name(map_key_type(base_type)) == 'int[]'):
                 lines.push(emit_release_index_instruction(program, function_ir, LinearInstruction('release_index', '', '', '', '', [op.args[0], map_key_temp]), 'map.replace.' + temp_suffix))
             else:
                 LinearInstruction key_instruction = lookup_temp_instruction(function_ir, op.args[1])
@@ -7968,7 +8059,12 @@ string emit_assign_index_instruction(ProgramIR program, ParsedFunction function_
             if (temp_is_record(function_ir, op.args[2]) && !temp_needs_backend_free(function_ir, op.args[2])):
                 stored_value = emit_record_owned_value(function_ir, op.args[2], 'index.' + temp_suffix)
             stored_owned = 'true'
-        if (normalize_llvm_type_name(map_key_type(base_type)) == 'int'):
+        if (normalize_llvm_type_name(map_key_type(base_type)) == 'int[]'):
+            lines.push('  call void ' + llvm_map_set_by_key_name(base_type) + '(ptr ' + temp_ref(op.args[0]) + ', ptr ' + temp_ref(map_key_temp) + ', ' + llvm_type(value_type) + ' ' + stored_value + ', i1 ' + stored_owned + ')')
+            string key_release = emit_owned_map_target_key_release(function_ir, op.args[1])
+            if (key_release != ''):
+                lines.push(key_release)
+        else if (normalize_llvm_type_name(map_key_type(base_type)) == 'int'):
             lines.push('  call void ' + llvm_map_set_by_key_name(base_type) + '(ptr ' + temp_ref(op.args[0]) + ', i64 ' + temp_ref(map_key_temp) + ', ' + llvm_type(value_type) + ' ' + stored_value + ', i1 ' + stored_owned + ')')
         else:
             for (string line in emit_map_key_string_materialize_if_needed(function_ir, map_key_temp, 'assign.' + temp_suffix)):
@@ -8106,18 +8202,61 @@ string emit_instruction(ProgramIR program, ParsedFunction function_ir, string bl
         string state_ref = '%tb.exc.state.' + temp_suffix
         string caught_ref = '%tb.exc.caught.' + temp_suffix
         string continue_label = try_continue_label(temp_suffix)
+        string[] lines = []
+        if (!op.detail.starts_with('map.key.guard.catch.')):
+            lines.push('  ' + env_ref + ' = alloca [192 x i8]')
+            lines.push('  ' + prev_slot_ref + ' = alloca ptr')
+        lines.push('  ' + prev_value_ref + ' = load ptr, ptr ' + exception_handler_symbol())
+        lines.push('  store ptr ' + prev_value_ref + ', ptr ' + prev_slot_ref)
+        lines.push('  ' + env_ptr_ref + ' = getelementptr [192 x i8], ptr ' + env_ref + ', i32 0, i32 0')
+        lines.push('  store ptr ' + env_ptr_ref + ', ptr ' + exception_handler_symbol())
+        lines.push('  ' + state_ref + ' = call i32 @setjmp(ptr ' + env_ptr_ref + ')')
+        lines.push('  ' + caught_ref + ' = icmp ne i32 ' + state_ref + ', 0')
+        lines.push('  br i1 ' + caught_ref + ', label %' + op.detail + ', label %' + continue_label)
+        lines.push(continue_label + ':')
+        return join_llvm_strings(lines, '\n')
+    if (op.kind == 'map_key_guard_snapshot'):
+        string try_suffix = catch_try_suffix(function_ir, op.detail)
+        if (try_suffix == '' || op.args.is_empty()):
+            throw 'map key assignment guard is missing its try site'
+        return '  store ptr ' + temp_ref(op.args[0]) + ', ptr ' + map_key_guard_snapshot_slot_ref(try_suffix)
+    if (op.kind == 'map_key_guard_normal'):
+        string try_suffix = catch_try_suffix(function_ir, op.detail)
+        if (try_suffix == ''):
+            throw 'map key assignment guard is missing its try site'
+        string slot_ref = map_key_guard_snapshot_slot_ref(try_suffix)
         return join_llvm_strings([
-            '  ' + env_ref + ' = alloca [192 x i8]',
-            '  ' + prev_slot_ref + ' = alloca ptr',
-            '  ' + prev_value_ref + ' = load ptr, ptr ' + exception_handler_symbol(),
-            '  store ptr ' + prev_value_ref + ', ptr ' + prev_slot_ref,
-            '  ' + env_ptr_ref + ' = getelementptr [192 x i8], ptr ' + env_ref + ', i32 0, i32 0',
-            '  store ptr ' + env_ptr_ref + ', ptr ' + exception_handler_symbol(),
-            '  ' + state_ref + ' = call i32 @setjmp(ptr ' + env_ptr_ref + ')',
-            '  ' + caught_ref + ' = icmp ne i32 ' + state_ref + ', 0',
-            '  br i1 ' + caught_ref + ', label %' + op.detail + ', label %' + continue_label,
-            continue_label + ':'
+            '  %tb.map.key.guard.normal.' + temp_suffix + ' = load ptr, ptr ' + slot_ref,
+            '  call void @tb_bootstrap_int_array_free(ptr %tb.map.key.guard.normal.' + temp_suffix + ')',
+            '  store ptr null, ptr ' + slot_ref
         ], '\n')
+    if (op.kind == 'map_key_guard_exception'):
+        string try_suffix = catch_try_suffix(function_ir, op.detail)
+        if (try_suffix == ''):
+            throw 'map key assignment guard is missing its try site'
+        string slot_ref = map_key_guard_snapshot_slot_ref(try_suffix)
+        string prev_ref = '%tb.map.key.guard.prev.' + temp_suffix
+        string snapshot_ref = '%tb.map.key.guard.exception.snapshot.' + temp_suffix
+        string has_handler_ref = '%tb.map.key.guard.has.handler.' + temp_suffix
+        string unwind_label = 'tb.map.key.guard.unwind.' + temp_suffix
+        string fatal_label = 'tb.map.key.guard.fatal.' + temp_suffix
+        string message_ref = '%tb.map.key.guard.message.' + temp_suffix
+        string[] lines = emit_try_restore_lines(try_suffix, temp_suffix)
+        lines.push('  ' + snapshot_ref + ' = load ptr, ptr ' + slot_ref)
+        lines.push('  call void @tb_bootstrap_int_array_free(ptr ' + snapshot_ref + ')')
+        lines.push('  store ptr null, ptr ' + slot_ref)
+        lines.push('  ' + prev_ref + ' = load ptr, ptr ' + exception_handler_symbol())
+        lines.push('  ' + has_handler_ref + ' = icmp ne ptr ' + prev_ref + ', null')
+        lines.push('  br i1 ' + has_handler_ref + ', label %' + unwind_label + ', label %' + fatal_label)
+        lines.push(unwind_label + ':')
+        lines.push('  call void @longjmp(ptr ' + prev_ref + ', i32 1)')
+        lines.push('  unreachable')
+        lines.push(fatal_label + ':')
+        lines.push('  ' + message_ref + ' = load ptr, ptr ' + exception_message_symbol())
+        lines.push('  call i32 @puts(ptr ' + message_ref + ')')
+        lines.push('  call void @exit(i32 1)')
+        lines.push('  unreachable')
+        return join_llvm_strings(lines, '\n')
     if (op.kind == 'catch'):
         string try_suffix = catch_try_suffix(function_ir, block_label)
         string[] lines = emit_try_restore_lines(try_suffix, temp_suffix)
@@ -8205,6 +8344,9 @@ string emit_instruction(ProgramIR program, ParsedFunction function_ir, string bl
     throw 'unsupported llvm instruction kind: ' + op.kind
 
 string[] emit_terminator(ParsedFunction function_ir, BlockIR block, TerminatorIR terminator, string temp_suffix):
+    if (terminator.kind == 'guard_unreachable'):
+        string[] empty = []
+        return empty
     if (terminator.kind == 'jump'):
         string[] lines = []
         int catch_block_index = enclosing_try_catch_block_index(function_ir, block.label)
@@ -8588,6 +8730,17 @@ string[] emit_allocas(ParsedFunction function_ir, bool bootstrap_main_args):
             lines.push('  store i1 false, ptr ' + managed_slot_ref(local_decl.name))
         if (llvm_type(local_decl.type_name) == 'ptr'):
             lines.push('  store ptr null, ptr ' + slot_ref(local_decl.name))
+    for (BlockIR block in function_ir.blocks):
+        int instruction_index = 0
+        for (LinearInstruction op in block.instructions):
+            if (op.kind == 'try'):
+                string try_suffix = block.label + '.' + instruction_index.to_string()
+                if (op.detail.starts_with('map.key.guard.catch.')):
+                    lines.push('  ' + try_env_ref(try_suffix) + ' = alloca [192 x i8]')
+                    lines.push('  ' + try_prev_slot_ref(try_suffix) + ' = alloca ptr')
+                    lines.push('  ' + map_key_guard_snapshot_slot_ref(try_suffix) + ' = alloca ptr')
+                    lines.push('  store ptr null, ptr ' + map_key_guard_snapshot_slot_ref(try_suffix))
+            instruction_index += 1
     return lines
 
 void append_plain_function_lines(string[] lines, ProgramIR program, ParsedFunction function_ir, string emitted_name, bool needs_runtime_global_init):
@@ -8697,6 +8850,8 @@ bool global_has_static_initializer(ProgramIR program, GlobalDeclIR global_decl):
     if (type_name == 'string[]'):
         return false
     if (type_name == 'map<string, string[]>'):
+        return false
+    if (type_name == 'map<int[], int>'):
         return false
     if (record_name_from_type(type_name) != ''):
         if (record_global_needs_runtime_init(program, record_name_from_type(type_name))):
@@ -9638,9 +9793,9 @@ string[] emit_record_array_helpers(string record_name):
 string emit_map_type(string type_name):
     string key_type = normalize_llvm_type_name(map_key_type(type_name))
     string value_type = normalize_llvm_type_name(map_value_type(type_name))
-    if (key_type != 'string' && key_type != 'int'):
+    if (key_type != 'string' && key_type != 'int' && key_type != 'int[]'):
         throw 'unsupported llvm map key type: ' + key_type
-    if (key_type == 'string'):
+    if (key_type == 'string' || key_type == 'int[]'):
         return llvm_map_type_name(type_name) + ' = type { i32, i32, ptr, ptr, ptr, ptr, ptr }'
     if (key_type == 'int' && value_type == 'int'):
         return llvm_map_type_name(type_name) + ' = type { i32, i32, ptr, ptr, ptr }'
@@ -9649,7 +9804,7 @@ string emit_map_type(string type_name):
 string[] emit_map_helpers(string type_name):
     string key_type = normalize_llvm_type_name(map_key_type(type_name))
     string value_type = normalize_llvm_type_name(map_value_type(type_name))
-    if (key_type != 'string' && key_type != 'int'):
+    if (key_type != 'string' && key_type != 'int' && key_type != 'int[]'):
         throw 'unsupported llvm map key type: ' + key_type
     require_backend_value_type(value_type, 'map value')
     string map_struct = llvm_map_type_name(type_name)
@@ -9674,8 +9829,11 @@ string[] emit_map_helpers(string type_name):
         lines = replace_llvm_template_lines(lines, '__MAP_STRUCT__', map_struct)
         return lines
     string[] lines = []
-    if (key_type == 'string'):
-        lines = llvm_embedded_helper_text('map_string_key.ll').split_lines()
+    if (key_type == 'string' || key_type == 'int[]'):
+        if (key_type == 'int[]'):
+            lines = llvm_embedded_helper_text('map_int_array_key.ll').split_lines()
+        else:
+            lines = llvm_embedded_helper_text('map_string_key.ll').split_lines()
     else:
         lines = llvm_embedded_helper_text('map_base.ll').split_lines()
     lines = replace_llvm_template_lines(lines, '__MAP_NEW_NAME__', llvm_map_new_name(type_name))
@@ -9729,7 +9887,7 @@ string[] emit_map_helpers(string type_name):
         lines.push('  store i32 %next.len, ptr %len.ptr')
         lines.push('  ret void')
         lines.push('}')
-    if (key_type == 'string'):
+    if (key_type == 'string' || key_type == 'int[]'):
         lines = replace_llvm_template_lines(lines, '__MAP_REHASH_INSERT_NAME__', '@' + llvm_map_suffix(type_name) + '_rehash_insert')
         lines = replace_llvm_template_lines(lines, '__MAP_GROW_NAME__', '@' + llvm_map_suffix(type_name) + '_grow')
 
@@ -9755,6 +9913,21 @@ string[] emit_map_helpers(string type_name):
         free_key_lines = [
             '  %key.value = load ptr, ptr %key.slot',
             '  call void @tb_release(ptr %key.value)'
+        ]
+    else if (key_type == 'int[]'):
+        key_compare_lines = ['  %key.match = call i1 @tb_bootstrap_int_array_equals(ptr %key.value, ptr %key)']
+        insert_key_lines = [
+            '  %insert.key = call ptr @tb_bootstrap_int_array_clone(ptr %key)',
+            '  store ptr %insert.key, ptr %new.key.slot'
+        ]
+        keys_result_lines = [
+            '  %key.copy = call ptr @tb_bootstrap_int_array_clone(ptr %key.value)',
+            '  call void @tb_bootstrap_int_array_array_set_owned(ptr %result, i32 %index, ptr %key.copy, i1 true)'
+        ]
+        clone_key_copy_lines = ['  %key.copy = call ptr @tb_bootstrap_int_array_clone(ptr %key.value)']
+        free_key_lines = [
+            '  %key.value = load ptr, ptr %key.slot',
+            '  call void @tb_bootstrap_int_array_free(ptr %key.value)'
         ]
     lines = replace_llvm_template_block_lines(lines, '__KEY_COMPARE_GET__', key_compare_lines)
     lines = replace_llvm_template_block_lines(lines, '__KEY_COMPARE_CONTAINS__', key_compare_lines)
@@ -9793,6 +9966,35 @@ string[] emit_map_helpers(string type_name):
             '  %value.raw = load ' + value_llvm_type + ', ptr %value.slot',
             '  %value.text = call ptr @tb_bootstrap_int_to_string(i64 %value.raw)',
             '  call void @tb_bootstrap_string_array_set_owned(ptr %result, i32 %index, ptr %value.text, i1 true)',
+            '  br label %loop.step',
+            'loop.step:',
+            '  %next.index = add i32 %index, 1',
+            '  br label %loop.cond',
+            'done:',
+            '  ret ptr %result',
+            '}'
+        ]
+    else if (key_type == 'int[]' && value_type == 'int'):
+        values_block_lines = [
+            'define private ptr ' + llvm_map_values_name(type_name) + '(ptr %map) {',
+            'entry:',
+            '  %len = call i32 ' + llvm_map_length_name(type_name) + '(ptr %map)',
+            '  %result = call ptr @tb_bootstrap_int_array_new(i32 %len)',
+            '  %order.ptr = getelementptr inbounds ' + map_struct + ', ptr %map, i32 0, i32 6',
+            '  %order = load ptr, ptr %order.ptr',
+            '  %values.ptr = getelementptr inbounds ' + map_struct + ', ptr %map, i32 0, i32 3',
+            '  %values = load ptr, ptr %values.ptr',
+            '  br label %loop.cond',
+            'loop.cond:',
+            '  %index = phi i32 [0, %entry], [%next.index, %loop.step]',
+            '  %keep.loop = icmp slt i32 %index, %len',
+            '  br i1 %keep.loop, label %loop.body, label %done',
+            'loop.body:',
+            '  %order.slot = getelementptr inbounds i32, ptr %order, i32 %index',
+            '  %slot = load i32, ptr %order.slot',
+            '  %value.slot = getelementptr inbounds i64, ptr %values, i32 %slot',
+            '  %value.raw = load i64, ptr %value.slot',
+            '  call void @tb_bootstrap_int_array_set(ptr %result, i32 %index, i64 %value.raw)',
             '  br label %loop.step',
             'loop.step:',
             '  %next.index = add i32 %index, 1',
@@ -9950,6 +10152,35 @@ string[] emit_map_helpers(string type_name):
         values_block_lines.push('done:')
         values_block_lines.push('  ret ptr %result')
         values_block_lines.push('}')
+    else if (key_type == 'int[]' && value_type == 'int'):
+        values_block_lines = [
+            'define private ptr ' + llvm_map_values_name(type_name) + '(ptr %map) {',
+            'entry:',
+            '  %len = call i32 ' + llvm_map_length_name(type_name) + '(ptr %map)',
+            '  %result = call ptr @tb_bootstrap_int_array_new(i32 %len)',
+            '  %order.ptr = getelementptr inbounds ' + map_struct + ', ptr %map, i32 0, i32 6',
+            '  %order = load ptr, ptr %order.ptr',
+            '  %values.ptr = getelementptr inbounds ' + map_struct + ', ptr %map, i32 0, i32 3',
+            '  %values = load ptr, ptr %values.ptr',
+            '  br label %loop.cond',
+            'loop.cond:',
+            '  %index = phi i32 [0, %entry], [%next.index, %loop.step]',
+            '  %keep.loop = icmp slt i32 %index, %len',
+            '  br i1 %keep.loop, label %loop.body, label %done',
+            'loop.body:',
+            '  %order.slot = getelementptr inbounds i32, ptr %order, i32 %index',
+            '  %slot = load i32, ptr %order.slot',
+            '  %value.slot = getelementptr inbounds ' + value_llvm_type + ', ptr %values, i32 %slot',
+            '  %value = load i64, ptr %value.slot',
+            '  call void @tb_bootstrap_int_array_set(ptr %result, i32 %index, i64 %value)',
+            '  br label %loop.step',
+            'loop.step:',
+            '  %next.index = add i32 %index, 1',
+            '  br label %loop.cond',
+            'done:',
+            '  ret ptr %result',
+            '}'
+        ]
     else if (value_type == 'int'):
         values_block_lines = [
             'define private ptr ' + llvm_map_values_name(type_name) + '(ptr %map) {',
@@ -10276,9 +10507,9 @@ string[] llvm_codegen_ir(ProgramIR program):
         lines.push('declare i32 @printf(ptr, ...)')
     if (needs_int_set):
         lines.push('declare i32 @putchar(i32)')
-    if (needs_print_string || needs_print_bool || needs_throw):
+    if (needs_print_string || needs_print_bool || needs_throw || needs_try_catch):
         lines.push('declare i32 @puts(ptr)')
-    if (needs_throw || needs_read_lines || needs_read_file || needs_write_all):
+    if (needs_throw || needs_try_catch || needs_read_lines || needs_read_file || needs_write_all):
         lines.push('declare void @exit(i32)')
     if (needs_strcmp || needs_string_search || needs_string_array_helpers):
         lines.push('declare i32 @strcmp(ptr, ptr)')
@@ -10622,10 +10853,10 @@ void llvm_print_ir(ProgramIR program):
     if (needs_int_set):
         print('declare i32 @putchar(i32)')
         emitted_any_header = true
-    if (needs_print_string || needs_print_bool || needs_throw):
+    if (needs_print_string || needs_print_bool || needs_throw || needs_try_catch):
         print('declare i32 @puts(ptr)')
         emitted_any_header = true
-    if (needs_throw || needs_read_lines || needs_read_file || needs_write_all):
+    if (needs_throw || needs_try_catch || needs_read_lines || needs_read_file || needs_write_all):
         print('declare void @exit(i32)')
         emitted_any_header = true
     if (needs_strcmp || needs_string_search || needs_string_array_helpers):

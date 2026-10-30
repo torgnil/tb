@@ -1,0 +1,57 @@
+record MapHolder(map<int[], int> values);
+
+int[] plain_key = [1]
+int[] compound_key = [10]
+
+int mutate_plain_key():
+    plain_key[0] = 2
+    return 5
+
+int mutate_compound_key():
+    compound_key[0] = 20
+    return 3
+
+map<int[], int> forward_map(map<int[], int> source):
+    return source
+
+int main():
+    map<int[], int> source = {[1, 2]: 12}
+    map<int[], int> copied = source
+    copied[[1, 2]] = 99
+    copied[[3, 4]] = 34
+    print(source[[1, 2]])
+    print(source[[3, 4]])
+    print(copied[[1, 2]])
+    source = source
+    print(source[[1, 2]])
+
+    map<int[], int> second = {[5, 6]: 56}
+    copied = second
+    print(copied[[1, 2]])
+    print(copied[[5, 6]])
+
+    map<int[], int> through_function = forward_map(source)
+    through_function[[1, 2]] = 77
+    print(source[[1, 2]])
+    print(through_function[[1, 2]])
+
+    MapHolder holder = MapHolder(source)
+    source[[1, 2]] = 88
+    print(holder.values[[1, 2]])
+    print(source[[1, 2]])
+
+    map<int[], int> writes = {}
+    writes[[1]] = 0
+    writes[plain_key] = mutate_plain_key()
+    print(writes[[1]])
+    print(writes[[2]])
+
+    writes[compound_key] = 4
+    writes[compound_key] += mutate_compound_key()
+    print(writes[[10]])
+    print(writes[[20]])
+
+    writes[[50]] = 2
+    writes[[50]] += 1
+    print(writes[[50]])
+    return 0

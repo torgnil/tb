@@ -269,6 +269,15 @@ RefineInstructionsResult contextualize_call_array_literal(LinearInstruction[] in
         temp_types = set_temp_type_slot(temp_types, array_name, normalized_expected_type)
     return RefineInstructionsResult(instructions, temp_types)
 
+RefineInstructionsResult contextualize_array_map_key(LinearInstruction[] instructions, string[] temp_types, string map_name, string key_name):
+    string map_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, map_name))
+    if (map_type != 'map<int[], int>'):
+        return RefineInstructionsResult(instructions, temp_types)
+    string key_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, key_name))
+    if (!is_untyped_array_shape(key_type)):
+        return RefineInstructionsResult(instructions, temp_types)
+    return contextualize_call_array_literal(instructions, temp_types, key_name, 'int[]')
+
 bool is_builtin_ufcs_array_context_name(string method_name):
     # Conservative eligibility check, not the compiler's authoritative dispatch resolver.
     FunctionSigIR[] empty_functions = []
@@ -673,6 +682,45 @@ bool validate_integer_enum_declared_types(ProgramIR program, EnumTypeIR[] enums)
             validate_integer_enum_declared_type(local.type_name, enums)
     return true
 
+bool type_contains_unsupported_array_map_key_inner(string type_name, bool allow_root_array_key_map):
+    string normalized_type = normalize_llvm_type_name(type_name)
+    if (normalized_type.starts_with('map<') && normalized_type.ends_with('>')):
+        string key_type = normalize_llvm_type_name(map_key_type(normalized_type))
+        string value_type = normalize_llvm_type_name(map_value_type(normalized_type))
+        if (key_type == 'int[]' && (normalized_type != 'map<int[], int>' || !allow_root_array_key_map)):
+            return true
+        return type_contains_unsupported_array_map_key_inner(key_type, false) || type_contains_unsupported_array_map_key_inner(value_type, false)
+    if (normalized_type.ends_with('[]')):
+        return type_contains_unsupported_array_map_key_inner(array_item_type(normalized_type), false)
+    return false
+
+bool type_contains_unsupported_array_map_key(string type_name):
+    return type_contains_unsupported_array_map_key_inner(type_name, true)
+
+void validate_int_array_map_key_type(string type_name):
+    if (type_contains_unsupported_array_map_key(type_name)):
+        throw 'int[] map keys are only supported for map<int[], int>: ' + type_name
+
+void validate_int_array_map_key_types(ProgramIR program):
+    for (GlobalDeclIR global_decl in program.globals):
+        BindingIR binding = ir_parse_binding_decl(strip_prefix(global_decl.header, 'global '))
+        validate_int_array_map_key_type(binding.type_name)
+        for (LinearInstruction op in global_decl.instructions):
+            validate_int_array_map_key_type(op.result_type)
+    for (RecordDeclIR record_decl in program.records):
+        for (string field in record_decl.fields):
+            BindingIR binding = ir_parse_binding_decl(strip_prefix(field, 'field '))
+            validate_int_array_map_key_type(binding.type_name)
+    for (ParsedFunction function_ir in program.functions):
+        validate_int_array_map_key_type(function_ir.return_type)
+        for (BindingIR param in function_ir.params):
+            validate_int_array_map_key_type(param.type_name)
+        for (BindingIR local in function_ir.locals):
+            validate_int_array_map_key_type(local.type_name)
+        for (BlockIR block in function_ir.blocks):
+            for (LinearInstruction op in block.instructions):
+                validate_int_array_map_key_type(op.result_type)
+
 BindingIR normalize_enum_binding(BindingIR binding, EnumTypeIR[] enums):
     return BindingIR(normalize_enum_type_name(binding.type_name, enums), binding.name)
 
@@ -732,11 +780,56 @@ RefineInstructionsResult contextualize_map_literal_rows(LinearInstruction[] inst
     string row_type = normalize_llvm_type_name(map_value_type(normalized_expected_type))
     bool array_rows = is_supported_empty_map_array_value_type(record_names, row_type)
     bool map_rows = row_type.starts_with('map<') && row_type.ends_with('>')
-    if ((key_type != 'int' && key_type != 'string') || (!array_rows && !map_rows)):
+    bool array_key_map = key_type == 'int[]' && row_type == 'int'
+    if ((key_type != 'int' && key_type != 'string' && !array_key_map) || (!array_key_map && !array_rows && !map_rows)):
         return RefineInstructionsResult(instructions, temp_types)
     LinearInstruction map_op = lookup_instruction(instructions, map_name)
     if (map_op.lhs != map_name || map_op.kind != 'value' || map_op.detail != 'map' || map_op.args.is_empty()):
         return RefineInstructionsResult(instructions, temp_types)
+    if (array_key_map):
+        string[] key_sources = []
+        string[] key_snapshots = []
+        int next_temp_index = temp_types.length()
+        int key_index = 0
+        while (key_index + 1 < map_op.args.length()):
+            string key_name = map_op.args[key_index]
+            string actual_key_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, key_name))
+            if (is_untyped_array_shape(actual_key_type)):
+                RefineInstructionsResult contextual_key = contextualize_call_array_literal(instructions, temp_types, key_name, 'int[]')
+                instructions = contextual_key.instructions
+                temp_types = contextual_key.temp_types
+                actual_key_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, key_name))
+            if (actual_key_type != 'int[]'):
+                throw 'map literal key requires int[]; got ' + actual_key_type
+            LinearInstruction key_op = lookup_instruction(instructions, key_name)
+            if (key_op.detail != 'map-key-snapshot'):
+                key_sources.push(key_name)
+                key_snapshots.push('t' + next_temp_index.to_string())
+                next_temp_index += 1
+            key_index += 2
+        if (!key_sources.is_empty()):
+            string[] new_map_args = []
+            for (string argument in map_op.args):
+                new_map_args.push(argument)
+            key_index = 0
+            while (key_index + 1 < new_map_args.length()):
+                for (int snapshot_index = 0; snapshot_index < key_sources.length(); snapshot_index += 1):
+                    if (new_map_args[key_index] == key_sources[snapshot_index]):
+                        new_map_args[key_index] = key_snapshots[snapshot_index]
+                key_index += 2
+            LinearInstruction[] snapped_instructions = []
+            for (LinearInstruction instruction in instructions):
+                if (instruction.lhs == map_name && instruction.kind == 'value' && instruction.detail == 'map'):
+                    snapped_instructions.push(LinearInstruction(instruction.kind, instruction.lhs, instruction.result_type, instruction.ownership_mode, instruction.detail, new_map_args))
+                else:
+                    snapped_instructions.push(instruction)
+                for (int snapshot_index = 0; snapshot_index < key_sources.length(); snapshot_index += 1):
+                    if (instruction.lhs == key_sources[snapshot_index]):
+                        snapped_instructions.push(LinearInstruction('value', key_snapshots[snapshot_index], 'int[]', 'owned', 'map-key-snapshot', [key_sources[snapshot_index]]))
+            instructions = snapped_instructions
+            for (int snapshot_index = 0; snapshot_index < key_snapshots.length(); snapshot_index += 1):
+                temp_types = set_temp_type_slot(temp_types, key_snapshots[snapshot_index], 'int[]')
+            map_op = lookup_instruction(instructions, map_name)
     bool changed_row = false
     int index = 0
     while (index + 1 < map_op.args.length()):
@@ -748,7 +841,7 @@ RefineInstructionsResult contextualize_map_literal_rows(LinearInstruction[] inst
         if (empty_array_literal || empty_map_literal):
             changed_row = true
         index += 2
-    if (!changed_row):
+    if (!changed_row && !array_key_map):
         return RefineInstructionsResult(instructions, temp_types)
     index = 0
     while (index + 1 < map_op.args.length()):
@@ -850,6 +943,36 @@ int temp_slot_index(string name):
         value = value * 10 + digit
         index += 1
     return value
+
+int max_temp_slot_index(LinearInstruction[] instructions):
+    int max_index = -1
+    for (LinearInstruction op in instructions):
+        int index = temp_slot_index(op.lhs)
+        if (index > max_index):
+            max_index = index
+    return max_index
+
+string[] unknown_temp_type_slots(int slot_count):
+    string[] slots = []
+    while (slots.length() < slot_count):
+        slots.push('unknown')
+    return slots
+
+int max_function_temp_slot_index(ParsedFunction function_ir):
+    int max_index = -1
+    for (BlockIR block in function_ir.blocks):
+        int block_max = max_temp_slot_index(block.instructions)
+        if (block_max > max_index):
+            max_index = block_max
+    return max_index
+
+int max_global_temp_slot_index(GlobalDeclIR[] globals):
+    int max_index = -1
+    for (GlobalDeclIR global_decl in globals):
+        int global_max = max_temp_slot_index(global_decl.instructions)
+        if (global_max > max_index):
+            max_index = global_max
+    return max_index
 
 string[] set_temp_type_slot(string[] slots, string name, string type_name):
     int index = temp_slot_index(name)
@@ -1136,9 +1259,13 @@ string infer_method_call_type(string method_name, string base_type, FunctionSigI
     if (method_name == 'hash' && is_native_query_receiver_type(method_name, base_type)):
         return 'int'
     if (method_name == 'keys' && base_type.starts_with('map<')):
+        if (normalize_llvm_type_name(map_key_type(base_type)) == 'int[]'):
+            return 'int[][]'
         return 'string[]'
     if (method_name == 'values' && base_type.starts_with('map<')):
         string value_type = map_value_type(base_type)
+        if (normalize_llvm_type_name(map_key_type(base_type)) == 'int[]' && normalize_llvm_type_name(value_type) == 'int'):
+            return 'int[]'
         if (value_type == 'int[]'):
             return 'int[][]'
         if (value_type == 'string[]'):
@@ -1995,11 +2122,19 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
         if (op.args.length() < 2):
             return op
         string index_type = lookup_temp_type_slot(temp_types, op.args[1])
+        string target_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[0]))
+        if (target_type == 'map<int[], int>'):
+            return refined_value_op(op, index_type, 'owned')
         return refined_value_op(op, index_type, refine_ownership_mode(op, index_type))
+    if (op.detail == 'map-key-snapshot'):
+        return refined_value_op(op, 'int[]', 'owned')
     if (op.detail == 'assign-index-key'):
         if (op.args.length() < 2):
             return op
         string index_type = lookup_temp_type_slot(temp_types, op.args[1])
+        string target_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[0]))
+        if (target_type == 'map<int[], int>'):
+            return refined_value_op(op, index_type, 'owned')
         return refined_value_op(op, index_type, refine_ownership_mode(op, index_type))
     if (op.detail == 'index'):
         if (op.args.is_empty()):
@@ -2140,8 +2275,30 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
         if (op.kind == 'value' && (op.detail == 'index' || op.detail == 'target-index' || op.detail == 'assign-index-key') && op.args.length() >= 2):
             string index_base_type = lookup_temp_type_slot(temp_types, op.args[0])
             string index_type = lookup_temp_type_slot(temp_types, op.args[1])
+            RefineInstructionsResult contextual_key = contextualize_array_map_key(block_refined, temp_types, op.args[0], op.args[1])
+            block_refined = contextual_key.instructions
+            temp_types = contextual_key.temp_types
+            index_type = lookup_temp_type_slot(temp_types, op.args[1])
             validate_sequence_index_type(index_base_type, index_type)
             validate_map_index_type(index_base_type, index_type)
+        if (op.kind == 'value' && op.detail == 'binary'):
+            if (op.args.length() >= 3):
+                if (op.args[0] == 'in' || op.args[0] == 'not in'):
+                    RefineInstructionsResult contextual_key = contextualize_array_map_key(block_refined, temp_types, op.args[2], op.args[1])
+                    block_refined = contextual_key.instructions
+                    temp_types = contextual_key.temp_types
+        if (op.kind == 'value' && op.detail == 'call'):
+            if (op.args.length() == 3):
+                if (op.args[0] == 'contains'):
+                    RefineInstructionsResult contextual_key = contextualize_array_map_key(block_refined, temp_types, op.args[1], op.args[2])
+                    block_refined = contextual_key.instructions
+                    temp_types = contextual_key.temp_types
+        if (op.kind == 'value' && op.detail == 'method-call'):
+            if (op.args.length() == 3):
+                if (op.args[0] == 'contains'):
+                    RefineInstructionsResult contextual_key = contextualize_array_map_key(block_refined, temp_types, op.args[1], op.args[2])
+                    block_refined = contextual_key.instructions
+                    temp_types = contextual_key.temp_types
         LinearInstruction current = refine_value_instruction(op, bindings, functions, record_fields, record_names, enum_types, temp_types)
         if (current.kind == 'value' && (current.detail == 'call' || current.detail == 'method-call')):
             if (current.args.length() == 3):
@@ -2303,6 +2460,9 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                             throw 'record field assignment requires ' + field_type + '; got ' + actual_type
         if ((current.kind == 'assign_index' || current.kind == 'assign_index_add') && current.args.length() >= 3):
             string base_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[0]))
+            RefineInstructionsResult contextual_key = contextualize_array_map_key(block_refined, temp_types, current.args[0], current.args[1])
+            block_refined = contextual_key.instructions
+            temp_types = contextual_key.temp_types
             validate_sequence_index_type(base_type, lookup_temp_type_slot(temp_types, current.args[1]))
             validate_map_index_type(base_type, lookup_temp_type_slot(temp_types, current.args[1]))
         if (current.kind == 'assign_index'):
@@ -2384,6 +2544,12 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
 
 BlockIR refine_block(BlockIR block, BindingIR[] globals, BindingIR[] params, BindingIR[] locals, FunctionSigIR[] functions, RecordFieldIR[] record_fields, string[] record_names, EnumTypeIR[] enum_types, LinearInstruction[] prior_instructions):
     string[] temp_types = collect_temp_type_slots(prior_instructions)
+    int max_index = max_temp_slot_index(prior_instructions)
+    int block_max_index = max_temp_slot_index(block.instructions)
+    if (block_max_index > max_index):
+        max_index = block_max_index
+    while (temp_types.length() <= max_index):
+        temp_types.push('unknown')
     reset_type_ir_lookup_caches()
     RefineInstructionsResult refined = refine_instructions(block.instructions, globals, params, locals, functions, record_fields, record_names, enum_types, prior_instructions, temp_types, false)
     return BlockIR(block.label.substring(0), refined.instructions, clone_terminator_ir(block.terminator))
@@ -2393,6 +2559,12 @@ GlobalDeclIR refine_global(GlobalDeclIR global_decl, BindingIR[] globals, Functi
     BindingIR[] empty_locals = []
     reset_type_ir_lookup_caches()
     string[] temp_types = collect_temp_type_slots(prior_instructions)
+    int max_index = max_temp_slot_index(prior_instructions)
+    int global_max_index = max_temp_slot_index(global_decl.instructions)
+    if (global_max_index > max_index):
+        max_index = global_max_index
+    while (temp_types.length() <= max_index):
+        temp_types.push('unknown')
     RefineInstructionsResult refined_result = refine_instructions(global_decl.instructions, globals, empty_params, empty_locals, functions, record_fields, record_names, enum_types, prior_instructions, temp_types, false)
     LinearInstruction[] refined = refined_result.instructions
     BindingIR binding = ir_parse_binding_decl(strip_prefix(global_decl.header, 'global '))
@@ -2444,7 +2616,7 @@ ParsedFunction refine_function(ParsedFunction function_ir, BindingIR[] globals, 
     BindingIR[] locals = normalize_enum_bindings(function_ir.locals, enum_types)
     BlockIR[] blocks = []
     LinearInstruction[] prior_instructions = []
-    string[] temp_types = []
+    string[] temp_types = unknown_temp_type_slots(max_function_temp_slot_index(function_ir) + 1)
     reset_type_ir_lookup_caches()
     for (BlockIR block in function_ir.blocks):
         RefineInstructionsResult refined_result = refine_instructions(block.instructions, globals, params, locals, functions, record_fields, record_names, enum_types, prior_instructions, temp_types, regex_imported)
@@ -2478,7 +2650,114 @@ ParsedFunction refine_function(ParsedFunction function_ir, BindingIR[] globals, 
             prior_instructions.push(refined_block.instructions[block_op_index])
             block_op_index += 1
     string normalized_header = normalize_enum_function_header(function_ir.header, enum_types).substring(0)
-    return resolve_conditional_bindings(ParsedFunction(normalized_header, function_name_from_header(normalized_header).substring(0), function_return_type_from_header(normalized_header).substring(0), clone_binding_irs(params), clone_binding_irs(locals), blocks))
+    ParsedFunction refined_function = resolve_conditional_bindings(ParsedFunction(normalized_header, function_name_from_header(normalized_header).substring(0), function_return_type_from_header(normalized_header).substring(0), clone_binding_irs(params), clone_binding_irs(locals), blocks))
+    return guard_int_array_map_assignments(refined_function)
+
+LinearInstruction[] flatten_type_function_instructions(ParsedFunction function_ir):
+    LinearInstruction[] result = []
+    for (BlockIR block in function_ir.blocks):
+        result = append_instructions(result, block.instructions)
+    return result
+
+ParsedFunction guard_one_int_array_map_assignment(ParsedFunction function_ir, string key_temp):
+    string catch_label = 'map.key.guard.catch.' + key_temp
+    string after_label = 'map.key.guard.after.' + key_temp
+    int key_block_index = -1
+    int key_instruction_index = -1
+    int assign_block_index = -1
+    int assign_instruction_index = -1
+    for (int block_index = 0; block_index < function_ir.blocks.length(); block_index += 1):
+        BlockIR block = function_ir.blocks[block_index]
+        for (int instruction_index = 0; instruction_index < block.instructions.length(); instruction_index += 1):
+            LinearInstruction op = block.instructions[instruction_index]
+            if (op.kind == 'value' && (op.detail == 'target-index' || op.detail == 'assign-index-key') && op.lhs == key_temp):
+                key_block_index = block_index
+                key_instruction_index = instruction_index
+            if (op.kind == 'assign_index'):
+                if (op.args.length() == 3):
+                    if (op.args[1] == key_temp):
+                        assign_block_index = block_index
+                        assign_instruction_index = instruction_index
+    if (key_block_index < 0 || assign_block_index < 0):
+        return function_ir
+
+    BlockIR key_block = function_ir.blocks[key_block_index]
+    LinearInstruction[] guarded_key_instructions = []
+    for (int instruction_index = 0; instruction_index < key_block.instructions.length(); instruction_index += 1):
+        LinearInstruction op = key_block.instructions[instruction_index]
+        if (instruction_index == key_instruction_index):
+            # The guard owns this cloned key snapshot; ordinary temp cleanup must not free it.
+            guarded_key_instructions.push(LinearInstruction(op.kind, op.lhs, op.result_type, 'borrowed', op.detail, clone_instruction_args(op.args)))
+            guarded_key_instructions.push(LinearInstruction('map_key_guard_snapshot', '', '', '', catch_label, [key_temp]))
+            guarded_key_instructions.push(LinearInstruction('try', '', '', '', catch_label, []))
+        else:
+            guarded_key_instructions.push(op)
+    BlockIR guarded_key_block = BlockIR(key_block.label, guarded_key_instructions, key_block.terminator)
+
+    BlockIR[] with_guard_start = []
+    for (int block_index = 0; block_index < function_ir.blocks.length(); block_index += 1):
+        if (block_index == key_block_index):
+            with_guard_start.push(guarded_key_block)
+        else:
+            with_guard_start.push(function_ir.blocks[block_index])
+    function_ir = ParsedFunction(function_ir.header, function_ir.name, function_ir.return_type, function_ir.params, function_ir.locals, with_guard_start)
+
+    assign_block_index = -1
+    assign_instruction_index = -1
+    for (int block_index = 0; block_index < function_ir.blocks.length(); block_index += 1):
+        BlockIR block = function_ir.blocks[block_index]
+        for (int instruction_index = 0; instruction_index < block.instructions.length(); instruction_index += 1):
+            LinearInstruction op = block.instructions[instruction_index]
+            if (op.kind == 'assign_index'):
+                if (op.args.length() == 3):
+                    if (op.args[1] == key_temp):
+                        assign_block_index = block_index
+                        assign_instruction_index = instruction_index
+    if (assign_block_index < 0):
+        return function_ir
+    BlockIR assign_block = function_ir.blocks[assign_block_index]
+    LinearInstruction[] before_assignment = []
+    LinearInstruction[] after_assignment = []
+    for (int instruction_index = 0; instruction_index < assign_block.instructions.length(); instruction_index += 1):
+        if (instruction_index <= assign_instruction_index):
+            before_assignment.push(assign_block.instructions[instruction_index])
+        else:
+            after_assignment.push(assign_block.instructions[instruction_index])
+    before_assignment.push(LinearInstruction('map_key_guard_normal', '', '', '', catch_label, [key_temp]))
+    BlockIR guarded_assign_block = BlockIR(assign_block.label, before_assignment, TerminatorIR('jump', [after_label]))
+    BlockIR guard_catch_block = BlockIR(catch_label, [LinearInstruction('map_key_guard_exception', '', '', '', catch_label, [])], TerminatorIR('guard_unreachable', []))
+    BlockIR guard_after_block = BlockIR(after_label, after_assignment, assign_block.terminator)
+
+    BlockIR[] blocks = []
+    for (int block_index = 0; block_index < function_ir.blocks.length(); block_index += 1):
+        if (block_index == assign_block_index):
+            blocks.push(guarded_assign_block)
+            blocks.push(guard_catch_block)
+            blocks.push(guard_after_block)
+        else:
+            blocks.push(function_ir.blocks[block_index])
+    return ParsedFunction(function_ir.header, function_ir.name, function_ir.return_type, function_ir.params, function_ir.locals, blocks)
+
+ParsedFunction guard_int_array_map_assignments(ParsedFunction function_ir):
+    LinearInstruction[] all_instructions = flatten_type_function_instructions(function_ir)
+    string[] guard_keys = []
+    for (LinearInstruction op in all_instructions):
+        if (op.kind != 'assign_index' || op.args.length() != 3):
+            continue
+        string base_type = normalize_llvm_type_name(lookup_temp_type(all_instructions, op.args[0]))
+        if (base_type != 'map<int[], int>'):
+            continue
+        bool found_key = false
+        for (LinearInstruction key_op in all_instructions):
+            if (key_op.kind == 'value' && (key_op.detail == 'target-index' || key_op.detail == 'assign-index-key') && key_op.lhs == op.args[1]):
+                found_key = true
+        if (found_key):
+            guard_keys.push(op.args[1])
+    int guard_index = guard_keys.length() - 1
+    while (guard_index >= 0):
+        function_ir = guard_one_int_array_map_assignment(function_ir, guard_keys[guard_index])
+        guard_index -= 1
+    return function_ir
 
 ProgramIR refine_program_ir_with_regex(ProgramIR program, bool regex_imported):
     if (regex_imported):
@@ -2489,6 +2768,7 @@ ProgramIR refine_program_ir_with_regex(ProgramIR program, bool regex_imported):
         if (helper_count != 1):
             throw 'regex split internal helper must be declared exactly once'
     EnumTypeIR[] enum_types = collect_enum_types(program.enums)
+    validate_int_array_map_key_types(program)
     bool has_integer_enum = validate_integer_enum_declared_types(program, enum_types)
     bool has_string_enum_record_field = has_string_enum_record_fields(program.records, enum_types)
     bool normalize_records = has_integer_enum || has_string_enum_record_field
@@ -2504,7 +2784,7 @@ ProgramIR refine_program_ir_with_regex(ProgramIR program, bool regex_imported):
 
     GlobalDeclIR[] refined_globals = []
     LinearInstruction[] prior_global_instructions = []
-    string[] prior_global_temp_types = []
+    string[] prior_global_temp_types = unknown_temp_type_slots(max_global_temp_slot_index(program.globals) + 1)
     for (GlobalDeclIR global_decl in program.globals):
         reset_type_ir_lookup_caches()
         BindingIR[] empty_params = []
