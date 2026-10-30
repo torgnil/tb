@@ -1934,6 +1934,9 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
         if (method_name == 'starts_with' || method_name == 'ends_with' || method_name == 'starts_with_at' || method_name == 'is_alpha' || method_name == 'is_digit' || method_name == 'is_alnum' || method_name == 'is_space' || method_name == 'is_whitespace'):
             string predicate_receiver_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
             if (predicate_receiver_type != 'string'):
+                if (predicate_receiver_type != 'unknown' && has_matching_ufcs_signature(op, method_name, functions, enum_types, temp_types)):
+                    FunctionSigIR predicate_method_sig = lookup_function_sig(functions, method_name)
+                    return refined_value_op(op, predicate_method_sig.return_type, refine_ownership_mode(op, predicate_method_sig.return_type))
                 throw method_name + ' requires string receiver; got ' + predicate_receiver_type
             int expected_arity = 2
             if (method_name == 'starts_with' || method_name == 'ends_with'):

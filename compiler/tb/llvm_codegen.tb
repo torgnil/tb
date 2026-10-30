@@ -5872,25 +5872,25 @@ string emit_string_method_call_value_instruction(ProgramIR program, ParsedFuncti
         return '  ' + lhs + ' = call ptr @tb_bootstrap_trim_left(ptr ' + temp_ref(op.args[1]) + ')'
     if (method_name == 'trim_right'):
         return '  ' + lhs + ' = call ptr @tb_bootstrap_trim_right(ptr ' + temp_ref(op.args[1]) + ')'
-    if (method_name == 'starts_with'):
+    if (method_name == 'starts_with' && method_base_type == 'string'):
         if (op.args.length() != 3):
             throw 'bootstrap starts_with currently requires one prefix argument'
         return '  ' + lhs + ' = call i1 @tb_bootstrap_starts_with(ptr ' + temp_ref(op.args[1]) + ', ptr ' + temp_ref(op.args[2]) + ')'
-    if (method_name == 'ends_with'):
+    if (method_name == 'ends_with' && method_base_type == 'string'):
         if (op.args.length() != 3):
             throw 'bootstrap ends_with currently requires one suffix argument'
         return '  ' + lhs + ' = call i1 @tb_bootstrap_ends_with(ptr ' + temp_ref(op.args[1]) + ', ptr ' + temp_ref(op.args[2]) + ')'
-    if (method_name == 'starts_with_at'):
+    if (method_name == 'starts_with_at' && method_base_type == 'string'):
         if (op.args.length() != 4):
             throw 'bootstrap starts_with_at currently requires prefix and index arguments'
         return '  ' + lhs + ' = call i1 @tb_bootstrap_starts_with_at(ptr ' + temp_ref(op.args[1]) + ', ptr ' + temp_ref(op.args[2]) + ', i64 ' + temp_ref(op.args[3]) + ')'
-    if (method_name == 'is_alpha'):
+    if (method_name == 'is_alpha' && method_base_type == 'string'):
         return '  ' + lhs + ' = call i1 @tb_bootstrap_string_is_alpha(ptr ' + temp_ref(op.args[1]) + ')'
-    if (method_name == 'is_digit'):
+    if (method_name == 'is_digit' && method_base_type == 'string'):
         return '  ' + lhs + ' = call i1 @tb_bootstrap_string_is_digit(ptr ' + temp_ref(op.args[1]) + ')'
-    if (method_name == 'is_alnum'):
+    if (method_name == 'is_alnum' && method_base_type == 'string'):
         return '  ' + lhs + '.alpha = call i1 @tb_bootstrap_string_is_alpha(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + '.digit = call i1 @tb_bootstrap_string_is_digit(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = or i1 ' + temp_ref(op.lhs + '.alpha') + ', ' + temp_ref(op.lhs + '.digit')
-    if (method_name == 'is_space' || method_name == 'is_whitespace'):
+    if ((method_name == 'is_space' || method_name == 'is_whitespace') && method_base_type == 'string'):
         return '  ' + lhs + ' = call i1 @tb_bootstrap_string_is_space(ptr ' + temp_ref(op.args[1]) + ')'
     if (method_name == 'replace'):
         if (op.args.length() != 4):
