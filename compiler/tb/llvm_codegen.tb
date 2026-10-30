@@ -1156,7 +1156,7 @@ RecordDeclIR clone_record_decl_ir(RecordDeclIR record_decl):
     return RecordDeclIR(record_decl.header.substring(0), fields)
 
 void ensure_function_lookup_cache(ParsedFunction function_ir):
-    string cache_key = function_ir.header
+    string cache_key = function_ir.name
     if (LLVM_LOOKUP_CACHE_FUNCTION_KEY == cache_key):
         return
     LLVM_LOOKUP_CACHE_FUNCTION_KEY = cache_key.substring(0)
@@ -1445,7 +1445,12 @@ ParsedFunction lookup_named_function_decl(ProgramIR program, string name):
     for (ParsedFunction function_ir in program.functions):
         if (function_ir.name == name):
             return function_ir
-    return ParsedFunction('', '', '', [], [], [])
+    return ParsedFunction('', '', '', '', false, '', [], [], [])
+
+string source_function_display_name(ParsedFunction function_ir):
+    if (function_ir.source_name != ''):
+        return function_ir.source_name
+    return function_ir.name
 
 bool instruction_uses_temp(LinearInstruction op, string temp_name):
     if (op.args.is_empty()):
@@ -1659,12 +1664,13 @@ string validate_named_array_comparator(ProgramIR program, ParsedFunction functio
     ParsedFunction comparator_function = lookup_named_function_decl(program, comparator_name)
     if (comparator_function.header == ''):
         throw 'unknown ' + operation_name + ' comparator function: ' + comparator_name
+    string display_name = source_function_display_name(comparator_function)
     if (normalize_llvm_type_name(comparator_function.return_type) != 'int'):
-        throw operation_name + ' comparator must return int: ' + comparator_name
+        throw operation_name + ' comparator must return int: ' + display_name
     if (comparator_function.params.length() != 2):
-        throw operation_name + ' comparator must have signature int ' + comparator_name + '(' + expected_type + ', ' + expected_type + ')'
+        throw operation_name + ' comparator must have signature int ' + display_name + '(' + expected_type + ', ' + expected_type + ')'
     if (normalize_llvm_type_name(comparator_function.params[0].type_name) != expected_type || normalize_llvm_type_name(comparator_function.params[1].type_name) != expected_type):
-        throw operation_name + ' comparator must have signature int ' + comparator_name + '(' + expected_type + ', ' + expected_type + ')'
+        throw operation_name + ' comparator must have signature int ' + display_name + '(' + expected_type + ', ' + expected_type + ')'
     return comparator_name
 
 bool function_name_exists(ProgramIR program, string name):
@@ -2022,15 +2028,16 @@ void validate_named_user_call_arguments(ProgramIR program, ParsedFunction caller
         return
     int param_count = program.functions[call_meta_index].params.length()
     int actual_count = call_args.length() - first_arg_index
+    string display_name = source_function_display_name(program.functions[call_meta_index])
     if (actual_count != param_count):
-        throw 'call ' + call_name + ' expects ' + param_count.to_string() + ' arguments, got ' + actual_count.to_string()
+        throw 'call ' + display_name + ' expects ' + param_count.to_string() + ' arguments, got ' + actual_count.to_string()
     int arg_index = first_arg_index
     int param_index = 0
     while (arg_index < call_args.length() && param_index < param_count):
         string expected_type = normalize_llvm_type_name(program.functions[call_meta_index].params[param_index].type_name)
         string actual_type = normalize_llvm_type_name(lookup_temp_llvm_type(caller, call_args[arg_index]))
         if (!llvm_named_call_arg_types_compatible(expected_type, actual_type)):
-            throw 'call ' + call_name + ' argument ' + (param_index + 1).to_string() + ' expected ' + expected_type + ', actual ' + actual_type
+            throw 'call ' + display_name + ' argument ' + (param_index + 1).to_string() + ' expected ' + expected_type + ', actual ' + actual_type
         arg_index += 1
         param_index += 1
 
@@ -2846,7 +2853,7 @@ string enum_string_symbol(string enum_name, string value_name):
 
 StringConstIR[] collect_function_string_constants(ParsedFunction function_ir):
     StringConstIR[] constants = []
-    string function_name = function_name_from_header_local(function_ir.header)
+    string function_name = function_ir.name
     string symbol_prefix = function_string_symbol_prefix(function_name)
     string[] cached_literals = []
     for (BlockIR block in function_ir.blocks):
@@ -2971,7 +2978,7 @@ string[] collect_used_map_types(ProgramIR program):
 void analyze_program_features(ProgramIR program, string[] map_types):
     bool has_user_write_all = false
     for (ParsedFunction function_ir in program.functions):
-        if (function_ir.name == 'write_all'):
+        if (function_ir.source_name == 'write_all'):
             has_user_write_all = true
     LLVM_SCAN_NEEDS_STRCMP = 0
     LLVM_SCAN_NEEDS_STRING_SEARCH = 0
@@ -3197,7 +3204,7 @@ void analyze_program_features(ProgramIR program, string[] map_types):
             if (field_type == 'set<int>'):
                 needs_int_set = true
     for (ParsedFunction function_ir in program.functions):
-        if (function_ir.name == 'edges_for_point'):
+        if (function_ir.source_name == 'edges_for_point'):
             has_edges_for_point = true
         if (function_ir.name == 'main' && function_ir.params.length() == 1):
             needs_main_args = normalize_llvm_type_name(function_ir.params[0].type_name) == 'string[]'
@@ -5769,7 +5776,11 @@ string emit_call_value_instruction_core(ProgramIR program, ParsedFunction functi
         return record_line
     validate_named_user_call_arguments(program, function_ir, call_name, op.args, 1)
     if (!is_backend_value_type(result_type)):
-        throw 'unsupported llvm call result type: [' + result_type + '] call=' + call_name + ' lhs=' + op.lhs + ' fn=' + function_ir.header + ' meta=' + call_meta_index.to_string()
+        ParsedFunction failed_callee = lookup_named_function_decl(program, call_name)
+        string display_call_name = call_name
+        if (failed_callee.header != ''):
+            display_call_name = source_function_display_name(failed_callee)
+        throw 'unsupported llvm call result type: [' + result_type + '] call=' + display_call_name + ' lhs=' + op.lhs + ' fn=' + function_ir.header + ' meta=' + call_meta_index.to_string()
     if (result_llvm_type == ''):
         if (LLVM_USER_CALL_STATS_ACTIVE != 0):
             LLVM_USER_CALL_RESULT_LLVM_TYPE_CALLS += 1
@@ -6839,7 +6850,7 @@ string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, Lin
         LLVM_FUNCTION_STRING_SYMBOL_VALUE_EMIT_CALLS += 1
         string symbol = lookup_function_string_literal_symbol(function_ir.name, op.args[0])
         if (symbol == ''):
-            throw 'missing function string literal symbol for ' + function_ir.name
+            throw 'missing function string literal symbol for ' + source_function_display_name(function_ir)
         return track_string_value('  ' + lhs + ' = getelementptr inbounds [' + tb_string_literal_data_length(op.args[0]) + ' x i8], ptr ' + string_symbol_ref(symbol) + ', i32 0, i32 0')
     if (op.detail == 'array'):
         string array_result_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.lhs))
@@ -9009,7 +9020,7 @@ void append_function_lines(string[] lines, ProgramIR program, ParsedFunction fun
         if ((terminator.kind == 'return' || terminator.kind == 'return_owned') && terminator.args.length() == 1):
             string actual_return_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, terminator.args[0]))
             if (actual_return_type != 'unknown' && actual_return_type != expected_return_type):
-                throw 'return from function ' + function_ir.name + ' expected ' + expected_return_type + ', actual ' + actual_return_type
+                throw 'return from function ' + source_function_display_name(function_ir) + ' expected ' + expected_return_type + ', actual ' + actual_return_type
     if (is_cached_function_header(function_ir.header) && supports_cached_function_backend(program, function_ir)):
         append_cached_function_lines(lines, program, function_ir, needs_runtime_global_init)
         return
@@ -9273,7 +9284,7 @@ string[] emit_runtime_global_init_lines(ProgramIR program, GlobalDeclIR global_d
     while (renamed_index < global_decl.instructions.length()):
         renamed.push(rename_global_instruction_temps(global_decl.instructions[renamed_index], temp_names, prefix))
         renamed_index += 1
-    ParsedFunction function_ir = ParsedFunction('func void __tb_init_globals', '__tb_init_globals', 'void', [], [], [BlockIR('entry', renamed, TerminatorIR('', []))])
+    ParsedFunction function_ir = ParsedFunction('func void __tb_init_globals', '__tb_init_globals', '__tb_init_globals', '', false, 'void', [], [], [BlockIR('entry', renamed, TerminatorIR('', []))])
     string[] lines = []
     int instruction_index = 0
     while (instruction_index < renamed.length()):
@@ -11083,6 +11094,15 @@ string[] llvm_codegen_source(string source):
 
 string[] llvm_codegen_source_with_regex(string source, bool regex_imported):
     ProgramIR program = owned_program_ir(refine_program_ir_with_regex(lower_source_ir(source), regex_imported))
+    string[] lines = llvm_codegen_ir(program)
+    string[] detached = []
+    for (string line in lines):
+        detached.push(line.substring(0))
+    return detached
+
+string[] llvm_codegen_source_with_modules(string source, string[] module_ids, bool regex_imported):
+    ProgramIR lowered = lower_source_ir_with_module_ids(source, module_ids)
+    ProgramIR program = owned_program_ir(refine_program_ir_with_regex(lowered, regex_imported))
     string[] lines = llvm_codegen_ir(program)
     string[] detached = []
     for (string line in lines):

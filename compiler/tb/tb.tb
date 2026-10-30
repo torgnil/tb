@@ -20,16 +20,66 @@ import ownership_ir_lib;
 import llvm_codegen;
 import foreign_modules;
 
-record LoadedSourceBundle(string text, string[] foreign_modules, bool regex_imported);
+record LoadedSourceBundle(string text, string[] module_ids, string[] foreign_modules, bool regex_imported);
+record ExpandedSourceLines(string[] lines, string[] module_ids);
 record CompileOptions(string source_path, string output_path, bool profile_phases);
 
 string path_dirname(string path):
     int index = path.length() - 1
     while (index >= 0):
         if (path[index] == '/'):
+            if (index == 0):
+                return '/'
             return path.substring(0, index)
         index -= 1
     return ''
+
+string[] append_normalized_path_segment(string[] parts, string part, bool absolute):
+    if (part == '' || part == '.'):
+        return parts
+    if (part == '..'):
+        if (!parts.is_empty()):
+            int last_index = parts.length() - 1
+            if (parts[last_index] != '..'):
+                string[] reduced_parts = []
+                int part_index = 0
+                while (part_index < last_index):
+                    reduced_parts.push(parts[part_index])
+                    part_index += 1
+                parts = reduced_parts
+            else if (!absolute):
+                parts.push(part)
+        else if (!absolute):
+            parts.push(part)
+        return parts
+    parts.push(part)
+    return parts
+
+string normalize_lexical_path(string path):
+    bool absolute = path.starts_with('/')
+    string[] normalized_parts = []
+    int segment_start = 0
+    int index = 0
+    while (index <= path.length()):
+        bool at_end = index == path.length()
+        if (at_end):
+            normalized_parts = append_normalized_path_segment(normalized_parts, path.substring(segment_start, index), absolute)
+        else if (path[index] == '/'):
+            normalized_parts = append_normalized_path_segment(normalized_parts, path.substring(segment_start, index), absolute)
+            segment_start = index + 1
+        index += 1
+    string result = ''
+    for (string part : normalized_parts):
+        if (result != ''):
+            result += '/'
+        result += part
+    if (absolute):
+        result = '/' + result
+    if (result == ''):
+        if (absolute):
+            return '/'
+        return '.'
+    return result
 
 string import_module_name(string line):
     string trimmed = line.trim()
@@ -45,11 +95,20 @@ bool string_in_array(string[] values, string target):
             return true
     return false
 
+string[] string_array_with_last(string[] values, string value):
+    string[] result = []
+    int index = 0
+    while (index < values.length()):
+        result.push(values[index])
+        index += 1
+    result.push(value)
+    return result
+
 string resolve_import_path(string source_path, string module_name):
-    string base_dir = path_dirname(source_path)
+    string base_dir = path_dirname(normalize_lexical_path(source_path))
     if (base_dir == ''):
-        return module_name + '.tb'
-    return base_dir + '/' + module_name + '.tb'
+        return normalize_lexical_path(module_name + '.tb')
+    return normalize_lexical_path(base_dir + '/' + module_name + '.tb')
 
 string join_lines(string[] lines):
     string merged = ''
@@ -62,50 +121,54 @@ string join_lines(string[] lines):
             merged += '\n' + line
     return merged
 
-string[] expand_source_lines_with_imports(string path, string[] lines, string[] seen, string[] foreign_modules):
+ExpandedSourceLines expand_source_lines_with_imports(string path, string[] lines, string[] seen, string[] active, string[] foreign_modules):
+    string normalized_path = normalize_lexical_path(path)
     string[] merged = []
+    string[] module_ids = []
     int line_index = 0
     while (line_index < lines.length()):
         if (is_import_line(lines[line_index])):
             string module_name = import_module_name(lines[line_index])
             if (module_name == 'regex' || module_name == 'random' || module_name == 'uuid'):
                 string module_key = '<builtin:' + module_name + '>'
+                if (string_in_array(active, module_key)):
+                    throw 'import cycle detected: ' + module_key
                 if (!string_in_array(seen, module_key)):
                     seen.push(module_key)
+                    string[] next_active = string_array_with_last(active, module_key)
                     string[] module_lines = tb_builtin_module_text(module_name).split_lines()
-                    string[] imported = expand_source_lines_with_imports(path, module_lines, seen, foreign_modules)
-                    for (string line in imported):
-                        merged.push(line)
+                    ExpandedSourceLines imported = expand_source_lines_with_imports(module_key, module_lines, seen, next_active, foreign_modules)
+                    for (int imported_index = 0; imported_index < imported.lines.length(); imported_index += 1):
+                        merged.push(imported.lines[imported_index])
+                        module_ids.push(imported.module_ids[imported_index])
             else if (is_foreign_module(module_name)):
                 if (!string_in_array(foreign_modules, module_name)):
                     foreign_modules.push(module_name)
             else:
                 string import_path = resolve_import_path(path, module_name)
-                string[] imported = load_source_lines_with_imports(import_path, seen, foreign_modules)
-                int imported_index = 0
-                while (imported_index < imported.length()):
-                    merged.push(imported[imported_index])
-                    imported_index += 1
+                if (string_in_array(active, import_path)):
+                    throw 'import cycle detected: ' + import_path
+                if (!string_in_array(seen, import_path)):
+                    seen.push(import_path)
+                    string[] next_active = string_array_with_last(active, import_path)
+                    ExpandedSourceLines imported = expand_source_lines_with_imports(import_path, read_lines(import_path), seen, next_active, foreign_modules)
+                    for (int imported_index = 0; imported_index < imported.lines.length(); imported_index += 1):
+                        merged.push(imported.lines[imported_index])
+                        module_ids.push(imported.module_ids[imported_index])
         else:
             merged.push(lines[line_index])
+            module_ids.push(normalized_path)
         line_index += 1
-    return merged
-
-string[] load_source_lines_with_imports(string path, string[] seen, string[] foreign_modules):
-    if (string_in_array(seen, path)):
-        return []
-    seen.push(path)
-    return expand_source_lines_with_imports(path, read_lines(path), seen, foreign_modules)
+    return ExpandedSourceLines(merged, module_ids)
 
 LoadedSourceBundle load_source_bundle_with_imports(string path, string source, string[] seen):
+    string normalized_path = normalize_lexical_path(path)
     string[] foreign_modules = []
-    if (!source.contains('import ')):
-        if (string_in_array(seen, path)):
-            return LoadedSourceBundle('', foreign_modules, false)
-        seen.push(path)
-        return LoadedSourceBundle(source, foreign_modules, false)
-    string text = join_lines(expand_source_lines_with_imports(path, source.split_lines(), seen, foreign_modules))
-    return LoadedSourceBundle(text, foreign_modules, string_in_array(seen, '<builtin:regex>'))
+    string[] active = [normalized_path]
+    if (!string_in_array(seen, normalized_path)):
+        seen.push(normalized_path)
+    ExpandedSourceLines expanded = expand_source_lines_with_imports(normalized_path, source.split_lines(), seen, active, foreign_modules)
+    return LoadedSourceBundle(join_lines(expanded.lines), expanded.module_ids, foreign_modules, string_in_array(seen, '<builtin:regex>'))
 
 void write_lines_file(string path, string[] lines):
     file out = open(path)
@@ -168,19 +231,26 @@ int run_compiler(CompileOptions options):
     string source = read_file(options.source_path)
     string[] active_foreign_modules = []
     bool regex_imported = false
-    if (source.contains('import ')):
-        string[] seen = []
-        LoadedSourceBundle loaded = load_source_bundle_with_imports(options.source_path, source, seen)
-        source = loaded.text
-        active_foreign_modules = loaded.foreign_modules
-        regex_imported = loaded.regex_imported
+    string[] seen = []
+    LoadedSourceBundle loaded = load_source_bundle_with_imports(options.source_path, source, seen)
+    source = loaded.text
+    string[] module_ids = loaded.module_ids
+    active_foreign_modules = loaded.foreign_modules
+    regex_imported = loaded.regex_imported
     string injected = injected_foreign_module_declarations(active_foreign_modules)
     if (injected != ''):
         source = injected + '\n' + source
+        string[] with_foreign_modules = []
+        int injected_line_count = injected.split_lines().length()
+        for (int line_index = 0; line_index < injected_line_count; line_index += 1):
+            with_foreign_modules.push('')
+        for (string module_id : module_ids):
+            with_foreign_modules.push(module_id)
+        module_ids = with_foreign_modules
     if (!active_foreign_modules.is_empty()):
         source = rewrite_foreign_module_uses(source, active_foreign_modules)
     if (!options.profile_phases):
-        string[] lines = llvm_codegen_source_with_regex(source, regex_imported)
+        string[] lines = llvm_codegen_source_with_modules(source, module_ids, regex_imported)
         if (options.output_path != ''):
             write_lines_file(options.output_path, lines)
             write_build_metadata(options.output_path, active_foreign_modules)
@@ -190,7 +260,7 @@ int run_compiler(CompileOptions options):
         return 0
     int t1 = time_ms()
 
-    Token[] tokens = lex_source(source)
+    Token[] tokens = lex_source_with_module_ids(source, module_ids)
     int t2 = time_ms()
 
     Node parsed = parse_program(tokens)

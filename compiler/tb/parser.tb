@@ -19,7 +19,7 @@ record ParseResult(Node node, int next_index);
 record ParseNodesResult(Node[] nodes, int next_index);
 record TypeParseResult(string value, int next_index, int pending_closers);
 record BindingParseResult(string binding, int next_index);
-record FunctionDeclParseResult(string return_type, string name, string[] params, Node[] body_nodes, int next_index, bool is_cached);
+record FunctionDeclParseResult(string return_type, string name, string[] params, Node[] body_nodes, int next_index, bool is_cached, bool is_private);
 
 string parser_error(Token token, string message):
     return 'Parser error at ' + token.line.to_string() + ':' + token.column.to_string() + ': ' + message + ' [' + token.kind + ' ' + token.value + ']'
@@ -1006,12 +1006,18 @@ ParseResult parse_switch_statement(Token[] tokens, int index):
     current += 1
     return ParseResult(Node('Switch', '', children), current)
 
-FunctionDeclParseResult parse_function_declaration_parts(Token[] tokens, int index, bool is_cached):
+FunctionDeclParseResult parse_function_declaration_parts(Token[] tokens, int index, bool is_cached, bool is_private):
+    if (is_private && token_is(token_at(tokens, index), 'KEYWORD', 'cached')):
+        throw parser_error(token_at(tokens, index), 'private cached functions are not supported')
     string return_type = parse_type(tokens, index)
     int current = type_end(tokens, index)
     Token name_token = token_at(tokens, current)
     if (name_token.kind != 'IDENTIFIER'):
         throw parser_error(name_token, 'expected function name')
+    if (is_private && is_cached):
+        throw parser_error(name_token, 'private cached functions are not supported')
+    if (is_private && name_token.value == 'main'):
+        throw parser_error(name_token, 'private main functions are not supported')
     current += 1
     current = expect_symbol(tokens, current, '(')
 
@@ -1042,10 +1048,10 @@ FunctionDeclParseResult parse_function_declaration_parts(Token[] tokens, int ind
     else:
         throw parser_error(token_at(tokens, current), 'expected function body')
 
-    return FunctionDeclParseResult(return_type, name_token.value, params, body.nodes, body.next_index, is_cached)
+    return FunctionDeclParseResult(return_type, name_token.value, params, body.nodes, body.next_index, is_cached, is_private)
 
-ParseResult parse_function_declaration(Token[] tokens, int index, bool is_cached):
-    FunctionDeclParseResult function_decl = parse_function_declaration_parts(tokens, index, is_cached)
+ParseResult parse_function_declaration(Token[] tokens, int index, bool is_cached, bool is_private):
+    FunctionDeclParseResult function_decl = parse_function_declaration_parts(tokens, index, is_cached, is_private)
     Node[] children = []
     for (string param_binding in function_decl.params):
         children.push(Node('Param', param_binding, []))
@@ -1054,10 +1060,15 @@ ParseResult parse_function_declaration(Token[] tokens, int index, bool is_cached
     string kind = 'Function'
     if (function_decl.is_cached):
         kind = 'CachedFunction'
+    else if (function_decl.is_private):
+        kind = 'PrivateFunction'
     return ParseResult(Node(kind, function_decl.return_type + ' ' + function_decl.name, children), function_decl.next_index)
 
 ParseResult parse_statement(Token[] tokens, int index):
     Token token = token_at(tokens, index)
+
+    if (token_is(token, 'KEYWORD', 'private')):
+        throw parser_error(token, 'private is only valid on top-level ordinary functions')
 
     if (token_is(token, 'KEYWORD', 'record')):
         return parse_record_declaration(tokens, index)
@@ -1100,7 +1111,9 @@ ParseResult parse_statement(Token[] tokens, int index):
     if (token_is(token, 'KEYWORD', 'return')):
         return parse_return_statement(tokens, index)
     if (token_is(token, 'KEYWORD', 'cached')):
-        return parse_function_declaration(tokens, index + 1, true)
+        if (token_is(token_at(tokens, index + 1), 'KEYWORD', 'private')):
+            throw parser_error(token_at(tokens, index + 1), 'private cached functions are not supported')
+        return parse_function_declaration(tokens, index + 1, true, false)
     if (token_is(token, 'KEYWORD', 'const') || token.kind == 'KEYWORD' || token.kind == 'IDENTIFIER'):
         int type_index = index
         if (token_is(token, 'KEYWORD', 'const')):
@@ -1116,7 +1129,7 @@ ParseResult parse_statement(Token[] tokens, int index):
                         break
                     probe += 2
                 if (probe < tokens.length() && token_is(token_at(tokens, probe), 'SYMBOL', '(')):
-                    return parse_function_declaration(tokens, index, false)
+                    return parse_function_declaration(tokens, index, false, false)
                 if (probe < tokens.length() && token_is(token_at(tokens, probe), 'SYMBOL', '=')):
                     return parse_variable_declaration(tokens, index)
 
@@ -1140,6 +1153,27 @@ Node parse_program(Token[] tokens):
     int current = skip_statement_separators(tokens, 0)
 
     while (!token_is(token_at(tokens, current), 'EOF', '')):
+        if (token_at(tokens, current).kind == 'MODULE'):
+            statements.push(Node('ModuleMarker', token_at(tokens, current).value, []))
+            current += 1
+            continue
+        if (token_is(token_at(tokens, current), 'KEYWORD', 'private')):
+            int function_start = current + 1
+            if (token_is(token_at(tokens, function_start), 'KEYWORD', 'cached')):
+                throw parser_error(token_at(tokens, function_start), 'private cached functions are not supported')
+            if (token_is(token_at(tokens, function_start), 'KEYWORD', 'record') || token_is(token_at(tokens, function_start), 'KEYWORD', 'enum') || token_is(token_at(tokens, function_start), 'KEYWORD', 'const')):
+                throw parser_error(token_at(tokens, current), 'private is only valid on top-level ordinary functions')
+            if (!could_start_type(tokens, function_start)):
+                throw parser_error(token_at(tokens, current), 'private is only valid on top-level ordinary functions')
+            int after_type = type_end(tokens, function_start)
+            if (after_type + 1 >= tokens.length()):
+                throw parser_error(token_at(tokens, current), 'private is only valid on top-level ordinary functions')
+            if (token_at(tokens, after_type).kind != 'IDENTIFIER' || !token_is(token_at(tokens, after_type + 1), 'SYMBOL', '(')):
+                throw parser_error(token_at(tokens, current), 'private is only valid on top-level ordinary functions')
+            ParseResult private_function = parse_function_declaration(tokens, function_start, false, true)
+            statements.push(private_function.node)
+            current = skip_statement_separators(tokens, private_function.next_index)
+            continue
         ParseResult statement = parse_statement(tokens, current)
         statements.push(statement.node)
         current = skip_statement_separators(tokens, statement.next_index)

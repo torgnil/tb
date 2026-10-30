@@ -32,7 +32,7 @@ int LEXER_STAT_SUBSTRING_BYTES = 0;
 const string[] KEYWORDS = [
     'import', 'int', 'string', 'bool', 'num', 'void', 'const', 'record', 'enum',
     'if', 'else', 'while', 'for', 'in', 'not', 'and', 'or', 'switch', 'case', 'default', 'return', 'break', 'continue', 'cached',
-    'throw', 'try', 'catch', 'true', 'false'
+    'throw', 'try', 'catch', 'true', 'false', 'private'
 ];
 
 const string[] THREE_CHAR_SYMBOLS = [
@@ -117,7 +117,7 @@ string word_kind(string value):
         if (value == 'import' || value == 'string' || value == 'record' || value == 'return' || value == 'cached' || value == 'switch'):
             return 'KEYWORD'
     else if (value.length() == 7):
-        if (value == 'default'):
+        if (value == 'default' || value == 'private'):
             return 'KEYWORD'
     else if (value.length() == 8):
         if (value == 'continue'):
@@ -547,6 +547,22 @@ Token[] lex_source(string source):
     string[] lines = source.split_lines()
     LEXER_STAT_SPLIT_LINES = lines.length()
     return lex_source_lines(lines)
+
+Token[] lex_source_with_module_ids(string source, string[] module_ids):
+    Token[] source_tokens = lex_source(source)
+    Token[] scoped_tokens = []
+    string active_module = '__tb_module_unset__'
+    for (Token token in source_tokens):
+        if (!(token.kind == 'NEWLINE' || token.kind == 'INDENT' || token.kind == 'DEDENT' || token.kind == 'EOF')):
+            string module_id = ''
+            if (token.line > 0):
+                if (token.line <= module_ids.length()):
+                    module_id = module_ids[token.line - 1]
+            if (module_id != active_module):
+                scoped_tokens.push(Token('MODULE', module_id, token.line, 1))
+                active_module = module_id
+        scoped_tokens.push(token)
+    return scoped_tokens
 
 string format_token(Token token):
     string head = token.kind + '@' + token.line.to_string() + ':' + token.column.to_string()

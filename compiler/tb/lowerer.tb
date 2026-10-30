@@ -160,7 +160,7 @@ SubmitLambdaScope copy_submit_lambda_scope(SubmitLambdaScope scope):
 
 string[] collect_submit_unavailable_names(Node node, string[] names):
     names = add_unique_name(names, node.value)
-    if (node.kind == 'Param' || node.kind == 'VarDecl' || node.kind == 'ForEach' || node.kind == 'Catch' || node.kind == 'Function' || node.kind == 'CachedFunction'):
+    if (node.kind == 'Param' || node.kind == 'VarDecl' || node.kind == 'ForEach' || node.kind == 'Catch' || node.kind == 'Function' || node.kind == 'CachedFunction' || node.kind == 'PrivateFunction'):
         names = add_unique_name(names, binding_name(node.value))
     for (Node child : node.children):
         names = collect_submit_unavailable_names(child, names)
@@ -170,12 +170,28 @@ Node submit_lambda_helper(Node[] functions, string name):
     int index = functions.length() - 1
     while (index >= 0):
         Node function_node = functions[index]
-        if (function_node.kind == 'Function' || function_node.kind == 'CachedFunction'):
+        if (function_node.kind == 'Function' || function_node.kind == 'CachedFunction' || function_node.kind == 'PrivateFunction'):
             BindingIR signature = ir_parse_binding_decl(function_node.value)
             if (signature.name == name):
                 return function_node
         index -= 1
     return Node('', '', [])
+
+Node[] program_visible_function_nodes(Node[] declarations, string module_id):
+    Node[] visible = []
+    string active_module = ''
+    for (Node child : declarations):
+        if (child.kind == 'ModuleMarker'):
+            active_module = child.value
+        else if (child.kind == 'Function' || child.kind == 'CachedFunction'):
+            visible.push(child)
+    active_module = ''
+    for (Node child : declarations):
+        if (child.kind == 'ModuleMarker'):
+            active_module = child.value
+        else if (child.kind == 'PrivateFunction' && active_module == module_id):
+            visible.push(child)
+    return visible
 
 string submit_lambda_expression_type_context(Node node, SubmitLambdaScope scope, Node[] functions, bool array_callback_context, string callback_name):
     if (node.kind == 'Int'):
@@ -798,21 +814,29 @@ SubmitLambdaRewrite rewrite_int_array_expression(Node node, string[] used_names,
 
 SubmitLambdaRewrite rewrite_int_array_expressions_in_program(Node program):
     string[] used_names = collect_submit_unavailable_names(program, [])
-    Node[] functions = []
-    for (Node child : program.children):
-        if (child.kind == 'Function' || child.kind == 'CachedFunction'):
-            functions.push(child)
     Node[] children = []
     Node[] generated = []
     int next_index = 0
+    string current_module_id = ''
     for (Node child : program.children):
-        SubmitLambdaRewrite rewritten = rewrite_int_array_expression(child, used_names, next_index, functions)
+        if (child.kind == 'ModuleMarker'):
+            current_module_id = child.value.substring(0)
+            children.push(child)
+            continue
+        Node[] visible_functions = program_visible_function_nodes(program.children, current_module_id)
+        SubmitLambdaRewrite rewritten = rewrite_int_array_expression(child, used_names, next_index, visible_functions)
         children.push(rewritten.node)
-        generated = append_nodes(generated, rewritten.generated)
+        generated = append_generated_nodes_for_module(generated, rewritten.generated, current_module_id)
         used_names = rewritten.used_names
         next_index = rewritten.next_index
     children = append_nodes(children, generated)
     return SubmitLambdaRewrite(Node('Program', program.value, children), generated, used_names, next_index)
+
+Node[] append_generated_nodes_for_module(Node[] target, Node[] generated, string module_id):
+    for (Node node : generated):
+        target.push(Node('ModuleMarker', module_id.substring(0), []))
+        target.push(node)
+    return target
 
 int submit_name_occurrence_count(string[] names, string name):
     int count = 0
@@ -1594,17 +1618,18 @@ bool global_array_callback_has_unsupported_capture(Node node, BindingIR[] global
 SubmitLambdaRewrite rewrite_submit_lambdas_in_program(Node program, bool include_submit):
     string[] unavailable_names = collect_submit_unavailable_names(program, [])
     BindingIR[] global_bindings = submit_unique_global_bindings(program.children)
-    Node[] functions = []
-    for (Node child : program.children):
-        if (child.kind == 'Function' || child.kind == 'CachedFunction'):
-            functions.push(child)
-
     Node[] rewritten_children = []
     Node[] generated = []
     string[] used_names = unavailable_names
     int next_index = 0
+    string current_module_id = ''
     for (Node child : program.children):
-        if (child.kind == 'Function' || child.kind == 'CachedFunction'):
+        if (child.kind == 'ModuleMarker'):
+            current_module_id = child.value.substring(0)
+            rewritten_children.push(child)
+            continue
+        Node[] visible_functions = program_visible_function_nodes(program.children, current_module_id)
+        if (child.kind == 'Function' || child.kind == 'CachedFunction' || child.kind == 'PrivateFunction'):
             BindingIR[] bindings = []
             for (BindingIR global_binding : global_bindings):
                 bindings.push(global_binding)
@@ -1615,14 +1640,14 @@ SubmitLambdaRewrite rewrite_submit_lambdas_in_program(Node program, bool include
             for (Node fn_child : child.children):
                 if (fn_child.kind != 'Param'):
                     body_nodes.push(fn_child)
-            SubmitScopedListRewrite rewritten_body = rewrite_submit_statement_list(body_nodes, used_names, next_index, functions, bindings, include_submit)
+            SubmitScopedListRewrite rewritten_body = rewrite_submit_statement_list(body_nodes, used_names, next_index, visible_functions, bindings, include_submit)
             Node[] function_children = []
             for (Node fn_child : child.children):
                 if (fn_child.kind == 'Param'):
                     function_children.push(fn_child)
             function_children = append_nodes(function_children, rewritten_body.nodes)
             rewritten_children.push(Node(child.kind, child.value, function_children))
-            generated = append_nodes(generated, rewritten_body.generated)
+            generated = append_generated_nodes_for_module(generated, rewritten_body.generated, current_module_id)
             used_names = rewritten_body.used_names
             next_index = rewritten_body.next_index
         else:
@@ -1631,9 +1656,9 @@ SubmitLambdaRewrite rewrite_submit_lambdas_in_program(Node program, bool include
                 bindings.push(global_binding)
             if (child.kind == 'VarDecl' && global_array_callback_has_unsupported_capture(child, global_bindings)):
                 throw 'captured int[] map_to/filter callbacks in global initializers may capture only int or bool values'
-            SubmitScopedRewrite rewritten = rewrite_submit_expression(child, used_names, next_index, functions, bindings, include_submit, child.kind == 'VarDecl')
+            SubmitScopedRewrite rewritten = rewrite_submit_expression(child, used_names, next_index, visible_functions, bindings, include_submit, child.kind == 'VarDecl')
             rewritten_children.push(rewritten.node)
-            generated = append_nodes(generated, rewritten.generated)
+            generated = append_generated_nodes_for_module(generated, rewritten.generated, current_module_id)
             used_names = rewritten.used_names
             next_index = rewritten.next_index
     for (Node generated_node : generated):
@@ -3373,10 +3398,12 @@ string[] lower_statement_lines(Node node, string indent):
         for (Node child in node.children):
             lines.push(lower_statement_lines(child, indent + '  ')[0])
         return lines
-    if (node.kind == 'Function' || node.kind == 'CachedFunction'):
+    if (node.kind == 'Function' || node.kind == 'CachedFunction' || node.kind == 'PrivateFunction'):
         string head = 'func '
         if (node.kind == 'CachedFunction'):
             head = 'cached func '
+        else if (node.kind == 'PrivateFunction'):
+            head = 'private func '
         string[] lines = [indent + head + node.value]
         lines.push(indent + '  params')
         Node[] body_nodes = []
@@ -3774,7 +3801,7 @@ void validate_const_bindings(Node program):
     for (Node child : program.children):
         if (child.kind == 'VarDecl'):
             globals.push(ir_parse_binding_decl(child.value))
-        if (child.kind == 'Function' || child.kind == 'CachedFunction'):
+        if (child.kind == 'Function' || child.kind == 'CachedFunction' || child.kind == 'PrivateFunction'):
             BindingIR signature = ir_parse_binding_decl(child.value)
             function_names.push(signature.name)
         if (child.kind == 'RecordDecl'):
@@ -3782,7 +3809,7 @@ void validate_const_bindings(Node program):
     for (Node child : program.children):
         if (child.kind == 'VarDecl' && child.children.length() > 0):
             validate_const_expression(child.children[0], globals, function_names, record_nodes)
-        if (child.kind == 'Function' || child.kind == 'CachedFunction'):
+        if (child.kind == 'Function' || child.kind == 'CachedFunction' || child.kind == 'PrivateFunction'):
             BindingIR[] function_bindings = const_copy_bindings(globals)
             for (Node fn_child : child.children):
                 if (fn_child.kind == 'Param'):
@@ -3856,7 +3883,7 @@ bool top_level_function_starts(Token[] tokens, int index):
         return false
     return token_is(token_at(tokens, current), 'SYMBOL', ':') || token_is(token_at(tokens, current), 'SYMBOL', '{')
 
-LoweredFunctionDeclIR lower_function_declaration_from_parts(FunctionDeclParseResult function_decl):
+LoweredFunctionDeclIR lower_function_declaration_from_parts(FunctionDeclParseResult function_decl, string module_id):
     BindingIR[] params = []
     for (string param_binding in function_decl.params):
         params.push(ir_parse_binding_decl(param_binding))
@@ -3869,7 +3896,7 @@ LoweredFunctionDeclIR lower_function_declaration_from_parts(FunctionDeclParseRes
     string header = 'func ' + function_decl.return_type + ' ' + function_decl.name
     if (function_decl.is_cached):
         header = 'cached func ' + function_decl.return_type + ' ' + function_decl.name
-    return LoweredFunctionDeclIR(ParsedFunction(header, function_decl.name.substring(0), function_decl.return_type.substring(0), params, locals, blocks), function_decl.next_index)
+    return LoweredFunctionDeclIR(ParsedFunction(header, function_decl.name.substring(0), function_decl.name.substring(0), module_id.substring(0), function_decl.is_private, function_decl.return_type.substring(0), params, locals, blocks), function_decl.next_index)
 
 TerminatorIR empty_terminator():
     string[] empty_args = []
@@ -3922,14 +3949,14 @@ BlockIR[] linear_instructions_to_blocks(LinearInstruction[] instructions):
 # Global initialization emits straight-line IR. Keep a branching initializer at its
 # original initialization point by calling an ordinary CFG function. Dots cannot
 # occur in source identifiers, so generated functions and bool slots are hygienic.
-ParsedFunction lower_logical_global_initializer(Node declaration, int index):
+ParsedFunction lower_logical_global_initializer(Node declaration, int index, string module_id):
     BindingIR binding = ir_parse_binding_decl(declaration.value)
     string result_type = binding.type_name
     if (result_type.starts_with('const ')):
         result_type = result_type.substring(6)
     string name = 'global.logic.' + index.to_string()
     LinearIRBlockResult value = lower_linear_statement_ir(Node('Return', '', declaration.children), 0)
-    return ParsedFunction('func ' + result_type + ' ' + name, name, result_type, [], collect_function_locals(value.instructions), linear_instructions_to_blocks(value.instructions))
+    return ParsedFunction('func ' + result_type + ' ' + name, name, name, module_id.substring(0), false, result_type, [], collect_function_locals(value.instructions), linear_instructions_to_blocks(value.instructions))
 
 ProgramIR lower_program_ir(Node program):
     SubmitLambdaRewrite rewritten = rewrite_submit_lambdas_in_program(program, true)
@@ -3942,17 +3969,20 @@ ProgramIR lower_program_ir(Node program):
     RecordDeclIR[] records = []
     EnumDeclIR[] enums = []
     ParsedFunction[] functions = []
+    string module_id = ''
     for (Node child : program.children):
-        if (child.kind == 'ImportDecl'):
+        if (child.kind == 'ModuleMarker'):
+            module_id = child.value.substring(0)
+        else if (child.kind == 'ImportDecl'):
             imports.push(ImportDeclIR('import ' + child.value))
         else if (child.kind == 'VarDecl'):
             if (contains_logical_expression(child.children[0])):
-                ParsedFunction initializer = lower_logical_global_initializer(child, globals.length())
+                ParsedFunction initializer = lower_logical_global_initializer(child, globals.length(), module_id)
                 functions.push(initializer)
-                globals.push(GlobalDeclIR('global ' + child.value, [LinearInstruction('value', 't0', 'unknown', 'unknown', 'call', [initializer.name])], 't0'))
+                globals.push(GlobalDeclIR('global ' + child.value, [LinearInstruction('value', 't0', 'unknown', 'unknown', 'call', [initializer.name])], 't0', module_id.substring(0)))
             else:
                 TempIRResult value = lower_linear_value_ir(child.children[0], 0)
-                globals.push(GlobalDeclIR('global ' + child.value, value.instructions, value.name))
+                globals.push(GlobalDeclIR('global ' + child.value, value.instructions, value.name, module_id.substring(0)))
         else if (child.kind == 'RecordDecl'):
             string[] fields = []
             for (Node field_decl : child.children):
@@ -3963,7 +3993,7 @@ ProgramIR lower_program_ir(Node program):
             for (Node value_decl : child.children):
                 values.push('value ' + value_decl.value)
             enums.push(EnumDeclIR('enum ' + child.value, values))
-        else if (child.kind == 'Function' || child.kind == 'CachedFunction'):
+        else if (child.kind == 'Function' || child.kind == 'CachedFunction' || child.kind == 'PrivateFunction'):
             BindingIR[] params = []
             Node[] body_nodes = []
             for (Node fn_child : child.children):
@@ -3980,7 +4010,7 @@ ProgramIR lower_program_ir(Node program):
             if (child.kind == 'CachedFunction'):
                 header = 'cached func ' + child.value
             BindingIR signature_binding = ir_parse_binding_decl(child.value)
-            functions.push(ParsedFunction(header, signature_binding.name.substring(0), signature_binding.type_name.substring(0), params, locals, blocks))
+            functions.push(ParsedFunction(header, signature_binding.name.substring(0), signature_binding.name.substring(0), module_id.substring(0), child.kind == 'PrivateFunction', signature_binding.type_name.substring(0), params, locals, blocks))
         else:
             throw 'unsupported top-level node in shared bootstrap IR: ' + child.kind
     return ProgramIR(imports, globals, records, enums, functions)
@@ -3998,7 +4028,7 @@ bool program_declares_range(Node program):
     for (Node child : program.children):
         if (child.kind == 'RecordDecl' && child.value == 'range'):
             return true
-        if (child.kind == 'Function' || child.kind == 'CachedFunction'):
+        if (child.kind == 'Function' || child.kind == 'CachedFunction' || child.kind == 'PrivateFunction'):
             if (ir_parse_binding_decl(child.value).name == 'range'):
                 return true
     return false
@@ -4037,19 +4067,36 @@ ProgramIR lower_tokens_ir(Token[] tokens):
     RecordDeclIR[] records = []
     EnumDeclIR[] enums = []
     ParsedFunction[] functions = []
+    string current_module_id = ''
 
     int current = skip_statement_separators(tokens, 0)
     while (!token_is(token_at(tokens, current), 'EOF', '')):
         Token token = token_at(tokens, current)
+        if (token.kind == 'MODULE'):
+            current_module_id = token.value.substring(0)
+            current += 1
+            continue
+        if (token_is(token, 'KEYWORD', 'private')):
+            if (token_is(token_at(tokens, current + 1), 'KEYWORD', 'cached')):
+                throw parser_error(token_at(tokens, current + 1), 'private cached functions are not supported')
+            if (token_is(token_at(tokens, current + 1), 'KEYWORD', 'record') || token_is(token_at(tokens, current + 1), 'KEYWORD', 'enum') || token_is(token_at(tokens, current + 1), 'KEYWORD', 'const')):
+                throw parser_error(token, 'private is only valid on top-level ordinary functions')
+            if (!top_level_function_starts(tokens, current + 1)):
+                throw parser_error(token, 'private is only valid on top-level ordinary functions')
+            FunctionDeclParseResult function_decl = parse_function_declaration_parts(tokens, current + 1, false, true)
+            LoweredFunctionDeclIR lowered_function = lower_function_declaration_from_parts(function_decl, current_module_id)
+            functions.push(lowered_function.function_ir)
+            current = skip_statement_separators(tokens, lowered_function.next_index)
+            continue
         if (token_is(token, 'KEYWORD', 'cached')):
-            FunctionDeclParseResult function_decl = parse_function_declaration_parts(tokens, current + 1, true)
-            LoweredFunctionDeclIR lowered_function = lower_function_declaration_from_parts(function_decl)
+            FunctionDeclParseResult function_decl = parse_function_declaration_parts(tokens, current + 1, true, false)
+            LoweredFunctionDeclIR lowered_function = lower_function_declaration_from_parts(function_decl, current_module_id)
             functions.push(lowered_function.function_ir)
             current = skip_statement_separators(tokens, lowered_function.next_index)
             continue
         if (top_level_function_starts(tokens, current)):
-            FunctionDeclParseResult function_decl = parse_function_declaration_parts(tokens, current, false)
-            LoweredFunctionDeclIR lowered_function = lower_function_declaration_from_parts(function_decl)
+            FunctionDeclParseResult function_decl = parse_function_declaration_parts(tokens, current, false, false)
+            LoweredFunctionDeclIR lowered_function = lower_function_declaration_from_parts(function_decl, current_module_id)
             functions.push(lowered_function.function_ir)
             current = skip_statement_separators(tokens, lowered_function.next_index)
             continue
@@ -4059,12 +4106,12 @@ ProgramIR lower_tokens_ir(Token[] tokens):
             imports.push(ImportDeclIR('import ' + child.value))
         else if (child.kind == 'VarDecl'):
             if (contains_logical_expression(child.children[0])):
-                ParsedFunction initializer = lower_logical_global_initializer(child, globals.length())
+                ParsedFunction initializer = lower_logical_global_initializer(child, globals.length(), current_module_id)
                 functions.push(initializer)
-                globals.push(GlobalDeclIR('global ' + child.value, [LinearInstruction('value', 't0', 'unknown', 'unknown', 'call', [initializer.name])], 't0'))
+                globals.push(GlobalDeclIR('global ' + child.value, [LinearInstruction('value', 't0', 'unknown', 'unknown', 'call', [initializer.name])], 't0', current_module_id.substring(0)))
             else:
                 TempIRResult value = lower_linear_value_ir(child.children[0], 0)
-                globals.push(GlobalDeclIR('global ' + child.value, value.instructions, value.name))
+                globals.push(GlobalDeclIR('global ' + child.value, value.instructions, value.name, current_module_id.substring(0)))
         else if (child.kind == 'RecordDecl'):
             string[] fields = []
             for (Node field_decl : child.children):
@@ -4075,7 +4122,7 @@ ProgramIR lower_tokens_ir(Token[] tokens):
             for (Node value_decl : child.children):
                 values.push('value ' + value_decl.value)
             enums.push(EnumDeclIR('enum ' + child.value, values))
-        else if (child.kind == 'Function' || child.kind == 'CachedFunction'):
+        else if (child.kind == 'Function' || child.kind == 'CachedFunction' || child.kind == 'PrivateFunction'):
             child = Node(child.kind, child.value, normalize_function_local_bindings(child.children))
             BindingIR[] params = []
             Node[] body_nodes = []
@@ -4093,7 +4140,7 @@ ProgramIR lower_tokens_ir(Token[] tokens):
             if (child.kind == 'CachedFunction'):
                 header = 'cached func ' + child.value
             BindingIR signature_binding = ir_parse_binding_decl(child.value)
-            functions.push(ParsedFunction(header, signature_binding.name.substring(0), signature_binding.type_name.substring(0), params, locals, blocks))
+            functions.push(ParsedFunction(header, signature_binding.name.substring(0), signature_binding.name.substring(0), current_module_id.substring(0), child.kind == 'PrivateFunction', signature_binding.type_name.substring(0), params, locals, blocks))
         else:
             throw 'unsupported top-level node in shared bootstrap IR: ' + child.kind
         current = skip_statement_separators(tokens, statement.next_index)
@@ -4101,4 +4148,8 @@ ProgramIR lower_tokens_ir(Token[] tokens):
 
 ProgramIR lower_source_ir(string source):
     Token[] tokens = lex_source(source)
+    return lower_tokens_ir(tokens)
+
+ProgramIR lower_source_ir_with_module_ids(string source, string[] module_ids):
+    Token[] tokens = lex_source_with_module_ids(source, module_ids)
     return lower_tokens_ir(tokens)

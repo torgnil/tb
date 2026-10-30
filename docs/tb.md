@@ -58,6 +58,18 @@ Build and invocation details are documented in the repository or release `README
 - A global `num` may be initialized by a decimal literal such as `num RATE = 1.25` or an integer literal such as `num COUNT = 5`. Decimal literals keep their written scale; integer literals use scale zero. Runtime initializers remain supported.
 - Top-level executable statements are rejected: executable code belongs inside `main` or other functions.
 
+Imports are expanded relative to the importing source file. Unmarked top-level
+functions remain public and are visible through transitive imports. Prefix an
+ordinary top-level function with `private` to restrict it to its declaring
+source file; that file can use it before or after its declaration, including
+from global initializers. A local private function takes precedence over a
+visible public function or builtin with the same name. Other files cannot call
+or use it as a callback, even if they import the declaring file indirectly.
+Private names may repeat in different files, but not within one file. Private
+cached functions, `main`, globals, records, enums, and nested functions are not
+supported. Repeated and diamond imports load a lexically normalized path once;
+an active import cycle is a compiler error.
+
 4. Types
 
 - int — 64-bit signed integer.
@@ -125,6 +137,13 @@ string storage, while ordinary string fields retain their existing literal
 storage behavior.
 
 5. Declarations
+
+- Private ordinary top-level function:
+
+  `private int parse_helper(string text) { ... }`
+
+  Private functions are visible only in their declaring source file. Imports
+  expose only unmarked public functions; see the module rules above.
 
 - Variable declaration (typed):
 
