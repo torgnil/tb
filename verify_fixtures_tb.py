@@ -74,6 +74,44 @@ def find_runtime_output_target(source_text: str) -> Path | None:
     return Path(matches[0])
 
 
+def prepare_fixture_workspace(
+    workspace_path: Path,
+    fixtures_dir: Path,
+    input_path: Path,
+    source_text: str,
+) -> None:
+    fixture_names = [fixtures_dir.name]
+    if fixtures_dir.name != "test-files":
+        fixture_names.append("test-files")
+
+    fixture_assets: set[Path] = set()
+    for suffix in (".in", ".out", ".err", ".tb"):
+        companion = input_path.with_suffix(suffix)
+        if companion.is_file():
+            fixture_assets.add(Path(companion.name))
+
+    for literal_path in re.findall(r"['\"]([^'\"]+)['\"]", source_text):
+        path_parts = Path(literal_path).parts
+        if len(path_parts) < 2 or path_parts[0] not in fixture_names:
+            continue
+        relative_path = Path(*path_parts[1:])
+        if ".." in relative_path.parts:
+            continue
+        if (fixtures_dir / relative_path).is_file():
+            fixture_assets.add(relative_path)
+
+    for fixture_name in fixture_names:
+        fixture_workspace = workspace_path / fixture_name
+        fixture_workspace.mkdir(parents=True, exist_ok=True)
+        for relative_path in sorted(fixture_assets):
+            source_path = fixtures_dir / relative_path
+            if not source_path.is_file():
+                continue
+            destination = fixture_workspace / relative_path
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source_path, destination)
+
+
 def run_fixture(
     compiler_bin: Path,
     fixtures_dir: Path,
@@ -115,11 +153,7 @@ def run_fixture(
             )
 
         workspace_path = tmp_path / "workspace"
-        fixture_workspace = workspace_path / fixtures_dir.name
-        shutil.copytree(fixtures_dir, fixture_workspace)
-        if fixtures_dir.name != "test-files":
-            compat_workspace = workspace_path / "test-files"
-            shutil.copytree(fixtures_dir, compat_workspace)
+        prepare_fixture_workspace(workspace_path, fixtures_dir, input_path, source_text)
 
         linkflags_path = Path(f"{output_path}.linkflags")
         cflags_path = Path(f"{output_path}.cflags")
