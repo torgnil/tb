@@ -1,106 +1,375 @@
-const map<int, string[]> GLOBAL_ROWS = {7: [], -3: ['global']}
 
-record Rows(map<int, string[]> text, map<string, int[]> numbers);
 
-map<int, string[]> make_rows(int seed):
-    string token = seed.to_string()
-    map<int, string[]> rows = {seed: [], seed + 1: ['returned-' + token]}
-    rows[seed].push('returned-empty-' + token)
+# Case 1
+int item = 7
+int receiver_calls = 0
+
+record NumberBox(int[] values);
+
+int[] make_values(int seed):
+    receiver_calls += 1
+    return [0 - seed - 2, seed + 1, seed + 4]
+
+int[] map_square(int[] values):
+    return values.map_to(int item -> item * item)
+
+int mapped_sum(int[] values):
+    return values.map_to(int item -> item + item).sum()
+
+void print_values(int[] values):
+    for (int value in values):
+        print(value)
+
+void discard_values(int[] values):
+    print(values.length())
+
+int combined_case_1_main(string[] args):
+    int seed = args.length()
+    int item = 99
+    int[] source = make_values(seed)
+    int[] doubled = source.map_to(int item -> item + item)
+    doubled[0] = 123
+    print_values(doubled)
+    int[] differences = source.map_to(int item -> item - item)
+    print_values(differences)
+    int[] squares = source.map_to(int item -> item * item)
+    print_values(squares)
+    int[] quotients = source.map_to(int item -> item / item)
+    print_values(quotients)
+    int[] remainders = source.map_to(int item -> item % item)
+    print_values(remainders)
+    print(item)
+    print_values(source)
+    print(map_square(source).sum())
+    for (int value in source.map_to(int value -> value * value)):
+        print(value)
+
+    const int[] fixed = [0 - 9223372036854775807 - 1, -3, 2]
+    print_values(fixed.map_to(int value -> value * value))
+    print_values(fixed.map_to(int value -> value / value))
+    print_values(fixed.map_to(int value -> value % value))
+
+    int[] empty = []
+    print(empty.map_to(int value -> value + value).length())
+    print(empty.map_to(int value -> value - value).length())
+    print(empty.map_to(int value -> value * value).length())
+    print(empty.map_to(int value -> value / value).length())
+    print(empty.map_to(int value -> value % value).length())
+
+    print(mapped_sum(make_values(seed)))
+    int[] chained = make_values(seed).map_to(int value -> value * value).map_to(int value -> value + value)
+    print_values(chained)
+    for (int repeat in range(2)):
+        discard_values(make_values(seed).map_to(int value -> value * value))
+    print(receiver_calls)
+
+    NumberBox box = NumberBox(make_values(seed).map_to(int value -> value * value))
+    NumberBox copied = box
+    copied.values = make_values(seed).map_to(int value -> value + value)
+    print_values(box.values)
+    print_values(copied.values)
+    return 0
+
+# Case 2
+record Selection(int[] values, int total);
+
+string int_array_text(int[] values):
+    string text = '['
+    for (int index : range(values.length())):
+        if (index > 0):
+            text += ', '
+        text += values[index]
+    text += ']'
+    return text
+
+int array_total(int[] values):
+    int total = 0
+    for (int value : values):
+        total += value
+    return total
+
+int[] positive_values(int[] values):
+    return values.filter(int item -> item > 0)
+
+int __tb_int_filter_expression_0(int value):
+    return value + 100
+
+int[] global_values = [0 - 2, 2, 4, 0]
+int[] global_filtered = global_values.filter(int item -> item > 0 && item % 2 == 0)
+
+int combined_case_2_main(string[] args):
+    int seed = args.length() + 2
+    int[] values = [seed, 0 - seed, 0, seed, 4, 0 - 4, 3, 2]
+    const int[] frozen = values
+
+    print(int_array_text(values))
+    print(int_array_text(values.filter(int item -> item >= 0 && (item & 1) == 0)))
+    print(int_array_text(values.filter(int item -> item == 0 ? true : item != 0)))
+    print(int_array_text(values.filter(int item -> item > 99)))
+    print(int_array_text(values.filter(int item -> item <= 0)))
+    int[] empty_values = []
+    print(int_array_text(empty_values.filter(int item -> item == 0 ? item / item > 0 : false)))
+    print(int_array_text(values.filter(int item -> item != 0 && 12 / item > 0)))
+    print(int_array_text(frozen.filter(int item -> item < 0 || item == 0)))
+    print(int_array_text(values.filter(int item -> item > 0).filter(int item -> item % 2 == 0)))
+    print(int_array_text(global_filtered))
+    print(int_array_text(positive_values(values)))
+    print(array_total(values.filter(int item -> item > 0)))
+
+    Selection selected = Selection(values.filter(int item -> item >= 0), array_total(values))
+    print(int_array_text(selected.values))
+    print(selected.total)
+
+    int foreach_total = 0
+    for (int value : values.filter(int item -> item >= 0)):
+        if (value == 0):
+            continue
+        foreach_total += value
+        if (foreach_total > 5):
+            break
+    print(foreach_total)
+
+    int repeated_count = 0
+    for (int index : range(2)):
+        int[] repeated = values.filter(int item -> item > 0 && item < 5)
+        repeated_count += repeated.length()
+    print(repeated_count)
+    print(__tb_int_filter_expression_0(seed))
+    return 0
+
+# Case 3
+record Item(int value, string label);
+record Empty();
+record ItemMaps(map<int, Item> singles, map<int, Item[]> rows);
+
+int item_calls = 0
+
+Item make_item(int value, string label):
+    item_calls += 1
+    return Item(value, label)
+
+Item[] make_row(int value):
+    return [Item(value, 'row-' + value)]
+
+map<int, Item> returned_items(int key):
+    return {key: Item(1, 'old'), key + 1: Item(2, 'middle'), key: Item(key + 12, 'return-last')}
+
+map<int, Item[]> returned_rows(int key):
+    Item[] empty_row = []
+    return {key: [Item(3, 'old-row')], key + 1: empty_row, key: [Item(key + 13, 'return-row-last')]}
+
+map<int, Item> global_items = {3: Item(30, 'global-old'), 3: Item(31, 'global-last')}
+map<int, Item[]> global_rows = {4: [Item(40, 'global-row-old')], 4: [Item(41, 'global-row-last')]}
+
+int combined_case_3_main(string[] args):
+    int seed = args.length() + 4
+    print(global_items.length())
+    print(global_items[3].value)
+    print(global_rows.length())
+    print(global_rows[4][0].value)
+
+    item_calls = 0
+    map<int, Item> items = {seed: make_item(10, 'first'), -seed: make_item(20, 'negative'), seed + 1: make_item(31, 'next-first'), seed + 2 - 1: make_item(32, 'next-last')}
+    print(item_calls)
+    print(items.length())
+    print(items[seed].value)
+    print(items[seed + 1].value)
+    string[] item_order = items.keys()
+    print(item_order[0])
+    print(item_order[1])
+    print(item_order[2])
+
+    map<int, Item> copied_items = items
+    copied_items[seed] = Item(90, 'copy')
+    print(items[seed].value)
+    print(copied_items[seed].value)
+
+    const map<int, Item> fixed_items = {1: Item(1, 'const-old'), 1: Item(2, 'const-last')}
+    print(fixed_items.length())
+    print(fixed_items[1].value)
+
+    Item[] source = [Item(seed + 40, 'source')]
+    Item[] no_items = []
+    map<int, Item[]> rows = {seed: source, -seed: no_items, seed: make_row(seed + 20), seed + 1: [Item(50, 'row-first')], seed + 2 - 1: [Item(60, 'row-last')]}
+    source[0].value = 900
+    print(rows.length())
+    print(rows[seed][0].value)
+    print(rows[-seed].length())
+    print(rows[seed + 1][0].value)
+    string[] row_order = rows.keys()
+    print(row_order[0])
+    print(row_order[1])
+
+    map<int, Item[]> copied_rows = rows
+    copied_rows[seed][0] = Item(777, 'row-copy')
+    print(rows[seed][0].value)
+    print(copied_rows[seed][0].value)
+
+    ItemMaps catalog = ItemMaps(items, rows)
+    catalog.singles[seed] = Item(88, 'field-single')
+    catalog.rows[seed] = make_row(89)
+    print(items[seed].value)
+    print(catalog.singles[seed].value)
+    print(rows[seed][0].value)
+    print(catalog.rows[seed][0].value)
+
+    Item[] empty_items = []
+    map<int, Item[]> empty_last = {0: make_row(70), 0: empty_items}
+    print(empty_last.length())
+    print(empty_last[0].length())
+    map<int, Empty> zero_fields = {0: Empty(), 0: Empty()}
+    print(zero_fields.length())
+    Empty[] no_empty_records = []
+    map<int, Empty[]> empty_records = {1: [Empty()], 1: no_empty_records}
+    print(empty_records.length())
+    print(empty_records[1].length())
+
+    map<int, Item> returned = returned_items(seed)
+    print(returned.length())
+    print(returned[seed].value)
+    map<int, Item[]> returned_array = returned_rows(seed)
+    print(returned_array.length())
+    print(returned_array[seed][0].value)
+
+    map<int, Item> loop_items = {}
+    item_calls = 0
+    for (int index : range(3)):
+        loop_items = {seed: make_item(index, 'loop-old'), seed: make_item(index + 10, 'loop-last')}
+    print(item_calls)
+    print(loop_items.length())
+    print(loop_items[seed].value)
+
+    map<int, bool> flags = {1: false, 2: false, 1: true}
+    print(flags.length())
+    print(flags[1])
+    map<int, int> counts = {1: 10, 2: 20}
+    print(counts.length())
+    print(counts[2])
+    map<string, Item> words = {'same': Item(1, 'old'), 'other': Item(2, 'other'), 'same': Item(3, 'last')}
+    print(words.length())
+    print(words['same'].value)
+    return 0
+
+# Case 4
+map<int, int[][]> GLOBAL_INT_GRIDS = {1: [[1, 2], [3]]}
+map<string, string[][]> GLOBAL_STRING_GRIDS = {'global': [['g', 'h']]}
+map<string, string[][]> GLOBAL_ALIAS_GRIDS = {'source': [['target-5']], 'target-5': [['old']]}
+
+record GridBook(map<int, int[][]> numbers, map<string, string[][]> words);
+
+int[][] make_int_grid(int value):
+    return [[value, value + 1], [value + 2]]
+
+string[][] make_string_grid(string value):
+    return [[value, value + '-tail'], ['row']]
+
+map<int, int[][]> make_int_grid_map(int value):
+    int[][] local_grid = [[value, value + 1], [value + 2]]
+    map<int, int[][]> rows = {value: local_grid}
     return rows
 
+map<string, string[][]> make_string_grid_map(string value):
+    string[][] local_grid = [[value, value + '-tail'], ['row']]
+    map<string, string[][]> rows = {'result': local_grid}
+    return rows
+
+string[][] replace_alias_source(string value):
+    GLOBAL_ALIAS_GRIDS['source'] = [['changed']]
+    return [[value]]
+
+map<int, int[][]> early_grid_map(int value):
+    if (value > 0):
+        return {1: [[value]]}
+    return {}
+
+int combined_case_4_main(string[] args):
+    int seed = args.length() + 4
+    string label = 'tag-' + seed
+    print(GLOBAL_INT_GRIDS.length())
+    print(GLOBAL_INT_GRIDS[1][0][0])
+    print(GLOBAL_STRING_GRIDS.length())
+    print(GLOBAL_STRING_GRIDS['global'][0][1])
+
+    int[][] empty_int_grid = []
+    string[][] empty_string_grid = []
+    int[][] borrowed_int_grid = [[seed, seed + 1], [seed + 2]]
+    map<int, int[][]> int_grids = {1: borrowed_int_grid, 2: empty_int_grid}
+    borrowed_int_grid[0][0] = 99
+    print(int_grids.length())
+    print(int_grids[1][0][0])
+    print(borrowed_int_grid[0][0])
+    print(int_grids[2].length())
+    int_grids[1] = make_int_grid(seed + 10)
+    print(int_grids[1][0][0])
+    int_grids[1] = int_grids[1]
+    print(int_grids[1][0][0])
+    map<int, int[][]> copied_int_grids = int_grids
+    copied_int_grids[1][0][0] = 77
+    print(int_grids[1][0][0])
+    print(copied_int_grids[1][0][0])
+    int_grids[2] = int_grids[1]
+    int_grids[1][0][1] = 88
+    print(int_grids[2][0][1])
+
+    string[][] borrowed_string_grid = [[label, label + '-tail'], ['row']]
+    map<string, string[][]> string_grids = {'source': borrowed_string_grid, 'empty': empty_string_grid}
+    borrowed_string_grid[0][0] = 'changed-source'
+    print(string_grids['source'][0][0])
+    print(borrowed_string_grid[0][0])
+    string_grids['source'] = make_string_grid('owned')
+    string_grids['source'] = string_grids['source']
+    map<string, string[][]> copied_string_grids = string_grids
+    copied_string_grids['source'][0][0] = 'copied'
+    print(string_grids['source'][0][0])
+    print(copied_string_grids['source'][0][0])
+    print(string_grids['empty'].length())
+
+    GLOBAL_ALIAS_GRIDS[GLOBAL_ALIAS_GRIDS['source'][0][0]] = replace_alias_source('new-target')
+    print(GLOBAL_ALIAS_GRIDS['target-5'][0][0])
+    print(GLOBAL_ALIAS_GRIDS['source'][0][0])
+
+    GridBook book = GridBook({1: [[seed + 30, seed + 31]]}, {'entry': [['book']]})
+    book.numbers[1] = make_int_grid(seed + 32)
+    book.words['entry'] = make_string_grid('field')
+    print(book.numbers[1][0][0])
+    print(book.words['entry'][0][0])
+
+    map<int, int[][]> duplicate_int_grids = {9: [[1]], 10: [[2]], 9: [[seed + 3]]}
+    map<int, string[][]> duplicate_string_grids = {9: [['old']], 10: [['keep']], 9: [['last']]}
+    print(duplicate_int_grids.length())
+    print(duplicate_int_grids[9][0][0])
+    print(duplicate_string_grids.length())
+    print(duplicate_string_grids[9][0][0])
+
+    map<int, int[][]> returned_int_grids = make_int_grid_map(seed + 40)
+    map<string, string[][]> returned_string_grids = make_string_grid_map(label)
+    print(returned_int_grids[seed + 40][0][0])
+    print(returned_string_grids['result'][0][0])
+    map<int, int[][]> early = early_grid_map(seed)
+    print(early[1][0][0])
+
+    map<string, string[][]> loop_grids = {}
+    for (int index : range(2)):
+        string[][] loop_grid = [['loop-' + index]]
+        loop_grids = {'last': loop_grid}
+    print(loop_grids.length())
+    print(loop_grids['last'][0][0])
+
+    const map<int, int[][]> fixed_grids = {1: [[seed + 50]]}
+    print(fixed_grids[1][0][0])
+    return 0
+
 int main(string[] args):
-    int seed = args.length()
-    string token = seed.to_string()
-
-    string[] global_row = GLOBAL_ROWS[7]
-    print(global_row.length())
-
-    map<int, string[]> all_empty = {11: [], -1: []}
-    all_empty[11].push('filled-' + token)
-    string[][] all_values = all_empty.values()
-    string[] first_all = all_values[0]
-    print(all_empty.length())
-    print(first_all[0])
-
-    map<int, string[]> mixed_int = {-4: ['mixed-' + token], 3: []}
-    mixed_int[3].push('late-' + token)
-    string[][] mixed_values = mixed_int.values()
-    string[] mixed_first = mixed_values[0]
-    string[] mixed_second = mixed_values[1]
-    print(mixed_first[0])
-    print(mixed_second[0])
-
-    map<string, int[]> all_string_empty = {'z': [], 'a': []}
-    all_string_empty['z'].push(seed + 1)
-    int[][] string_empty_values = all_string_empty.values()
-    int[] string_empty_first = string_empty_values[0]
-    print(string_empty_first[0])
-
-    map<string, int[]> mixed_string = {'empty': [], 'filled': [seed + 2]}
-    mixed_string['empty'].push(seed + 3)
-    int[][] mixed_string_values = mixed_string.values()
-    int[] mixed_string_first = mixed_string_values[0]
-    int[] mixed_string_second = mixed_string_values[1]
-    print(mixed_string_first[0])
-    print(mixed_string_second[0])
-
-    map<int, string[]> reset = {8: ['old']}
-    reset = {8: [], 9: ['new-' + token]}
-    reset[8].push('reset-' + token)
-    string[] reset_row = reset[8]
-    print(reset.length())
-    print(reset_row[0])
-
-    map<int, string[]> duplicate = {5: ['first'], 6: []}
-    duplicate[5] = ['last']
-    duplicate[6].push('six-' + token)
-    string[] duplicate_keys = duplicate.keys()
-    string[] duplicate_row = duplicate[5]
-    print(duplicate.length())
-    print(duplicate_row[0])
-    print(duplicate_keys[0])
-    print(duplicate_keys[1])
-
-    Rows box = Rows({7: [], 8: ['ctor-' + token]}, {'empty': [], 'one': [seed]})
-    box.text[7].push('ctor-empty-' + token)
-    box.numbers['empty'].push(seed + 4)
-    int[] constructor_number = box.numbers['empty']
-    string[] constructor_row = box.text[7]
-    print(constructor_row[0])
-    print(constructor_number[0])
-
-    Rows cloned = box
-    cloned.text[7] = ['clone-' + token]
-    string[] box_row_after_clone = box.text[7]
-    string[] cloned_row = cloned.text[7]
-    print(box_row_after_clone[0])
-    print(cloned_row[0])
-
-    box.text = {9: [], 10: ['field-' + token]}
-    box.text[9].push('field-empty-' + token)
-    string[] field_row = box.text[9]
-    print(field_row[0])
-
-    map<int, string[]> returned = make_rows(seed)
-    string[][] returned_values = returned.values()
-    string[] returned_first = returned_values[0]
-    print(returned_first[0])
-
-    map<int, string[]> flow = {}
-    if (seed > 0):
-        flow = {1: [], 2: ['if-' + token]}
-    for (int i = 0; i < 1; i++):
-        flow = {3: [], 4: ['loop-' + token]}
-    switch (seed):
-        case 1:
-            flow = {5: [], 6: ['switch-' + token]}
-        default:
-            flow = {5: [], 6: ['switch-' + token]}
-    try:
-        throw 'caught-' + token
-    catch (exception err):
-        flow = {7: [], 8: ['catch-' + token]}
-    flow[7].push('try-catch-' + token)
-    string[] flow_row = flow[7]
-    print(flow_row[0])
+    print('=== case 1 ===')
+    if (combined_case_1_main(args) != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main(args) != 0):
+        return 1
+    print('=== case 3 ===')
+    if (combined_case_3_main(args) != 0):
+        return 1
+    print('=== case 4 ===')
+    if (combined_case_4_main(args) != 0):
+        return 1
     return 0

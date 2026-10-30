@@ -1,75 +1,193 @@
-record FieldCell(string text, int[] values);
-record FieldBox(string text, string[] words, map<string, int> counts, FieldCell cell, int[] numbers, bool[] flags, int[][] rows, string[][] groups);
 
-string make_field_text(int value):
-    return 'owned-' + value
 
-string[] make_field_words(int value):
-    return ['owned-word-' + value]
+# Case 1
+record EntryLabel(int value, string label);
 
-map<string, int> make_field_counts(int value):
-    return {'owned': value}
+int parameter_entry(int entry):
+    if (entry > 0):
+        int total = 0
+        for (int index = 0; index < entry; index++):
+            total += index
+        return total + entry
+    return 0 - entry
 
-FieldCell make_field_cell(int value):
-    return FieldCell('owned-cell-' + value, [value + 1])
+string managed_entry(int value):
+    string entry = 'runtime-' + value.to_string()
+    return entry
+
+int record_entry(EntryLabel[] values):
+    int total = 0
+    for (EntryLabel entry : values):
+        print(entry.label)
+        total += entry.value
+    return total
+
+cached int cached_entry(int entry):
+    if (entry > 0):
+        return entry + 10
+    return 10 - entry
+
+int combined_case_1_main(string[] args):
+    int entry = args.length() + 2
+    print(parameter_entry(entry))
+    print(managed_entry(entry))
+
+    EntryLabel[] values = [EntryLabel(entry, 'first'), EntryLabel(entry + 1, 'second')]
+    print(record_entry(values))
+
+    print(cached_entry(entry))
+    print(cached_entry(entry))
+    print(cached_entry(entry + 1))
+    return 0
+
+# Case 2
+record Item(int key);
+
+void inspect_queues(int label, const prio_q<int> values, const prio_q<Item> items):
+    print(label)
+    print(values.is_empty())
+    print(items.is_empty())
+
+int compare_items(Item left, Item right):
+    return right.key - left.key
+
+int compare_high_first(int left, int right):
+    return right - left
+
+int combined_case_2_main(string[] args):
+    int argc = args.length()
+    int[] values = [4, 1, 3]
+    prio_q<int> queue = values.create_prio_q(compare_high_first)
+    Item[] items = [Item(7), Item(2)]
+    prio_q<Item> item_queue = items.create_prio_q(compare_items)
+    const prio_q<int> const_queue = queue
+    const prio_q<Item> const_item_queue = item_queue
+
+    inspect_queues(10 + argc, const_queue, const_item_queue)
+    int label = 20 + argc
+    label.inspect_queues(queue, item_queue)
+
+    int[] empty_values = []
+    prio_q<int> empty_queue = empty_values.create_prio_q(compare_high_first)
+    print(empty_queue.is_empty())
+    print(queue.pop())
+    print(item_queue.pop().key)
+    print(empty_queue.is_empty())
+    return 0
+
+# Case 3
+record Ranked(bool active, string name, int key, int rank);
+record Solo(int key);
+
+int combined_case_3_main(string[] args):
+    int argc = args.length()
+    Ranked[] items = [Ranked(true, 'low', -5 + argc, 4), Ranked(false, 'high', 8 - argc, -2), Ranked(true, 'tie-a', 3, 3), Ranked(true, 'tie-b', 3, 3)]
+    prio_q<Ranked> by_key = items.create_prio_q((Ranked a, Ranked b) -> b.key - a.key)
+    prio_q<Ranked> same_key = items.create_prio_q((Ranked a, Ranked b) -> b.key - a.key)
+    prio_q<Ranked> by_rank = items.create_prio_q((Ranked a, Ranked b) -> b.rank - a.rank)
+
+    items[1] = Ranked(false, 'changed', 100, 100)
+    by_key.push(Ranked(true, 'pushed', 1 - argc, 0))
+    print(items[1].key)
+    while (!by_key.is_empty()):
+        print(by_key.pop().key)
+    print(same_key.pop().key)
+    while (!by_rank.is_empty()):
+        print(by_rank.pop().rank)
+
+    Ranked[] empty_items = []
+    prio_q<Ranked> empty_queue = empty_items.create_prio_q((Ranked a, Ranked b) -> b.key - a.key)
+    print(empty_queue.is_empty())
+    Ranked[] one_item = [Ranked(true, 'only', -11, 2)]
+    prio_q<Ranked> one_queue = one_item.create_prio_q((Ranked a, Ranked b) -> b.key - a.key)
+    print(one_queue.pop().key)
+    print(one_queue.is_empty())
+    Solo[] solo_items = [Solo(2), Solo(8)]
+    prio_q<Solo> solo_queue = solo_items.create_prio_q((Solo a, Solo b) -> b.key - a.key)
+    print(solo_queue.pop().key)
+    print(solo_queue.pop().key)
+    return 0
+
+# Case 4
+int count_int_values(int prefix, const int[] values):
+    return prefix + values.length()
+
+int count_flags(int prefix, const bool[] values):
+    return prefix + values.length()
+
+int count_words(int prefix, const string[] values):
+    return prefix + values.length()
+
+int count_int_rows(int prefix, const int[][] values):
+    return prefix + values.length()
+
+int count_string_rows(int prefix, const string[][] values):
+    return prefix + values.length()
+
+int receiver_length(const int[] values, int prefix):
+    return prefix + values.length()
+
+int[] copy_int_values(int prefix, const int[] values):
+    return values
+
+string[][] copy_string_rows(int prefix, const string[][] values):
+    return values
+
+int combined_case_4_main(string[] args):
+    int seed = args.length()
+    int[] ints = [seed]
+    bool[] flags = [seed > 1]
+    string[] words = ['word' + seed]
+    int[][] int_rows = [[], [seed]]
+    string[][] string_rows = [[], ['row' + seed]]
+
+    print(seed.count_int_values([]))
+    print(seed.count_flags([]))
+    print(seed.count_words([]))
+    print(seed.count_int_rows([[]]))
+    print(seed.count_string_rows([[]]))
+
+    print(seed.count_int_values([seed]))
+    print(seed.count_flags([seed > 1]))
+    print(seed.count_words(['x']))
+    print(seed.count_int_rows([[], [seed]]))
+    print(seed.count_string_rows([[], ['x']]))
+
+    print(count_int_values(seed, ints))
+    print(seed.count_int_values(ints))
+    print(seed.count_flags(flags))
+    print(seed.count_words(words))
+    print(seed.count_int_rows(int_rows))
+    print(seed.count_string_rows(string_rows))
+    print([].receiver_length(seed))
+
+    int[] copied_ints = seed.copy_int_values(ints)
+    copied_ints[0] = seed + 10
+    print(ints[0])
+    print(copied_ints[0])
+
+    string[][] copied_rows = seed.copy_string_rows([[], ['fresh' + seed]])
+    copied_rows[1][0] = 'changed'
+    print(copied_rows[1][0])
+    print(copied_rows[0].length())
+
+    int total = 0
+    for (int i = 0; i < 3; i++):
+        total += i.count_int_values([])
+    print(total)
+    return 0
 
 int main(string[] args):
-    int count = args.length()
-    string seed_key = 'seed-' + count
-    map<string, int> seed_counts = {seed_key: count}
-    FieldBox box = FieldBox('seed-' + count, ['seed-word-' + count], seed_counts, FieldCell('seed-cell-' + count, [count + 5]), [count + 10], [true], [[count + 11]], [['seed-group-' + count]])
-
-    box.text = box.text
-    box.words = box.words
-    box.counts = box.counts
-    box.cell = box.cell
-    box.numbers = box.numbers
-    box.flags = box.flags
-    box.rows = box.rows
-    box.groups = box.groups
-    print(box.text)
-    print(box.words[0])
-    print(box.counts[seed_key])
-    print(box.cell.text)
-    print(box.numbers[0])
-    print(box.flags[0])
-    print(box.rows[0][0])
-    print(box.groups[0][0])
-
-    string source_text = 'borrowed-' + count
-    string borrowed_key = 'borrowed-' + count
-    string[] source_words = ['borrowed-word-' + count]
-    map<string, int> source_counts = {borrowed_key: count + 20}
-    FieldCell source_cell = FieldCell('borrowed-cell-' + count, [count + 21])
-    box.text = source_text
-    box.words = source_words
-    box.counts = source_counts
-    box.cell = source_cell
-    source_text = 'changed'
-    source_words[0] = 'changed'
-    source_counts[borrowed_key] = -1
-    source_cell.text = 'changed'
-    source_cell.values[0] = -2
-    print(box.text)
-    print(box.words[0])
-    print(box.counts[borrowed_key])
-    print(box.cell.text)
-    print(box.cell.values[0])
-
-    box.text = make_field_text(count)
-    box.words = make_field_words(count)
-    box.counts = make_field_counts(count + 30)
-    box.cell = make_field_cell(count + 31)
-    box.cell.text = box.cell.text
-    print(box.text)
-    print(box.words[0])
-    print(box.counts['owned'])
-    print(box.cell.text)
-    print(box.cell.values[0])
-
-    box.words = []
-    box.words = box.words
-    print(box.words.length())
-    box.words = make_field_words(count + 40)
-    print(box.words[0])
+    print('=== case 1 ===')
+    if (combined_case_1_main(args) != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main(args) != 0):
+        return 1
+    print('=== case 3 ===')
+    if (combined_case_3_main(args) != 0):
+        return 1
+    print('=== case 4 ===')
+    if (combined_case_4_main(args) != 0):
+        return 1
     return 0

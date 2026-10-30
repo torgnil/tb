@@ -1,103 +1,79 @@
-int visit_row(int[] values, int item):
-    if (values.length() == 2):
-        values.push(6)
-    return item
 
-int maybe_fail(int value):
-    if (value < 0):
-        throw 'negative item'
-    return value
 
-future<int> submit_local_row(thread_pool pool, int seed):
-    int[] local_row = [seed, 2]
-    return pool.submit(int[] row -> {
-        int total = 0
-        for (int item : row) {
-            total += item
-        }
-        return total
-    }, local_row)
+# Case 1
+record ConditionalSetBox(set<int> values);
+
+int make_calls = 0
+set<int> global_values = {6, 7}
+
+set<int> make_values(int value):
+    make_calls += 1
+    return {value}
+
+set<int> choose_return(bool owned, set<int> source):
+    return owned ? make_values(40) : source
+
+int combined_case_1_main(string[] args):
+    set<int> source = {1, 2}
+    const set<int> fixed = {3, 4}
+    ConditionalSetBox box = ConditionalSetBox({5})
+    set<int> empty = {}
+
+    int before = make_calls
+    set<int> borrowed = false ? make_values(10) : source
+    print(make_calls == before)
+    borrowed.add(20)
+    print(source.contains(20))
+
+    set<int> owned = true ? make_values(11) : source
+    print(make_calls == before + 1)
+    print(owned.contains(11))
+
+    set<int> const_choice = true ? fixed : empty
+    const_choice.add(30)
+    print(fixed.contains(30))
+
+    set<int> global_choice = false ? empty : global_values
+    global_choice.add(31)
+    print(global_values.contains(31))
+
+    set<int> field_choice = false ? empty : box.values
+    field_choice.add(32)
+    print(box.values.contains(32))
+
+    set<int> borrowed_return = choose_return(false, source)
+    borrowed_return.add(33)
+    print(source.contains(33))
+
+    set<int> owned_return = choose_return(true, source)
+    print(owned_return.contains(40))
+
+    int loop_index = 0
+    while (loop_index < 2):
+        set<int> loop_choice = loop_index == 0 ? make_values(loop_index + 50) : empty
+        print(loop_choice.length())
+        loop_index += 1
+
+    set<int> argument_choice = args.length() > 0 ? make_values(60) : source
+    print(argument_choice.length())
+    return 0
+
+# Case 2
+record slice(bool[] values);
+
+int combined_case_2_main(string[] args):
+    bool[] values = [true, false]
+    slice snapshot = slice(values)
+    bool[] part = values[0:1]
+    print(snapshot.values.length())
+    print(part.length())
+    return 0
 
 int main(string[] args):
-    thread_pool pool = thread_pool(1)
-    int seed = args.length()
-    int offset = seed
-    int[] source = [seed, 2]
-    int[] row_input = [seed + 2, 3]
-    int[] empty_input = []
-
-    future<int> sum = pool.submit(int[] row -> {
-        int total = 0
-        for (int item : row) {
-            total += item
-            item = 99
-        }
-        return total
-    }, source)
-    future<bool> found = pool.submit(int[] row -> {
-        for (const int item : row) {
-            if (item == seed) {
-                return true
-            }
-        }
-        return false
-    }, source)
-    future<int> empty = pool.submit(int[] row -> {
-        int total = 0
-        for (int item : row) {
-            total += 100
-        }
-        return total
-    }, empty_input)
-    future<int> stopped = pool.submit(int[] row -> {
-        int total = 0
-        for (int item : row) {
-            if (item == 2) {
-                break
-            }
-            total += item
-        }
-        return total
-    }, source)
-    future<int> nested_range = pool.submit(int[] row -> {
-        int total = 0
-        for (const int item : row) {
-            for (int repeat : range(2)) {
-                total += item
-            }
-        }
-        return total + offset
-    }, source)
-    future<int> live_length = pool.submit(int[] values -> {
-        int total = 0
-        for (int item : values) {
-            total += visit_row(values, item)
-        }
-        return total
-    }, row_input)
-    future<int> recovered = pool.submit(int[] row -> {
-        int total = 0
-        for (int item : row) {
-            try {
-                total += maybe_fail(item - 2)
-            } catch (string error) {
-                total += 1
-                continue
-            }
-        }
-        return total
-    }, [seed, 2])
-    future<int> local = submit_local_row(pool, seed)
-
-    source[0] = 99
-    print(sum.await())
-    print(sum.await())
-    print(found.await())
-    print(empty.await())
-    print(stopped.await())
-    print(nested_range.await())
-    print(live_length.await())
-    print(recovered.await())
-    print(local.await())
-    print(source[0])
+    print('=== case 1 ===')
+    if (combined_case_1_main(args) != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main(args) != 0):
+        return 1
     return 0

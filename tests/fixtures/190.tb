@@ -1,95 +1,294 @@
-record WordBox(string[] words);
 
-int consume_words(string[] words):
-    return words.length()
 
-int[] make_int_result(int[] source):
-    return [source.length(), source.length() + 1]
+# Case 1
+record IntRows(int[][] values);
+record StringRows(string[][] values);
 
-bool[] make_bool_result(bool[] source):
-    return [source[0], false]
+int compare_descending(int left, int right):
+    return right - left
 
-string[] make_string_result(string[] source):
-    return [source[0] + '-copy']
+int[] make_int_row(int value):
+    return [value, value + 1]
 
-int[][] make_int_rows(int[][] source):
-    return [[source[0][0] + 1]]
+string[] make_string_row(int value):
+    string dynamic_text = 'row-' + value.to_string()
+    return [dynamic_text, dynamic_text + '-tail']
 
-string[][] make_string_rows(string[][] source):
-    return [[source[0][0] + '-copy']]
+int[][] replace_parameter(int[][] rows, int value):
+    rows[-1] = rows[-1]
+    rows[-1] = rows[-1]
+    rows[-1] = make_int_row(value)
+    return rows
 
-int[] empty_int_result(int[] source):
-    return []
+string[][] replace_string_parameter(string[][] rows, string[] value):
+    rows[-1] = rows[-1]
+    rows[-1] = value
+    return rows
 
-bool[] empty_bool_result(bool[] source):
-    return []
+int combined_case_1_main(string[] args):
+    int n = args.length() + 10
 
-string[] empty_string_result(string[] source):
-    return []
+    int[][] rows = [[n + 3, n + 1, n + 2], [n + 20]]
+    rows[0] = rows[0].sort(compare_descending)
+    print(rows[0])
+    rows[0] = rows[0]
+    rows[0][0] = 99
+    print(rows[0])
+    rows[1] = rows[0]
+    rows[1][0] = 77
+    print(rows[0])
+    print(rows[1])
+    rows[-1] = [n + 30]
+    rows[-1] = make_int_row(n + 40)
+    print(rows[-1])
 
-int[][] empty_int_rows(int[][] source):
-    return []
+    int[][] changed = replace_parameter(rows, n + 50)
+    print(changed[-1])
 
-string[][] empty_string_rows(string[][] source):
-    return []
+    IntRows int_box = IntRows([[n + 60], [n + 61]])
+    int_box.values[-1] = int_box.values[-1]
+    int_box.values[0] = make_int_row(n + 70)
+    print(int_box.values[0])
+    print(int_box.values[1])
 
-string[] returned_split(string text):
-    return text.split(',')
+    string count_text = n.to_string()
+    string[][] labels = [['old-' + count_text], ['keep-' + count_text]]
+    string old_row_value = labels[0][0]
+    labels[0] = labels[0]
+    labels[0] = labels[0]
+    labels[0][0] = 'changed-' + count_text
+    print(old_row_value)
+    print(labels[0][0])
+    labels[1] = labels[0]
+    labels[1][0] = 'cross-' + count_text
+    print(labels[0][0])
+    print(labels[1][0])
+    labels[-1] = ['literal-' + count_text]
+    labels[-1] = make_string_row(n + 80)
+    print(labels[-1])
+
+    string[][] changed_labels = replace_string_parameter(labels, ['parameter-' + count_text])
+    print(changed_labels[-1])
+
+    StringRows string_box = StringRows([['field-old-' + count_text]])
+    string_box.values[0] = string_box.values[0]
+    string_box.values[0] = make_string_row(n + 90)
+    print(string_box.values[0])
+
+    int[][] empty_rows = [[], [n]]
+    int[] empty_int_row = []
+    empty_rows[0] = empty_rows[0]
+    empty_rows[0] = empty_int_row
+    empty_rows[0] = [n + 100]
+    print(empty_rows[0].length())
+    print(empty_rows[1])
+
+    string[][] empty_string_rows = [[], ['populated-' + count_text]]
+    string[] empty_string_row = []
+    empty_string_rows[0] = empty_string_rows[0]
+    empty_string_rows[0] = empty_string_row
+    empty_string_rows[0] = ['filled-' + count_text]
+    print(empty_string_rows[0])
+    return 0
+
+# Case 2
+record SearchBox(bool[] flags, string[] words);
+
+int find_int(int[] values, int needle):
+    return values.index_of(needle)
+
+int combined_case_2_main(string[] args):
+    int argc = args.length()
+    int[] values = [argc, argc + 2, argc, argc + 3]
+    const int[] frozen = [argc + 1, argc, argc + 1]
+    print(index_of(values, argc))
+    print(values.index_of(argc + 3))
+    print(values.index_of(argc + 20))
+    print(index_of(frozen, argc))
+    print(find_int(values, argc + 2))
+
+    int[] empty_values = []
+    int[] singleton = [argc + 7]
+    print(empty_values.index_of(argc))
+    print(index_of(singleton, argc + 7))
+
+    bool[] flags = [argc > 1, false, argc > 1, true]
+    print(index_of(flags, false))
+    print(flags.index_of(true))
+    print(flags.index_of(argc > 5))
+    const bool[] frozen_flags = [true, false, true]
+    print(frozen_flags.index_of(false))
+    bool[] empty_flags = []
+    print(empty_flags.index_of(true))
+    empty_flags.push(true)
+    print(empty_flags.index_of(true))
+    bool[] one_flag = [false]
+    print(index_of(one_flag, false))
+
+    string prefix = 'match-' + argc
+    string[] words = [prefix, '', 'match-' + argc, 'tail-' + argc]
+    print(index_of(words, prefix))
+    print(words.index_of(''))
+    print(words.index_of('missing'))
+    const string[] frozen_words = ['quiet-' + argc, 'seed-' + argc, 'quiet-' + argc]
+    string frozen_needle = 'seed-' + argc
+    print(frozen_words.index_of(frozen_needle))
+    string[] empty_words = []
+    print(empty_words.index_of(''))
+    empty_words.push('filled')
+    print(empty_words.index_of('filled'))
+    string[] one_word = ['single']
+    print(index_of(one_word, 'single'))
+
+    SearchBox box = SearchBox([argc > 1, false, true], ['field-' + argc, '', 'field-' + argc])
+    print(index_of(box.flags, true))
+    print(box.words.index_of('field-' + argc))
+    print(box.words.index_of(''))
+    print(box.flags.length())
+    print(box.words.length())
+
+    values.push(argc + 9)
+    print(values.index_of(argc + 9))
+    print(values.length())
+    words.push(prefix)
+    print(words.index_of(prefix))
+    print(words.length())
+    return 0
+
+# Case 3
+record LastBox(int[] values, bool[] flags);
+
+int int_param_tail(int[] values):
+    return values.last()
+
+bool bool_param_tail(bool[] values):
+    return last(values)
+
+int combined_case_3_main(string[] args):
+    int count = args.length()
+
+    int[] values = [count + 10, count + 20]
+    print(last(values))
+    print(values.last())
+    print(values.length())
+    print(int_param_tail(values))
+    values.push(count + 30)
+    print(last(values))
+    print(values.pop())
+    print(values.last())
+    print(values.length())
+    values.insert(0, count + 5)
+    print(values.last())
+    print(values.length())
+    values.remove_at(0)
+    print(values.last())
+    print(values.length())
+
+    bool[] flags = [count > 1, false]
+    print(last(flags))
+    print(flags.last())
+    print(flags.length())
+    print(bool_param_tail(flags))
+    flags.push(count > 1)
+    print(last(flags))
+    print(flags.length())
+    flags.pop()
+    print(last(flags))
+    print(flags.length())
+
+    const int[] frozen_values = [count + 40]
+    const bool[] frozen_flags = [count > 1]
+    print(last(frozen_values))
+    print(frozen_values.last())
+    print(last(frozen_flags))
+    print(frozen_flags.last())
+
+    int[] singleton = [count + 50]
+    bool[] one_flag = [count > 1]
+    print(last(singleton))
+    print(one_flag.last())
+
+    LastBox box = LastBox([count + 60, count + 70], [false, count > 1])
+    print(last(box.values))
+    print(box.values.last())
+    print(last(box.flags))
+    print(box.flags.last())
+    print(box.values.length())
+    print(box.flags.length())
+    return 0
+
+# Case 4
+record inner(int value);
+record Payload(int value, string text, int[] values, bool[] flags, string[] words, int[][] rows, string[][] groups, inner child);
+record NumberBox(int value);
+
+NumberBox GLOBAL_NUMBER = NumberBox(41)
+
+Payload make_payload(int count):
+    return Payload(count, 'item-' + count.to_string(), [count, count + 1], [count > 0], ['word-' + count.to_string()], [[count, count + 1]], [['group-' + count.to_string()]], inner(count + 5))
+
+int inspect(Payload item):
+    return item.value + item.values.sum() + item.flags.sum() + item.words.length() + item.words[0].length() + item.rows.length() + item.rows[0].sum() + item.groups.length() + item.groups[0].length() + item.groups[0][0].length() + item.child.value
+
+void observe(Payload item):
+    print(item.value)
+
+int inspect_pair(Payload left, Payload right):
+    return inspect(left) + inspect(right)
+
+Payload echo_payload(Payload item):
+    return item
+
+string payload_text(Payload item):
+    return item.text
+
+int[] payload_values(Payload item):
+    return item.values
+
+int read_inner(inner item):
+    return item.value
+
+int read_number(NumberBox item):
+    return item.value
+
+int combined_case_4_main(string[] args):
+    int count = args.length()
+    print(inspect(Payload(count, 'direct-' + count.to_string(), [count, count + 1], [true], ['first'], [[count, count + 1]], [['nested']], inner(count + 2))))
+    print(inspect_pair(make_payload(count), make_payload(count + 1)))
+    print(make_payload(count + 2).inspect())
+    observe(make_payload(count + 3))
+
+    Payload borrowed = make_payload(count + 4)
+    print(inspect(borrowed))
+    print(borrowed.value)
+    const Payload fixed = make_payload(count + 5)
+    print(inspect(fixed))
+    print(fixed.value)
+    print(read_inner(borrowed.child))
+    print(borrowed.child.value)
+    print(read_number(GLOBAL_NUMBER))
+    print(read_number(GLOBAL_NUMBER))
+
+    Payload echoed = echo_payload(make_payload(count + 6))
+    print(inspect(echoed))
+    string kept_text = payload_text(make_payload(count + 7))
+    print(kept_text)
+    int[] kept_values = payload_values(make_payload(count + 8))
+    print(kept_values.sum())
+    print(inspect(echo_payload(make_payload(count + 9))))
+    return 0
 
 int main(string[] args):
-    string text = 'red,blue'
-    string[] split_words = text.split(',')
-    print(split_words)
-    const string[] const_words = text.split(',')
-    print(const_words)
-    split_words = 'green,yellow'.split(',')
-    print(split_words)
-    print(text.split_lines())
-    text.split(',')
-
-    print(consume_words('cyan,white'.split(',')))
-    string[] user_result_words = ['user']
-    print(consume_words(user_result_words.make_string_result()))
-    user_result_words.make_string_result()
-
-    string[] returned_words = returned_split('north,south')
-    print(returned_words)
-    WordBox box = WordBox('old,words'.split(','))
-    box.words = 'new,words'.split(',')
-    print(box.words)
-    string[][] nested_words = []
-    nested_words.push('nested,words'.split(','))
-    print(nested_words[0])
-
-    string[] borrowed_source = ['source', 'tail']
-    string[] result_snapshot = borrowed_source.make_string_result()
-    result_snapshot[0] = 'changed'
-    print(borrowed_source)
-    print(result_snapshot)
-
-    int[] int_result = [1, 2].make_int_result()
-    bool[] bool_result = [true, true].make_bool_result()
-    int[][] int_rows_result = [[3]].make_int_rows()
-    string[][] string_rows_result = [['row']].make_string_rows()
-    print(int_result)
-    print(bool_result[0])
-    print(bool_result[1])
-    print(int_rows_result[0])
-    print(string_rows_result[0])
-
-    int[] empty_int_source = []
-    bool[] empty_bool_source = []
-    string[] empty_string_source = []
-    int[][] empty_int_rows_source = []
-    string[][] empty_string_rows_source = []
-    int[] empty_ints = empty_int_source.empty_int_result()
-    bool[] empty_bools = empty_bool_source.empty_bool_result()
-    string[] empty_strings = empty_string_source.empty_string_result()
-    int[][] empty_int_rows_result = empty_int_rows_source.empty_int_rows()
-    string[][] empty_string_rows_result = empty_string_rows_source.empty_string_rows()
-    print(empty_ints.length())
-    print(empty_bools.length())
-    print(empty_strings.length())
-    print(empty_int_rows_result.length())
-    print(empty_string_rows_result.length())
+    print('=== case 1 ===')
+    if (combined_case_1_main(args) != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main(args) != 0):
+        return 1
+    print('=== case 3 ===')
+    if (combined_case_3_main(args) != 0):
+        return 1
+    print('=== case 4 ===')
+    if (combined_case_4_main(args) != 0):
+        return 1
     return 0

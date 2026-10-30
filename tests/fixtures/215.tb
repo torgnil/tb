@@ -1,57 +1,218 @@
-record Box(int value);
 
-int INDEX_CALLS = 0
 
-int last_index():
-    INDEX_CALLS += 1
-    return 0 - 1
+# Case 1
+record Empty();
+
+int count_ints(const int[] values):
+    return values.length()
+
+int count_flags(const bool[] flags):
+    return flags.length()
+
+int count_words(const string[] words):
+    return words.length()
+
+int count_int_rows(const int[][] rows):
+    return rows.length()
+
+int count_rows(const string[][] rows):
+    return rows.length()
+
+int combined_lengths(string[] first, const string[] second):
+    return first.length() + second.length()
+
+void append_word(string[] words):
+    words.push('added')
+    print(words.length())
+
+string last_word(const string[][] rows):
+    return rows[1][0]
+
+int count_empty_records(Empty[] values):
+    return values.length()
+
+int combined_case_1_main(string[] args):
+    string[] typed_empty = []
+    Empty[] empty_records = []
+    print(count_ints([]))
+    print(count_flags([]))
+    print(count_words([]))
+    print(count_words(typed_empty))
+    print(count_int_rows([[]]))
+    print(count_int_rows([[], [1, 2]]))
+    print(count_rows([[]]))
+    print(count_rows([[], ['one', 'two']]))
+    print(combined_lengths([], ['three']))
+    append_word([])
+    print(last_word([[], ['retained']]))
+    print(count_empty_records(empty_records))
+    print(count_words(['populated']))
+    return 0
+
+# Case 2
+int combined_case_2_main(string[] args) {
+    int total = 0;
+    int[] values = [2,3,4];
+    for (const int value : values) {
+        total += value;
+    }
+    int[] empty_values = [];
+    for (const int empty : empty_values) {
+        total += 100;
+    }
+    string[] words = ['red','blue'];
+    for (const string word in words) {
+        print(word);
+        continue;
+    }
+    for (const int value : [5,6]) {
+        total += value;
+    }
+    set<int> ids = {7,8};
+    for (const int id : ids) {
+        total += id;
+    }
+    for (int counter : [1]) {
+        counter += 1;
+        total += counter;
+    }
+    int seed = args.length();
+    int[][] rows = [[seed,2],[seed+1]];
+    for (const int[] row : rows) {
+        for (const int item : row) {
+            total += item;
+            continue;
+        }
+    }
+    print(rows[0][0]);
+    print(total);
+    return 0;
+}
+
+# Case 3
+int combined_case_3_main(string[] args) {
+    int seed = args.length();
+    int[] values = [2, seed];
+    int total = 0;
+    for (const int value_item : values) {
+        total += value_item;
+        print(value_item);
+    }
+    print(values[0]);
+    print(values[1]);
+
+    const int[] empty_values = [];
+    for (const int empty : empty_values) {
+        total += 100;
+    }
+    const int[] fixed_values = [4, 5];
+    for (const int fixed : fixed_values) {
+        total += fixed;
+    }
+
+    string[] words = ['fixed', 'runtime-' + args.length()];
+    for (const string word : words) {
+        print(word);
+    }
+
+    int[][] rows = [[3, seed], [seed + 1]];
+    for (const int[] row : rows) {
+        for (const int row_item : row) {
+            total += row_item;
+        }
+    }
+    print(rows[0][0]);
+    print(rows[1][0]);
+    print(total);
+
+    int mutable_total = 0;
+    for (int mutable_item : [1, 2]) {
+        mutable_item += 10;
+        mutable_total += mutable_item;
+    }
+    print(mutable_total);
+    return 0;
+}
+
+# Case 4
+int combined_case_4_main(string[] args) {
+    int seed = args.length();
+    int[] values = [2, seed];
+    int total = 0;
+    for (const int item : values) {
+        total += item;
+        print(item);
+    }
+    for (int item : values) {
+        item += 10;
+        total += item;
+        print(item);
+    }
+    print(values[0]);
+    print(values[1]);
+
+    for (int reverse_item : values) {
+        reverse_item += 20;
+        print(reverse_item);
+    }
+    for (const int reverse_item : values) {
+        print(reverse_item);
+    }
+
+    bool[] flags = [true, false];
+    for (const bool flag : flags) {
+        print(flag);
+    }
+    for (bool flag : flags) {
+        flag = !flag;
+        print(flag);
+    }
+    print(flags[0]);
+    print(flags[1]);
+
+    string[] words = ['fixed', 'runtime-' + args.length()];
+    for (const string word : words) {
+        print(word);
+    }
+    for (string word : words) {
+        word = word + '-changed';
+        print(word);
+    }
+    print(words[0]);
+    print(words[1]);
+
+    int[][] rows = [[3, seed], [seed + 1]];
+    for (const int[] row : rows) {
+        total += row.length();
+        print(row[0]);
+    }
+    for (int[] row : rows) {
+        row = [];
+        print(row.length());
+    }
+    print(rows[0][0]);
+    print(rows[1][0]);
+    print(total);
+
+    const int[] empty_values = [];
+    for (const int empty : empty_values) {
+        total += empty;
+    }
+    print(total);
+    return 0;
+}
 
 int main(string[] args):
-    int count = args.length()
-    const int first = 0
-    const int last = 0 - 1
-
-    int[] values = [count, 10]
-    print(values[first])
-    print(values[last])
-    values[first] = count + 1
-    values[last] += 2
-    print(values[0])
-    print(values[1])
-    values[last_index()] += 1
-    print(INDEX_CALLS)
-    print(values[last])
-
-    bool[] flags = [count == 1, false]
-    print(flags[first])
-    print(flags[last])
-    flags[last] = count == 3
-    print(flags[last])
-
-    string[] words = ['left', 'right']
-    print(words[last])
-    words[last] = 'word-' + count
-    print(words[last])
-    string text = 'text-' + count
-    print(text[last])
-
-    int[][] rows = [[count], [count + 2]]
-    print(rows[last][first])
-    rows[last][last] += 4
-    print(rows[1][0])
-
-    string[][] groups = [['a'], ['b-' + count]]
-    print(groups[last][first])
-    groups[last][first] = 'group-' + count
-    print(groups[1][0])
-
-    Box[] boxes = [Box(count + 1), Box(count + 2)]
-    print(boxes[last].value)
-    boxes[last].value += 4
-    print(boxes[1].value)
-
-    map<string, int> scores = {'key-' + count: count + 2}
-    print(scores['key-' + count])
-    scores['key-' + count] += 3
-    print(scores['key-' + count])
+    print('=== case 1 ===')
+    if (combined_case_1_main(args) != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main(args) != 0):
+        return 1
+    print('=== case 3 ===')
+    if (combined_case_3_main(args) != 0):
+        return 1
+    print('=== case 4 ===')
+    if (combined_case_4_main(args) != 0):
+        return 1
     return 0

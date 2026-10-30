@@ -1,162 +1,29 @@
-int flag_calls = 0
-int grid_calls = 0
-int word_calls = 0
-int condition_calls = 0
-
-record ArrayChoice(bool[] flags, int[][] grid, string[][] words);
-
-bool checked_condition(bool value):
-    condition_calls += 1
-    return value
-
-bool[] make_flags(int seed):
-    flag_calls += 1
-    return [seed > 0, seed > 1]
-
-int[][] make_grid(int seed):
-    grid_calls += 1
-    return [[seed, seed + 1], [seed + 2]]
-
-string[][] make_words(int seed):
-    word_calls += 1
-    return [['word-' + seed.to_string()], ['tail']]
-
-bool[] fail_flags():
-    throw 'unselected bool[] arm'
-    return []
-
-int[][] fail_grid():
-    throw 'unselected int[][] arm'
-    return []
-
-string[][] fail_words():
-    throw 'unselected string[][] arm'
-    return []
-
-bool[] return_flags(bool choose, int seed):
-    return choose ? make_flags(seed) : make_flags(seed + 10)
-
-int[][] return_grid(bool choose, int seed):
-    return choose ? make_grid(seed) : make_grid(seed + 10)
-
-string[][] return_words(bool choose, int seed):
-    return choose ? make_words(seed) : make_words(seed + 10)
-
-bool[] return_borrowed_flags(bool choose, bool[] left, bool[] right):
-    return choose ? left : right
-
-int[][] return_borrowed_grid(bool choose, int[][] left, int[][] right):
-    return choose ? left : right
-
-string[][] return_borrowed_words(bool choose, string[][] left, string[][] right):
-    return choose ? left : right
-
-int early_value(bool[] values):
-    bool[] selected = true ? values : values
-    if (selected[0]):
-        return selected.length()
-    return 0
-
-void print_flags(bool[] values):
-    print(values.length())
-    print(values[0] ? 1 : 0)
-    print(values[1] ? 1 : 0)
-
-void print_grid(int[][] values):
-    print(values.length())
-    print(values[0][0])
-    print(values[0][1])
-    print(values[1][0])
-
-void print_words(string[][] values):
-    print(values.length())
-    print(values[0][0])
-    print(values[1][0])
+import uuid;
+import uuid;
+import uuid_helper;
+import random;
+import regex;
 
 int main(string[] args):
-    bool choose_first = args.length() == 1
-    bool take_true = args.length() > 0
-    bool[] flags = checked_condition(choose_first) ? make_flags(1) : make_flags(2)
-    int[][] grid = choose_first ? make_grid(3) : make_grid(4)
-    string[][] words = choose_first ? make_words(5) : make_words(6)
-    print_flags(flags)
-    print_grid(grid)
-    print_words(words)
-    print(condition_calls)
-    print(flag_calls)
-    print(grid_calls)
-    print(word_calls)
-
-    bool[] nested_flags = choose_first ? make_flags(7) : (choose_first ? make_flags(8) : make_flags(9))
-    print_flags(nested_flags)
-    const bool[] fixed_flags = [true, false]
-    const int[][] fixed_grid = [[21, 22], [23]]
-    const string[][] fixed_words = [['fixed'], ['const']]
-    print_flags(choose_first ? fixed_flags : flags)
-    print_grid(choose_first ? fixed_grid : grid)
-    print_words(choose_first ? fixed_words : words)
-
-    bool[] literal_flags = choose_first ? [true, false] : [false, true]
-    int[][] literal_grid = choose_first ? [[14, 15], [16]] : [[17, 18], [19]]
-    string[][] literal_words = choose_first ? [['literal-a'], ['literal-b']] : [['other-a'], ['other-b']]
-    print_flags(literal_flags)
-    print_grid(literal_grid)
-    print_words(literal_words)
-
-    bool[] empty_flags = []
-    int[][] empty_grid = []
-    string[][] empty_words = []
-    print((choose_first ? empty_flags : flags).length())
-    print((choose_first ? empty_grid : grid).length())
-    print((choose_first ? empty_words : words).length())
-    print((choose_first ? make_flags(44) : make_flags(45)).length())
-    print((choose_first ? make_grid(46) : make_grid(47)).length())
-    print((choose_first ? make_words(48) : make_words(49)).length())
-
-    bool[] returned_flags = return_flags(!choose_first, 11)
-    int[][] returned_grid = return_grid(!choose_first, 12)
-    string[][] returned_words = return_words(!choose_first, 13)
-    print_flags(returned_flags)
-    print_grid(returned_grid)
-    print_words(returned_words)
-
-    bool[] borrowed_flags = return_borrowed_flags(choose_first, flags, fixed_flags)
-    int[][] borrowed_grid = return_borrowed_grid(choose_first, grid, fixed_grid)
-    string[][] borrowed_words = return_borrowed_words(choose_first, words, fixed_words)
-    borrowed_flags[0] = false
-    borrowed_grid[0][0] = 99
-    borrowed_words[0][0] = 'changed'
-    print_flags(flags)
-    print_grid(grid)
-    print_words(words)
-    print_flags(borrowed_flags)
-    print_grid(borrowed_grid)
-    print_words(borrowed_words)
-
-    bool[] lazy_flags = take_true ? make_flags(31) : fail_flags()
-    int[][] lazy_grid = take_true ? make_grid(32) : fail_grid()
-    string[][] lazy_words = take_true ? make_words(33) : fail_words()
-    bool[] lazy_other_flags = !take_true ? fail_flags() : make_flags(34)
-    int[][] lazy_other_grid = !take_true ? fail_grid() : make_grid(35)
-    string[][] lazy_other_words = !take_true ? fail_words() : make_words(36)
-    print_flags(lazy_flags)
-    print_grid(lazy_grid)
-    print_words(lazy_words)
-    print_flags(lazy_other_flags)
-    print_grid(lazy_other_grid)
-    print_words(lazy_other_words)
-
-    ArrayChoice choice = ArrayChoice(choose_first ? make_flags(41) : flags, choose_first ? make_grid(42) : grid, choose_first ? make_words(43) : words)
-    print_flags(choice.flags)
-    print_grid(choice.grid)
-    print_words(choice.words)
-
-    bool[] repeated = []
-    for (int repeat in range(2)):
-        repeated = choose_first ? make_flags(repeat + 51) : make_flags(repeat + 61)
-        print_flags(repeated)
-    print(early_value(flags))
-    print(flag_calls)
-    print(grid_calls)
-    print(word_calls)
+    string lower = '550e8400-e29b-41d4-a716-446655440000'
+    string upper = '550E8400-E29B-41D4-A716-446655440000'
+    string mixed = '550e8400-E29B-41d4-A716-446655440000'
+    print(uuid_is_valid(lower))
+    print(uuid_is_valid(upper))
+    print(mixed.uuid_is_valid())
+    print(uuid_is_valid('00000000-0000-0000-0000-000000000000'))
+    print(uuid_is_valid('550e8400-e29b-01d4-0716-446655440000'))
+    print(uuid_is_valid('550e8400e29b-41d4-a716-446655440000'))
+    print(uuid_is_valid('550e8400-e29b-41d4-a716-44665544000'))
+    print(uuid_is_valid('550e8400-e29b-41d4-a716-446655440000 '))
+    print(uuid_is_valid('550e8400-e29b-41d4-a716-44665544000g'))
+    print(uuid_is_valid('550e8400-e29b-41d4-a716-446655é0000'))
+    print(helper_uuid_is_valid(lower))
+    print(uuid_is_valid(uuid()))
+    print(random_below(1) >= 0)
+    print(regex_match(regex_compile('(uuid|regex)'), 'regex'))
+    string runtime_uuid = lower
+    if (args.length() > 1):
+        runtime_uuid = args[1]
+    print(uuid_is_valid(runtime_uuid))
     return 0

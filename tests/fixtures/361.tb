@@ -1,62 +1,106 @@
-string int_array_text(int[] values):
-    string text = '['
-    for (int index : range(values.length())):
-        if (index > 0):
-            text += ', '
-        text += values[index]
-    text += ']'
-    return text
 
-int[] transform_closed(int[] values):
-    return values.map_to(int item -> item * (item + 1))
 
-int[] make_values(int seed):
-    return [seed, 0 - seed, 0, 3]
+# Case 1
+int order = 0
 
-int[] transform_global():
-    return global_values.map_to(int item -> item < 0 ? 0 - item : item)
+int first_bound():
+    order = order * 10 + 1
+    return -2
 
-int[] global_values = [0 - 4, 5, 0]
-int[] global_mapped = global_values.map_to(int item -> item * (item + 1))
+int last_bound():
+    order = order * 10 + 2
+    return 3
+
+int combined_case_1_main(string[] args):
+    int total = 0
+    for (int item : range(first_bound(), last_bound())):
+        total += item
+        item = 99
+    print(order)
+    print(total)
+
+    int count = 0
+    for (int outer : range(3)):
+        for (int inner : range(4)):
+            if (inner == 1):
+                continue
+            if (inner == 3):
+                break
+            count += 1
+    print(count)
+
+    int const_sum = 0
+    for (const int item in range(4)):
+        const_sum += item
+    print(const_sum)
+
+    int edges = 0
+    for (int item : range(-9223372036854775807 - 1, -9223372036854775806)):
+        edges += 1
+    for (int item : range(9223372036854775805, 9223372036854775807)):
+        edges += 1
+    for (int item : range(4, 4)):
+        edges += 100
+    for (int item : range(9, 1)):
+        edges += 100
+    print(edges)
+
+    int[] values = range(3)
+    print(values.length())
+    return 0
+
+# Case 2
+int combined_case_2_main():
+    int[] values = [2]
+    int[] mapped = values.map_to(int value -> value + 1)
+    int total = 0
+    for (int item : range(mapped[0])):
+        total += item
+    print(total)
+    return 0
+
+# Case 3
+int[] range(int n):
+    return [42]
+
+int combined_case_3_main():
+    for (int value : range(2)):
+        print(value)
+    return 0
+
+# Case 4
+int early(int end):
+    for (int item : range(end)):
+        if (item == 2):
+            return item
+    return -1
+
+int throw_in_loop():
+    for (int item : range(4)):
+        if (item == 1):
+            throw 'range stopped'
+    return 0
+
+int combined_case_4_main():
+    print(early(4))
+    print(early(2))
+    try:
+        print(throw_in_loop())
+    catch (string error):
+        print(error)
+    return 0
 
 int main(string[] args):
-    int seed = args.length() + 2
-    int[] values = [seed, 0 - seed, 0, 3]
-    const int[] frozen = values
-    int __tb_int_map_expression_0 = 42
-
-    print(int_array_text(values.map_to(int item -> item * (item + 1))))
-    print(int_array_text(values.map_to(int item -> 2 * item + 1)))
-    print(int_array_text(values.map_to(int item -> item < 0 ? 0 - item : item)))
-    print(int_array_text(values.map_to(int item -> item == 0 ? 99 : 84 / item)))
-    print(int_array_text(values.map_to(int item -> item > 0 && (item & 1) == 1 ? item << 1 : item >> 1)))
-    print(int_array_text(values.map_to(int item -> item < 0 ? (item == 0 - 3 ? 1 : 2) : (item == 0 ? 3 : 4))))
-    print(int_array_text(values.map_to(int item -> item)))
-    print(int_array_text(values.map_to(int item -> 9)))
-    print(int_array_text(frozen.map_to(int item -> item * item)))
-    print(int_array_text(transform_closed(values)))
-    print(int_array_text(transform_global()))
-    print(int_array_text(global_mapped))
-
-    int[] empty = []
-    print(empty.map_to(int item -> item * (item + 1)).length())
-    print(values.map_to(int item -> item * (item + 1)).length())
-
-    int[] independent = values.map_to(int item -> 10 + item)
-    independent[0] = 700
-    print(values[0])
-    print(independent[0])
-    print(make_values(seed).map_to(int item -> item * (item + 1)).sum())
-
-    if (seed == 3):
-        print(values.map_to(int item -> item * (item + 1))[0])
-    else:
-        print(values.map_to(int item -> 2 * item + 1)[0])
-
-    int loop_value = 0
-    for (int index : range(2)):
-        int[] repeated = values.map_to(int item -> 1 + item)
-        loop_value += repeated[index]
-    print(loop_value)
-    print(__tb_int_map_expression_0)
+    print('=== case 1 ===')
+    if (combined_case_1_main(args) != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main() != 0):
+        return 1
+    print('=== case 3 ===')
+    if (combined_case_3_main() != 0):
+        return 1
+    print('=== case 4 ===')
+    if (combined_case_4_main() != 0):
+        return 1
     return 0

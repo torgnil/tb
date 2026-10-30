@@ -1,4 +1,44 @@
-map<int, string> SOURCE = {1: 'x'}
-map<int, int> TARGET = SOURCE
+enum Code { MIN = -9223372036854775808, ZERO = 0, ONE = 1, TWO = 2, MAX = 9223372036854775807 }
+enum Legacy { READY, DONE }
+record Item(Code code, string label, int[] values);
+record Envelope(Item item, Code state, string status);
+
+const Item GLOBAL = Item(Code.MAX, 'global', [10]);
+
+Code next_code(Code value):
+    return value + 1
+
+Item make_item(Code value):
+    return Item(value, 'returned', [20])
+
 int main(string[] args):
+    print(args.length())
+    Item item = Item(Code.MIN, 'local', [1, 2])
+    print(item.code)
+    print(item.label)
+    item.code = Code.ZERO
+    print(item.code)
+    item.code = 9223372036854775807
+    print(item.code)
+    print(next_code(Code.ONE))
+    Item integer_value = Item(7, 'integer', [4])
+    print(integer_value.code)
+
+    const Item fixed = Item(Code.ONE, 'fixed', [3])
+    print(fixed.code)
+    print(fixed.values[0])
+    print(GLOBAL.code)
+    print(GLOBAL.values[0])
+
+    Item returned = make_item(Code.TWO)
+    print(returned.code)
+    print(returned.label)
+    returned.code = next_code(returned.code)
+    print(returned.code)
+
+    Envelope nested = Envelope(item, Code.MAX, Legacy.READY)
+    print(nested.item.code)
+    print(nested.item.values.length())
+    print(nested.state)
+    print(nested.status)
     return 0

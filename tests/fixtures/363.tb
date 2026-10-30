@@ -1,65 +1,136 @@
-record Selection(int[] values, int total);
 
-string int_array_text(int[] values):
-    string text = '['
-    for (int index : range(values.length())):
-        if (index > 0):
-            text += ', '
-        text += values[index]
-    text += ']'
-    return text
 
-int array_total(int[] values):
+# Case 1
+record range(int value);
+
+int combined_case_1_main():
+    for (int value : range(2)):
+        print(value)
+    return 0
+
+# Case 2
+enum Opcode { ZERO = 0, CHAR = 1, ALSO_CHAR = 01, NEG = -2, MIN = -9223372036854775808, MAX = 9223372036854775807 }
+enum Mode { READY, DONE }
+
+Opcode current = Opcode.CHAR
+const Opcode initial = Opcode.NEG
+
+Opcode next_opcode(Opcode value):
+    return value + 1
+
+int classify(Opcode value):
+    switch (value):
+        case Opcode.CHAR:
+            return 10
+        case Opcode.NEG:
+            return 20
+        default:
+            return 30
+
+int combined_case_2_main(string[] args):
+    Opcode code = Opcode.CHAR
+    const Opcode negative = Opcode.NEG
+    print(code)
+    print(negative)
+    print(current)
+    print(initial)
+    print(Opcode.CHAR == Opcode.ALSO_CHAR)
+    print(Opcode.MIN == -9223372036854775807 - 1)
+    print(Opcode.MAX == 9223372036854775807)
+    print(classify(code))
+    print(classify(negative))
+    print(next_opcode(code))
+    print(code.next_opcode())
+    code = 7
+    print(code)
+    int[] values = [Opcode.ZERO, Opcode.CHAR, Opcode.NEG]
+    print(values[0] + values[1] + values[2])
+    Mode mode = Mode.READY
+    print(mode == Mode.READY)
+    print(Mode.DONE)
+    return 0
+
+# Case 3
+enum Code { A = 1 }
+
+int combined_case_3_main():
+    Code[] values = []
+    return 0
+
+# Case 4
+enum Op { LOAD = 1, STORE = 2, HALT = -1 }
+record Program(Op[] ops, string label);
+
+Op[] GLOBAL_OPS = [Op.LOAD, 7]
+Op[] EMPTY_GLOBAL_OPS = []
+const Op[] CONST_GLOBAL_OPS = [Op.STORE]
+
+Op[] make_ops(Op[] source):
+    return source
+
+Op[] empty_ops():
+    return []
+
+Op[] local_ops(int count):
+    Op[] values = [count, count + 1]
+    return values
+
+int first_op(Op[] ops):
+    return ops[0]
+
+int combined_case_4_main(string[] args):
+    Op[] ops = [Op.LOAD, Op.STORE]
+    ops = [Op.HALT, 4]
+    print(ops[0])
+    print(first_op(ops))
+    print(GLOBAL_OPS[1])
+    print(EMPTY_GLOBAL_OPS.length())
+    print(CONST_GLOBAL_OPS[0])
+    print(empty_ops().length())
+    Op[] local_result = local_ops(args.length())
+    print(local_result[0])
+    print(local_result[1])
+
+    const Op[] fixed = make_ops([Op.LOAD, Op.HALT])
+    print(fixed.length())
+    print(fixed[1])
+
+    int[] integers = ops
+    integers.push(Op.STORE)
+    print(integers[2])
+    Op[] enum_alias = make_ops(integers)
+    print(enum_alias.length())
+    print(integers[0])
+
+    Program program = Program(make_ops([Op.STORE, 9]), 'direct field')
+    print(program.ops[0])
+    program.ops[1] = Op.HALT
+    print(program.ops[1])
+    program.ops = make_ops([Op.HALT])
+    print(program.ops.length())
+    print(program.ops[0])
+    print(program.label)
+
+    Program empty_program = Program([], 'empty field')
+    print(empty_program.ops.length())
+
     int total = 0
-    for (int value : values):
-        total += value
-    return total
-
-int[] positive_values(int[] values):
-    return values.filter(int item -> item > 0)
-
-int __tb_int_filter_expression_0(int value):
-    return value + 100
-
-int[] global_values = [0 - 2, 2, 4, 0]
-int[] global_filtered = global_values.filter(int item -> item > 0 && item % 2 == 0)
+    for (Op code : fixed):
+        total += code
+    print(total)
+    return 0
 
 int main(string[] args):
-    int seed = args.length() + 2
-    int[] values = [seed, 0 - seed, 0, seed, 4, 0 - 4, 3, 2]
-    const int[] frozen = values
-
-    print(int_array_text(values))
-    print(int_array_text(values.filter(int item -> item >= 0 && (item & 1) == 0)))
-    print(int_array_text(values.filter(int item -> item == 0 ? true : item != 0)))
-    print(int_array_text(values.filter(int item -> item > 99)))
-    print(int_array_text(values.filter(int item -> item <= 0)))
-    int[] empty_values = []
-    print(int_array_text(empty_values.filter(int item -> item == 0 ? item / item > 0 : false)))
-    print(int_array_text(values.filter(int item -> item != 0 && 12 / item > 0)))
-    print(int_array_text(frozen.filter(int item -> item < 0 || item == 0)))
-    print(int_array_text(values.filter(int item -> item > 0).filter(int item -> item % 2 == 0)))
-    print(int_array_text(global_filtered))
-    print(int_array_text(positive_values(values)))
-    print(array_total(values.filter(int item -> item > 0)))
-
-    Selection selected = Selection(values.filter(int item -> item >= 0), array_total(values))
-    print(int_array_text(selected.values))
-    print(selected.total)
-
-    int foreach_total = 0
-    for (int value : values.filter(int item -> item >= 0)):
-        if (value == 0):
-            continue
-        foreach_total += value
-        if (foreach_total > 5):
-            break
-    print(foreach_total)
-
-    int repeated_count = 0
-    for (int index : range(2)):
-        int[] repeated = values.filter(int item -> item > 0 && item < 5)
-        repeated_count += repeated.length()
-    print(repeated_count)
-    print(__tb_int_filter_expression_0(seed))
+    print('=== case 1 ===')
+    if (combined_case_1_main() != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main(args) != 0):
+        return 1
+    print('=== case 3 ===')
+    if (combined_case_3_main() != 0):
+        return 1
+    print('=== case 4 ===')
+    if (combined_case_4_main(args) != 0):
+        return 1
     return 0

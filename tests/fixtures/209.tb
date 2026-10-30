@@ -1,51 +1,276 @@
-record insert(string[] values);
 
-void print_words(string[] words):
-    print(words.length())
-    for (int i : range(words.length())):
-        print(words[i])
 
-string make_word(int value):
-    return 'owned-' + value.to_string()
+# Case 1
+record WordBox(string text);
+record WordList(string[] words);
+
+string[] global_words = ['global-left', 'global-tail'];
+
+string[] make_words(int seed):
+    string left = 'left-' + seed.to_string()
+    string right = 'right-' + (seed + 1).to_string()
+    return [left, right]
+
+string choose_word(int seed, bool tail):
+    if (tail):
+        return make_words(seed)[-1]
+    return make_words(seed)[0]
+
+string echo_word(string word):
+    return word
+
+string borrowed_first(string[] words):
+    return words[0]
+
+int combined_case_1_main(string[] args):
+    int seed = args.length() + 4
+    print(make_words(seed)[0])
+    print(make_words(seed)[-1])
+    print(['literal-left', 'literal-tail'][-1])
+    print(make_words(seed + 1)[0:][-1])
+    print(make_words(seed + 2).copy()[0])
+    print(('split-left,split-tail').split(',')[1])
+    string returned = choose_word(seed + 3, args.length() > 1)
+    print(returned)
+    print(choose_word(seed + 4, false))
+    string local = make_words(seed + 5)[0]
+    print(local)
+    local = make_words(seed + 6)[-1]
+    print(local)
+    const string fixed = make_words(seed + 7)[0]
+    print(fixed)
+    string[] destination = ['slot-old']
+    destination[0] = make_words(seed + 8)[0]
+    print(destination[0])
+    string[] pushed = []
+    pushed.push(make_words(seed + 9)[-1])
+    print(pushed[0])
+    destination[0] = make_words(seed + 10)[-1]
+    print(destination[0])
+    WordBox box = WordBox(make_words(seed + 11)[0])
+    print(box.text)
+    box.text = make_words(seed + 12)[-1]
+    print(box.text)
+    print(echo_word(make_words(seed + 13)[0]))
+    print(make_words(seed + 14)[0] + '-joined')
+    print(make_words(seed + 15)[-1].length())
+    string[] named = make_words(seed + 16)
+    print(named[0])
+    named.clear()
+    named.push('named-reused')
+    print(named[0])
+    const string[] constant_words = make_words(seed + 17)
+    print(constant_words[-1])
+    print(global_words[0])
+    print(('line-left\nline-tail').split_lines()[0])
+    string[] borrowed_words = make_words(seed + 23)
+    print(borrowed_first(borrowed_words))
+    print(borrowed_words[1])
+    WordList shelf = WordList(make_words(seed + 24))
+    print(shelf.words[0])
+    print(shelf.words[1])
+    string held = make_words(seed + 25)[0]
+    print(held)
+    print(held)
+    int branch_value = 0
+    if (args.length() > 1):
+        branch_value = make_words(seed + 18)[0].length()
+    else:
+        branch_value = make_words(seed + 19)[-1].length()
+    print(branch_value)
+    int loop_total = 0
+    for (int offset : range(2)):
+        loop_total += make_words(seed + offset)[0].length()
+    print(loop_total)
+    switch (args.length()):
+        case 1:
+            print(make_words(seed + 20)[0])
+        default:
+            print(make_words(seed + 21)[-1])
+    try:
+        print(make_words(seed + 22)[0])
+        throw 'caught-index'
+    catch (exception err):
+        print(err)
+    return 0
+
+# Case 2
+record NestedRows(int[][] ints, string[][] words);
+
+int[][] global_int_rows = []
+string[][] global_string_rows = []
+
+int[] make_int_row(int value):
+    return [value]
+
+string[] make_string_row(int value):
+    return [value.to_string()]
+
+int[][] empty_int_outer():
+    return []
+
+string[][] empty_string_outer():
+    return []
+
+int[][] one_int_outer(int value):
+    return [make_int_row(value)]
+
+string[][] one_string_outer(int value):
+    return [make_string_row(value)]
+
+int append_ints(int[][] rows, int[] row):
+    return rows.push(row)
+
+int append_words(string[][] rows, string[] row):
+    return rows.push(row)
+
+int combined_case_2_main(string[] args):
+    int seed = args.length() + 3
+
+    print(empty_int_outer().push(make_int_row(seed)))
+    print([make_int_row(seed + 1)].push(make_int_row(seed + 2)))
+    print(one_int_outer(seed + 3).copy().push(make_int_row(seed + 4)))
+
+    int[][] int_rows = []
+    int[] borrowed_int_row = [seed + 10]
+    print(int_rows.push(borrowed_int_row))
+    borrowed_int_row[0] = 99
+    print(int_rows[0][0])
+    const int[] const_int_row = [seed + 11]
+    print(int_rows.push(const_int_row))
+    int[] empty_int_row = []
+    print(int_rows.push(empty_int_row))
+    print(int_rows[2].length())
+    print(int_rows.push(int_rows[0]))
+    print(int_rows[3][0])
+    if (seed > 0):
+        print(int_rows.push(make_int_row(seed + 20)))
+    for (int i = 0; i < 2; i++):
+        print(int_rows.push(make_int_row(seed + 30 + i)))
+    print(push(global_int_rows, make_int_row(seed + 40)))
+    NestedRows holder = NestedRows([], [])
+    print(holder.ints.push(make_int_row(seed + 50)))
+    int[][] reused_int_rows = []
+    print(reused_int_rows.push(make_int_row(seed + 60)))
+    print(append_ints(reused_int_rows, make_int_row(seed + 61)))
+
+    print(empty_string_outer().push(make_string_row(seed)))
+    print([make_string_row(seed + 1)].push(make_string_row(seed + 2)))
+    print(one_string_outer(seed + 3).copy().push(make_string_row(seed + 4)))
+
+    string[][] string_rows = []
+    string[] borrowed_string_row = [(seed + 10).to_string()]
+    print(string_rows.push(borrowed_string_row))
+    borrowed_string_row[0] = 'changed'
+    print(string_rows[0][0])
+    const string[] const_string_row = [(seed + 11).to_string()]
+    print(string_rows.push(const_string_row))
+    string[] empty_string_row = []
+    print(string_rows.push(empty_string_row))
+    print(string_rows[2].length())
+    print(string_rows.push(string_rows[0]))
+    print(string_rows[3][0])
+    if (seed > 0):
+        print(string_rows.push(make_string_row(seed + 20)))
+    for (int j = 0; j < 2; j++):
+        print(string_rows.push(make_string_row(seed + 30 + j)))
+    print(push(global_string_rows, make_string_row(seed + 40)))
+    print(holder.words.push(make_string_row(seed + 50)))
+    string[][] reused_string_rows = []
+    print(reused_string_rows.push(make_string_row(seed + 60)))
+    print(append_words(reused_string_rows, make_string_row(seed + 61)))
+    return 0
+
+# Case 3
+record Item(int value, string label, int[] values);
+record Empty();
+record Holder(Item[] items);
+record item(int[] values);
+
+Item[] global_items = []
+
+Item make_item(int value):
+    return Item(value, 'item-' + value.to_string(), [value, value + 1])
+
+Item[] empty_items():
+    return []
+
+Item[] make_items(int value):
+    return [make_item(value)]
+
+item[] make_payloads(int value):
+    return [item([value])]
+
+int append_item(Item[] receiver, Item value):
+    return receiver.push(value)
+
+int combined_case_3_main(string[] args):
+    int seed = args.length() + 3
+
+    Item[] stored = []
+    Item source = make_item(seed)
+    print(stored.push(source))
+    source.value = 90
+    source.label = 'changed'
+    source.values[0] = 91
+    print(stored[0].value)
+    print(stored[0].label)
+    print(stored[0].values[0])
+
+    const Item const_source = make_item(seed + 1)
+    print(stored.push(const_source))
+    print(stored[1].value)
+    print(stored[1].values[1])
+    print(stored.push(Item(seed + 2, 'inline', [seed + 2])))
+    print(stored.push(make_item(seed + 3)))
+    print(stored[3].values[0])
+
+    if (seed > 0):
+        print(append_item(stored, make_item(seed + 4)))
+    for (int i = 0; i < 2; i++):
+        print(stored.push(make_item(seed + 5 + i)))
+    print(stored.length())
+
+    Empty[] empties = []
+    print(empties.push(Empty()))
+    print(empties.push(Empty()))
+    print(empty_items().push(make_item(seed + 10)))
+    print(make_items(seed + 11).push(make_item(seed + 12)))
+    print([make_item(seed + 13)].push(make_item(seed + 14)))
+
+    Item[] reused = make_items(seed + 15)
+    print(reused.push(const_source))
+    print(reused.push(make_item(seed + 16)))
+    print(reused[2].value)
+
+    print(global_items.push(make_item(seed + 17)))
+    print(global_items[0].label)
+    Holder holder = Holder([])
+    print(holder.items.push(make_item(seed + 18)))
+    print(holder.items[0].values[0])
+
+    print(push(empty_items(), make_item(seed + 19)))
+    int[] native_values = []
+    print(native_values.push(seed))
+    print(push([seed + 1], seed + 2))
+
+    item[] payloads = []
+    int[] payload_source = [seed + 20]
+    item borrowed_payload = item(payload_source)
+    print(payloads.push(borrowed_payload))
+    payload_source[0] = 99
+    print(payloads[0].values[0])
+    print(make_payloads(seed + 21).push(item([seed + 22])))
+    return 0
 
 int main(string[] args):
-    int count = args.length()
-    const int middle_index = 1
-    const string middle_value = 'middle-' + count
-    string[] words = ['left-' + count, 'right-' + count]
-    words.insert(middle_index, middle_value)
-    print_words(words)
-    words.insert(words.length() - 1, 'before-last-' + count)
-    words.insert(-9223372036854775807 - 1, 'first-' + count)
-    words.insert(9223372036854775807, 'last-' + count)
-    print_words(words)
-
-    string[] empty = []
-    empty.insert(9223372036854775807, 'empty-end-' + count)
-    empty.insert(-9223372036854775807 - 1, make_word(count))
-    print_words(empty)
-    string removed = empty.remove_at(0)
-    empty.clear()
-    empty.insert(0, removed)
-    print_words(empty)
-
-    string[] self_alias_growth = ['growth-' + count, 'tail-' + count]
-    self_alias_growth.insert(0, self_alias_growth[self_alias_growth.length() - 1])
-    print_words(self_alias_growth)
-
-    string[] self_alias_capacity = ['capacity-' + count, 'kept-' + count]
-    self_alias_capacity.remove_at(0)
-    self_alias_capacity.insert(0, self_alias_capacity[0])
-    print_words(self_alias_capacity)
-
-    string[] owned = ['before-' + count, 'after-' + count]
-    owned.insert(1, make_word(count))
-    string owned_removed = owned.remove_at(1)
-    owned.clear()
-    print(owned_removed)
-
-    string[] constructor_values = ['constructor-' + count]
-    insert collision = insert(constructor_values)
-    print(collision.values)
-    print(constructor_values)
+    print('=== case 1 ===')
+    if (combined_case_1_main(args) != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main(args) != 0):
+        return 1
+    print('=== case 3 ===')
+    if (combined_case_3_main(args) != 0):
+        return 1
     return 0

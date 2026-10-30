@@ -1,28 +1,35 @@
-int contains(int left, int right):
-    return left + right
+string missing_path(string suffix):
+    return 'test-files/missing-open-parent/' + suffix
 
-int main(string[] args):
-    int seed = args.length() + 7
-    const int fixed_seed = seed + 10
-    print(contains(seed, 3))
-    print(seed.contains(3))
-    print(fixed_seed.contains(1))
-    for (int offset : range(2)):
-        print((seed + offset).contains(2))
+int main():
+    string path = missing_path('dynamic')
+    string dynamic_error = ''
+    try:
+        file bad = open(path)
+        close(bad)
+    catch (exception err):
+        dynamic_error = err
+    path = missing_path('changed')
 
-    print('alpha'.contains('ph'))
-    const int[] numbers = [seed, seed + 1]
-    print(numbers.contains(seed + 1))
-    print(numbers.contains(99))
-    bool[] flags = [true, false]
-    print(flags.contains(false))
-    print(flags.contains(true))
-    string[] words = ['alpha', 'beta']
-    print(words.contains('beta'))
-    print(words.contains('missing'))
-    map<int, int> counts = {seed: seed}
-    print(counts.contains(seed))
-    print(counts.contains(seed + 1))
-    set<int> seen = {seed, seed + 1}
-    print(seen.contains(seed + 1))
-    print(seen.contains(99))
+    const string const_path = missing_path('const')
+    string const_error = ''
+    try:
+        file bad = open(const_path)
+        close(bad)
+    catch (exception err):
+        const_error = err
+
+    string temporary_error = ''
+    try:
+        file bad = open(missing_path('temporary'))
+        close(bad)
+    catch (exception err):
+        temporary_error = err
+
+    file out = open('test-files/498.out')
+    write_line(out, dynamic_error)
+    write_line(out, const_error)
+    write_line(out, temporary_error)
+    write_line(out, 'successful open/write/close')
+    close(out)
+    return 0

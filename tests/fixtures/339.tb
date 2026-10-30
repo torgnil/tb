@@ -1,74 +1,85 @@
-record TextBox(string value);
 
-string GLOBAL_TEXT = 'global'
 
-string make_text(int value):
-    if (value == 0):
-        return ''
-    return 'line-' + value.to_string()
+# Case 1
+num echo_num(num value):
+    return value
 
-string make_empty_text():
-    return ''
+int combined_case_1_main(string[] args):
+    num small = echo_num(0.09000000000000000000)
+    num tenth = echo_num(0.1)
+    print(small < tenth)
+    print(small <= tenth)
+    print(small == tenth)
+    print(small != tenth)
+    print(small >= tenth)
+    print(small > tenth)
 
-string[] make_words(int value):
-    return ['word-' + value.to_string()]
+    num negative_small = echo_num(-0.09000000000000000000)
+    num negative_tenth = echo_num(-0.1)
+    print(negative_tenth < negative_small)
+    print(negative_tenth <= negative_small)
+    print(negative_tenth == negative_small)
+    print(negative_tenth != negative_small)
+    print(negative_tenth >= negative_small)
+    print(negative_tenth > negative_small)
 
-bool is_empty(int value):
-    return value == 0
+    num zero = echo_num(0.00000000000000000000)
+    num tiny = echo_num(0.00000000000000000001)
+    print(zero == 0.0)
+    print(zero < tiny)
+    print(-tiny < zero)
+    print(tiny > 1.0)
+    print(1.0 > tiny)
+
+    num equal_whole = echo_num(0.01)
+    num equal_scaled = echo_num(0.01000000000000000000)
+    print(equal_whole == equal_scaled)
+    print(equal_whole <= equal_scaled)
+    print(equal_whole >= equal_scaled)
+    print(min(equal_whole, equal_scaled))
+    print(max(equal_whole, equal_scaled))
+
+    num minimum = echo_num(-0.9223372036854775808)
+    num maximum = echo_num(0.9223372036854775807)
+    print(minimum < maximum)
+    print(maximum > minimum)
+    print(min(minimum, maximum))
+    print(max(minimum, maximum))
+
+    print(min(small, tenth))
+    print(max(small, tenth))
+    print(min(negative_tenth, negative_small))
+    print(max(negative_tenth, negative_small))
+    return 0
+
+# Case 2
+string format_direct(num value):
+    return to_string(value)
+
+string format_method(num value):
+    return value.to_string()
+
+string format_int(int value):
+    return value.to_string()
+
+void discard_num(num value):
+    to_string(value)
+    return
+
+int combined_case_2_main():
+    print(format_direct(12.50))
+    print(format_method(-0.25))
+    print(format_direct(0.00))
+    print(format_method(123.00))
+    print(format_int(-42))
+    discard_num(9.75)
+    return 0
 
 int main(string[] args):
-    int seed = args.length()
-    thread_pool pool = thread_pool(2)
-
-    print(is_empty(0))
-
-    print(is_empty(make_empty_text()))
-    print(make_empty_text().is_empty())
-    print(make_text(seed).length())
-    print(make_text(seed).is_empty())
-    print(is_empty(make_text(seed)))
-    print(make_words(seed)[0].length())
-    print(is_empty(make_words(seed)[0]))
-    print(('segment-' + seed.to_string()).length())
-
-    string named_text = make_text(seed)
-    const string fixed_text = make_text(4)
-    TextBox box = TextBox(make_text(5))
-    print(named_text[0].length())
-    print(named_text.length())
-    print(named_text)
-    print(fixed_text.is_empty())
-    print(box.value.length())
-    print(box.value)
-    print(GLOBAL_TEXT.length())
-    print(is_empty(GLOBAL_TEXT))
-
-    string reused_text = make_text(6)
-    print(reused_text.length())
-    print(reused_text)
-
-    int total_length = 0
-    for (int index = 0; index < 3; index++):
-        total_length += make_text(index).length()
-    print(total_length)
-
-    if (make_empty_text().is_empty()):
-        print('branch-empty')
-    else:
-        print('branch-not-empty')
-
-    try:
-        int query_result = make_text(seed).length()
-        if (query_result > 0):
-            throw 'query then throw'
-    catch (exception error):
-        print(error)
-
-    future<int> worker_length = pool.submit(int value -> make_text(value).length(), seed)
-    future<bool> worker_method_empty = pool.submit(int value -> make_empty_text().is_empty(), 0)
-    future<int> worker_borrowed_length = pool.submit(string value -> value.length(), named_text)
-    print(worker_length.await())
-    print(worker_method_empty.await())
-    print(worker_borrowed_length.await())
-
+    print('=== case 1 ===')
+    if (combined_case_1_main(args) != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main() != 0):
+        return 1
     return 0

@@ -1,31 +1,6 @@
-record Ranked(bool active, string name, int key, int rank);
-record Solo(int key);
-
+enum Mode { READY, DONE }
+void replace(const Mode value):
+    value = Mode.DONE
 int main(string[] args):
-    int argc = args.length()
-    Ranked[] items = [Ranked(true, 'low', -5 + argc, 4), Ranked(false, 'high', 8 - argc, -2), Ranked(true, 'tie-a', 3, 3), Ranked(true, 'tie-b', 3, 3)]
-    prio_q<Ranked> by_key = items.create_prio_q((Ranked a, Ranked b) -> b.key - a.key)
-    prio_q<Ranked> same_key = items.create_prio_q((Ranked a, Ranked b) -> b.key - a.key)
-    prio_q<Ranked> by_rank = items.create_prio_q((Ranked a, Ranked b) -> b.rank - a.rank)
-
-    items[1] = Ranked(false, 'changed', 100, 100)
-    by_key.push(Ranked(true, 'pushed', 1 - argc, 0))
-    print(items[1].key)
-    while (!by_key.is_empty()):
-        print(by_key.pop().key)
-    print(same_key.pop().key)
-    while (!by_rank.is_empty()):
-        print(by_rank.pop().rank)
-
-    Ranked[] empty_items = []
-    prio_q<Ranked> empty_queue = empty_items.create_prio_q((Ranked a, Ranked b) -> b.key - a.key)
-    print(empty_queue.is_empty())
-    Ranked[] one_item = [Ranked(true, 'only', -11, 2)]
-    prio_q<Ranked> one_queue = one_item.create_prio_q((Ranked a, Ranked b) -> b.key - a.key)
-    print(one_queue.pop().key)
-    print(one_queue.is_empty())
-    Solo[] solo_items = [Solo(2), Solo(8)]
-    prio_q<Solo> solo_queue = solo_items.create_prio_q((Solo a, Solo b) -> b.key - a.key)
-    print(solo_queue.pop().key)
-    print(solo_queue.pop().key)
+    replace(Mode.READY)
     return 0

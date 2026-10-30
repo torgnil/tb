@@ -1,61 +1,155 @@
-record sum(int[] values);
-record SumEnvelope(sum value);
 
-sum GLOBAL_SUM = sum([31, 32])
 
-int[] make_values(int seed):
-    return [seed, seed + 1]
+# Case 1
+string length(int value):
+    return 'L' + value
 
-sum make_sum(int seed):
-    int[] values = [seed, seed + 1]
-    return sum(values)
+string index_of(bool value):
+    if value:
+        return 'index-true'
+    return 'index-false'
 
-sum round_trip(sum value):
+string hash(bool value):
+    if value:
+        return 'hash-true'
+    return 'hash-false'
+
+int is_empty(int value):
+    return value + 40
+
+int compare_int(int left, int right):
+    return left - right
+
+record Entry(int value);
+
+int combined_case_1_main(string[] args):
+    int seed = args.length() + 7
+    const int fixed_seed = seed
+    bool flag = args.length() == 1
+    print(seed.is_empty())
+    print(is_empty(seed))
+    print(seed.length())
+    print(flag.index_of())
+    print(flag.hash())
+    for (int i : range(2)):
+        print((seed + i).length())
+    print(fixed_seed.length())
+    print('tb'.length())
+    print([seed].length())
+    print('cab'.index_of('a'))
+    int[][] grid = [[seed]]
+    print(grid.length())
+    print(grid.is_empty())
+    string[][] groups = [['item']]
+    print(groups.length())
+    print(groups.is_empty())
+    map<string, int> counts = {'seed': seed}
+    print(counts.length())
+    print(counts.is_empty())
+    set<int> values = {seed}
+    print(values.length())
+    print(values.is_empty())
+    Entry[] entries = [Entry(seed)]
+    print(entries.length())
+    print(entries.is_empty())
+    print(7.hash() == 7.hash())
+    num precise = 1.25
+    print(precise.hash() == precise.hash())
+    string word = 'tb'
+    print(word.hash() == word.hash())
+    int[] queue_values = [1]
+    prio_q<int> queue = queue_values.create_prio_q(compare_int)
+    print(queue.is_empty())
+    queue.pop()
+    print(queue.is_empty())
+    return 0
+
+# Case 2
+int global_condition_calls = 0
+
+bool global_condition(bool value):
+    global_condition_calls += 1
     return value
 
+num global_choice = global_condition(true) ? 4.50 : 8.125
+int condition_calls = 0
+int arm_calls = 0
+
+bool check_condition(bool value):
+    condition_calls += 1
+    return value
+
+num make_arm(int choice):
+    arm_calls += 1
+    if (choice == 1):
+        return 1.250
+    return 2.500
+
+num choose_num(bool flag):
+    return flag ? 1.25 : 2.500
+
+num choose_forward(bool flag):
+    num selected = flag ? 3.125 : 4.50
+    return selected
+
+num fail_num():
+    throw 'selected num arm'
+
+int combined_case_2_main(string[] args):
+    bool first = args.length() == 1
+    print(global_choice)
+    print(global_condition_calls)
+    print(choose_num(first))
+    print(choose_forward(!first))
+
+    const num fixed = 6.250
+    num mutable_value = 9.50
+    print(first ? fixed : mutable_value)
+    mutable_value = 7.750
+    print(first ? mutable_value : fixed)
+    print(first ? (first ? 1.25 : 2.500) : 3.000)
+    print(first ? -1.25 : -2.500)
+
+    num arithmetic = (first ? 1.25 : 2.500) + 0.375
+    print(arithmetic)
+    print(arithmetic > 1.5)
+
+    num branched = 0.000
+    if (first):
+        branched = choose_num(true)
+    else:
+        branched = choose_num(false)
+    print(branched)
+
+    num loop_total = 0.000
+    for (int index : range(2)):
+        loop_total = loop_total + (index == 0 ? 1.250 : 0.50)
+    print(loop_total)
+
+    condition_calls = 0
+    arm_calls = 0
+    num effected = check_condition(first) ? make_arm(1) : make_arm(2)
+    print(effected)
+    print(condition_calls)
+    print(arm_calls)
+
+    print(false ? fail_num() : 6.250)
+    try:
+        print(true ? fail_num() : 7.000)
+    catch (string message):
+        print(message)
+
+    print(true ? 7 : 8)
+    print(false ? true : false)
+    print(first ? 'left' : 'right')
+    print((first ? 1.25 : 2.500) == (first ? 1.250 : 2.5))
+    return 0
+
 int main(string[] args):
-    int count = args.length()
-
-    int[] borrowed = [count + 3, count + 4]
-    sum direct = sum(borrowed)
-    borrowed[0] = 99
-    print(direct.values[0])
-    print(borrowed[0])
-
-    const int[] fixed = [count + 5, count + 6]
-    sum from_const = sum(fixed)
-    print(from_const.values.sum())
-
-    sum from_literal = sum([count + 7, count + 8])
-    print(from_literal.values.sum())
-
-    sum from_owned_call = sum(make_values(count + 9))
-    print(from_owned_call.values.sum())
-
-    sum from_record_return = make_sum(count + 10)
-    print(from_record_return.values.sum())
-
-    sum empty = sum([])
-    print(empty.values.length())
-
-    sum cloned = direct
-    cloned.values[0] = 70
-    print(direct.values[0])
-    print(cloned.values[0])
-
-    SumEnvelope wrapped = SumEnvelope(direct)
-    wrapped.value.values[0] = 80
-    print(direct.values[0])
-    print(wrapped.value.values[0])
-    wrapped.value = sum([count + 11, count + 12])
-    print(wrapped.value.values.sum())
-
-    sum returned = round_trip(direct)
-    print(returned.values.sum())
-    print(GLOBAL_SUM.values.sum())
-
-    int[] native_values = [count + 13, count + 14]
-    bool[] native_flags = [count > 0, count > 2]
-    print(native_values.sum())
-    print(native_flags.sum())
+    print('=== case 1 ===')
+    if (combined_case_1_main(args) != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main(args) != 0):
+        return 1
     return 0

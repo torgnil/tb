@@ -1,58 +1,738 @@
-record Box(int[] values);
-record Holder(int value);
 
-int push(int value, int extra):
-    return value + extra
+
+# Case 1
+int switch_case_value():
+    return 1
+
+int named_worker(int value):
+    return value + 10
+
+int combined_case_1_main(string[] args):
+    thread_pool pool = thread_pool(2)
+    future<int> selected = pool.submit(int value -> {
+        int result = 0
+        switch (value) {
+            case switch_case_value(): {
+                int one_value = 10
+                result = one_value
+            }
+            case 2: {
+                int two_value = 20
+                result = two_value
+            }
+            default: {
+                int other_value = 30
+                result = other_value
+            }
+        }
+        return result + 5
+    }, args.length())
+    future<int> unmatched = pool.submit(int value -> {
+        int result = 50
+        switch (value) {
+            case -1: {
+                result = 1
+            }
+        }
+        return result
+    }, args.length())
+    future<bool> flag = pool.submit(int value -> {
+        switch (value) {
+            case 0: {
+                return false
+            }
+            case 1: {
+                return true
+            }
+            default: {
+                return value > 1
+            }
+        }
+        return false
+    }, args.length() - 1)
+    future<int> looped = pool.submit(int value -> {
+        int total = 0
+        for (int index = 0; index < value + 3; index += 1) {
+            switch (index) {
+                case 0: {
+                    continue
+                }
+                case 1: {
+                    total += 2
+                }
+                case 2: {
+                    total += 3
+                    break
+                }
+                default: {
+                    total += 10
+                }
+            }
+            total += 1
+        }
+        return total
+    }, args.length())
+    future<int> nested = pool.submit(int value -> {
+        int result = 0
+        if (value > 0) {
+            switch (value) {
+                case 1: {
+                    int nested_value = 4
+                    result = nested_value
+                }
+                default: {
+                    result = 8
+                }
+            }
+        } else {
+            result = -1
+        }
+        int cursor = 0
+        while (cursor < value) {
+            cursor += 1
+            switch (cursor) {
+                case 1: {
+                    result += 2
+                }
+                default: {
+                    result += 1
+                }
+            }
+        }
+        return result
+    }, args.length())
+    future<int> early = pool.submit(int value -> {
+        switch (value) {
+            case 1: {
+                return 41
+            }
+            default: {
+                if (value < 0) {
+                    return -1
+                }
+            }
+        }
+        return 0
+    }, args.length())
+    future<int> named = pool.submit(named_worker, 2)
+    future<int> expression = pool.submit(int value -> value * 3, 4)
+
+    print(selected.await())
+    print(unmatched.await())
+    print(flag.await())
+    print(looped.await())
+    print(nested.await())
+    print(early.await())
+    print(named.await())
+    print(expression.await())
+    print(selected.await())
+    return 0
+
+# Case 2
+int producer_calls = 0
+
+int text_length(string value):
+    return value.length()
+
+bool text_is_empty(string value):
+    return value.is_empty()
+
+string echo_text(string value):
+    return value
+
+int[] text_vector(string value):
+    return [value.length()]
+
+int[][] text_matrix(string value):
+    return [[value.length()]]
+
+int fail_on_text(string value):
+    if (value.length() > 0):
+        throw 'literal task failed'
+    return 0
+
+string next_text():
+    producer_calls += 1
+    return 'owned'
+
+future<int> submit_text_parameter(thread_pool pool, string value):
+    return pool.submit(string text -> text.length(), value)
+
+future<int> submit_scoped_text(thread_pool pool):
+    string scoped = 'scope'
+    return pool.submit(string text -> text.length(), scoped)
+
+int combined_case_2_main(string[] args):
+    thread_pool pool = thread_pool(2)
+    const string fixed_text = 'const'
+
+    future<int> empty_length = pool.submit(text_length, '')
+    future<int> literal_length = pool.submit(text_length, 'literal')
+    future<int> lifted_length = pool.submit(string text -> text.length(), 'lifted')
+    future<bool> empty_check = pool.submit(text_is_empty, '')
+    future<bool> literal_check = pool.submit(string text -> text.is_empty(), 'value')
+    future<string> empty_echo = pool.submit(echo_text, '')
+    future<string> literal_echo = pool.submit(echo_text, 'echo')
+    future<int[]> literal_vector = pool.submit(text_vector, 'vector')
+    future<int[]> empty_vector = pool.submit(text_vector, '')
+    future<int[][]> literal_matrix = pool.submit(text_matrix, 'matrix')
+    future<int[][]> empty_matrix = pool.submit(text_matrix, '')
+    future<int> const_length = pool.submit(text_length, fixed_text)
+    future<int> owned_length = pool.submit(text_length, next_text())
+    future<int> forwarded_length = submit_text_parameter(pool, 'forwarded')
+    future<int> scoped_length = submit_scoped_text(pool)
+    future<int> failed = pool.submit(fail_on_text, 'bad')
+
+    print(empty_length.await())
+    print(literal_length.await())
+    print(literal_length.await())
+    print(lifted_length.await())
+    print(empty_check.await())
+    print(literal_check.await())
+    string empty_echo_result = empty_echo.await()
+    string literal_echo_result = literal_echo.await()
+    print(empty_echo_result.length())
+    print(literal_echo_result.length())
+    int[] vector_result = literal_vector.await()
+    int[] vector_again = literal_vector.await()
+    int[] empty_vector_result = empty_vector.await()
+    print(vector_result.length())
+    print(vector_result[0])
+    print(vector_again[0])
+    print(empty_vector_result.length())
+    int[][] matrix_result = literal_matrix.await()
+    int[][] empty_matrix_result = empty_matrix.await()
+    print(matrix_result.length())
+    print(matrix_result[0][0])
+    print(empty_matrix_result.length())
+    print(const_length.await())
+    print(fixed_text.length())
+    print(owned_length.await())
+    print(producer_calls)
+    print(forwarded_length.await())
+    print(scoped_length.await())
+    try:
+        failed.await()
+    catch (string error):
+        print(error)
+    try:
+        failed.await()
+    catch (string error):
+        print(error)
+    return 0
+
+# Case 3
+const int global_offset = 4
+const bool global_enabled = true
+const int[] global_values = [8, 3]
+
+int mutate_first(int[] values, int amount):
+    values[0] += amount
+    return values[0]
+
+int fail_mixed(int[] values, bool enabled):
+    if (enabled):
+        throw 'mixed capture failed'
+    return values.length()
+
+future<int> submit_scoped(thread_pool pool, int seed):
+    int[] local_values = [seed, 5]
+    int local_bias = 6
+    return pool.submit(() -> local_values[1] + local_bias)
+
+future<int> submit_parameter(thread_pool pool, int[] source, int bias):
+    return pool.submit(() -> bias + source[0])
+
+int combined_case_3_main(string[] args):
+    thread_pool pool = thread_pool(2)
+    int[] source = [args.length() + 1, 3]
+    int bias = args.length() + 4
+    bool enabled = true
+    const int[] fixed_values = [10, 11]
+    int[] empty_values = []
+
+    future<int> expression = pool.submit(() -> bias + source[0])
+    future<int> block = pool.submit(() -> {
+        int total = 0
+        for (int item : source) {
+            total += item
+        }
+        return total + bias
+    })
+    future<bool> predicate = pool.submit(() -> source.length() == 2 && enabled && bias == 5 && source[0] == 2)
+    future<int> changed = pool.submit(() -> mutate_first(source, bias))
+    future<int> fixed = pool.submit(() -> fixed_values[0] + global_offset)
+    future<bool> global_check = pool.submit(() -> global_values[0] == 8 && global_enabled)
+    future<int> parameter = submit_parameter(pool, source, bias)
+    future<int> scoped = submit_scoped(pool, args.length())
+    future<bool> empty = pool.submit(() -> {
+        return empty_values.is_empty() && enabled
+    })
+    future<int> failed = pool.submit(() -> fail_mixed(source, enabled))
+
+    source[0] = 99
+    bias = 50
+    enabled = false
+
+    print(expression.await())
+    print(expression.await())
+    print(block.await())
+    print(predicate.await())
+    print(changed.await())
+    print(changed.await())
+    print(source[0])
+    print(fixed.await())
+    print(global_check.await())
+    print(parameter.await())
+    print(scoped.await())
+    print(empty.await())
+    try {
+        failed.await()
+    } catch (string error) {
+        print(error)
+    }
+    try {
+        failed.await()
+    } catch (string error) {
+        print(error)
+    }
+    return 0
+
+# Case 4
+int[] pipeline(int value):
+    return make_row(cached_twice(value))
+
+int[] pick_generated(int value):
+    return take_row(make_grid(value))
+
+int row_length(int[] values):
+    return values.length()
+
+cached int cached_twice(int value):
+    return value * 2
+
+string make_label(int value):
+    return 'value=' + value.to_string()
+
+string add_marker(string value):
+    return value + '!'
+
+string fail_label(int value):
+    if (value < 0):
+        throw 'helper failed'
+    return make_label(value)
+
+int[] make_row(int value):
+    return [value, value + 1]
+
+int[][] make_grid(int value):
+    return [[value, value + 1], [value + 2]]
+
+int[] take_row(int[][] rows):
+    return rows[0]
+
+future<int[]> submit_scoped_row(thread_pool pool, int value):
+    int[][] local_grid = make_grid(value)
+    return pool.submit(() -> take_row(local_grid))
+
+int combined_case_4_main(string[] args):
+    thread_pool pool = thread_pool(2)
+    int seed = args.length() + 4
+    string label = make_label(seed)
+    int[][] grid = [[seed, seed + 1], [seed + 2]]
+
+    future<string> returned_text = pool.submit(int value -> make_label(value), seed)
+    future<string> task_text = pool.submit(string value -> add_marker(value), label)
+    future<string> captured_text = pool.submit(() -> add_marker(label))
+    future<string> block_text = pool.submit(int value -> {
+        if (value > 0) {
+            return make_label(value)
+        } else {
+            throw 'invalid value'
+        }
+    }, seed)
+    future<int[]> created_row = pool.submit(int value -> pipeline(value), seed)
+    future<int[]> nested_row = pool.submit(int value -> pick_generated(value), seed)
+    future<int[]> task_row = pool.submit(int[][] rows -> take_row(rows), grid)
+    future<int[]> captured_row = pool.submit(() -> take_row(grid))
+    future<int[]> scoped_row = submit_scoped_row(pool, seed + 10)
+    future<int[][]> created_grid = pool.submit(int value -> make_grid(value), seed)
+    future<int> queried_length = pool.submit(int value -> make_row(value).length(), seed)
+    future<int> grid_length = pool.submit(int value -> make_grid(value).length(), seed)
+    future<bool> grid_empty = pool.submit(int value -> make_grid(value).is_empty(), seed)
+    future<int> nested_length = pool.submit(int value -> row_length(make_row(value)), seed)
+    future<int> indexed_value = pool.submit(int value -> make_row(value)[1], seed)
+    future<string> failed = pool.submit(int value -> fail_label(value), -1)
+
+    grid[0][0] = 90
+    label = 'changed'
+
+    print(returned_text.await())
+    print(returned_text.await())
+    print(task_text.await())
+    print(captured_text.await())
+    print(block_text.await())
+    int[] first_created = created_row.await()
+    print(first_created[0])
+    print(first_created[1])
+    first_created[0] = 99
+    int[] second_created = created_row.await()
+    print(second_created[0])
+    int[] generated_row = nested_row.await()
+    print(generated_row[0])
+    int[] first_task_row = task_row.await()
+    print(first_task_row[0])
+    first_task_row[0] = 88
+    int[] second_task_row = task_row.await()
+    print(second_task_row[0])
+    int[] captured = captured_row.await()
+    print(captured[0])
+    int[] scoped = scoped_row.await()
+    print(scoped[0])
+    int[][] first_grid = created_grid.await()
+    print(first_grid[0][0])
+    first_grid[0][0] = 77
+    int[][] second_grid = created_grid.await()
+    print(second_grid[0][0])
+    print(queried_length.await())
+    print(grid_length.await())
+    print(grid_empty.await())
+    print(nested_length.await())
+    print(indexed_value.await())
+    try {
+        failed.await()
+    } catch (string error) {
+        print(error)
+    }
+    try {
+        failed.await()
+    } catch (string error) {
+        print(error)
+    }
+    return 0
+
+# Case 5
+record TextBox(string value);
+
+string global_text = 'stable'
+
+string make_text(int seed):
+    return 'word-' + seed.to_string()
+
+string[] make_words(int seed):
+    return ['word-' + seed.to_string()]
+
+string make_empty():
+    return ''
+
+bool compare_borrowed(string left, string right):
+    return left == right
+
+string worker_text():
+    return 'stable'
+
+int combined_case_5_main(string[] args):
+    int seed = args.length()
+    print(make_text(seed) == make_text(seed))
+    print(make_text(seed) != make_text(seed + 1))
+    print('word-3' == make_text(3))
+    print('word-4' != make_text(5))
+    print(make_words(seed)[0] == make_text(seed))
+    print(make_text(seed) == make_words(seed)[0])
+    print(make_empty() == '')
+    print(make_empty() != make_text(seed))
+    print(make_text(seed) == make_text(seed) && make_text(seed + 1) != make_text(seed + 2))
+    string local_text = 'stable'
+    const string fixed_text = 'stable'
+    TextBox box = TextBox('stable')
+    print(compare_borrowed(local_text, fixed_text))
+    print(global_text == box.value)
+    int index = 0
+    int matches = 0
+    while (index < 3):
+        if (make_text(index) == make_text(index)):
+            matches += 1
+        index += 1
+    print(matches)
+    thread_pool pool = thread_pool(1)
+    future<string> answer = pool.submit(worker_text)
+    print(answer.await() == answer.await())
+    print(answer.await())
+    return 0
+
+# Case 6
+string runtime_text(int suffix):
+    return '#' + 'tag-' + suffix.to_string()
+
+string duplicate_text(string text):
+    return text
+
+bool starts_with_text(string text, string prefix):
+    return text.starts_with(prefix)
+
+future<bool> submit_scoped_string(thread_pool pool, int suffix):
+    string scoped = 'scope-' + suffix.to_string()
+    return pool.submit(() -> scoped.length() > 0 && scoped[0] == 's')
+
+int combined_case_6_main(string[] args):
+    thread_pool pool = thread_pool(2)
+    const string fixed_text = 'needle'
+    string dynamic_text = runtime_text(args.length())
+
+    future<bool> equal = pool.submit(string text -> text == 'needle', fixed_text)
+    future<bool> not_equal = pool.submit(string text -> text != 'other', fixed_text)
+    future<bool> literal_left = pool.submit(string text -> 'needle' == text, fixed_text)
+    future<bool> helper_equality = pool.submit(string text -> text == duplicate_text(text), fixed_text)
+    future<bool> helper_literal = pool.submit(string text -> starts_with_text(text, '#'), dynamic_text)
+    future<bool> block_predicate = pool.submit(string text -> {
+        if (text.length() > 0 && starts_with_text(text, '#')) {
+            return text[0] == '#'
+        }
+        return false
+    }, dynamic_text)
+    future<bool> loop_predicate = pool.submit(string text -> {
+        int index = 0
+        while (index < text.length()) {
+            if (text[index] == '#') {
+                return true
+            }
+            index += 1
+        }
+        return false
+    }, dynamic_text)
+    future<bool> guarded_empty = pool.submit(string text -> text.is_empty() || text[0] == 'x', '')
+    future<bool> empty_index = pool.submit(string text -> text[0] == '', '')
+    future<bool> out_of_bounds_index = pool.submit(string text -> text[100] == '', 'x')
+    future<bool> negative_index = pool.submit(string text -> text[-1] == 'e', 'needle')
+    future<bool> const_input = pool.submit(string text -> text == 'fixed', 'fixed')
+    future<string> literal_result = pool.submit(() -> 'literal-result')
+    future<string> block_literal_result = pool.submit(string text -> {
+        if (text.length() > 0) {
+            return 'block-result'
+        }
+        return ''
+    }, fixed_text)
+    future<string> indexed_result = pool.submit(string text -> text[-1], dynamic_text)
+    future<string> empty_result = pool.submit(string text -> text[0], '')
+    future<bool> scoped_capture = submit_scoped_string(pool, args.length())
+    future<bool> scalar_compatibility = pool.submit(int value -> value > 0, args.length())
+
+    print(equal.await())
+    print(not_equal.await())
+    print(literal_left.await())
+    print(helper_equality.await())
+    print(helper_literal.await())
+    print(block_predicate.await())
+    print(loop_predicate.await())
+    print(guarded_empty.await())
+    print(empty_index.await())
+    print(out_of_bounds_index.await())
+    print(negative_index.await())
+    print(const_input.await())
+    print(scoped_capture.await())
+    print(scalar_compatibility.await())
+    print(literal_result.await())
+    print(literal_result.await())
+    print(block_literal_result.await())
+    print(indexed_result.await())
+    print(indexed_result.await())
+    string empty_first = empty_result.await()
+    string empty_second = empty_result.await()
+    print(empty_first)
+    print(empty_second)
+    print(empty_first.length())
+    return 0
+
+# Case 7
+int[] make_values(int value):
+    return [value, value + 1]
+
+int[] shifted_values(int[] values):
+    return [values[0] + 1, values[1] + 1]
+
+int mark_length(int[] values, int marker):
+    values.push(marker)
+    return values.length()
+
+future<int[]> submit_scoped_values(thread_pool pool, int value):
+    int[] values = [value, value + 1]
+    return pool.submit(int[] input -> [input[0], input[1]], values)
+
+int combined_case_7_main(string[] args):
+    int seed = args.length() + 3
+    const int captured = seed + 10
+    int[] source = [seed, seed + 1]
+    thread_pool pool = thread_pool(2)
+
+    future<int[]> direct = pool.submit(int value -> [value, value + 1], seed)
+    future<int[]> captured_values = pool.submit(() -> [seed, captured])
+    future<int[]> task_values = pool.submit(int[] values -> [values[0], values.length()], source)
+    future<int[]> conditional = pool.submit(int value -> value == 4 ? [value, value + 1] : [0 - value], seed)
+    future<int[]> block_values = pool.submit(int value -> {
+        return [value + 2, value + 3]
+    }, seed)
+    future<int> literal_index = pool.submit(int value -> [value, value + 1][1], seed)
+    future<int> literal_length = pool.submit(int value -> [value, value + 1].length(), seed)
+    future<int[]> helper_result = pool.submit(int[] values -> shifted_values([values[0], values[1]]), source)
+    future<int[]> ordered = pool.submit(int[] values -> [mark_length(values, 1), mark_length(values, 2)], source)
+    future<int[]> scoped = submit_scoped_values(pool, seed + 20)
+    future<int[]> named = pool.submit(make_values, seed)
+
+    source[0] = 99
+
+    int[] direct_first = direct.await()
+    direct_first[0] = 999
+    print(direct_first[0])
+    int[] direct_second = direct.await()
+    print(direct_second[0])
+    print(direct_second[1])
+
+    int[] captured_result = captured_values.await()
+    print(captured_result[0])
+    print(captured_result[1])
+    int[] task_result = task_values.await()
+    print(task_result.length())
+    print(task_result[0])
+    int[] conditional_result = conditional.await()
+    print(conditional_result.length())
+    print(conditional_result[0])
+    int[] block_result = block_values.await()
+    print(block_result[0])
+    print(block_result[1])
+    print(literal_index.await())
+    print(literal_length.await())
+    int[] helper_array = helper_result.await()
+    print(helper_array[0])
+    print(helper_array[1])
+    int[] order_result = ordered.await()
+    print(order_result[0])
+    print(order_result[1])
+    int[] scoped_result = scoped.await()
+    print(scoped_result[0])
+    print(scoped_result[1])
+    int[] named_result = named.await()
+    print(named_result[0])
+    return 0
+
+# Case 8
+string text_for(int value):
+    return 'n=' + value
+
+string suffix_text(string text):
+    return text + '!'
+
+string prefix_text(string prefix, string text):
+    return prefix + text
+
+string one_char_text():
+    return 'p' + ''
+
+string ordered_text(int[] values, int marker, string label):
+    values.push(marker)
+    return label + values.length()
+
+future<string> scoped_string(thread_pool pool, int value):
+    string local_text = text_for(value)
+    return pool.submit(() -> local_text + '!')
+
+int combined_case_8_main(string[] args):
+    int seed = args.length() + 4
+    thread_pool pool = thread_pool(2)
+    int bias = 10
+
+    future<string> string_then_int = pool.submit(int value -> 'L' + value, seed)
+    future<string> int_then_string = pool.submit(int value -> value + 'R', seed)
+    future<string> zero_integer = pool.submit(int value -> 'zero=' + 0, seed)
+    future<string> negative_integer = pool.submit(int value -> -value + ':' + value, seed)
+    future<string> string_pair = pool.submit(string text -> text + ':' + 'end', 'base')
+    future<string> nested_helpers = pool.submit(int value -> text_for(value) + suffix_text(text_for(value)), seed)
+    future<string> helper_argument = pool.submit(int value -> prefix_text('id=', text_for(value) + '?'), seed)
+    future<string> empty_text = pool.submit(int value -> '' + '', 0)
+    future<string> block_result = pool.submit(int value -> {
+        if (value > 0) {
+            return 'block=' + value
+        }
+        return 'none'
+    }, seed)
+    bool choose_first = args.length() == 1
+    future<string> conditional_result = pool.submit(bool choose -> choose ? 'yes=' + 'ok' : 'no=' + 'ok', choose_first)
+    future<bool> composed_predicate = pool.submit(string text -> (text + '!').length() == 4 && (text + '!')[0] == 'a' && text + '!' == 'abc!', 'abc')
+
+    string captured_text = 'capture'
+    future<string> captured_result = pool.submit(() -> captured_text + '!')
+    captured_text = 'changed'
+    future<string> scoped_result = scoped_string(pool, seed)
+    string mutable_text = 'before'
+    future<string> parameter_snapshot = pool.submit(string text -> text + '!', mutable_text)
+    mutable_text = 'after'
+    const string fixed_text = 'fixed'
+    future<string> const_parameter = pool.submit(string text -> text + '!', fixed_text)
+    future<bool> ordered_result = pool.submit(int[] values -> ordered_text(values, 1, 'L') + ordered_text(values, 2, 'R') == 'L2R3', [0])
+    future<int> arithmetic_result = pool.submit(int value -> value + 2, seed)
+    future<bool> scalar_capture = pool.submit(int value -> 'total=' + (value + bias) == 'total=' + (value + 10), seed)
+    bias = 99
+    future<string> borrowed_return = pool.submit(string text -> text, 'borrowed')
+    future<string> indexed_concat = pool.submit(string text -> (text + '!')[0], 'abc')
+    future<string> indexed_helper = pool.submit(string text -> one_char_text()[0], 'ignored')
+    future<string> negative_index = pool.submit(string text -> text[-1], 'abc')
+    future<string> owned_negative_index = pool.submit(string text -> (text + '!')[-1], 'abc')
+    future<string> empty_index = pool.submit(string text -> (text + '')[0], '')
+    future<string> borrowed_index = pool.submit(string text -> text[0], 'borrowed')
+
+    print(string_then_int.await())
+    print(int_then_string.await())
+    print(zero_integer.await())
+    print(negative_integer.await())
+    print(string_pair.await())
+    print(nested_helpers.await())
+    print(helper_argument.await())
+    print(empty_text.await())
+    string empty_value = empty_text.await()
+    print(empty_value.length())
+    print(block_result.await())
+    print(conditional_result.await())
+    print(composed_predicate.await())
+    print(captured_result.await())
+    print(scoped_result.await())
+    print(parameter_snapshot.await())
+    print(const_parameter.await())
+    print(ordered_result.await())
+    print(ordered_result.await())
+    print(arithmetic_result.await())
+    print(scalar_capture.await())
+    print(borrowed_return.await())
+    print(('ordinary' + '!')[0])
+    print(indexed_concat.await())
+    print(indexed_helper.await())
+    print(negative_index.await())
+    print(owned_negative_index.await())
+    print(empty_index.await())
+    print(borrowed_index.await())
+    return 0
 
 int main(string[] args):
-    int n = args.length()
-    const int value = n + 2
-    int[] numbers = [n]
-    numbers.push(value)
-    print(numbers[-1])
-    numbers.push(('' + n).to_int())
-    print(numbers[-1])
-    string[] number_text = [(n + 10).to_string()]
-    numbers.push(number_text[0].to_int())
-    print(numbers[-1])
-    const bool flag = n == 1
-    bool[] flags = []
-    flags.push(flag)
-    print(flags[0])
-    const string word = 'word-' + n
-    string[] words = []
-    words.push(word)
-    print(words[0])
-    int[][] rows = []
-    const int[] row = [n + 4]
-    rows.push(row)
-    rows[0][0] += 10
-    print(row[0])
-    print(rows[0][0])
-    rows.push([n + 6])
-    print(rows[1][0])
-    rows[1][0] += 1
-    print(rows[1][0])
-    int[] empty_row = []
-    rows.push(empty_row)
-    print(rows[2].length())
-    string[][] groups = []
-    const string[] group = ['group-' + n]
-    groups.push(group)
-    groups[0][0] = 'changed'
-    print(group[0])
-    string[] empty_group = []
-    groups.push(empty_group)
-    print(groups[1].length())
-    const Box box = Box([n])
-    Box[] boxes = []
-    boxes.push(box)
-    boxes[0].values[0] += 20
-    print(box.values[0])
-    print(boxes[0].values[0])
-    boxes.push(Box([n + 3]))
-    print(boxes[1].values[0])
-    Holder holder = Holder(n)
-    print(holder.value.push(5))
-    print(push(n, 7))
+    print('=== case 1 ===')
+    if (combined_case_1_main(args) != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main(args) != 0):
+        return 1
+    print('=== case 3 ===')
+    if (combined_case_3_main(args) != 0):
+        return 1
+    print('=== case 4 ===')
+    if (combined_case_4_main(args) != 0):
+        return 1
+    print('=== case 5 ===')
+    if (combined_case_5_main(args) != 0):
+        return 1
+    print('=== case 6 ===')
+    if (combined_case_6_main(args) != 0):
+        return 1
+    print('=== case 7 ===')
+    if (combined_case_7_main(args) != 0):
+        return 1
+    print('=== case 8 ===')
+    if (combined_case_8_main(args) != 0):
+        return 1
     return 0

@@ -1,83 +1,163 @@
-int shared_seed = 0
+string int_array_text(int[] values):
+    string text = '['
+    for (int index : range(values.length())):
+        if (index > 0):
+            text += ', '
+        text += values[index]
+    text += ']'
+    return text
 
-int read_seed():
-    return shared_seed
+int global_offset = 2
+int callback_calls = 0
 
-int twice(int value):
-    return value * 2
+int add_values(int left, int right):
+    return left + right
 
-bool is_positive(int value):
-    return value > 0
+int touch_callback(int value):
+    callback_calls += 1
+    return value
 
-int named_zero():
-    return 41
+int change_global_offset(int value):
+    global_offset += 1
+    return value
 
-int named_unary(int value):
-    return value + 1
+int[] make_source(int seed):
+    return [seed, seed + 1]
 
-int fail_task():
-    throw 'zero-argument submit failure'
+int[] global_block = [1, 2].map_to(int item -> {
+    int adjusted = item + global_offset
+    return adjusted
+})
 
 int main(string[] args):
-    shared_seed = args.length()
-    const thread_pool pool = thread_pool(2)
-    const future<int> expression = pool.submit(() -> (twice(read_seed()) + 1))
-    const future<bool> expression_bool = pool.submit(() -> is_positive(read_seed()))
-    const future<int> block = pool.submit(() -> {
-        int seed = read_seed()
-        const int selected_seed = seed
-        int total = 0
-        for (int index = 0; index < selected_seed; index += 1) {
-            if (index == 0) {
-                continue
-            }
-            total += index
+    int[] values = [1, 2, 2, 3]
+    int delta = args.length() + 1
+
+    print(int_array_text(global_block))
+    print(int_array_text(values))
+
+    int[] mapped = values.map_to(int item -> {
+        item += delta
+        int extra = 0
+        for (int step : range(2)) {
+            extra += step
         }
-        switch (selected_seed) {
+        int adjusted = add_values(item, extra)
+        if (adjusted > 5) {
+            return adjusted
+        } else {
+            return adjusted * 2
+        }
+    })
+    print(int_array_text(mapped))
+
+    int[] filtered = values.filter(int item -> {
+        int original = item
+        item += 1
+        if (item > 2) {
+            return original % 2 == 0
+        }
+        return false
+    })
+    print(int_array_text(filtered))
+    print(int_array_text(values))
+
+    int[] closed_filtered = values.filter(int item -> {
+        const bool is_even = item % 2 == 0
+        if (is_even) {
+            return true
+        }
+        return false
+    })
+    print(int_array_text(closed_filtered))
+
+    int[] switched = values.map_to(int item -> {
+        switch (item) {
             case 1: {
-                total += 10
+                return 10
+            }
+            case 2: {
+                return 20
             }
             default: {
-                total += 20
+                return 30
             }
         }
-        if (total > 20) {
-            return total
-        } else {
-            return total + 3
-        }
+        return 40
     })
-    const future<bool> block_bool = pool.submit(() -> {
-        const int seed = read_seed()
-        int cursor = 0
-        while (cursor < seed) {
-            cursor += 1
-        }
-        if (cursor == seed) {
-            return is_positive(seed - 1)
-        } else {
-            return false
-        }
-    })
-    const future<int> unary = pool.submit(int value -> value + 5, args.length())
-    const future<int> named = pool.submit(named_zero)
-    const future<int> named_arg = pool.submit(named_unary, args.length())
-    const future<int> failed = pool.submit(() -> fail_task())
+    print(int_array_text(switched))
 
-    print(expression.await())
-    print(expression_bool.await())
-    print(block.await())
-    print(block_bool.await())
-    print(unary.await())
-    print(named.await())
-    print(named_arg.await())
-    print(expression.await())
-    try:
-        int ignored = failed.await()
-    catch (exception err):
-        print(err)
-    try:
-        int ignored_again = failed.await()
-    catch (exception err):
-        print(err)
+    int[] handled = values.map_to(int item -> {
+        try {
+            if (item == 2) {
+                throw 'two'
+            }
+            return item + delta
+        } catch (exception error) {
+            return 99
+        }
+    })
+    print(int_array_text(handled))
+
+    int[] looped = values.map_to(int item -> {
+        int step = 0
+        int total = 0
+        while (step < 4) {
+            step += 1
+            if (step == 1) {
+                continue
+            }
+            total += 1
+            if (step == 3) {
+                break
+            }
+        }
+        for (int index = 0; index < 2; index += 1) {
+            total += index
+        }
+        return item + total
+    })
+    print(int_array_text(looped))
+
+    int[] snapshot = values.map_to(int item -> {
+        int saved_offset = global_offset
+        int current = change_global_offset(item)
+        return saved_offset + current
+    })
+    print(int_array_text(snapshot))
+    print(global_offset)
+
+    int[] empty = []
+    int calls_before_empty = callback_calls
+    int[] empty_mapped = empty.map_to(int item -> {
+        return touch_callback(item)
+    })
+    print(empty_mapped.length())
+    print(callback_calls - calls_before_empty)
+
+    bool enabled = args.length() == 1
+    int[] bool_captured = values.map_to(int item -> {
+        if (enabled) {
+            return item + 1
+        } else {
+            return item - 1
+        }
+    })
+    print(int_array_text(bool_captured))
+
+    const int[] fixed = values
+    const int const_delta = 3
+    int[] const_mapped = fixed.map_to(int item -> {
+        return item + const_delta
+    })
+    print(int_array_text(const_mapped))
+
+    int item = 100
+    int[] shadowed = values.map_to(int item -> {
+        return item + 1
+    })
+    print(int_array_text(shadowed))
+    print(int_array_text(make_source(delta).map_to(int item -> {
+        return item * 2
+    })))
     return 0

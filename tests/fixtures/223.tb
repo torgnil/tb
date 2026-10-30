@@ -1,59 +1,45 @@
-record Box(int[] values, bool[] flags);
-record Cell(int value);
+record Entry(int base);
 
-int[] make_row(int seed):
-    return [seed, seed + 1]
+int combine_entry(int value, Entry entry):
+    return value + entry.base
+
+int double_value(int value):
+    return value * 2
+
+future<int> schedule(thread_pool pool, int value):
+    return pool.submit(double_value, value)
+
+future<int> schedule_const(const thread_pool pool, const int value):
+    return pool.submit(double_value, value)
+
+void append_line(file destination, string value):
+    write_line(destination, value)
+
+void append_const_line(const file destination, const string value):
+    write_line(destination, value)
 
 int main(string[] args):
-    int n = args.length()
-    const int fixed = n + 1
-    const bool enabled = n > 0
-    Box box = Box([], [])
-    box.values = [n, fixed]
-    box.flags = [false, enabled]
-    print(box.values[0])
-    print(box.values[1])
-    print(box.flags[1])
+    int argc = args.length()
+    print(combine_entry(argc, Entry(6)))
 
-    int[] local_values = [n, fixed]
-    print(local_values[1])
-    int[] made = make_row(n + 5)
-    box.values = made
-    made[0] = 99
-    print(box.values[0])
-    Box copied = box
-    copied.values[0] = 91
-    print(box.values[0])
+    thread_pool pool = thread_pool(1)
+    const thread_pool fixed_pool = thread_pool(1)
+    const int fixed_value = 5 + argc
+    future<int> first = schedule(pool, 3 + argc)
+    future<int> second = pool.schedule_const(fixed_value)
+    future<int> third = fixed_pool.schedule_const(fixed_value + 1)
+    future<int> fourth = schedule_const(fixed_pool, fixed_value + 2)
+    print(first.await())
+    print(second.await())
+    print(third.await())
+    print(fourth.await())
+    print(first.await())
 
-    const string key = 'key-' + n
-    const string text = 'text-' + n
-    map<string, int> first = {key: fixed}
-    map<string, int> second = {'other': n}
-    print(first[key])
-    print(second['other'])
-
-    const int fixed_key = n + 2
-    map<int, int> integer_keys = {fixed_key: n, n: fixed}
-    print(integer_keys[fixed_key])
-
-    const int[] row = [n + 2]
-    map<int, int[]> rows = {n: row}
-    rows[n][0] = 90
-    print(row[0])
-    print(rows[n][0])
-
-    const string[] group = [text]
-    string[][] groups = [group, [text]]
-    groups[0][0] = 'changed'
-    print(group[0])
-    print(groups[1][0])
-
-    const Cell cell = Cell(n + 3)
-    Cell[] cells = [cell, Cell(n + 4)]
-    cells[0].value = 92
-    print(cell.value)
-    print(cells[1].value)
-
-    set<int> seen = {fixed, n}
-    print(seen.contains(n))
+    string path = 'handle-call-types-' + argc.to_string() + '.tmp'
+    file destination = open(path)
+    append_line(destination, 'direct')
+    destination.append_const_line('ufcs')
+    write_line(destination, 'caller')
+    close(destination)
+    print(read_file(path))
     return 0

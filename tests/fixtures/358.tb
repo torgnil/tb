@@ -1,68 +1,32 @@
-int item = 7
-int receiver_calls = 0
+import random;
+import regex;
+import random_helper;
+import random;
 
-record NumberBox(int[] values);
-
-int[] make_values(int seed):
-    receiver_calls += 1
-    return [0 - seed - 2, seed + 1, seed + 4]
-
-int[] map_square(int[] values):
-    return values.map_to(int item -> item * item)
-
-int mapped_sum(int[] values):
-    return values.map_to(int item -> item + item).sum()
-
-void print_values(int[] values):
-    for (int value in values):
-        print(value)
-
-void discard_values(int[] values):
-    print(values.length())
+int local_random():
+    return 17
 
 int main(string[] args):
-    int seed = args.length()
-    int item = 99
-    int[] source = make_values(seed)
-    int[] doubled = source.map_to(int item -> item + item)
-    doubled[0] = 123
-    print_values(doubled)
-    int[] differences = source.map_to(int item -> item - item)
-    print_values(differences)
-    int[] squares = source.map_to(int item -> item * item)
-    print_values(squares)
-    int[] quotients = source.map_to(int item -> item / item)
-    print_values(quotients)
-    int[] remainders = source.map_to(int item -> item % item)
-    print_values(remainders)
-    print(item)
-    print_values(source)
-    print(map_square(source).sum())
-    for (int value in source.map_to(int value -> value * value)):
-        print(value)
+    Regex pattern = regex_compile('(ab|c)+')
+    print(regex_match(pattern, 'abc'))
 
-    const int[] fixed = [0 - 9223372036854775807 - 1, -3, 2]
-    print_values(fixed.map_to(int value -> value * value))
-    print_values(fixed.map_to(int value -> value / value))
-    print_values(fixed.map_to(int value -> value % value))
+    RandomGenerator zero = seeded_random(0)
+    print(random_next(zero))
+    print(zero.state)
 
-    int[] empty = []
-    print(empty.map_to(int value -> value + value).length())
-    print(empty.map_to(int value -> value - value).length())
-    print(empty.map_to(int value -> value * value).length())
-    print(empty.map_to(int value -> value / value).length())
-    print(empty.map_to(int value -> value % value).length())
+    RandomGenerator seed_one = seeded_random(1)
+    print(helper_random_next(seed_one))
+    print(random_next(seed_one))
 
-    print(mapped_sum(make_values(seed)))
-    int[] chained = make_values(seed).map_to(int value -> value * value).map_to(int value -> value + value)
-    print_values(chained)
-    for (int repeat in range(2)):
-        discard_values(make_values(seed).map_to(int value -> value * value))
-    print(receiver_calls)
+    RandomGenerator original = seeded_random(-1)
+    RandomGenerator copy = original
+    print(random_next(original))
+    print(random_next(copy))
+    print(random_next(original))
+    print(random_next(copy))
 
-    NumberBox box = NumberBox(make_values(seed).map_to(int value -> value * value))
-    NumberBox copied = box
-    copied.values = make_values(seed).map_to(int value -> value + value)
-    print_values(box.values)
-    print_values(copied.values)
+    copy.state = 0
+    print(copy.random_next())
+    print(random_next(seeded_random(-9223372036854775807 - 1)))
+    print(local_random())
     return 0

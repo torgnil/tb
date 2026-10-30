@@ -1,110 +1,124 @@
-record BoolBox(bool[] flags);
 
-map<string, bool> make_flags(int seed):
-    map<string, bool> flags = {'kept': seed > 0, 'tail': false}
-    return flags
 
-bool[] returned_flags(int seed):
-    return make_flags(seed).values()
+# Case 1
+int[] length(bool flag):
+    if flag:
+        return [5, 6]
+    return [8, 9]
 
-int count_flags(bool[] flags):
-    return flags.sum()
+bool[] is_empty(bool flag):
+    if flag:
+        return [true, false]
+    return [false, false]
 
-bool[] return_flags(bool[] flags):
-    return flags
+string[] index_of(bool flag):
+    if flag:
+        return ['left', 'right']
+    return ['up', 'down']
 
-int bool_mask(bool[] flags):
-    int mask = 0
-    for (int i : range(flags.length())):
-        if (flags[i]):
-            mask = mask + (1 << i)
-    return mask
+int[][] hash(bool flag):
+    if flag:
+        return [[3], [4, 5]]
+    return [[6, 7], [8, 9]]
+
+int[] echo_values(int[] values):
+    return values
+
+int combined_case_1_main(string[] args):
+    bool flag = args.length() == 1
+    int[] first = flag.length()
+    print(first.sum())
+    print(sum(echo_values(flag.length())))
+    int total = 0
+    for (int value : flag.length()):
+        total += value
+    print(total)
+    bool[] flags = flag.is_empty()
+    print(flags.length())
+    print(flags.sum())
+    string[] words = flag.index_of()
+    print(words[0])
+    print(words.length())
+    int[][] grid = flag.hash()
+    print(grid[1].sum())
+    print(flag.hash().length())
+    return 0
+
+# Case 2
+record Counter(int value);
+
+const int GLOBAL_MASK = 45 & 15
+int global_shift = 3 << 2
+int effect_calls = 0
+
+int counted_shift():
+    effect_calls += 1
+    return 1
+
+int compute(const int value):
+    return ((value % 5) << 1) ^ 3
+
+int combined_case_2_main(string[] args):
+    int seed = args.length()
+    print(GLOBAL_MASK)
+    print(global_shift)
+    print(compute(seed + 6))
+
+    const int mask = 6
+    print(mask & 3)
+    print(29 % 6)
+    print(12 & 10)
+    print(12 | 10)
+    print(12 ^ 10)
+    print(3 << seed)
+    print(3 >> 0)
+    print(-32 >> seed)
+    print(-5 % 3)
+    print(1 << 63)
+    print(1 << 64)
+    print(-1 >> 65)
+
+    int local = 63
+    local %= 10
+    local |= 8
+    local ^= 3
+    local &= 7
+    local <<= 2
+    local >>= 1
+    print(local)
+
+    int[] values = [33]
+    values[0] >>= 1
+    print(values[0])
+
+    Counter counter = Counter(64)
+    counter.value %= 10
+    print(counter.value)
+
+    int before_calls = effect_calls
+    local = 3
+    local <<= counted_shift()
+    print(local)
+    print(effect_calls - before_calls)
+
+    int branch_value = 0
+    if (seed == 1):
+        branch_value = 7 ^ 3
+    else:
+        branch_value = 9 & 5
+    for (int index : range(3)):
+        branch_value += index
+    print(branch_value)
+
+    print(true && false)
+    print(1.50 + 0.25)
+    return 0
 
 int main(string[] args):
-    int seed = args.length() - 1
-
-    map<int, bool> empty_int = {}
-    bool[] empty_int_values = empty_int.values()
-    print(empty_int_values.length())
-    print(empty_int_values.is_empty())
-
-    map<string, bool> empty_string = {}
-    print(empty_string.values().length())
-
-    map<int, bool> all_false = {-1: false, 4: false}
-    print(all_false.values().sum())
-    map<string, bool> all_true = {'yes': true, 'also': true}
-    print(all_true.values().sum())
-
-    map<int, bool> indexed = {-20: false, 7: seed > 0, 100: true}
-    bool[] indexed_values = indexed.values()
-    indexed[-20] = true
-    indexed[7] = false
-    print(indexed_values[0])
-    print(indexed_values[1])
-    print(indexed_values[2])
-    print(indexed[-20])
-    print(indexed_values.sum())
-
-    const map<int, bool> const_indexed = {-5: true, 11: seed > 0, 90: false}
-    bool[] const_values = const_indexed.values()
-    print(const_values[0])
-    print(const_values[1])
-    print(const_values[2])
-
-    map<string, bool> ordered = {'first': false, 'second': true, 'third': seed > 0}
-    ordered['first'] = true
-    bool[] ordered_values = ordered.values()
-    print(ordered_values[0])
-    print(ordered_values[1])
-    print(ordered_values[2])
-    print(ordered_values.index_of(true))
-    print(ordered_values.sum())
-
-    map<string, bool> grown = {}
-    for (int i : range(13)):
-        grown['key-' + i] = (i % 2) == (seed % 2)
-    bool[] grown_values = grown.values()
-    print(grown_values.length())
-    print(bool_mask(grown_values))
-    grown['key-0'] = false
-    print(bool_mask(grown_values))
-    print(bool_mask(grown.values()))
-    print(grown.values().sum())
-
-    const map<string, bool> const_string = {'off': false, 'on': true}
-    bool[] const_string_values = const_string.values()
-    const_string_values[0] = true
-    print(const_string_values[0])
-    print(const_string['off'])
-
-    bool[] from_owned_map = returned_flags(seed)
-    print(from_owned_map[0])
-    print(from_owned_map[1])
-    print(from_owned_map.sum())
-    print(count_flags(make_flags(seed).values()))
-    bool[] copied_argument = return_flags(make_flags(seed).values())
-    print(copied_argument[0])
-    print(copied_argument[1])
-
-    BoolBox box = BoolBox(ordered.values())
-    BoolBox clone = box
-    clone.flags[0] = false
-    print(box.flags[0])
-    print(clone.flags[0])
-    box.flags = indexed.values()
-    indexed_values[1] = true
-    print(box.flags[1])
-    print(indexed_values[1])
-
-    bool[] loop_values = []
-    for (int i : range(3)):
-        if (i == 1):
-            loop_values.push(ordered.values()[i])
-        else:
-            loop_values.push(const_indexed.values()[i])
-    print(loop_values.length())
-    print(loop_values.sum())
-    print(ordered.values().length())
-    print(indexed.values()[2])
+    print('=== case 1 ===')
+    if (combined_case_1_main(args) != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main(args) != 0):
+        return 1
     return 0

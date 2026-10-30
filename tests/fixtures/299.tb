@@ -1,67 +1,7 @@
-int setting = 2;
-bool ready = false;
-const bool enabled = true;
+bool make_enabled():
+    return true
 
-int add(int value):
-    return value + 1
-
-int score(bool value):
-    if (value):
-        return 1
-    else:
-        return 0
-
-int parameter_shadow(int setting):
-    thread_pool pool = thread_pool(1)
-    future<int> result = pool.submit(() -> setting + 1)
-    return result.await()
-
-int local_shadow():
-    thread_pool pool = thread_pool(1)
-    int setting = 30
-    future<int> result = pool.submit(() -> setting + 1)
-    setting = 90
-    return result.await()
-
+int count = make_enabled()
 int main(string[] args):
-    thread_pool pool = thread_pool(2)
-    setting = args.length() + 4
-    ready = args.length() == 1
-
-    future<int> expression = pool.submit(() -> setting + add(1))
-    future<int> block = pool.submit(() -> {
-        int total = setting
-        for (int index = 0; index < 2; index += 1) {
-            total += index
-        }
-        return total
-    })
-    future<bool> int_to_bool = pool.submit(() -> setting > 4)
-    future<bool> mutable_bool = pool.submit(() -> ready)
-    future<bool> const_bool = pool.submit(() -> enabled)
-    future<int> bool_to_int = pool.submit(() -> score(ready))
-    setting = -5
-    future<int> failure = pool.submit(() -> {
-        if (setting < 0) {
-            throw 'global snapshot failure'
-        }
-        return 0
-    })
-    setting = 99
-    ready = false
-
-    print(expression.await())
-    print(expression.await())
-    print(block.await())
-    print(int_to_bool.await())
-    print(mutable_bool.await())
-    print(const_bool.await())
-    print(bool_to_int.await())
-    try:
-        int ignored = failure.await()
-    catch (exception err):
-        print(err)
-    print(parameter_shadow(10))
-    print(local_shadow())
-    print(setting)
+    print(count)
     return 0

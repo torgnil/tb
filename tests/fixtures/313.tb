@@ -1,91 +1,17 @@
-int producer_calls = 0
+set<int> empty_set():
+    return {}
 
-int text_length(string value):
-    return value.length()
-
-bool text_is_empty(string value):
-    return value.is_empty()
-
-string echo_text(string value):
-    return value
-
-int[] text_vector(string value):
-    return [value.length()]
-
-int[][] text_matrix(string value):
-    return [[value.length()]]
-
-int fail_on_text(string value):
-    if (value.length() > 0):
-        throw 'literal task failed'
-    return 0
-
-string next_text():
-    producer_calls += 1
-    return 'owned'
-
-future<int> submit_text_parameter(thread_pool pool, string value):
-    return pool.submit(string text -> text.length(), value)
-
-future<int> submit_scoped_text(thread_pool pool):
-    string scoped = 'scope'
-    return pool.submit(string text -> text.length(), scoped)
+set<int> choose_set(bool empty):
+    if (empty):
+        return {}
+    return {4, 5}
 
 int main(string[] args):
-    thread_pool pool = thread_pool(2)
-    const string fixed_text = 'const'
-
-    future<int> empty_length = pool.submit(text_length, '')
-    future<int> literal_length = pool.submit(text_length, 'literal')
-    future<int> lifted_length = pool.submit(string text -> text.length(), 'lifted')
-    future<bool> empty_check = pool.submit(text_is_empty, '')
-    future<bool> literal_check = pool.submit(string text -> text.is_empty(), 'value')
-    future<string> empty_echo = pool.submit(echo_text, '')
-    future<string> literal_echo = pool.submit(echo_text, 'echo')
-    future<int[]> literal_vector = pool.submit(text_vector, 'vector')
-    future<int[]> empty_vector = pool.submit(text_vector, '')
-    future<int[][]> literal_matrix = pool.submit(text_matrix, 'matrix')
-    future<int[][]> empty_matrix = pool.submit(text_matrix, '')
-    future<int> const_length = pool.submit(text_length, fixed_text)
-    future<int> owned_length = pool.submit(text_length, next_text())
-    future<int> forwarded_length = submit_text_parameter(pool, 'forwarded')
-    future<int> scoped_length = submit_scoped_text(pool)
-    future<int> failed = pool.submit(fail_on_text, 'bad')
-
-    print(empty_length.await())
-    print(literal_length.await())
-    print(literal_length.await())
-    print(lifted_length.await())
-    print(empty_check.await())
-    print(literal_check.await())
-    string empty_echo_result = empty_echo.await()
-    string literal_echo_result = literal_echo.await()
-    print(empty_echo_result.length())
-    print(literal_echo_result.length())
-    int[] vector_result = literal_vector.await()
-    int[] vector_again = literal_vector.await()
-    int[] empty_vector_result = empty_vector.await()
-    print(vector_result.length())
-    print(vector_result[0])
-    print(vector_again[0])
-    print(empty_vector_result.length())
-    int[][] matrix_result = literal_matrix.await()
-    int[][] empty_matrix_result = empty_matrix.await()
-    print(matrix_result.length())
-    print(matrix_result[0][0])
-    print(empty_matrix_result.length())
-    print(const_length.await())
-    print(fixed_text.length())
-    print(owned_length.await())
-    print(producer_calls)
-    print(forwarded_length.await())
-    print(scoped_length.await())
-    try:
-        failed.await()
-    catch (string error):
-        print(error)
-    try:
-        failed.await()
-    catch (string error):
-        print(error)
-    return 0
+    set<int> values = empty_set()
+    print(values.length())
+    values.add(7)
+    print(values.contains(7))
+    set<int> selected = choose_set(true)
+    print(selected.length())
+    set<int> populated = choose_set(false)
+    print(populated.length())

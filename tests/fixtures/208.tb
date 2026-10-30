@@ -1,66 +1,261 @@
-record StringBox(string[] values);
-record remove_at(string[] values);
 
-string remove_first(string[] values):
-    return values.remove_at(0)
+
+# Case 1
+record StringBox(string[] words);
+
+int[] global_ints = [70, 71];
+string[] global_words = ['global-left', 'global-tail'];
+
+int[] make_ints(int seed):
+    return [seed, seed + 10]
+
+int[] make_empty_ints():
+    return []
+
+bool[] make_bools(int seed):
+    return [seed > 0, false]
+
+bool[] make_empty_bools():
+    return []
+
+string[] make_words(int seed):
+    return ['head-' + seed.to_string(), 'tail-' + seed.to_string()]
+
+string[] make_empty_words():
+    return []
+
+int borrowed_int_remove(int[] values, int index):
+    return remove_at(values, index)
+
+bool borrowed_bool_remove(bool[] values, int index):
+    return remove_at(values, index)
+
+string borrowed_word_remove(string[] values, int index):
+    return remove_at(values, index)
+
+int combined_case_1_main(string[] args):
+    int argc = args.length()
+    int seed = argc + 4
+    print(argc)
+    print(remove_at(make_ints(seed), 1))
+    print(remove_at(make_ints(seed), -1))
+    print(remove_at(make_ints(seed), 9223372036854775807))
+    print(remove_at(make_ints(seed), -9223372036854775807 - 1))
+    print(remove_at(make_empty_ints(), 0))
+    print(remove_at([seed, seed + 1], 0))
+    print(remove_at(range(seed, seed + 2), 1))
+    print(remove_at(make_ints(seed)[0:], 1))
+    print(remove_at(make_ints(seed).copy(), 0))
+    int[] named_ints = make_ints(seed + 1)
+    print(remove_at(named_ints, 0))
+    print(named_ints.length())
+    int[] borrowed_ints = make_ints(seed + 2)
+    print(borrowed_int_remove(borrowed_ints, 0))
+    print(borrowed_ints.length())
+    print(remove_at(global_ints, 0) + global_ints.length())
+    print(remove_at(make_bools(seed), 0))
+    print(remove_at(make_bools(seed), 99))
+    print(remove_at(make_empty_bools(), 0))
+    bool[] named_bools = make_bools(seed)
+    print(remove_at(named_bools, 0))
+    print(named_bools[0])
+    bool[] borrowed_bools = make_bools(seed)
+    print(borrowed_bool_remove(borrowed_bools, 0))
+    print(borrowed_bools[0])
+    string saved = remove_at(make_words(seed), 1)
+    string[] saved_source = make_words(seed + 1)
+    saved = remove_at(saved_source, 0)
+    saved_source.clear()
+    print(saved)
+    print(remove_at(make_words(seed), -1))
+    print(remove_at(make_words(seed), 9223372036854775807))
+    print(remove_at(make_words(seed), -9223372036854775807 - 1))
+    print(remove_at(make_empty_words(), 0))
+    print(remove_at(['literal-left', 'literal-tail'], 1))
+    print(remove_at(make_words(seed)[0:], 0))
+    print(remove_at(make_words(seed).copy(), 1))
+    string[] named_words = make_words(seed)
+    print(remove_at(named_words, 0) + ':' + named_words[0])
+    string[] borrowed_words = make_words(seed)
+    print(borrowed_word_remove(borrowed_words, 0))
+    print(borrowed_words[0])
+    print(remove_at(global_words, 0) + ':' + global_words[0])
+    StringBox box = StringBox(make_words(seed))
+    print(remove_at(box.words, 0))
+    print(box.words.length().to_string() + ':' + box.words[0])
+    const int[] const_ints = make_ints(seed + 16)
+    int[] mutable_copy = copy(const_ints)
+    print(remove_at(mutable_copy, 1))
+    print(const_ints.length())
+    int branch_value = 0
+    if (argc > 1):
+        int[] branch_ints = make_ints(seed + 20)
+        branch_value = remove_at(branch_ints, 1)
+    else:
+        int[] branch_ints = make_ints(seed + 22)
+        branch_value = remove_at(branch_ints, 1)
+    print(branch_value)
+    int loop_total = 0
+    for (int offset : range(2)):
+        loop_total += make_ints(seed + offset).remove_at(1)
+    print(loop_total)
+    return 0
+
+# Case 2
+record NestedRows(int[][] ints, string[][] words);
+
+int[][] global_int_rows = []
+string[][] global_string_rows = []
+
+int[] make_int_row(int value):
+    return [value]
+
+string[] make_string_row(int value):
+    return [value.to_string()]
+
+int[][] empty_int_outer():
+    return []
+
+string[][] empty_string_outer():
+    return []
+
+int combined_case_2_main(string[] args):
+    int seed = args.length() + 3
+    int[][] int_rows = []
+    int[] borrowed_int_row = [seed, seed + 1]
+    print(push(int_rows, borrowed_int_row))
+    borrowed_int_row[0] = 99
+    print(int_rows[0][0])
+    const int[] const_int_row = [seed + 2]
+    print(push(int_rows, const_int_row))
+    int[] empty_int_row = []
+    print(push(int_rows, empty_int_row))
+    print(int_rows[2].length())
+    print(push(int_rows, [seed + 4]))
+    print(int_rows[3][0])
+    print(push(int_rows, make_int_row(seed + 5)))
+    print(int_rows[4][0])
+    if (seed > 0):
+        print(push(int_rows, make_int_row(seed + 6)))
+    for (int i = 0; i < 2; i++):
+        print(push(int_rows, make_int_row(seed + 10 + i)))
+    print(push(empty_int_outer(), make_int_row(seed + 20)))
+    print(push(global_int_rows, make_int_row(seed + 21)))
+    string[][] string_rows = []
+    string[] borrowed_string_row = [seed.to_string(), 'tail']
+    print(push(string_rows, borrowed_string_row))
+    borrowed_string_row[0] = 'changed'
+    print(string_rows[0][0])
+    const string[] const_string_row = ['const', seed.to_string()]
+    print(push(string_rows, const_string_row))
+    string[] empty_string_row = []
+    print(push(string_rows, empty_string_row))
+    print(string_rows[2].length())
+    print(push(string_rows, [(seed + 4).to_string()]))
+    print(string_rows[3][0])
+    print(push(string_rows, make_string_row(seed + 5)))
+    print(string_rows[4][0])
+    if (seed > 0):
+        print(push(string_rows, make_string_row(seed + 6)))
+    for (int j = 0; j < 2; j++):
+        print(push(string_rows, make_string_row(seed + 10 + j)))
+    print(push(empty_string_outer(), make_string_row(seed + 20)))
+    print(push(global_string_rows, make_string_row(seed + 21)))
+    NestedRows holder = NestedRows(int_rows, string_rows)
+    print(push(holder.ints, make_int_row(seed + 22)))
+    print(push(holder.words, make_string_row(seed + 22)))
+    int[][] reused_int_rows = []
+    print(push(reused_int_rows, make_int_row(seed + 23)))
+    print(push(reused_int_rows, make_int_row(seed + 24)))
+    string[][] reused_string_rows = []
+    print(push(reused_string_rows, make_string_row(seed + 23)))
+    print(push(reused_string_rows, make_string_row(seed + 24)))
+    return 0
+
+# Case 3
+record Item(int value, string label);
+record Empty();
+record Holder(Item[] items);
+record item(int[] values);
+
+Item[] global_items = []
+
+Item make_item(int value):
+    return Item(value, value.to_string())
+
+Item[] make_items(int value):
+    return [make_item(value)]
+
+item make_payload(int value):
+    return item([value])
+
+int append_item(Item[] items, Item item):
+    return push(items, item)
+
+int combined_case_3_main(string[] args):
+    int seed = args.length() + 3
+    Item[] items = []
+    Item source = Item(seed, 'borrowed')
+    print(push(items, source))
+    source.value = 90
+    source.label = 'changed'
+    print(items[0].value)
+    print(items[0].label)
+
+    const Item const_source = Item(seed + 1, 'const')
+    print(push(items, const_source))
+    print(items[1].value)
+    print(items[1].label)
+    print(push(items, Item(seed + 2, 'inline')))
+    print(items[2].label)
+    print(push(items, make_item(seed + 3)))
+    print(items[3].value)
+    print(append_item(items, items[0]))
+    print(items[4].label)
+
+    if (seed > 0):
+        print(push(items, make_item(seed + 4)))
+    for (int i = 0; i < 2; i++):
+        print(push(items, make_item(seed + 5 + i)))
+    print(items.length())
+
+    Empty[] empties = []
+    print(push(empties, Empty()))
+    print(push(empties, Empty()))
+
+    print(push(make_items(seed + 10), make_item(seed + 11)))
+    print(push(global_items, make_item(seed + 12)))
+    Holder holder = Holder([])
+    print(push(holder.items, make_item(seed + 13)))
+    print(holder.items[0].value)
+
+    Item[] method_items = []
+    print(method_items.push(const_source))
+    print(method_items[0].value)
+    int[] scalar_items = []
+    print(push(scalar_items, seed))
+    print(scalar_items.push(seed + 1))
+
+    item[] payloads = []
+    int[] payload_source = [seed + 14]
+    item borrowed_payload = item(payload_source)
+    print(push(payloads, borrowed_payload))
+    payload_source[0] = 91
+    print(payloads[0].values[0])
+    borrowed_payload.values = [seed + 15]
+    print(payloads[0].values[0])
+    print(push(payloads, make_payload(seed + 16)))
+    print(payloads[1].values[0])
+    return 0
 
 int main(string[] args):
-    int count = args.length()
-
-    string[] first_values = ['first-' + count, 'middle-' + count, 'last-' + count]
-    const int first_index = 0
-    string first = first_values.remove_at(first_index)
-    print(first)
-    print(first_values)
-    print(first_values.remove_at(1))
-    print(first_values)
-    print(first_values.remove_at(0))
-    print(first_values.length())
-
-    string[] collision_values = ['constructor-' + count, 'method-' + count]
-    remove_at collision = remove_at(collision_values)
-    print(collision.values)
-    print(collision_values.remove_at(0))
-
-    string[] retained_values = ['retained-' + count, 'tail-' + count]
-    string retained = retained_values.remove_at(0)
-    retained_values.clear()
-    retained_values.push('reused-' + count)
-    print(retained)
-    print(retained_values)
-
-    string borrowed_value = 'borrowed-' + count
-    string[] borrowed_values = []
-    borrowed_values.push(borrowed_value)
-    string borrowed_result = borrowed_values.remove_at(0)
-    borrowed_value = 'changed-' + count
-    print(borrowed_result)
-    print(borrowed_values.length())
-
-    string[] invalid_values = ['keep-' + count]
-    int min_index = -9223372036854775807 - 1
-    int max_index = 9223372036854775807
-    print(invalid_values.remove_at(-1))
-    print(invalid_values.remove_at(1))
-    print(invalid_values.remove_at(min_index))
-    print(invalid_values.remove_at(max_index))
-    print(invalid_values)
-    string[] empty_values = []
-    print(empty_values.remove_at(min_index))
-    print(empty_values.length())
-
-    string[] returned_values = ['return-' + count, 'return-tail-' + count]
-    string returned = remove_first(returned_values)
-    returned_values.clear()
-    print(returned)
-
-    StringBox box = StringBox(['field-' + count, 'field-tail-' + count])
-    string field_value = box.values.remove_at(0)
-    box.values.clear()
-    print(field_value)
-    print(box.values.length())
-
-    string[] discarded = ['discard-' + count]
-    discarded.remove_at(0)
-    print(discarded.length())
+    print('=== case 1 ===')
+    if (combined_case_1_main(args) != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main(args) != 0):
+        return 1
+    print('=== case 3 ===')
+    if (combined_case_3_main(args) != 0):
+        return 1
     return 0

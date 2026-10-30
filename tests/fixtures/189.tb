@@ -1,3 +1,6 @@
+
+
+# Case 1
 record IntArrayBox(int[] values);
 
 int sum_ints(int[] values):
@@ -69,7 +72,7 @@ int first_group_length(string[][] values):
 int with_offset(int[] values, int offset):
     return values.sum() + offset
 
-int main(string[] args):
+int combined_case_1_main(string[] args):
     int count = args.length()
     const int[] fixed = [10, 20]
     int[] mutable = [30]
@@ -109,4 +112,264 @@ int main(string[] args):
     print(first_group_length(make_groups(count)))
     print(sum_ints(range(sum_ints(range(count)))))
     print(range(3).with_offset(10))
+    return 0
+
+# Case 2
+record WordBox(string[] words);
+
+int consume_words(string[] words):
+    return words.length()
+
+int[] make_int_result(int[] source):
+    return [source.length(), source.length() + 1]
+
+bool[] make_bool_result(bool[] source):
+    return [source[0], false]
+
+string[] make_string_result(string[] source):
+    return [source[0] + '-copy']
+
+int[][] make_int_rows(int[][] source):
+    return [[source[0][0] + 1]]
+
+string[][] make_string_rows(string[][] source):
+    return [[source[0][0] + '-copy']]
+
+int[] empty_int_result(int[] source):
+    return []
+
+bool[] empty_bool_result(bool[] source):
+    return []
+
+string[] empty_string_result(string[] source):
+    return []
+
+int[][] empty_int_rows(int[][] source):
+    return []
+
+string[][] empty_string_rows(string[][] source):
+    return []
+
+string[] returned_split(string text):
+    return text.split(',')
+
+int combined_case_2_main(string[] args):
+    string text = 'red,blue'
+    string[] split_words = text.split(',')
+    print(split_words)
+    const string[] const_words = text.split(',')
+    print(const_words)
+    split_words = 'green,yellow'.split(',')
+    print(split_words)
+    print(text.split_lines())
+    text.split(',')
+
+    print(consume_words('cyan,white'.split(',')))
+    string[] user_result_words = ['user']
+    print(consume_words(user_result_words.make_string_result()))
+    user_result_words.make_string_result()
+
+    string[] returned_words = returned_split('north,south')
+    print(returned_words)
+    WordBox box = WordBox('old,words'.split(','))
+    box.words = 'new,words'.split(',')
+    print(box.words)
+    string[][] nested_words = []
+    nested_words.push('nested,words'.split(','))
+    print(nested_words[0])
+
+    string[] borrowed_source = ['source', 'tail']
+    string[] result_snapshot = borrowed_source.make_string_result()
+    result_snapshot[0] = 'changed'
+    print(borrowed_source)
+    print(result_snapshot)
+
+    int[] int_result = [1, 2].make_int_result()
+    bool[] bool_result = [true, true].make_bool_result()
+    int[][] int_rows_result = [[3]].make_int_rows()
+    string[][] string_rows_result = [['row']].make_string_rows()
+    print(int_result)
+    print(bool_result[0])
+    print(bool_result[1])
+    print(int_rows_result[0])
+    print(string_rows_result[0])
+
+    int[] empty_int_source = []
+    bool[] empty_bool_source = []
+    string[] empty_string_source = []
+    int[][] empty_int_rows_source = []
+    string[][] empty_string_rows_source = []
+    int[] empty_ints = empty_int_source.empty_int_result()
+    bool[] empty_bools = empty_bool_source.empty_bool_result()
+    string[] empty_strings = empty_string_source.empty_string_result()
+    int[][] empty_int_rows_result = empty_int_rows_source.empty_int_rows()
+    string[][] empty_string_rows_result = empty_string_rows_source.empty_string_rows()
+    print(empty_ints.length())
+    print(empty_bools.length())
+    print(empty_strings.length())
+    print(empty_int_rows_result.length())
+    print(empty_string_rows_result.length())
+    return 0
+
+# Case 3
+record StringPopBox(string[] values);
+
+string pop_from_local(int count):
+    string[] local_values = ['returned-' + count.to_string()]
+    return local_values.pop()
+
+string pop_parameter(string[] values):
+    return pop(values)
+
+int combined_case_3_main(string[] args):
+    int process_args = args.length()
+    string[] words = ['head-' + process_args.to_string(), 'tail-' + process_args.to_string()]
+    string first = pop(words)
+    print(first)
+    print(words.length())
+    words.clear()
+    words.push('replacement-' + process_args.to_string())
+    words[0] = 'replaced-' + process_args.to_string()
+    print(first)
+    print(words.pop())
+    print(words.pop())
+    words.push('reused-' + process_args.to_string())
+    print(words.pop())
+
+    string[] method_words = ['method-head-' + process_args.to_string(), 'method-tail-' + process_args.to_string()]
+    string method_result = method_words.pop()
+    print(method_result)
+    print(method_words.length())
+
+    string[] empty_words = []
+    print(pop(empty_words))
+    print(empty_words.pop())
+    print(empty_words.length())
+    empty_words.push('after-empty-' + process_args.to_string())
+    print(empty_words.pop())
+
+    print(pop_from_local(process_args))
+
+    string[] returned_values = ['array-' + process_args.to_string()]
+    string[] held_values = []
+    held_values.push(pop_parameter(returned_values))
+    print(held_values[0])
+    print(returned_values.length())
+
+    StringPopBox box = StringPopBox(['field-' + process_args.to_string()])
+    string field_value = box.values.pop()
+    box.values.clear()
+    print(field_value)
+
+    StringPopBox transferred_box = StringPopBox([])
+    transferred_box.values.push(pop_from_local(process_args + 1))
+    print(transferred_box.values[0])
+
+    string[] discarded = ['discarded-' + process_args.to_string()]
+    discarded.pop()
+    print(discarded.length())
+
+    string[] drained = ['loop-a-' + process_args.to_string(), 'loop-b-' + process_args.to_string()]
+    while (drained.length() > 0):
+        print(drained.pop())
+    print(drained.length())
+    return 0
+
+# Case 4
+record IntSortBox(int[] values);
+
+int[] sort(int[] values, int ignored):
+    return values
+
+int compare_ascending(int left, int right):
+    return left - right
+
+int compare_descending(int left, int right):
+    return right - left
+
+int consume_values(int[] values):
+    return values.sum()
+
+void sort_borrowed_parameter(int[] values):
+    values = values.sort(compare_descending)
+
+void sort_chained_local(int n):
+    int[] values = [n + 7, n + 5, n + 6]
+    values = values.sort(compare_descending).sort(compare_ascending)
+    print(values)
+
+int[] returned_sorted_values(int n):
+    int[] values = [n + 2, n, n + 1]
+    return values.sort(compare_ascending)
+
+IntSortBox returned_sorted_box(int n):
+    int[] values = [n + 2, n, n + 1]
+    return IntSortBox(values.sort(compare_ascending))
+
+int combined_case_4_main(string[] args):
+    int n = args.length()
+
+    int[] values = [n + 2, n, n + 1]
+    int[] sorted = values.sort(compare_ascending)
+    print(values)
+    print(sorted)
+    sorted[0] = 99
+    print(values)
+    print(sorted)
+
+    int[] reassigned = [n + 5, n + 3, n + 4]
+    reassigned = reassigned.sort(compare_descending)
+    print(reassigned)
+    sort_chained_local(n)
+    int[] parameter_source = [n + 10, n + 8, n + 9]
+    sort_borrowed_parameter(parameter_source)
+    print(parameter_source)
+
+    int[] descending = [n + 2, n, n + 1]
+    int[] descending_sorted = descending.sort(compare_descending)
+    print(descending)
+    print(descending_sorted)
+
+    int[] empty_values = []
+    int[] empty_sorted = empty_values.sort(compare_ascending)
+    print(empty_sorted.length())
+
+    IntSortBox box = IntSortBox(values.sort(compare_ascending))
+    box.values[0] = 77
+    print(values)
+    print(box.values)
+    box.values = values.sort(compare_descending)
+    box.values[0] = 88
+    print(values)
+    print(box.values)
+
+    int consumed = consume_values(values.sort(compare_ascending))
+    print(consumed)
+    print(values)
+    values.sort(compare_descending)
+    print(values)
+
+    int[] returned = returned_sorted_values(n)
+    print(returned)
+    IntSortBox returned_box = returned_sorted_box(n)
+    print(returned_box.values)
+
+    int[] lambda_values = [n + 2, n, n + 1]
+    lambda_values.sort((int left, int right) -> right - left)
+    print(lambda_values)
+    return 0
+
+int main(string[] args):
+    print('=== case 1 ===')
+    if (combined_case_1_main(args) != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main(args) != 0):
+        return 1
+    print('=== case 3 ===')
+    if (combined_case_3_main(args) != 0):
+        return 1
+    print('=== case 4 ===')
+    if (combined_case_4_main(args) != 0):
+        return 1
     return 0

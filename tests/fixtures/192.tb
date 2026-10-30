@@ -1,7 +1,48 @@
-record IntSortBox(int[] values);
 
-int[] sort(int[] values, int ignored):
-    return values
+
+# Case 1
+record QueueItem(int priority, int id);
+
+int create_prio_q(int value):
+    return value + 60
+
+int combined_case_1_main(string[] args):
+    int argc = args.length()
+    print(argc.create_prio_q())
+
+    int[] values = [argc, argc + 1, argc + 2]
+    prio_q<int> generic_int = values.create_prio_q(compare_ascending)
+    values[0] = 99
+    print(values[0])
+    while (!generic_int.is_empty()):
+        print(generic_int.pop())
+
+    int[] descending_values = [4, 2, 3]
+    prio_q<int> descending = descending_values.create_prio_q(compare_descending)
+    while (!descending.is_empty()):
+        print(descending.pop())
+
+    int[] inline_values = [1, 3, 2]
+    prio_q<int> inline_queue = inline_values.create_prio_q((int left, int right) -> right - left)
+    while (!inline_queue.is_empty()):
+        print(inline_queue.pop())
+
+    QueueItem[] items = [QueueItem(5, 50), QueueItem(2, 20), QueueItem(8, 80)]
+    prio_q<QueueItem> record_queue = items.create_prio_q(compare_items)
+    while (!record_queue.is_empty()):
+        print(record_queue.pop().id)
+
+    int[] empty_values = []
+    prio_q<int> empty_queue = empty_values.create_prio_q(compare_ascending)
+    print(empty_queue.is_empty())
+    print(empty_queue.pop())
+    print(empty_queue.is_empty())
+
+    int[] one_value = [7]
+    prio_q<int> singleton = one_value.create_prio_q(compare_ascending)
+    print(singleton.pop())
+    print(singleton.is_empty())
+    return 0
 
 int compare_ascending(int left, int right):
     return left - right
@@ -9,74 +50,215 @@ int compare_ascending(int left, int right):
 int compare_descending(int left, int right):
     return right - left
 
-int consume_values(int[] values):
-    return values.sum()
+int compare_items(QueueItem left, QueueItem right):
+    return right.priority - left.priority
 
-void sort_borrowed_parameter(int[] values):
-    values = values.sort(compare_descending)
+# Case 2
+record IntRows(int[][] values);
+record StringRows(string[][] values);
 
-void sort_chained_local(int n):
-    int[] values = [n + 7, n + 5, n + 6]
-    values = values.sort(compare_descending).sort(compare_ascending)
-    print(values)
+int next_index(int[] calls):
+    calls[0] += 1
+    return -1
 
-int[] returned_sorted_values(int n):
-    int[] values = [n + 2, n, n + 1]
-    return values.sort(compare_ascending)
+int[] make_int_row(int value):
+    return [value, value + 1]
 
-IntSortBox returned_sorted_box(int n):
-    int[] values = [n + 2, n, n + 1]
-    return IntSortBox(values.sort(compare_ascending))
+string[] make_string_row(string value):
+    return [value + '-owned']
+
+int replace_borrowed_int(int[][] rows, int[] row):
+    rows[0] = row
+    return rows[0][0]
+
+string replace_borrowed_string(string[][] rows, string[] row):
+    rows[0] = row
+    return rows[0][0]
+
+int combined_case_2_main(string[] args):
+    int seed = args.length() + 10
+    int[][] rows = [[seed], [seed + 1]]
+    const int[] fixed = [seed + 2, seed + 3]
+    rows[0] = fixed
+    print(rows[0])
+    print(replace_borrowed_int(rows, fixed))
+    rows[0][0] = seed + 4
+    print(fixed[0])
+
+    rows[1] = []
+    print(rows[1].length())
+    int[] calls = [0]
+    rows[next_index(calls)] = make_int_row(seed + 5)
+    print(calls[0])
+    print(rows[1])
+
+    if (seed > 0):
+        rows[0] = []
+    for (int i = 0; i < 1; i++):
+        rows[0] = [seed + 6]
+    switch (seed):
+        case 10:
+            rows[0] = [seed + 7]
+        default:
+            rows[0] = [seed + 8]
+    try:
+        rows[0] = []
+        throw 'row-assignment'
+    catch (exception err):
+        rows[0] = [seed + 9]
+    print(rows[0])
+
+    IntRows int_box = IntRows([[seed + 10]])
+    int_box.values[0] = make_int_row(seed + 11)
+    print(int_box.values[0])
+
+    string text = 'runtime-' + seed.to_string()
+    string[][] labels = [['old-' + text]]
+    const string[] fixed_labels = ['const-' + text]
+    labels[0] = fixed_labels
+    print(replace_borrowed_string(labels, fixed_labels))
+    labels[0] = make_string_row(text)
+    print(labels[0])
+    labels[0][0] = 'changed-' + text
+    print(fixed_labels[0])
+
+    StringRows string_box = StringRows([['field-' + text]])
+    string_box.values[0] = []
+    print(string_box.values[0].length())
+    string_box.values[0] = make_string_row(text)
+    print(string_box.values[0])
+    return 0
+
+# Case 3
+string last_from_local(string suffix):
+    string source = 'temporary-' + suffix
+    return source.last()
+
+int combined_case_3_main(string[] args):
+    int count = args.length()
+    string source = 'value-' + count.to_string()
+    string inferred = last(source)
+    const string fixed = 'fixed-' + count.to_string()
+    string explicit = fixed.last()
+    string empty = ''
+    string empty_last = last(empty)
+    string one = 'Z'
+    string one_last = one.last()
+
+    print(inferred)
+    print(explicit)
+    print(empty_last)
+    print(one_last)
+
+    source = 'reassigned-' + count.to_string()
+    print(inferred)
+    print(source.last())
+    print(last_from_local(count.to_string()))
+
+    int[] ints = [count + 10, count + 20]
+    bool[] flags = [count > 0, false]
+    string[] words = ['first-' + count.to_string(), 'tail-' + count.to_string()]
+    print(last(ints))
+    print(flags.last())
+    print(last(words))
+    return 0
+
+# Case 4
+record RowHolder(int[] numbers, string[] words);
+
+int[] returned_int_row(int value):
+    int[][] rows = [[value + 1], [value + 2, value + 3]]
+    return rows.last()
+
+string[] returned_string_row(int value):
+    string[][] rows = [['left-' + value.to_string()], ['right-' + value.to_string(), 'tail-' + value.to_string()]]
+    return last(rows)
+
+int consume_int_row(int[] row):
+    return row.sum()
+
+string consume_string_row(string[] row):
+    return row[0]
+
+int combined_case_4_main(string[] args):
+    int count = args.length()
+
+    int[][] numbers = [[count + 10], [count + 20, count + 30]]
+    int[] direct = last(numbers)
+    direct[0] = 91
+    print(numbers[1][0])
+    print(direct[0])
+
+    int[] method = numbers.last()
+    method[1] = 92
+    print(numbers[1][1])
+    print(method[1])
+
+    const int[][] fixed_numbers = [[count + 40], [count + 50, count + 60]]
+    int[] fixed_tail = fixed_numbers.last()
+    fixed_tail[0] = 93
+    print(fixed_numbers[1][0])
+    print(fixed_tail[0])
+
+    string[][] words = [['left-' + count.to_string()], ['right-' + count.to_string(), 'tail-' + count.to_string()]]
+    string[] direct_words = last(words)
+    direct_words[0] = 'changed-direct-' + count.to_string()
+    print(words[1][0])
+    print(direct_words[0])
+
+    string[] method_words = words.last()
+    method_words[1] = 'changed-method-' + count.to_string()
+    print(words[1][1])
+    print(method_words[1])
+
+    const string[][] fixed_words = [['fixed-left-' + count.to_string()], ['fixed-right-' + count.to_string()]]
+    string[] fixed_word_tail = fixed_words.last()
+    fixed_word_tail[0] = 'changed-fixed-' + count.to_string()
+    print(fixed_words[1][0])
+    print(fixed_word_tail[0])
+
+    int[][] empty_number_tail = [[count + 70], []]
+    int[] empty_number_row = empty_number_tail.last()
+    print(empty_number_row.length())
+    string[][] empty_word_tail = [['before-' + count.to_string()], []]
+    string[] empty_word_row = last(empty_word_tail)
+    print(empty_word_row.length())
+
+    int[] transferred_numbers = returned_int_row(count)
+    print(transferred_numbers[0])
+    transferred_numbers = returned_int_row(count + 1)
+    print(transferred_numbers[1])
+    string[] transferred_words = returned_string_row(count)
+    print(consume_string_row(transferred_words))
+    print(consume_string_row(returned_string_row(count + 1)))
+
+    int[][] other_numbers = [[count + 80], [count + 90]]
+    int[] replaced = numbers.last()
+    replaced = other_numbers.last()
+    print(replaced[0])
+    print(consume_int_row(numbers.last()))
+
+    RowHolder holder = RowHolder(numbers.last(), words.last())
+    holder.numbers[0] = 94
+    holder.words[0] = 'holder-' + count.to_string()
+    print(numbers[1][0])
+    print(words[1][0])
+    print(holder.numbers[0])
+    print(holder.words[0])
+
+    return 0
 
 int main(string[] args):
-    int n = args.length()
-
-    int[] values = [n + 2, n, n + 1]
-    int[] sorted = values.sort(compare_ascending)
-    print(values)
-    print(sorted)
-    sorted[0] = 99
-    print(values)
-    print(sorted)
-
-    int[] reassigned = [n + 5, n + 3, n + 4]
-    reassigned = reassigned.sort(compare_descending)
-    print(reassigned)
-    sort_chained_local(n)
-    int[] parameter_source = [n + 10, n + 8, n + 9]
-    sort_borrowed_parameter(parameter_source)
-    print(parameter_source)
-
-    int[] descending = [n + 2, n, n + 1]
-    int[] descending_sorted = descending.sort(compare_descending)
-    print(descending)
-    print(descending_sorted)
-
-    int[] empty_values = []
-    int[] empty_sorted = empty_values.sort(compare_ascending)
-    print(empty_sorted.length())
-
-    IntSortBox box = IntSortBox(values.sort(compare_ascending))
-    box.values[0] = 77
-    print(values)
-    print(box.values)
-    box.values = values.sort(compare_descending)
-    box.values[0] = 88
-    print(values)
-    print(box.values)
-
-    int consumed = consume_values(values.sort(compare_ascending))
-    print(consumed)
-    print(values)
-    values.sort(compare_descending)
-    print(values)
-
-    int[] returned = returned_sorted_values(n)
-    print(returned)
-    IntSortBox returned_box = returned_sorted_box(n)
-    print(returned_box.values)
-
-    int[] lambda_values = [n + 2, n, n + 1]
-    lambda_values.sort((int left, int right) -> right - left)
-    print(lambda_values)
+    print('=== case 1 ===')
+    if (combined_case_1_main(args) != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main(args) != 0):
+        return 1
+    print('=== case 3 ===')
+    if (combined_case_3_main(args) != 0):
+        return 1
+    print('=== case 4 ===')
+    if (combined_case_4_main(args) != 0):
+        return 1
     return 0

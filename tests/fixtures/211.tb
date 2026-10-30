@@ -1,49 +1,91 @@
-record IntRows(int[][] values);
-record StringRows(string[][] values);
+record Item(int value, string label, int[] values);
+record Empty();
+record Holder(Item[] items);
+record item(int[] values);
 
-int[][] make_int_rows(int value):
-    return [[value, value + 1], []]
+Item[] global_items = []
 
-string[][] make_string_rows(string value):
-    return [[value + '-owned'], []]
+Item make_item(int value):
+    return Item(value, 'item-' + value.to_string(), [value])
+
+Item[] make_items(int value):
+    return [make_item(value)]
+
+Item[] empty_items():
+    return []
+
+bool query_empty(Item[] values):
+    return is_empty(values)
 
 int main(string[] args):
-    int value = args.length()
-    int[][] numbers = [[value, value + 1], []]
-    clear(numbers)
-    print(numbers.length())
-    numbers.clear()
-    print(numbers.length())
-    numbers.push([value + 2])
-    print(numbers[0][0])
+    int seed = args.length() + 3
 
-    int[] source_numbers = [value + 3, value + 4]
-    int[][] number_snapshots = []
-    number_snapshots.push(source_numbers)
-    number_snapshots.clear()
-    print(source_numbers[0])
+    Item[] empty_named = []
+    Item[] populated_named = make_items(seed)
+    print(is_empty(empty_items()))
+    print(is_empty(make_items(seed + 1)))
+    print(is_empty([make_item(seed + 2)]))
+    print(empty_items().is_empty())
+    print(make_items(seed + 3).is_empty())
 
-    IntRows number_box = IntRows([[value + 5]])
-    number_box.values.clear()
-    print(number_box.values.length())
-    make_int_rows(value + 6).clear()
+    bool empty_result = is_empty(empty_items())
+    bool populated_result = is_empty(make_items(seed + 4))
+    print(empty_result)
+    print(populated_result)
+    print(query_empty(empty_named))
+    print(query_empty(populated_named))
 
-    string text = value.to_string()
-    string[][] labels = [['first-' + text], [], ['last-' + text]]
-    labels.clear()
-    print(labels.length())
-    labels.clear()
-    labels.push(['reused-' + text])
-    print(labels[0][0])
+    if (is_empty(empty_named)):
+        print(1)
+    else:
+        print(0)
+    if (!is_empty(populated_named)):
+        print(1)
+    else:
+        print(0)
 
-    string[] source_labels = ['source-' + text]
-    string[][] label_snapshots = []
-    label_snapshots.push(source_labels)
-    label_snapshots.clear()
-    print(source_labels[0])
+    int loops = 0
+    while (loops < 2 && !is_empty(make_items(seed + loops))):
+        loops += 1
+    print(loops)
+    print(!is_empty(empty_named))
+    print(!is_empty(populated_named))
 
-    StringRows label_box = StringRows([['field-' + text]])
-    clear(label_box.values)
-    print(label_box.values.length())
-    make_string_rows('temporary-' + text).clear()
+    print(is_empty(populated_named))
+    print(populated_named[0].value)
+    print(populated_named[0].label)
+
+    const Item[] fixed = make_items(seed + 7)
+    print(is_empty(fixed))
+    print(fixed[0].value)
+    print(fixed[0].label)
+    print(query_empty(populated_named))
+
+    print(is_empty(global_items))
+    global_items.push(make_item(17))
+    print(is_empty(global_items))
+    print(global_items[0].value)
+
+    Holder holder = Holder(make_items(seed + 8))
+    print(is_empty(holder.items))
+    print(holder.items[0].value)
+    print(holder.items[0].label)
+
+    Item[] reused = make_items(seed + 9)
+    print(is_empty(reused))
+    reused.push(make_item(seed + 10))
+    print(reused.length())
+
+    Empty[] no_records = []
+    print(is_empty(no_records))
+    print(no_records.is_empty())
+    print(is_empty([Empty()]))
+
+    item[] payloads = [item([seed])]
+    print(is_empty(payloads))
+
+    int[] native_values = [seed]
+    bool[] no_flags = []
+    print(native_values.is_empty())
+    print(no_flags.is_empty())
     return 0

@@ -1,142 +1,108 @@
-record SliceBox(int[] values, string[] words, int[][] rows);
+record Item(int value, string label);
+record Holder(Item[] items);
+record ItemMaps(map<int, Item[]> rows);
+record Empty();
 
-const int[] GLOBAL_VALUES = [71, 72, 73]
-const string[] GLOBAL_WORDS = ['global-a', 'global-b']
+Item[] make_row(int value):
+    return [Item(value, 'call-' + value)]
 
-int[] make_values(int seed):
-    return [seed, seed + 1, seed + 2, seed + 3]
+map<int, Item[]> row_from_holder(int value):
+    Holder owner = Holder([Item(value, 'field-' + value)])
+    map<int, Item[]> rows = {value: owner.items}
+    return rows
 
-bool[] make_flags(int seed):
-    return [seed > 0, seed % 2 == 0, seed > 1]
+map<int, Item[]> row_from_parameter(Item[] value):
+    map<int, Item[]> rows = {1: value}
+    return rows
 
-string[] make_words(int seed):
-    return ['word-' + seed, 'tail-' + seed, 'last-' + seed]
-
-int[][] make_rows(int seed):
-    return [[seed, seed + 1], [seed + 2, seed + 3]]
-
-string[][] make_groups(int seed):
-    return [['group-' + seed], ['row-' + seed]]
-
-int[] return_slice(int seed):
-    return make_values(seed)[1:]
-
-int borrowed_slice_value(int[] values):
-    int[] tail = values[values.length():]
-    return values[0] + tail.length()
+Item[] replace_row(map<string, Item[]> rows, string key, int value):
+    rows[key] = make_row(value)
+    return make_row(value + 1)
 
 int main(string[] args):
     int seed = args.length() + 4
+    map<int, Item[]> field_rows = row_from_holder(seed)
+    print(field_rows[seed][0].value)
+    print(field_rows[seed][0].label)
 
-    int[] open_end = make_values(seed)[1:]
-    print(open_end[0])
-    print(open_end.length())
+    Item[] source = [Item(seed + 1, 'source')]
+    Item[] empty_items = []
+    map<int, Item[]> rows = {seed: source, seed + 1: empty_items}
+    source[0].value = 900
+    print(rows[seed][0].value)
+    print(rows[seed][0].label)
+    print(rows[seed + 1].length())
+    map<int, Item[]> parameter_rows = row_from_parameter(source)
+    print(parameter_rows[1][0].value)
 
-    int[] omitted_start = make_values(seed)[:2]
-    print(omitted_start[0])
-    print(omitted_start[1])
+    const Item[] fixed = [Item(seed + 2, 'const')]
+    rows[seed + 2] = fixed
+    rows[seed + 3] = make_row(seed + 3)
+    print(rows[seed + 2][0].value)
+    print(rows[seed + 3][0].value)
 
-    int[] explicit = make_values(seed)[-3:-1]
-    print(explicit[0])
-    print(explicit[1])
+    map<int, Item[]> copied = rows
+    copied[seed][0] = Item(777, 'copy')
+    print(rows[seed][0].value)
+    print(copied[seed][0].value)
+    rows[seed] = rows[seed]
+    rows[seed + 4] = rows[seed]
+    rows[seed + 4][0] = Item(888, 'cross')
+    print(rows[seed][0].value)
+    print(rows[seed + 4][0].value)
 
-    int[] clamped = make_values(seed)[-20:20]
-    int[] reversed = make_values(seed)[3:1]
-    int[] empty = make_values(seed)[2:2]
-    print(clamped.length())
-    print(reversed.length())
-    print(empty.length())
+    for (int i : range(3)):
+        rows[seed + 5] = make_row(seed + 10 + i)
+    print(rows[seed + 5][0].value)
+    print(rows[seed + 5][0].label)
 
-    int[] chained = make_values(seed)[:][1:3]
-    print(chained[0])
-    print(chained[1])
+    map<int, Item[]> duplicate_int = {7: [Item(70, 'first')], 7: [Item(71, 'second')]}
+    print(duplicate_int.length())
+    print(duplicate_int[7][0].value)
+    map<int, Empty[]> empty_record = {seed: [Empty()]}
+    print(empty_record[seed].length())
 
-    int[] copied = make_values(seed).copy()[1:3]
-    print(copied[0])
-    print(copied[1])
+    map<string, Item[]> words = {}
+    words['alpha'] = source
+    words['beta'] = make_row(seed + 30)
+    print(words.length())
+    print(words['alpha'][0].value)
+    words['alpha'] = words['beta']
+    words['alpha'][0] = Item(999, 'word-copy')
+    print(words['beta'][0].value)
+    string alias_key = 'alias-' + seed
+    words[alias_key] = [Item(seed + 32, 'alias-' + seed)]
+    words[words[alias_key][0].label] = make_row(seed + 33)
+    print(words[alias_key][0].value)
+    words[alias_key] = [Item(seed + 32, 'alias-' + seed)]
+    words[words[alias_key][0].label] = replace_row(words, alias_key, seed + 34)
+    print(words[alias_key][0].value)
+    words['beta'] = make_row(seed + 31)
+    for (int i : range(10)):
+        words['growth-' + i] = make_row(seed + 40 + i)
+    print(words.length())
+    print(words['beta'][0].value)
 
-    int[] literal_slice = [seed + 10, seed + 11, seed + 12][1:]
-    print(literal_slice[0])
+    map<string, Item[]> duplicate_string = {'same': [Item(80, 'old')], 'same': [Item(81, 'new')]}
+    print(duplicate_string.length())
+    print(duplicate_string['same'][0].value)
 
-    bool[] flags = make_flags(seed)[1:]
-    print(flags[0])
-    print(flags[1])
-    bool[] explicit_flags = make_flags(seed)[0:2]
-    print(explicit_flags[0])
-    print(explicit_flags[1])
+    ItemMaps box = ItemMaps(rows)
+    box.rows[seed + 6] = make_row(seed + 6)
+    print(box.rows[seed + 6][0].value)
 
-    string[] words = make_words(seed)[1:]
-    print(words[0])
-    print(words[1])
-    string[] explicit_words = make_words(seed)[0:2]
-    print(explicit_words[0])
-    print(explicit_words[1])
-
-    int[][] row_slice = make_rows(seed)[0:1]
-    row_slice[0][0] += 50
-    print(row_slice[0][0])
-    print(row_slice[0][1])
-    int[][] row_open_end = make_rows(seed)[0:]
-    print(row_open_end[0][0])
-    print(row_open_end[0][1])
-
-    string[][] group_slice = make_groups(seed)[:]
-    print(group_slice[0][0])
-    print(group_slice[1][0])
-    string[][] explicit_group_slice = make_groups(seed)[0:1]
-    print(explicit_group_slice[0][0])
-
-    int[][] named_rows = make_rows(seed)
-    int[][] row_snapshot = named_rows[:]
-    row_snapshot[0][0] += 60
-    print(named_rows[0][0])
-    print(row_snapshot[0][0])
-
-    string[] churn = []
-    int churn_index = 0
-    while (churn_index < 3):
-        churn = make_words(seed + churn_index)
-        churn_index += 1
-    print(words[0])
-
-    const int[] fixed = make_values(seed + 20)
-    int[] fixed_slice = fixed[1:]
-    print(fixed[0])
-    print(fixed_slice[0])
-    print(GLOBAL_VALUES[0])
-    int[] global_slice = GLOBAL_VALUES[:]
-    print(global_slice[2])
-
-    int reused = borrowed_slice_value(named_rows[0])
-    print(reused)
-    print(named_rows[0][0])
-
-    SliceBox box = SliceBox(make_values(seed + 30)[1:], make_words(seed + 30)[1:], make_rows(seed + 30)[1:])
-    print(box.values[0])
-    print(box.words[0])
-    print(box.rows[0][0])
-    string[] box_word_slice = box.words[1:]
-    print(box_word_slice[0])
-    print(box.words[0])
-
-    int[] returned = return_slice(seed + 40)
-    print(returned[0])
-
-    int discard_index = 0
-    while (discard_index < 2):
-        if (discard_index == 0):
-            make_values(seed + discard_index)[1:]
-        else:
-            make_flags(seed + discard_index)[:]
-        discard_index += 1
-
+    map<int, Item[]> flow = {}
+    if (seed > 0):
+        flow[1] = [Item(seed + 60, 'if')]
+    for (int i : range(2)):
+        flow[2 + i] = [Item(seed + 61 + i, 'loop')]
     try:
-        int[] in_try = make_values(seed + 50)[1:3]
-        print(in_try[0])
-        throw 'slice-try'
-    catch (exception error):
-        print(error)
-
-    print(GLOBAL_WORDS[1])
-    print(box.values[1])
+        flow[4] = make_row(seed + 63)
+        throw 'caught'
+    catch (exception err):
+        flow[5] = [Item(seed + 64, 'catch')]
+    print(flow[1][0].value)
+    print(flow[3][0].value)
+    print(flow[4][0].value)
+    print(flow[5][0].value)
     return 0

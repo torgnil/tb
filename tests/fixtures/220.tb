@@ -1,74 +1,195 @@
-record FieldCell(int value);
-record FieldBox(int number, num amount, bool enabled, string label, int[] values, bool[] flags, string[] words, int[][] rows, string[][] groups, map<string, int> counts, FieldCell cell);
 
-int next_field_value(int value):
-    return value + 3
 
-map<string, int> make_field_counts(int value):
-    return {'owned': value}
+# Case 1
+record Point(int x, int y);
+record Empty();
+
+int named_zero():
+    return 7
+
+int increment(const int value):
+    return value + 2
+
+int combine(int left, int right):
+    return left * 10 + right
+
+int mix(int left, int right):
+    return left * 10 + right
+
+cached int cached_double(const int value):
+    return value * 2
+
+string join(string left, string right):
+    return left + right
+
+int point_total(Point point):
+    return point.x + point.y
+
+int empty_value(Empty value):
+    return 5
+
+void consume(int value):
+    print(value)
+
+int combined_case_1_main(string[] args):
+    int seed = args.length()
+    print(named_zero())
+    print(seed.increment())
+    print(combine(seed, increment(1)))
+    print(seed.mix(4))
+    print(combine(named_zero(), seed.mix(2)))
+    print(cached_double(seed))
+    print(join('a', 'b'))
+    Point source = Point(2, 3)
+    print(point_total(source))
+    const Point fixed = Point(4, 5)
+    print(point_total(fixed))
+    print(empty_value(Empty()))
+    consume(point_total(source))
+    print(source.x)
+    print(source.y)
+    return 0
+
+# Case 2
+record Pair(int left, int right);
+
+bool contains_int(set<int> values, int needle):
+    return values.contains(needle)
+
+bool const_contains_int(const set<int> values, const int needle):
+    return values.contains(needle)
+
+bool contains_pair(set<Pair> values, Pair needle):
+    return values.contains(needle)
+
+bool contains_both(set<int> numbers, set<Pair> pairs, int number, Pair pair):
+    return numbers.contains(number) && pairs.contains(pair)
+
+bool contains_pair_set(set<int> numbers, const set<Pair> pairs, int seed):
+    return numbers.contains(seed) && pairs.contains(Pair(seed + 1, seed + 11))
+
+int combined_case_2_main(string[] args):
+    int seed = args.length()
+    set<int> numbers = {seed, seed + 2}
+    const set<int> fixed_numbers = {seed + 1}
+    Pair target = Pair(seed, seed + 10)
+    set<Pair> pairs = {target}
+    const set<Pair> fixed_pairs = {Pair(seed + 1, seed + 11)}
+    set<Pair> empty_pairs = {}
+
+    print(contains_int(numbers, seed))
+    print(const_contains_int(fixed_numbers, seed + 1))
+    print(contains_pair(pairs, target))
+    print(numbers.contains_int(seed + 2))
+    print(numbers.contains_both(pairs, seed, target))
+    print(numbers.contains_pair_set(fixed_pairs, seed))
+    print(contains_pair(empty_pairs, target))
+    print(numbers.contains_int(seed + 1))
+
+    numbers.add(seed + 3)
+    print(numbers.contains_int(seed + 3))
+    print(numbers.contains_int(seed))
+    print(pairs.contains_pair(target))
+    return 0
+
+# Case 3
+bool is_enabled(int value) {
+    return value > 0;
+}
+
+int combined_case_3_main(string[] args) {
+    bool[] flags = [true, is_enabled(args.length() - 1), false];
+    int true_count = 0;
+
+    for (const bool flag : flags) {
+        if (flag) {
+            true_count += 1;
+            print(true);
+        } else {
+            print(false);
+        }
+    }
+
+    for (bool flag in flags) {
+        flag = !flag;
+        print(flag);
+    }
+
+    print(flags[0]);
+    print(flags[1]);
+    print(flags[2]);
+    print(true_count);
+
+    const bool[] empty_flags = [];
+    int empty_count = 0;
+    for (bool empty_flag : empty_flags) {
+        empty_count += 1;
+    }
+    print(empty_count);
+    return 0;
+}
+
+# Case 4
+record Entry(int value, string label, int[] samples);
+
+Entry make_entry(int value, string label):
+    return Entry(value, label, [value, value + 10])
+
+int combined_case_4_main(string[] args):
+    int seed = args.length() + 2
+    Entry[] entries = [make_entry(seed, 'first'), make_entry(seed + 2, 'second')]
+    int total = 0
+
+    Entry[] direct = [Entry(seed, 'direct-one', [seed]), Entry(seed + 1, 'direct-two', [seed + 1])]
+    for (Entry direct_entry : direct):
+        print(direct_entry.label)
+        print(direct_entry.samples[0])
+
+    for (const Entry initial : entries):
+        print(initial.value)
+
+    for (const Entry element : entries):
+        print(element.value)
+        print(element.label)
+        print(element.samples[1])
+        total += element.value
+        if (element.value == seed):
+            continue
+        print('last')
+    print(total)
+
+    Entry[] empty = []
+    for (Entry element in empty):
+        total += element.value
+    print(total)
+
+    const Entry[] fixed = [make_entry(seed + 4, 'fixed')]
+    for (const Entry element in fixed):
+        print(element.label)
+        print(element.samples[0])
+
+    for (Entry element in entries):
+        element = make_entry(seed + 9, 'local')
+        print(element.value)
+        print(element.label)
+        break
+
+    print(entries[0].value)
+    print(entries[0].label)
+    print(entries[0].samples[0])
+    return 0
 
 int main(string[] args):
-    int count = args.length()
-    const int fixed = count + 2
-    const num fixed_amount = 0.000 - count
-    const bool fixed_enabled = count > 0
-    const string fixed_label = 'field-' + count
-    int[] source_values = [count, count + 2]
-    const int[] fixed_values = [fixed]
-    bool[] source_flags = [fixed_enabled]
-    string[] source_words = [fixed_label]
-    int[] source_row = [fixed + 1]
-    int[][] source_rows = [source_row]
-    string[] source_group = [fixed_label]
-    string[][] source_groups = [source_group]
-    map<string, int> source_counts = {'borrowed': count + 2}
-    const map<string, int> fixed_counts = {'fixed': count + 2}
-    const FieldCell source_cell = FieldCell(fixed + 4)
-
-    FieldBox box = FieldBox(0, 0.0, false, '', [], [], [], [], [], {'seed': 1}, FieldCell(0))
-    box.number = fixed
-    box.number += count
-    box.amount = fixed_amount
-    box.amount += fixed_amount
-    box.enabled = fixed_enabled
-    box.label = fixed_label
-    box.values = []
-    box.flags = []
-    box.words = []
-    box.rows = []
-    box.groups = []
-    box.values = fixed_values
-    box.values = source_values
-    box.flags = source_flags
-    box.words = source_words
-    box.rows = source_rows
-    box.groups = source_groups
-    box.counts = fixed_counts
-    box.counts = source_counts
-    box.cell = source_cell
-    box.number = next_field_value(box.cell.value)
-    box.cell.value += count
-
-    source_values[0] = 99
-    source_flags[0] = false
-    source_words[0] = 'changed'
-    source_row[0] = 98
-    source_group[0] = 'changed'
-    source_counts['borrowed'] = 97
-
-    print(box.counts['borrowed'])
-    box.counts = make_field_counts(next_field_value(count))
-
-    print(box.number)
-    print(box.amount)
-    print(box.enabled)
-    print(box.label)
-    print(box.values[0])
-    print(box.flags[0])
-    print(box.words[0])
-    print(box.rows[0][0])
-    print(box.groups[0][0])
-    print(box.counts['owned'])
-    print(box.cell.value)
-    print(box.values.length())
+    print('=== case 1 ===')
+    if (combined_case_1_main(args) != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main(args) != 0):
+        return 1
+    print('=== case 3 ===')
+    if (combined_case_3_main(args) != 0):
+        return 1
+    print('=== case 4 ===')
+    if (combined_case_4_main(args) != 0):
+        return 1
     return 0

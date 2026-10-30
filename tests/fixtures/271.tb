@@ -1,35 +1,8 @@
 int main(string[] args):
-    int seed = args.length() + 3
-    const bool ready = args.length() == 1
-    thread_pool pool = thread_pool(2)
-    future<bool> positive = pool.submit(int value -> value > 0, seed + 1)
-    future<bool> even = pool.submit(int value -> (value % 2) == 0, seed + 1)
-    future<bool> below_limit = pool.submit(int value -> value > 0 && value < 10, seed)
-    future<bool> inverted = pool.submit(bool flag -> !flag, ready)
-    future<bool> negated = pool.submit(bool flag -> not flag, ready)
-    future<bool> conjunction = pool.submit(bool flag -> flag and true, ready)
-    future<bool> symbolic_or = pool.submit(bool flag -> flag || false, ready)
-    future<bool> disjunction = pool.submit(bool flag -> flag or false, ready)
-    future<int> bool_result = pool.submit(bool flag -> 41, ready)
-    future<int> integer_result = pool.submit(int value -> value * 2 + 1, seed)
-
-    print(positive.await())
-    print(even.await())
-    print(below_limit.await())
-    print(positive.await())
-    print(inverted.await())
-    print(negated.await())
-    print(conjunction.await())
-    print(symbolic_or.await())
-    print(disjunction.await())
-    print(bool_result.await())
-    print(integer_result.await())
-    print(ready or false)
-
-    if (positive.await()):
-        future<bool> in_branch = pool.submit(int value -> value == 4, seed)
-        print(in_branch.await())
-    for (int index = 0; index < 2; index++):
-        future<bool> in_loop = pool.submit(bool flag -> flag == false, index == 0)
-        print(in_loop.await())
-    return 0
+    thread_pool pool = thread_pool(1)
+    int[] weights = [1]
+    future<int> task = pool.submit(int[] row -> {
+        int[] local = [2]
+        return row[0] + weights[0] + local[0]
+    }, [3])
+    return task.await()

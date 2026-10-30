@@ -1,108 +1,27 @@
-record Item(int value, string label);
-record Holder(Item[] items);
-record ItemMaps(map<int, Item[]> rows);
-record Empty();
+string make_missing_path(string name):
+    return 'test-files/missing-write-all-parent/' + name
 
-Item[] make_row(int value):
-    return [Item(value, 'call-' + value)]
-
-map<int, Item[]> row_from_holder(int value):
-    Holder owner = Holder([Item(value, 'field-' + value)])
-    map<int, Item[]> rows = {value: owner.items}
-    return rows
-
-map<int, Item[]> row_from_parameter(Item[] value):
-    map<int, Item[]> rows = {1: value}
-    return rows
-
-Item[] replace_row(map<string, Item[]> rows, string key, int value):
-    rows[key] = make_row(value)
-    return make_row(value + 1)
+void show_write_error(string path, bool use_ufcs):
+    try:
+        if use_ufcs:
+            path.write_all('unused')
+        else:
+            write_all(path, 'unused')
+    catch (exception err):
+        print(err)
 
 int main(string[] args):
-    int seed = args.length() + 4
-    map<int, Item[]> field_rows = row_from_holder(seed)
-    print(field_rows[seed][0].value)
-    print(field_rows[seed][0].label)
-
-    Item[] source = [Item(seed + 1, 'source')]
-    Item[] empty_items = []
-    map<int, Item[]> rows = {seed: source, seed + 1: empty_items}
-    source[0].value = 900
-    print(rows[seed][0].value)
-    print(rows[seed][0].label)
-    print(rows[seed + 1].length())
-    map<int, Item[]> parameter_rows = row_from_parameter(source)
-    print(parameter_rows[1][0].value)
-
-    const Item[] fixed = [Item(seed + 2, 'const')]
-    rows[seed + 2] = fixed
-    rows[seed + 3] = make_row(seed + 3)
-    print(rows[seed + 2][0].value)
-    print(rows[seed + 3][0].value)
-
-    map<int, Item[]> copied = rows
-    copied[seed][0] = Item(777, 'copy')
-    print(rows[seed][0].value)
-    print(copied[seed][0].value)
-    rows[seed] = rows[seed]
-    rows[seed + 4] = rows[seed]
-    rows[seed + 4][0] = Item(888, 'cross')
-    print(rows[seed][0].value)
-    print(rows[seed + 4][0].value)
-
-    for (int i : range(3)):
-        rows[seed + 5] = make_row(seed + 10 + i)
-    print(rows[seed + 5][0].value)
-    print(rows[seed + 5][0].label)
-
-    map<int, Item[]> duplicate_int = {7: [Item(70, 'first')], 7: [Item(71, 'second')]}
-    print(duplicate_int.length())
-    print(duplicate_int[7][0].value)
-    map<int, Empty[]> empty_record = {seed: [Empty()]}
-    print(empty_record[seed].length())
-
-    map<string, Item[]> words = {}
-    words['alpha'] = source
-    words['beta'] = make_row(seed + 30)
-    print(words.length())
-    print(words['alpha'][0].value)
-    words['alpha'] = words['beta']
-    words['alpha'][0] = Item(999, 'word-copy')
-    print(words['beta'][0].value)
-    string alias_key = 'alias-' + seed
-    words[alias_key] = [Item(seed + 32, 'alias-' + seed)]
-    words[words[alias_key][0].label] = make_row(seed + 33)
-    print(words[alias_key][0].value)
-    words[alias_key] = [Item(seed + 32, 'alias-' + seed)]
-    words[words[alias_key][0].label] = replace_row(words, alias_key, seed + 34)
-    print(words[alias_key][0].value)
-    words['beta'] = make_row(seed + 31)
-    for (int i : range(10)):
-        words['growth-' + i] = make_row(seed + 40 + i)
-    print(words.length())
-    print(words['beta'][0].value)
-
-    map<string, Item[]> duplicate_string = {'same': [Item(80, 'old')], 'same': [Item(81, 'new')]}
-    print(duplicate_string.length())
-    print(duplicate_string['same'][0].value)
-
-    ItemMaps box = ItemMaps(rows)
-    box.rows[seed + 6] = make_row(seed + 6)
-    print(box.rows[seed + 6][0].value)
-
-    map<int, Item[]> flow = {}
-    if (seed > 0):
-        flow[1] = [Item(seed + 60, 'if')]
-    for (int i : range(2)):
-        flow[2 + i] = [Item(seed + 61 + i, 'loop')]
+    string path = make_missing_path('first')
+    show_write_error(path, false)
+    path = make_missing_path('second')
+    show_write_error(path, true)
+    show_write_error(make_missing_path('third'), false)
+    string retained = ''
+    path = make_missing_path('retained')
     try:
-        flow[4] = make_row(seed + 63)
-        throw 'caught'
+        write_all(path, 'unused')
     catch (exception err):
-        flow[5] = [Item(seed + 64, 'catch')]
-    print(flow[1][0].value)
-    print(flow[3][0].value)
-    print(flow[4][0].value)
-    print(flow[5][0].value)
+        retained = err
+    path = make_missing_path('changed-after-catch')
+    print(retained)
     return 0

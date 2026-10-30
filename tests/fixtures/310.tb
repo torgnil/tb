@@ -1,60 +1,200 @@
-bool has_positive_row(const int[][] rows):
-    if rows.length() > 0:
-        if rows[0].length() > 0:
-            if rows[0][0] < 0:
-                throw 'negative first row'
-            return rows[0][0] > 0
-    return false
 
-bool mutate_snapshot(int[][] rows):
-    if rows.length() > 0:
-        if rows[0].length() > 0:
-            rows[0][0] = 99
-            return rows[0][0] == 99
-    return false
 
-void enqueue_grid(thread_pool pool, int[][] rows):
-    future<bool> ignored = pool.submit(has_positive_row, rows)
+# Case 1
+enum Mode { READY, DONE }
+record Packet(string text);
+
+string saved_text = ''
+Mode saved_mode = Mode.READY
+exception saved_error = ''
+const exception saved_error_copy = saved_error
+
+string replace_text(string value, int seed):
+    value = 'value-' + seed
+    value += '!'
+    value = value
+    return value
+
+string return_early(string value, int seed):
+    value = 'early-' + seed
+    if seed > 0:
+        return value
+    return 'unreachable'
+
+string catch_and_continue(string value, int seed):
+    value = 'caught-' + seed
+    try {
+        throw 'local throw'
+    } catch (string ignored) {
+        value += ':local'
+    }
+    return value
+
+string read_const(const string value):
+    return value
+
+string shadow_const(const string value, int seed):
+    if seed > 0:
+        string value = 'shadow-' + seed
+        return value
+    return value
+
+Mode read_const_mode(const Mode value):
+    return value
+
+string[] make_row(string value, int seed):
+    value = 'row-' + seed
+    return [value]
+
+map<int, string> make_map(string value, int seed):
+    value = 'map-' + seed
+    map<int, string> result = {}
+    result[seed] = value
+    return result
+
+Packet make_packet(string value, int seed):
+    value = 'packet-' + seed
+    return Packet(value)
+
+void save_text(string value, int seed):
+    value = 'saved-' + seed
+    saved_text = value
+    return
+
+void save_mode(Mode value):
+    value = Mode.DONE
+    saved_mode = value
+
+void replace_and_throw(exception value, int seed):
+    value = 'thrown-' + seed
+    saved_error = value
+    throw value
+
+int combined_case_1_main(string[] args):
+    int seed = args.length() + 2
+    string caller = 'caller'
+    print(replace_text(caller, seed))
+    print(caller)
+    print(read_const('fixed'))
+    print(read_const_mode(Mode.READY))
+    string[] row = make_row('source', seed)
+    print(row[0])
+    map<int, string> values = make_map('source', seed)
+    print(values[seed])
+    Packet packet = make_packet('source', seed)
+    print(packet.text)
+    save_mode(Mode.READY)
+    print(saved_mode)
+    try {
+        replace_and_throw('source', seed);
+    } catch (string message) {
+        print(message);
+    }
+    print(saved_error)
+    print('[' + saved_error_copy + ']')
+    save_text('source', seed)
+    print(saved_text)
+    print(catch_and_continue('source', seed))
+    print(return_early(caller, seed))
+    print(caller)
+    print(shadow_const(caller, seed))
+    return 0
+
+# Case 2
+record SetBox(set<int> ids);
+
+set<int> global_ids = {0}
+set<int> source_global = {70, 71}
+set<int> initialized_global = source_global
+set<int> empty_global = {}
+set<int> initialized_empty = empty_global
+
+set<int> make_set(int seed):
+    return {seed, seed + 1}
+
+void assign_local(int seed):
+    set<int> local = {seed, seed + 1}
+    global_ids = local
+    local.add(99)
+
+void assign_const(const set<int> source):
+    global_ids = source
+
+void assign_parameter(set<int> source):
+    global_ids = source
+
+void assign_field(int seed):
+    SetBox box = SetBox({seed, seed + 1})
+    global_ids = box.ids
+    box.ids.add(99)
+
+void assign_global():
+    global_ids = source_global
+    source_global.add(74)
+
+void assign_owned(int seed):
+    global_ids = make_set(seed)
+
+void assign_early(bool use_local, int seed):
+    set<int> local = {seed, seed + 1}
+    if (use_local):
+        global_ids = local
+        return
+    global_ids = make_set(seed + 100)
+
+int combined_case_2_main(string[] args):
+    int seed = args.length() + 10
+    print(initialized_global.contains(70))
+    source_global.add(73)
+    print(initialized_global.contains(73))
+    print(initialized_empty.length())
+
+    assign_local(seed)
+    print(global_ids.contains(seed))
+    print(global_ids.contains(99))
+
+    const set<int> fixed = {seed + 2, seed + 3}
+    assign_const(fixed)
+    print(global_ids.contains(seed + 3))
+    set<int> input = {seed + 4, seed + 5}
+    assign_parameter(input)
+    input.add(99)
+    print(global_ids.contains(99))
+
+    assign_field(seed + 6)
+    print(global_ids.contains(seed + 6))
+    print(global_ids.contains(99))
+    SetBox saved = SetBox(global_ids)
+
+    assign_owned(seed + 8)
+    print(global_ids.contains(seed + 9))
+    print(saved.ids.contains(seed + 6))
+
+    assign_global()
+    print(global_ids.contains(70))
+    print(global_ids.contains(74))
+
+    assign_early(true, seed + 10)
+    print(global_ids.contains(seed + 10))
+    assign_early(false, seed + 12)
+    print(global_ids.contains(seed + 113))
+
+    global_ids = global_ids
+    global_ids.add(80)
+    print(global_ids.contains(80))
+    print(global_ids.contains(seed + 113))
+
+    for (int index : range(2)):
+        assign_local(seed + 20 + index)
+        print(global_ids.contains(seed + 20 + index))
+        print(global_ids.contains(99))
+    return 0
 
 int main(string[] args):
-    thread_pool pool = thread_pool(1)
-
-    int[][] source = [[args.length() + 4, 2], [], [-3]]
-    future<bool> changed = pool.submit(has_positive_row, source)
-    source[0][0] = -1
-    print(changed.await())
-    print(changed.await())
-    print(source[0][0])
-
-    const int[][] const_source = [[], [7]]
-    future<bool> const_result = pool.submit(has_positive_row, const_source)
-    print(const_result.await())
-
-    int[][] empty_outer = []
-    future<bool> empty_result = pool.submit(has_positive_row, empty_outer)
-    print(empty_result.await())
-
-    int[][] empty_first_row = [[], [8]]
-    future<bool> empty_row_result = pool.submit(has_positive_row, empty_first_row)
-    print(empty_row_result.await())
-
-    int[][] mutable_copy_source = [[1], []]
-    future<bool> mutation = pool.submit(mutate_snapshot, mutable_copy_source)
-    print(mutation.await())
-    print(mutable_copy_source[0][0])
-
-    int[][] throwing_source = [[-1]]
-    future<bool> throwing = pool.submit(has_positive_row, throwing_source)
-    try {
-        throwing.await()
-    } catch (string message) {
-        print(message)
-    }
-    try {
-        throwing.await()
-    } catch (string message) {
-        print(message)
-    }
-
-    enqueue_grid(pool, [[args.length() + 9]])
+    print('=== case 1 ===')
+    if (combined_case_1_main(args) != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main(args) != 0):
+        return 1
     return 0

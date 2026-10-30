@@ -1,58 +1,33 @@
-int[] global_empty_range = range(-1)
-int bound_order = 0
+import random;
+import uuid;
 
-int range_start():
-    bound_order = bound_order * 10 + 1
-    return -2
+string STARTUP_ID = uuid()
 
-int range_end():
-    bound_order = bound_order * 10 + 2
-    return 2
+bool valid_uuid(string value):
+    if (value.length() != 36):
+        return false
+    if (value[8] != '-' || value[13] != '-' || value[18] != '-' || value[23] != '-'):
+        return false
+    if (value[14] != '4'):
+        return false
+    string variant = value[19]
+    return variant == '8' || variant == '9' || variant == 'a' || variant == 'b'
+
+int next_random():
+    return random()
+
+string make_uuid():
+    return uuid()
 
 int main(string[] args):
-    print(global_empty_range.length())
-
-    int[] ordinary = range(5)
-    print(ordinary.length())
-    print(ordinary[0])
-    print(ordinary[-1])
-
-    int dynamic_end = args.length() + 4
-    int[] dynamic_bounds = range(args.length(), dynamic_end)
-    print(dynamic_bounds.length() == 4)
-
-    int[] negative = range(-2, 3)
-    print(negative.length())
-    print(negative[0])
-    print(negative[-1])
-
-    const int low = -2
-    const int high = 2
-    int[] const_bounds = range(low, high)
-    print(const_bounds.length())
-    int[] ordered = range(range_start(), range_end())
-    print(bound_order)
-    print(ordered.length())
-
-    int[] at_min = range(-9223372036854775807 - 1, -9223372036854775805)
-    print(at_min.length())
-    print(at_min[0])
-    print(at_min[-1])
-
-    int[] at_max = range(9223372036854775804, 9223372036854775807)
-    print(at_max.length())
-    print(at_max[0])
-    print(at_max[-1])
-
-    int[] equal = range(4, 4)
-    int[] reversed = range(9, 3)
-    int[] extreme_reversed = range(9223372036854775807, -9223372036854775807 - 1)
-    print(equal.length())
-    print(reversed.length())
-    print(extreme_reversed.length())
-
-    int total = 0
-    for (int value : range(-2, 3)):
-        total += value
-    print(total)
+    print(valid_uuid(STARTUP_ID))
+    print(valid_uuid(uuid()))
+    string returned_id = make_uuid()
+    print(valid_uuid(returned_id))
+    print(valid_uuid(uuid()))
+    int sample = next_random()
+    print(sample == sample)
+    for (int index : range(5)):
+        int ignored = random()
+        print(valid_uuid(uuid()))
     return 0

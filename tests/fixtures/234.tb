@@ -1,82 +1,28 @@
-record SumHolder(int[] values, bool[] flags);
-
-const int[] GLOBAL_SUM_VALUES = [31, 32]
-const bool[] GLOBAL_SUM_FLAGS = [true, false]
-
-int[] make_sum_values(int seed):
-    return [seed, seed + 1, seed + 2]
-
-bool[] make_sum_flags(int seed):
-    return [seed > 0, seed % 2 == 0, false]
-
-int direct_int_call_sum(int seed):
-    return sum(make_sum_values(seed))
-
-int method_int_call_sum(int seed):
-    return make_sum_values(seed).sum()
-
-int direct_bool_call_sum(int seed):
-    return sum(make_sum_flags(seed))
-
-int method_bool_call_sum(int seed):
-    return make_sum_flags(seed).sum()
+int contains(int left, int right):
+    return left + right
 
 int main(string[] args):
-    int seed = args.length() + 4
-
-    print(direct_int_call_sum(seed))
-    print(method_int_call_sum(seed))
-    print(sum([seed, seed + 1]))
-    print([seed + 2, seed + 3].sum())
-    print(range(seed).sum())
-    print(sum(make_sum_values(seed)[1:]))
-
-    int[] empty_values = []
-    bool[] empty_flags = []
-    print(sum(empty_values))
-    print(empty_flags.sum())
-
-    print(direct_bool_call_sum(seed))
-    print(method_bool_call_sum(seed))
-    print(sum([seed > 4, false]))
-    print([seed % 2 == 0, false].sum())
-    print(sum(make_sum_flags(seed)[1:]))
-
-    int[] named_values = make_sum_values(seed)
-    print(named_values.sum())
-    print(sum(named_values))
-    print(named_values[0])
-    print(sum(copy(named_values)))
-    print(copy(named_values).sum())
-
-    bool[] named_flags = make_sum_flags(seed)
-    print(sum(copy(named_flags)))
-    print(copy(named_flags).sum())
-
-    const int[] const_values = make_sum_values(seed)
-    print(const_values.sum())
-    print(const_values[2])
-
-    print(GLOBAL_SUM_VALUES.sum())
-    print(sum(GLOBAL_SUM_VALUES))
-    print(GLOBAL_SUM_VALUES[0])
-    print(sum(GLOBAL_SUM_FLAGS))
-
-    SumHolder holder = SumHolder(make_sum_values(seed), make_sum_flags(seed))
-    print(holder.values.sum())
-    print(sum(holder.flags))
-    holder.values.push(seed + 3)
-    holder.flags.push(true)
-    print(holder.values.length())
-    print(holder.values.sum())
-    print(holder.flags.sum())
-
-    int[] reused_values = make_sum_values(seed)
-    print(reused_values.sum())
-    reused_values[0] += 10
-    print(sum(reused_values))
-
+    int seed = args.length() + 7
+    const int fixed_seed = seed + 10
+    print(contains(seed, 3))
+    print(seed.contains(3))
+    print(fixed_seed.contains(1))
     for (int offset : range(2)):
-        print(make_sum_values(seed + offset).sum())
+        print((seed + offset).contains(2))
 
-    return 0
+    print('alpha'.contains('ph'))
+    const int[] numbers = [seed, seed + 1]
+    print(numbers.contains(seed + 1))
+    print(numbers.contains(99))
+    bool[] flags = [true, false]
+    print(flags.contains(false))
+    print(flags.contains(true))
+    string[] words = ['alpha', 'beta']
+    print(words.contains('beta'))
+    print(words.contains('missing'))
+    map<int, int> counts = {seed: seed}
+    print(counts.contains(seed))
+    print(counts.contains(seed + 1))
+    set<int> seen = {seed, seed + 1}
+    print(seen.contains(seed + 1))
+    print(seen.contains(99))

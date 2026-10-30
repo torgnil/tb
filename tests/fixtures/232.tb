@@ -1,108 +1,137 @@
-record IndexBox(int[] values, bool[] flags);
+record Item(int value, string label, int[] samples);
+record Empty();
+record Holder(Item[] items);
+record EmptyHolder(Empty[] items);
 
-const int[] GLOBAL_VALUES = [71, 72]
-const bool[] GLOBAL_FLAGS = [true, false]
+Item[] global_items = []
 
-int[] make_values(int value):
-    return [value, value + 1]
+Item make_item(int value):
+    return Item(value, 'I' + value.to_string(), [value])
 
-bool[] make_flags(int value):
-    return [value > 0, false]
+Item[] make_items(int value):
+    return [make_item(value)]
 
-bool[] slice_flags(int value):
-    return make_flags(value)[0:2]
+Holder make_holder(int value):
+    return Holder(make_items(value))
 
-bool[] copy_flags(int value):
-    bool[] flags = make_flags(value)
-    return flags.copy()
+EmptyHolder make_empty_holder():
+    return EmptyHolder([Empty(), Empty()])
 
-bool[] duplicate_flags(bool[] flags):
-    return flags.copy()
+Item[] field_from_local(int value):
+    Holder owner = make_holder(value)
+    return owner.items
 
-int[] slice_values(int value):
-    return make_values(value)[0:2]
+Item[] field_from_local_alias(int value):
+    Holder owner = make_holder(value)
+    Item[] alias = owner.items
+    return alias
 
-int[] copy_values(int value):
-    int[] values = make_values(value)
-    return values.copy()
+Item[] field_from_const_local_alias(int value):
+    Holder owner = make_holder(value)
+    const Item[] alias = owner.items
+    return alias
 
-int[] duplicate(int[] values):
-    return values.copy()
+Item[] field_from_parameter(Holder owner):
+    return owner.items
 
-int returned_index(int value):
-    return make_values(value)[-1]
+Item[] from_parameter(Item[] values):
+    return values
 
-int choose_index(int value):
-    return value - value
+Item[] from_global():
+    return global_items
 
-int read_borrowed(int[] values, bool[] flags):
-    int first = values[0]
-    bool flag = flags[0]
-    if (flag):
-        return first + 1
-    return first
+Item[] owned_local(int value):
+    Item[] values = make_items(value)
+    return values
+
+Item[] owned_const_local(int value):
+    const Item[] values = make_items(value)
+    return values
+
+Item[] owned_call(int value):
+    return make_items(value)
+
+Item[] owned_literal(int value):
+    return [make_item(value)]
+
+Item[] owned_item_variable(int value):
+    Item item = make_item(value)
+    return [item]
+
+Item[] branch_field(int value):
+    Holder owner = make_holder(value)
+    if (value > 0):
+        return owner.items
+    else:
+        return owner.items
+
+Item[] catch_field(int value):
+    Holder owner = make_holder(value)
+    try:
+        throw 'caught'
+    catch (exception error):
+        return owner.items
+
+Item[] try_or_catch_field(int value):
+    Holder owner = make_holder(value)
+    try:
+        if (value > 0):
+            return owner.items
+        throw 'caught'
+    catch (exception error):
+        return owner.items
+
+Empty[] empty_field():
+    EmptyHolder owner = make_empty_holder()
+    return owner.items
+
+Empty[] owned_empty():
+    Empty[] values = []
+    return values
+
+Empty[] owned_zero_field():
+    Empty[] values = [Empty()]
+    return values
 
 int main(string[] args):
-    int seed = args.length() + 4
+    int seed = args.length() + 3
 
-    print(make_values(seed)[0])
-    print(make_values(seed)[-1])
-    print(make_values(seed)[choose_index(seed)])
-    print(make_flags(seed)[0])
-    print(slice_flags(seed)[0])
-    print(copy_flags(seed)[1])
-    print(make_flags(seed).duplicate_flags()[0])
-    print([seed, seed + 1][1])
-    print(slice_values(seed)[1])
-    print(copy_values(seed)[1])
-    print(make_values(seed).duplicate()[1])
-    print(returned_index(seed))
+    Item[] from_owner = field_from_local(seed)
+    print(from_owner[0].value)
+    print(from_owner[0].label)
+    print(from_owner[0].samples[0])
 
-    if (make_flags(seed)[0]):
-        print('condition')
-    else:
-        print('condition-false')
+    Item[] from_alias = field_from_local_alias(seed + 1)
+    print(from_alias[0].value)
+    Item[] from_const_alias = field_from_const_local_alias(seed + 2)
+    print(from_const_alias[0].value)
 
-    int loop_index = 0
-    while (loop_index < 2):
-        print(make_values(seed + loop_index)[0])
-        loop_index += 1
+    Item[] source = make_items(seed + 3)
+    Item[] copied_parameter = from_parameter(source)
+    source[0] = make_item(seed + 30)
+    print(copied_parameter[0].value)
+    print(source[0].value)
 
-    switch (make_values(seed)[0]):
-        case 5:
-            print('switch-five')
-        default:
-            print('switch-other')
+    Item[] from_holder_parameter = field_from_parameter(make_holder(seed + 4))
+    print(from_holder_parameter[0].value)
 
-    try:
-        print(make_values(seed)[0])
-        throw 'index-try'
-    catch (exception error):
-        print(error)
+    global_items.push(make_item(80))
+    Item[] copied_global = from_global()
+    global_items[0] = make_item(81)
+    print(copied_global[0].value)
 
-    int[] named_values = make_values(seed)
-    const bool[] const_flags = make_flags(seed)
-    print(named_values[0])
-    print(const_flags[0])
-    named_values[0] += 2
-    print(named_values[0])
-    print(const_flags.length())
+    print(owned_local(seed + 5)[0].value)
+    print(owned_const_local(seed + 6)[0].value)
+    print(owned_call(seed + 7)[0].value)
+    print(owned_literal(seed + 8)[0].value)
+    print(owned_item_variable(seed + 9)[0].value)
 
-    print(read_borrowed(named_values, const_flags))
-    print(named_values[1])
+    print(branch_field(seed + 10)[0].value)
+    print(catch_field(seed + 11)[0].value)
+    print(try_or_catch_field(seed + 12)[0].value)
+    print(try_or_catch_field(0)[0].value)
 
-    print(GLOBAL_VALUES[0])
-    print(GLOBAL_VALUES[1])
-    print(GLOBAL_FLAGS[0])
-
-    IndexBox box = IndexBox([seed + 8], [true])
-    print(box.values[0])
-    print(box.flags[0])
-    print(box.values[0])
-
-    int foreach_total = 0
-    for (int item : make_values(seed)):
-        foreach_total += item
-    print(foreach_total)
-
+    print(empty_field().length())
+    print(owned_empty().length())
+    print(owned_zero_field().length())
     return 0

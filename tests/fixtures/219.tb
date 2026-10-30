@@ -1,49 +1,107 @@
-record MapCell(string name, int count);
+
+
+# Case 1
+int shared_seed = 0
+
+int read_seed():
+    return shared_seed
+
+int twice(int value):
+    return value * 2
+
+bool is_positive(int value):
+    return value > 0
+
+int named_zero():
+    return 41
+
+int named_unary(int value):
+    return value + 1
+
+int fail_task():
+    throw 'zero-argument submit failure'
+
+int combined_case_1_main(string[] args):
+    shared_seed = args.length()
+    const thread_pool pool = thread_pool(2)
+    const future<int> expression = pool.submit(() -> (twice(read_seed()) + 1))
+    const future<bool> expression_bool = pool.submit(() -> is_positive(read_seed()))
+    const future<int> block = pool.submit(() -> {
+        int seed = read_seed()
+        const int selected_seed = seed
+        int total = 0
+        for (int index = 0; index < selected_seed; index += 1) {
+            if (index == 0) {
+                continue
+            }
+            total += index
+        }
+        switch (selected_seed) {
+            case 1: {
+                total += 10
+            }
+            default: {
+                total += 20
+            }
+        }
+        if (total > 20) {
+            return total
+        } else {
+            return total + 3
+        }
+    })
+    const future<bool> block_bool = pool.submit(() -> {
+        const int seed = read_seed()
+        int cursor = 0
+        while (cursor < seed) {
+            cursor += 1
+        }
+        if (cursor == seed) {
+            return is_positive(seed - 1)
+        } else {
+            return false
+        }
+    })
+    const future<int> unary = pool.submit(int value -> value + 5, args.length())
+    const future<int> named = pool.submit(named_zero)
+    const future<int> named_arg = pool.submit(named_unary, args.length())
+    const future<int> failed = pool.submit(() -> fail_task())
+
+    print(expression.await())
+    print(expression_bool.await())
+    print(block.await())
+    print(block_bool.await())
+    print(unary.await())
+    print(named.await())
+    print(named_arg.await())
+    print(expression.await())
+    try:
+        int ignored = failed.await()
+    catch (exception err):
+        print(err)
+    try:
+        int ignored_again = failed.await()
+    catch (exception err):
+        print(err)
+    return 0
+
+# Case 2
+int random():
+    return 17
+
+string uuid():
+    return 'user-uuid'
+
+int combined_case_2_main(string[] args):
+    print(random())
+    print(uuid())
+    return 0
 
 int main(string[] args):
-    int count = args.length()
-    const string fixed_key = 'fixed'
-    const int fixed_value = count + 2
-    map<string, int> counts = {}
-    counts['items'] = count
-    print(counts['items'])
-
-    map<string, int> fixed_counts = {}
-    fixed_counts[fixed_key] = fixed_value
-    const map<string, int> fixed = {'fixed': count + 1}
-    print(fixed_counts[fixed_key])
-    print(fixed[fixed_key])
-
-    map<int, string> labels = {}
-    const int label_key = count
-    const string label_value = 'label-' + count
-    labels[label_key] = label_value
-    print(labels[label_key])
-
-    map<string, int[]> rows = {}
-    rows['row'] = [count, count + 2]
-    print(rows['row'][1])
-
-    map<string, MapCell> cells = {}
-    cells['cell'] = MapCell('cell-' + count, count + 3)
-    print(cells['cell'].name)
-    print(cells['cell'].count)
-
-    map<string, map<int, string>> nested = {}
-    map<int, string> inner = {}
-    inner[count] = 'inner-' + count
-    nested['outer'] = inner
-    print(nested['outer'][count])
-
-    counts['items'] += 5
-    print(counts['items'])
-
-    const int increment = count + 2
-    map<string, int> binary_counts = {}
-    binary_counts['items'] = count
-    binary_counts['items'] = binary_counts['items'] + increment
-    print(binary_counts['items'])
-
-    counts['items'] += increment
-    print(counts['items'])
+    print('=== case 1 ===')
+    if (combined_case_1_main(args) != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main(args) != 0):
+        return 1
     return 0

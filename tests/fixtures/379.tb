@@ -1,109 +1,37 @@
-map<int, bool[]> GLOBAL_INT_FLAGS = {1: [true, false, true]}
-map<string, bool[]> GLOBAL_STRING_FLAGS = {'global': [false, true]}
+enum Mode { READY, DONE }
+enum Code { ZERO = 0, ONE = 1 }
+record Task(Mode state, Code code, string label);
+record Envelope(Task task, Mode status);
 
-record FlagBook(map<string, bool[]> flags);
+const Task GLOBAL = Task('READY', Code.ZERO, 'global');
 
-int duplicate_evaluations = 0
+Mode make_state(string suffix):
+    return 'ready' + suffix
 
-bool[] make_flags(int value):
-    return [(value % 2) == 0, value > 0]
+Task make_task():
+    Mode state = make_state('!')
+    Task task = Task(state, Code.ONE, 'returned')
+    return task
 
-map<int, bool[]> borrowed_flag_map(int value):
-    bool[] borrowed = [value > 0, false]
-    return {value: borrowed}
+int main():
+    print(GLOBAL.state)
+    print(GLOBAL.code)
 
-map<string, bool[]> owned_flag_map(int value):
-    return {'owned': make_flags(value)}
+    Task task = make_task()
+    print(task.state)
+    print(task.code)
+    print(task.label)
 
-bool[] counted_flags(int value):
-    duplicate_evaluations += 1
-    return [value > 0, true]
+    task.state = Mode.DONE
+    print(task.state)
+    task.state = ''
+    print(task.state)
 
-int main(string[] args):
-    int seed = args.length() + 4
-    print(GLOBAL_INT_FLAGS.length())
-    print(GLOBAL_INT_FLAGS[1].sum())
-    print(GLOBAL_STRING_FLAGS.length())
-    print(GLOBAL_STRING_FLAGS['global'].sum())
+    Envelope envelope = Envelope(task, Mode.READY)
+    print(envelope.task.state)
+    print(envelope.status)
 
-    map<int, bool[]> empty_map = {}
-    bool[] empty_row = []
-    map<int, bool[]> empty_rows = {1: []}
-    empty_rows[2] = empty_row
-    map<string, bool[]> empty_named = {}
-    empty_named['empty'] = []
-    print(empty_map.length())
-    print(empty_rows.length())
-    print(empty_rows[1].length())
-    print(empty_rows[2].length())
-    print(empty_named.length())
-    print(empty_named['empty'].length())
-
-    bool[] source = [true, false, true]
-    map<int, bool[]> numbers = {4: source}
-    source[0] = false
-    print(numbers[4].sum())
-    print(source.sum())
-    map<int, bool[]> copied_numbers = numbers
-    copied_numbers[4][1] = true
-    print(numbers[4].sum())
-    print(copied_numbers[4].sum())
-    numbers[4] = numbers[4]
-    print(numbers[4].sum())
-
-    bool[] replacement = [false, true, true]
-    numbers[4] = replacement
-    replacement[1] = false
-    print(numbers[4].sum())
-    numbers[4] = make_flags(seed)
-    print(numbers[4].sum())
-
-    map<int, bool[]> duplicate_numbers = {9: counted_flags(seed), 10: counted_flags(seed), 9: counted_flags(-seed)}
-    string[] number_keys = duplicate_numbers.keys()
-    print(duplicate_numbers.length())
-    print(number_keys[0])
-    print(number_keys[1])
-    print(duplicate_numbers[9].sum())
-    map<string, bool[]> duplicate_named = {'first': counted_flags(seed), 'second': counted_flags(seed), 'first': counted_flags(-seed)}
-    string[] named_keys = duplicate_named.keys()
-    print(duplicate_named.length())
-    print(named_keys[0])
-    print(named_keys[1])
-    print(duplicate_named['first'].sum())
-    print(duplicate_evaluations)
-    map<string, bool[]> copied_named = duplicate_named
-    copied_named['first'][0] = true
-    print(duplicate_named['first'].sum())
-    print(copied_named['first'].sum())
-
-    map<int, bool[]> returned_borrowed = borrowed_flag_map(seed)
-    map<string, bool[]> returned_owned = owned_flag_map(seed)
-    print(returned_borrowed[seed].sum())
-    print(returned_owned['owned'].sum())
-
-    bool[] record_source = [true, false]
-    FlagBook book = FlagBook({'record': record_source})
-    record_source[0] = false
-    print(book.flags['record'].sum())
-    book.flags['record'] = [false, true, true]
-    print(book.flags['record'].sum())
-    book.flags['empty'] = []
-    print(book.flags['empty'].length())
-
-    map<string, bool[]> grown = {}
-    for (int index : range(12)):
-        grown['key-' + index] = [(index % 2) == 0]
-    print(grown.length())
-    print(grown['key-0'].sum())
-    print(grown['key-11'].sum())
-    grown['key-0'] = grown['key-0']
-    print(grown['key-0'].sum())
-    if (seed > 5):
-        grown['branch'] = [true]
-    else:
-        grown['branch'] = [false]
-    print(grown['branch'].sum())
-
-    const map<int, bool[]> fixed = {2: [true, false, true]}
-    print(fixed[2].sum())
+    const Task fixed = Task(Mode.DONE, Code.ZERO, 'const')
+    print(fixed.state)
+    print(fixed.label)
     return 0

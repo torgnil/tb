@@ -1,135 +1,73 @@
-record GridBox(int[][] rows);
+import regex;
 
-int calls = 0
-int[][] global_rows = [[30, 31]]
-const int[][] constant_rows = [[40, 41]]
+# Case 1
 
-int[] make_values(int seed):
-    calls += 1
-    return [seed, seed + 1, seed + 2]
+void check(string pattern, string text):
+    Regex r = regex_compile(pattern)
+    print(r.valid && regex_match(r, text))
+    return
 
-int[] empty_values():
-    return []
+int combined_case_1_main():
+    check('[a-z]+', 'hello')
+    check('[a-z]+', 'Hello')
+    check('[^0-9]+', 'abc!')
+    check('[^0-9]+', 'ab1')
+    check('[a-zA-Z_][a-zA-Z_0-9]*', 'foo_42')
+    check('[a-zA-Z_][a-zA-Z_0-9]*', '9foo')
+    check('[\\dA-F]+', '1FA2')
+    check('[\\D]+', 'abc')
+    check('[-a]+', '-a-')
+    check('[a-]+', 'a--')
+    check('[a\\-z]+', 'a-z')
+    check('[\\]\\\\]+', ']\\')
+    check('[a^]+', 'a^')
+    check('([a-c]|\\d)+', 'abc9')
+    print(regex_compile('[]').valid)
+    print(regex_compile('[^]').valid)
+    print(regex_compile('[z-a]').valid)
+    print(regex_compile('[a-\\d]').valid)
+    print(regex_compile('[\\d-a]').valid)
+    print(regex_compile('[a-b-c]').valid)
+    print(regex_compile('[a').valid)
+    print(regex_compile('[\\q]').valid)
+    Regex damaged = regex_compile('[a]')
+    damaged.characters[0] = 'z-a'
+    print(regex_match(damaged, 'z'))
+    Regex changed = regex_compile('[a]')
+    changed.characters[0] = 'z'
+    print(regex_match(changed, 'z'))
+    print(regex_match(changed, 'a'))
+    print(regex_match(regex_compile('[b-d]'), 'b'))
+    print(regex_match(regex_compile('[b-d]'), 'd'))
+    print(regex_match(regex_compile('[b-d]'), 'a'))
+    print(regex_match(regex_compile('[b-d]'), 'e'))
+    return 0
 
-int[][] make_grid(int seed):
-    calls += 1
-    return [[seed, seed + 1], [], [seed + 2]]
+# Case 2
 
-int t3():
-    return 73
-
-int alias_symbols_and_literals():
-    for (int value in global_rows[0]):
-        int item = value
-    return t3() + 't3'.length()
-
-int sum_owned(int seed):
-    int total = 0
-    for (int value in make_values(seed)):
-        total += value
-    return total
-
-int sum_owned_break(int seed):
-    int total = 0
-    for (int value in make_values(seed)):
-        if (value == seed + 1):
-            break
-        total += value
-    return total
-
-int sum_owned_continue(int seed):
-    int total = 0
-    for (int value in make_values(seed)):
-        if (value == seed + 1):
-            continue
-        total += value
-    return total
-
-int[] return_owned_early(int seed):
-    for (int value in make_values(seed)):
-        return [value]
-    return []
-
-int[] return_owned_grid_row(int seed):
-    for (int value in make_grid(seed)[0]):
-        return [value]
-    return []
-
-int sum_owned_literal(int seed):
-    int total = 0
-    for (int value in [seed, seed + 1]):
-        total += value
-    return total
-
-int sum_owned_empty(int seed):
-    int total = 0
-    for (int value in empty_values()):
-        total += value
-    return total
-
-int sum_owned_empty_grid_row(int seed):
-    int total = 0
-    for (int value in make_grid(seed)[1]):
-        total += value
-    return total
-
-int sum_owned_negative_grid_row(int seed):
-    int total = 0
-    for (int value in make_grid(seed)[-1]):
-        total += value
-    return total
-
-int sum_caught_throw(int seed):
-    int total = 0
-    try:
-        for (int value in make_values(seed)):
-            if (value == seed + 1):
-                throw 'caught foreach throw'
-            total += value
-    catch (exception error):
-        total += 100
-    return total
-
-int sum_reentered(int seed):
-    int total = 0
-    for (int round in range(3)):
-        for (int value in make_values(seed + round)):
-            total += value
-    return total
-
-int sum_borrowed(int[][] rows):
-    int total = 0
-    for (int value in rows[0]):
-        total += value
-    return total
-
-int sum_box(GridBox box):
-    int total = 0
-    for (int value in box.rows[0]):
-        total += value
-    return total
+int combined_case_2_main(string[] args):
+    print(regex_find_start(regex_compile('ab+'), 'xxabbb'))
+    print(regex_find_start(regex_compile('a.*z|b'), 'abxxz'))
+    print(regex_find_start(regex_compile('\\d+'), 'x12y3'))
+    print(regex_find_start(regex_compile('a*'), 'bbb'))
+    print(regex_find_start(regex_compile('^b'), 'ab'))
+    print(regex_find_start(regex_compile('$'), 'abc'))
+    print(regex_find_start(regex_compile('$'), 'abc\n'))
+    print(regex_find_start(regex_compile('z$'), 'abz'))
+    print(regex_find_start(regex_compile('^'), ''))
+    print(regex_find_start(regex_compile(''), 'abc'))
+    print(regex_find_start(regex_compile(''), args[0]))
+    print(regex_find_start(regex_compile('((b*|ab)+)+'), 'bab'))
+    print(regex_find_start(regex_compile('('), 'abc'))
+    Regex malformed = Regex(true, 0, [1, 4], [99, -1], [-1, -1], ['a', ''])
+    print(regex_find_start(malformed, 'a'))
+    return 0
 
 int main(string[] args):
-    int seed = args.length() + 4
-    print(sum_owned(seed))
-    print(sum_owned_break(seed))
-    print(sum_owned_continue(seed))
-    print(sum_owned_literal(seed))
-    print(sum_owned_empty(seed))
-    print(sum_owned_empty_grid_row(seed))
-    print(sum_owned_negative_grid_row(seed))
-    print(sum_caught_throw(seed))
-    int[] early = return_owned_early(seed)
-    print(early[0])
-    int[] row = return_owned_grid_row(seed)
-    print(row[0])
-    print(sum_reentered(seed))
-    int before_calls = calls
-    print(sum_owned(seed))
-    print(calls - before_calls)
-    print(sum_borrowed([[20, 21]]))
-    print(sum_borrowed(global_rows))
-    print(sum_borrowed(constant_rows))
-    print(sum_box(GridBox([[50, 51]])))
-    print(alias_symbols_and_literals())
+    print('=== case 1 ===')
+    if (combined_case_1_main() != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main(args) != 0):
+        return 1
     return 0

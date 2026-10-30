@@ -1,74 +1,242 @@
-record IntRows(int[][] values);
-record StringRows(string[][] values);
 
-int next_index(int[] calls):
-    calls[0] += 1
-    return -1
 
-int[] make_int_row(int value):
-    return [value, value + 1]
+# Case 1
+record Box(int value);
 
-string[] make_string_row(string value):
-    return [value + '-owned']
+int INDEX_CALLS = 0
 
-int replace_borrowed_int(int[][] rows, int[] row):
-    rows[0] = row
-    return rows[0][0]
+int last_index():
+    INDEX_CALLS += 1
+    return 0 - 1
 
-string replace_borrowed_string(string[][] rows, string[] row):
-    rows[0] = row
-    return rows[0][0]
+int combined_case_1_main(string[] args):
+    int count = args.length()
+    const int first = 0
+    const int last = 0 - 1
+
+    int[] values = [count, 10]
+    print(values[first])
+    print(values[last])
+    values[first] = count + 1
+    values[last] += 2
+    print(values[0])
+    print(values[1])
+    values[last_index()] += 1
+    print(INDEX_CALLS)
+    print(values[last])
+
+    bool[] flags = [count == 1, false]
+    print(flags[first])
+    print(flags[last])
+    flags[last] = count == 3
+    print(flags[last])
+
+    string[] words = ['left', 'right']
+    print(words[last])
+    words[last] = 'word-' + count
+    print(words[last])
+    string text = 'text-' + count
+    print(text[last])
+
+    int[][] rows = [[count], [count + 2]]
+    print(rows[last][first])
+    rows[last][last] += 4
+    print(rows[1][0])
+
+    string[][] groups = [['a'], ['b-' + count]]
+    print(groups[last][first])
+    groups[last][first] = 'group-' + count
+    print(groups[1][0])
+
+    Box[] boxes = [Box(count + 1), Box(count + 2)]
+    print(boxes[last].value)
+    boxes[last].value += 4
+    print(boxes[1].value)
+
+    map<string, int> scores = {'key-' + count: count + 2}
+    print(scores['key-' + count])
+    scores['key-' + count] += 3
+    print(scores['key-' + count])
+    return 0
+
+# Case 2
+record CharacterBox(string value);
+
+const string GLOBAL_TEXT = 'global-const';
+
+string character_after_cleanup(int count):
+    const string source = 'return-' + count
+    return source[-1]
+
+int combined_case_2_main(string[] args):
+    int count = args.length()
+    const int first = 0
+    const int last = 0 - 1
+    const string literal = 'literal-char'
+    print(literal[first])
+    print(literal[last])
+    print(GLOBAL_TEXT[first])
+    print(GLOBAL_TEXT[last])
+
+    const string runtime = 'runtime-' + count
+    string selected_first = runtime[first]
+    string selected_last = runtime[last]
+    print(selected_first)
+    print(selected_last)
+    print(runtime[1])
+
+    string[] characters = [runtime[0], runtime[-1]]
+    print(characters[0])
+    print(characters[1])
+    CharacterBox box = CharacterBox(runtime[2])
+    print(box.value)
+
+    print(character_after_cleanup(count))
+    runtime[2]
+
+    string mutable = 'runtime-' + count
+    print(mutable[first])
+    print(mutable[last])
+    return 0
+
+# Case 3
+record MapCell(string name, int count);
+
+int combined_case_3_main(string[] args):
+    int count = args.length()
+    const string fixed_key = 'fixed'
+    const int fixed_value = count + 2
+    map<string, int> counts = {}
+    counts['items'] = count
+    print(counts['items'])
+
+    map<string, int> fixed_counts = {}
+    fixed_counts[fixed_key] = fixed_value
+    const map<string, int> fixed = {'fixed': count + 1}
+    print(fixed_counts[fixed_key])
+    print(fixed[fixed_key])
+
+    map<int, string> labels = {}
+    const int label_key = count
+    const string label_value = 'label-' + count
+    labels[label_key] = label_value
+    print(labels[label_key])
+
+    map<string, int[]> rows = {}
+    rows['row'] = [count, count + 2]
+    print(rows['row'][1])
+
+    map<string, MapCell> cells = {}
+    cells['cell'] = MapCell('cell-' + count, count + 3)
+    print(cells['cell'].name)
+    print(cells['cell'].count)
+
+    map<string, map<int, string>> nested = {}
+    map<int, string> inner = {}
+    inner[count] = 'inner-' + count
+    nested['outer'] = inner
+    print(nested['outer'][count])
+
+    counts['items'] += 5
+    print(counts['items'])
+
+    const int increment = count + 2
+    map<string, int> binary_counts = {}
+    binary_counts['items'] = count
+    binary_counts['items'] = binary_counts['items'] + increment
+    print(binary_counts['items'])
+
+    counts['items'] += increment
+    print(counts['items'])
+    return 0
+
+# Case 4
+record FieldCell(int value);
+record FieldBox(int number, num amount, bool enabled, string label, int[] values, bool[] flags, string[] words, int[][] rows, string[][] groups, map<string, int> counts, FieldCell cell);
+
+int next_field_value(int value):
+    return value + 3
+
+map<string, int> make_field_counts(int value):
+    return {'owned': value}
+
+int combined_case_4_main(string[] args):
+    int count = args.length()
+    const int fixed = count + 2
+    const num fixed_amount = 0.000 - count
+    const bool fixed_enabled = count > 0
+    const string fixed_label = 'field-' + count
+    int[] source_values = [count, count + 2]
+    const int[] fixed_values = [fixed]
+    bool[] source_flags = [fixed_enabled]
+    string[] source_words = [fixed_label]
+    int[] source_row = [fixed + 1]
+    int[][] source_rows = [source_row]
+    string[] source_group = [fixed_label]
+    string[][] source_groups = [source_group]
+    map<string, int> source_counts = {'borrowed': count + 2}
+    const map<string, int> fixed_counts = {'fixed': count + 2}
+    const FieldCell source_cell = FieldCell(fixed + 4)
+
+    FieldBox box = FieldBox(0, 0.0, false, '', [], [], [], [], [], {'seed': 1}, FieldCell(0))
+    box.number = fixed
+    box.number += count
+    box.amount = fixed_amount
+    box.amount += fixed_amount
+    box.enabled = fixed_enabled
+    box.label = fixed_label
+    box.values = []
+    box.flags = []
+    box.words = []
+    box.rows = []
+    box.groups = []
+    box.values = fixed_values
+    box.values = source_values
+    box.flags = source_flags
+    box.words = source_words
+    box.rows = source_rows
+    box.groups = source_groups
+    box.counts = fixed_counts
+    box.counts = source_counts
+    box.cell = source_cell
+    box.number = next_field_value(box.cell.value)
+    box.cell.value += count
+
+    source_values[0] = 99
+    source_flags[0] = false
+    source_words[0] = 'changed'
+    source_row[0] = 98
+    source_group[0] = 'changed'
+    source_counts['borrowed'] = 97
+
+    print(box.counts['borrowed'])
+    box.counts = make_field_counts(next_field_value(count))
+
+    print(box.number)
+    print(box.amount)
+    print(box.enabled)
+    print(box.label)
+    print(box.values[0])
+    print(box.flags[0])
+    print(box.words[0])
+    print(box.rows[0][0])
+    print(box.groups[0][0])
+    print(box.counts['owned'])
+    print(box.cell.value)
+    print(box.values.length())
+    return 0
 
 int main(string[] args):
-    int seed = args.length() + 10
-    int[][] rows = [[seed], [seed + 1]]
-    const int[] fixed = [seed + 2, seed + 3]
-    rows[0] = fixed
-    print(rows[0])
-    print(replace_borrowed_int(rows, fixed))
-    rows[0][0] = seed + 4
-    print(fixed[0])
-
-    rows[1] = []
-    print(rows[1].length())
-    int[] calls = [0]
-    rows[next_index(calls)] = make_int_row(seed + 5)
-    print(calls[0])
-    print(rows[1])
-
-    if (seed > 0):
-        rows[0] = []
-    for (int i = 0; i < 1; i++):
-        rows[0] = [seed + 6]
-    switch (seed):
-        case 10:
-            rows[0] = [seed + 7]
-        default:
-            rows[0] = [seed + 8]
-    try:
-        rows[0] = []
-        throw 'row-assignment'
-    catch (exception err):
-        rows[0] = [seed + 9]
-    print(rows[0])
-
-    IntRows int_box = IntRows([[seed + 10]])
-    int_box.values[0] = make_int_row(seed + 11)
-    print(int_box.values[0])
-
-    string text = 'runtime-' + seed.to_string()
-    string[][] labels = [['old-' + text]]
-    const string[] fixed_labels = ['const-' + text]
-    labels[0] = fixed_labels
-    print(replace_borrowed_string(labels, fixed_labels))
-    labels[0] = make_string_row(text)
-    print(labels[0])
-    labels[0][0] = 'changed-' + text
-    print(fixed_labels[0])
-
-    StringRows string_box = StringRows([['field-' + text]])
-    string_box.values[0] = []
-    print(string_box.values[0].length())
-    string_box.values[0] = make_string_row(text)
-    print(string_box.values[0])
+    print('=== case 1 ===')
+    if (combined_case_1_main(args) != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main(args) != 0):
+        return 1
+    print('=== case 3 ===')
+    if (combined_case_3_main(args) != 0):
+        return 1
+    print('=== case 4 ===')
+    if (combined_case_4_main(args) != 0):
+        return 1
     return 0

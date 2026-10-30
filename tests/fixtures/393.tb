@@ -1,10 +1,150 @@
+import regex;
+
+# Case 1
+
+record Holder(string text, Regex separator);
+
+string[] GLOBAL = split('g,,h', regex_compile(',+'));
+
+void show(string[] values):
+    print(values.length())
+    for (string value : values):
+        print('[' + value + ']')
+
+string make_text():
+    print('text')
+    return 'x,y'
+
+Regex make_separator():
+    print('separator')
+    return regex_compile(',')
+
+int combined_case_1_main():
+    show(GLOBAL)
+    show(split(',a,,b,', regex_compile(',')))
+    show(',a,,b,'.split(regex_compile(',+')))
+    show('abc'.split(regex_compile('z')))
+    show('abc'.split(regex_compile('')))
+    show('abb'.split(regex_compile('a*|b')))
+    show('abc\n'.split(regex_compile('$')))
+    show('abc'.split(regex_compile('(')))
+    Regex bad = Regex(true, 0, [3, 4], [1, -1], [99, -1], ['', ''])
+    show('abc'.split(bad))
+    string[] bytes = 'é'.split(regex_compile(''))
+    print(bytes.length())
+    print(bytes[1].length())
+    print(bytes[2].length())
+    Holder holder = Holder('p:q', regex_compile(':'))
+    string[] result = holder.text.split(holder.separator)
+    holder.text = 'changed'
+    show(result)
+    show(make_text().split(make_separator()))
+    show(split(make_text(), make_separator()))
+    show('a,b'.split(','))
+    return 0
+
+# Case 2
+
+record split(int value);
+
+int combined_case_2_main():
+    print('a,b'.split(',')[0])
+    print('a,b'.split(regex_compile(','))[0])
+    return 0
+
+# Case 3
+
+void show_program(Regex program, string text):
+    print(regex_match(program, text))
+    print(regex_contains(program, text))
+    print(regex_find_start(program, text))
+    RegexMatch match = regex_find(program, text)
+    print(match.matched)
+    print(match.start)
+    print(match.end)
+    RegexCapture capture = regex_find_captures(program, text)
+    print(capture.matched)
+    if (capture.matched):
+        print(capture.starts.length())
+
+int first_save(Regex program):
+    for (int index = 0; index < program.operations.length(); index += 1):
+        if (program.operations[index] == REGEX_NFA_SAVE):
+            return index
+    return -1
+
+int combined_case_3_main():
+    Regex program = regex_compile('((a|b)+)')
+    int save = first_save(program)
+    show_program(program, 'ab')
+    program.out2[save] = -1
+    show_program(program, 'ab')
+    program.out2[save] = 0
+    show_program(program, 'ab')
+    program.out1[save] = save
+    show_program(program, 'ab')
+
+    Regex cycle = Regex(true, 0, [12, 4], [0, -1], [0, -1], ['2', '1'])
+    show_program(cycle, '')
+    Regex forged = Regex(true, 0, [12, 12, 4], [1, 0, -1], [9, 10, -1], ['2', '3', '1'])
+    show_program(forged, '')
+
+    RegexCapture retained = regex_match_captures(regex_compile('((^)|a)+'), 'a')
+    print(retained.matched)
+    print(retained.starts[2])
+    print(retained.ends[2])
+    string[] fields = 'a,b'.split(regex_compile('(,)'))
+    print(fields.length())
+    print(fields[0])
+    print(fields[1])
+    return 0
+
+# Case 4
+
+void show_matches(RegexMatch[] matches):
+    print(matches.length())
+    for (RegexMatch match : matches):
+        print(match.start)
+        print(match.end)
+
+void show_all(string pattern, string text):
+    Regex program = regex_compile(pattern)
+    RegexMatch[] matches = regex_find_all(program, text)
+    show_matches(matches)
+
+void show_all_from(string pattern, string text, int start):
+    Regex program = regex_compile(pattern)
+    RegexMatch[] matches = regex_find_all_from(program, text, start)
+    show_matches(matches)
+
+int combined_case_4_main():
+    show_all('a|aa', 'aa a')
+    show_all('aa|a', 'aa')
+    show_all('aba', 'ababa')
+    show_all('z', 'abc')
+    show_all('[', 'abc')
+
+    show_all('', 'xy')
+    show_all('', '')
+    show_all_from('a', 'baac', 1)
+    show_all_from('a', 'abc', -1)
+    show_all_from('a', 'abc', 4)
+    show_all_from('^a', 'ba', 1)
+    show_all_from('a$', 'ba', 1)
+    show_all('x', 'éx')
+    return 0
+
 int main(string[] args):
-    thread_pool pool = thread_pool(1)
-    int[] left = [1]
-    int[] right = [2]
-    future<int> invalid = pool.submit(() -> {
-        left[0] = 8
-        return right[0]
-    })
-    print(invalid.await())
+    print('=== case 1 ===')
+    if (combined_case_1_main() != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main() != 0):
+        return 1
+    print('=== case 3 ===')
+    if (combined_case_3_main() != 0):
+        return 1
+    print('=== case 4 ===')
+    if (combined_case_4_main() != 0):
+        return 1
     return 0

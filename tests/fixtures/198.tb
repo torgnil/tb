@@ -1,62 +1,263 @@
-record SearchBox(bool[] flags, string[] words);
 
-int find_int(int[] values, int needle):
-    return values.index_of(needle)
+
+# Case 1
+record Box(int value);
+
+Box make_box(int value):
+    return Box(value)
+
+int combined_case_1_main(string[] args):
+    int count = args.length()
+    const int fixed = count + 1
+    int target = 0
+
+    int[] values = [count, 0]
+    values[-1] = fixed
+    values[target] = count + 2
+    print(values[0])
+    print(values[1])
+
+    const bool enabled = count == 1
+    bool[] flags = [false]
+    flags[target] = enabled
+    print(flags[0])
+
+    const string label = 'const-' + count
+    string[] words = ['left', 'right']
+    words[-1] = label
+    words[target] = 'runtime-' + count
+    print(words[0])
+    print(words[1])
+
+    Box[] boxes = [Box(count), Box(count + 1)]
+    Box borrowed = boxes[0]
+    boxes[-1] = borrowed
+    borrowed.value = 90
+    print(boxes[1].value)
+    boxes[target] = make_box(count + 10)
+    print(boxes[0].value)
+    boxes[1] = boxes[0]
+    boxes[0].value = 99
+    print(boxes[1].value)
+
+    int[][] rows = [[count], []]
+    rows[1] = []
+    rows[1] = [count + 4]
+    print(rows[1][0])
+
+    map<string, int> scores = {'key': count}
+    scores['key'] = count + 5
+    print(scores['key'])
+    return 0
+
+# Case 2
+record FieldCell(string text, int[] values);
+record FieldBox(string text, string[] words, map<string, int> counts, FieldCell cell, int[] numbers, bool[] flags, int[][] rows, string[][] groups);
+
+string make_field_text(int value):
+    return 'owned-' + value
+
+string[] make_field_words(int value):
+    return ['owned-word-' + value]
+
+map<string, int> make_field_counts(int value):
+    return {'owned': value}
+
+FieldCell make_field_cell(int value):
+    return FieldCell('owned-cell-' + value, [value + 1])
+
+int combined_case_2_main(string[] args):
+    int count = args.length()
+    string seed_key = 'seed-' + count
+    map<string, int> seed_counts = {seed_key: count}
+    FieldBox box = FieldBox('seed-' + count, ['seed-word-' + count], seed_counts, FieldCell('seed-cell-' + count, [count + 5]), [count + 10], [true], [[count + 11]], [['seed-group-' + count]])
+
+    box.text = box.text
+    box.words = box.words
+    box.counts = box.counts
+    box.cell = box.cell
+    box.numbers = box.numbers
+    box.flags = box.flags
+    box.rows = box.rows
+    box.groups = box.groups
+    print(box.text)
+    print(box.words[0])
+    print(box.counts[seed_key])
+    print(box.cell.text)
+    print(box.numbers[0])
+    print(box.flags[0])
+    print(box.rows[0][0])
+    print(box.groups[0][0])
+
+    string source_text = 'borrowed-' + count
+    string borrowed_key = 'borrowed-' + count
+    string[] source_words = ['borrowed-word-' + count]
+    map<string, int> source_counts = {borrowed_key: count + 20}
+    FieldCell source_cell = FieldCell('borrowed-cell-' + count, [count + 21])
+    box.text = source_text
+    box.words = source_words
+    box.counts = source_counts
+    box.cell = source_cell
+    source_text = 'changed'
+    source_words[0] = 'changed'
+    source_counts[borrowed_key] = -1
+    source_cell.text = 'changed'
+    source_cell.values[0] = -2
+    print(box.text)
+    print(box.words[0])
+    print(box.counts[borrowed_key])
+    print(box.cell.text)
+    print(box.cell.values[0])
+
+    box.text = make_field_text(count)
+    box.words = make_field_words(count)
+    box.counts = make_field_counts(count + 30)
+    box.cell = make_field_cell(count + 31)
+    box.cell.text = box.cell.text
+    print(box.text)
+    print(box.words[0])
+    print(box.counts['owned'])
+    print(box.cell.text)
+    print(box.cell.values[0])
+
+    box.words = []
+    box.words = box.words
+    print(box.words.length())
+    box.words = make_field_words(count + 40)
+    print(box.words[0])
+    return 0
+
+# Case 3
+record RowBox(map<string, int[]> rows);
+
+int[] make_row(int seed):
+    return [seed, seed + 1]
+
+map<string, int[]> make_rows(int seed):
+    int[] source = [seed, seed + 1]
+    map<string, int[]> rows = {}
+    rows['returned'] = source
+    source[0] = -1
+    return rows
+
+int combined_case_3_main(string[] args):
+    int count = args.length()
+    int[] literal_source = [count, count + 1]
+    map<string, int[]> rows = {'literal': literal_source}
+    literal_source[0] = 99
+    print(rows['literal'][0])
+
+    int[] source = [count + 10, count + 11]
+    rows['borrowed'] = source
+    source[0] = 99
+    print(rows['borrowed'][0])
+
+    rows['call'] = make_row(count + 20)
+    print(rows['call'][0])
+    rows['self'] = [count + 30]
+    rows['self'] = rows['self']
+    print(rows['self'][0])
+
+    rows['alias'] = rows['borrowed']
+    source[1] = 98
+    print(rows['alias'][1])
+
+    const int[] fixed = [count + 40]
+    rows['const'] = fixed
+    print(rows['const'][0])
+    int[] empty = []
+    rows['empty'] = empty
+    print(rows['empty'].length())
+
+    rows['repeat'] = [1]
+    rows['repeat'] = [2]
+    print(rows['repeat'][0])
+
+    map<string, int[]> copied = rows
+    copied['literal'][0] = 99
+    print(rows['literal'][0])
+
+    RowBox box = RowBox(rows)
+    rows['borrowed'] = [97]
+    print(box.rows['borrowed'][0])
+    RowBox cloned = box
+    cloned.rows['call'] = [88]
+    print(box.rows['call'][0])
+
+    map<string, int[]> returned = make_rows(count + 50)
+    print(returned['returned'][0])
+    print(returned['returned'][1])
+
+    map<int, int[]> numbers = {1: [count + 60]}
+    numbers[2] = source
+    source[0] = 96
+    print(numbers[1][0])
+    print(numbers[2][0])
+    return 0
+
+# Case 4
+record KeyBox(map<string, string> names);
+
+string owned_key(int value):
+    return 'owned-' + value
+
+map<string, string> escape_names(int value):
+    string local_key = 'local-' + value
+    map<string, string> result = {local_key: local_key}
+    return result
+
+int combined_case_4_main(string[] args):
+    int count = args.length()
+    string borrowed_key = 'borrowed-' + count
+    const string fixed_key = 'fixed-' + count
+    map<string, string> names = {borrowed_key: borrowed_key, fixed_key: fixed_key, owned_key(count): 'call-value-' + count, 'concat-' + count: 'concat-value-' + count, 'literal': 'literal-value-' + count, '': 'empty-value-' + count}
+    map<string, int> duplicates = {borrowed_key: count, borrowed_key: count + 1}
+    map<string, int> literal_keys = {'literal': count + 2, '': count + 3}
+    map<int, int> integer_keys = {count: count + 4}
+
+    print(names[borrowed_key])
+    print(names[fixed_key])
+    print(names[owned_key(count)])
+    print(names['concat-' + count])
+    print(names['literal'])
+    print(names[''])
+    print(duplicates[borrowed_key])
+    print(literal_keys['literal'])
+    print(literal_keys[''])
+    print(integer_keys[count])
+
+    map<string, string> copied = names
+    KeyBox box = KeyBox(names)
+    borrowed_key = 'changed'
+    print(names['borrowed-' + count])
+    string original_key = 'borrowed-' + count
+    names[original_key] = 'replacement'
+    print(copied[original_key])
+    print(box.names[original_key])
+    print(fixed_key)
+
+    map<string, string> returned = escape_names(count)
+    string returned_key = 'local-' + count
+    print(returned[returned_key])
+
+    int index = 0
+    while (index < 4):
+        map<string, int> temporary = {owned_key(count + index): index, 'loop-' + count + '-' + index: index + 1}
+        print(temporary.length())
+        index += 1
+    return 0
 
 int main(string[] args):
-    int argc = args.length()
-    int[] values = [argc, argc + 2, argc, argc + 3]
-    const int[] frozen = [argc + 1, argc, argc + 1]
-    print(index_of(values, argc))
-    print(values.index_of(argc + 3))
-    print(values.index_of(argc + 20))
-    print(index_of(frozen, argc))
-    print(find_int(values, argc + 2))
-
-    int[] empty_values = []
-    int[] singleton = [argc + 7]
-    print(empty_values.index_of(argc))
-    print(index_of(singleton, argc + 7))
-
-    bool[] flags = [argc > 1, false, argc > 1, true]
-    print(index_of(flags, false))
-    print(flags.index_of(true))
-    print(flags.index_of(argc > 5))
-    const bool[] frozen_flags = [true, false, true]
-    print(frozen_flags.index_of(false))
-    bool[] empty_flags = []
-    print(empty_flags.index_of(true))
-    empty_flags.push(true)
-    print(empty_flags.index_of(true))
-    bool[] one_flag = [false]
-    print(index_of(one_flag, false))
-
-    string prefix = 'match-' + argc
-    string[] words = [prefix, '', 'match-' + argc, 'tail-' + argc]
-    print(index_of(words, prefix))
-    print(words.index_of(''))
-    print(words.index_of('missing'))
-    const string[] frozen_words = ['quiet-' + argc, 'seed-' + argc, 'quiet-' + argc]
-    string frozen_needle = 'seed-' + argc
-    print(frozen_words.index_of(frozen_needle))
-    string[] empty_words = []
-    print(empty_words.index_of(''))
-    empty_words.push('filled')
-    print(empty_words.index_of('filled'))
-    string[] one_word = ['single']
-    print(index_of(one_word, 'single'))
-
-    SearchBox box = SearchBox([argc > 1, false, true], ['field-' + argc, '', 'field-' + argc])
-    print(index_of(box.flags, true))
-    print(box.words.index_of('field-' + argc))
-    print(box.words.index_of(''))
-    print(box.flags.length())
-    print(box.words.length())
-
-    values.push(argc + 9)
-    print(values.index_of(argc + 9))
-    print(values.length())
-    words.push(prefix)
-    print(words.index_of(prefix))
-    print(words.length())
+    print('=== case 1 ===')
+    if (combined_case_1_main(args) != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main(args) != 0):
+        return 1
+    print('=== case 3 ===')
+    if (combined_case_3_main(args) != 0):
+        return 1
+    print('=== case 4 ===')
+    if (combined_case_4_main(args) != 0):
+        return 1
     return 0

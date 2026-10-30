@@ -1,60 +1,318 @@
-record LastBox(int[] values, bool[] flags);
 
-int int_param_tail(int[] values):
-    return values.last()
 
-bool bool_param_tail(bool[] values):
-    return last(values)
+# Case 1
+record Box(int[] values);
+record Holder(int value);
+
+int push(int value, int extra):
+    return value + extra
+
+int combined_case_1_main(string[] args):
+    int n = args.length()
+    const int value = n + 2
+    int[] numbers = [n]
+    numbers.push(value)
+    print(numbers[-1])
+    numbers.push(('' + n).to_int())
+    print(numbers[-1])
+    string[] number_text = [(n + 10).to_string()]
+    numbers.push(number_text[0].to_int())
+    print(numbers[-1])
+    const bool flag = n == 1
+    bool[] flags = []
+    flags.push(flag)
+    print(flags[0])
+    const string word = 'word-' + n
+    string[] words = []
+    words.push(word)
+    print(words[0])
+    int[][] rows = []
+    const int[] row = [n + 4]
+    rows.push(row)
+    rows[0][0] += 10
+    print(row[0])
+    print(rows[0][0])
+    rows.push([n + 6])
+    print(rows[1][0])
+    rows[1][0] += 1
+    print(rows[1][0])
+    int[] empty_row = []
+    rows.push(empty_row)
+    print(rows[2].length())
+    string[][] groups = []
+    const string[] group = ['group-' + n]
+    groups.push(group)
+    groups[0][0] = 'changed'
+    print(group[0])
+    string[] empty_group = []
+    groups.push(empty_group)
+    print(groups[1].length())
+    const Box box = Box([n])
+    Box[] boxes = []
+    boxes.push(box)
+    boxes[0].values[0] += 20
+    print(box.values[0])
+    print(boxes[0].values[0])
+    boxes.push(Box([n + 3]))
+    print(boxes[1].values[0])
+    Holder holder = Holder(n)
+    print(holder.value.push(5))
+    print(push(n, 7))
+    return 0
+
+# Case 2
+string make_key(int value):
+    return 'owned-' + value
+
+string make_managed_key(int value):
+    return 'managed-' + value
+
+string compound_key(int value):
+    print('key-call')
+    return 'compound-' + value
+
+int compound_rhs():
+    print('rhs-call')
+    return 2
+
+int combined_case_2_main(string[] args):
+    int count = args.length()
+    string borrowed = 'borrowed-' + count
+    const string fixed = 'fixed-' + count
+    map<string, int> scores = {borrowed: 1, fixed: 2, 'literal': 3, '': 4, 'owned-' + count: 5, 'concat-' + count: 6, 'slice-' + count: 7, 'c': 8, 'compound-' + count: 4}
+
+    print(scores[borrowed])
+    print(scores[fixed])
+    print(scores['literal'])
+    print(scores[''])
+    print(scores[make_key(count)])
+    print(scores['concat-' + count])
+    string full_key = 'slice-' + count + '-tail'
+    print(scores[full_key[0:full_key.length() - 5]])
+    string char_source = 'char-' + count
+    print(scores[char_source.char_at(0)])
+
+    scores[make_key(count)] = 9
+    print(scores['owned-' + count])
+    borrowed = 'changed'
+    print(scores['borrowed-' + count])
+
+    map<string, string> names = {'string-value': 'before'}
+    names[make_key(count + 1)] = 'after-' + count
+    print(names['owned-' + (count + 1)])
+    print(names['string-value'])
+
+    map<string, int[]> rows = {'managed-' + count: [count]}
+    rows[make_managed_key(count)] = [count + 1]
+    print(rows['managed-' + count][0])
+    print(rows[make_managed_key(count)][0])
+
+    map<string, map<string, int>> nested = {'owned-' + (count + 2): {'leaf': count}}
+    print(nested[make_key(count + 2)]['leaf'])
+    nested[make_key(count + 2)] = {'leaf': count + 1}
+    print(nested['owned-' + (count + 2)]['leaf'])
+
+    map<string, int> totals = {'compound-' + count: 4}
+    totals[compound_key(count)] += compound_rhs()
+    print(totals['compound-' + count])
+
+    int index = 0
+    while (index < 3):
+        print(scores[make_key(count)])
+        index += 1
+
+    map<int, int> integer_keys = {count: 10}
+    print(integer_keys[count])
+    integer_keys[count] = 11
+    print(integer_keys[count])
+    return 0
+
+# Case 3
+record SnapshotBox(int[][] rows);
+
+int values(int value):
+    return value + 1000
+
+int[][] copied_values(map<string, int[]> rows):
+    return rows.values()
+
+map<string, int[]> make_rows(int seed):
+    map<string, int[]> rows = {}
+    rows['made-' + seed] = [seed + 90]
+    return rows
+
+map<int, int[]> make_number_rows(int seed):
+    map<int, int[]> rows = {seed: [seed + 91]}
+    return rows
+
+int[] first_row(int[][] rows):
+    return rows[0]
+
+int combined_case_3_main(string[] args):
+    int seed = args.length() + 4
+    string first_key = 'first-' + seed
+    string second_key = 'second-' + seed
+    string empty_key = 'empty-' + seed
+    int[] empty_row = []
+    map<string, int[]> strings = {first_key: [seed, seed + 1], second_key: [seed + 10, seed + 11], empty_key: empty_row}
+    int[][] string_values = strings.values()
+    print(string_values.length())
+    print(string_values[0][0])
+    print(string_values[1][0])
+    print(string_values[2].length())
+    string_values[0][0] = 901
+    print(strings[first_key][0])
+    strings[second_key][0] = 902
+    print(string_values[1][0])
+
+    int[] direct_escaped_row = first_row(strings.values())
+    strings[first_key] = [seed + 30]
+    print(direct_escaped_row[0])
+    int[][] updated_values = strings.values()
+    print(updated_values[0][0])
+    print(updated_values[1][0])
+    print(updated_values[2].length())
+    print(strings.values().length())
+    print(strings.values()[0][0])
+
+    const map<string, int[]> fixed_strings = {'fixed-' + seed: [seed + 20]}
+    int[][] fixed_values = fixed_strings.values()
+    fixed_values[0][0] = 903
+    print(fixed_strings['fixed-' + seed][0])
+
+    map<string, int[]> empty_strings = {}
+    int[][] no_string_values = empty_strings.values()
+    print(no_string_values.length())
+
+    map<int, int[]> numbers = {seed: [seed + 40], seed + 1: [seed + 50]}
+    int[][] number_values = numbers.values()
+    print(number_values.length())
+    print(number_values[0][0])
+    print(number_values[1][0])
+    numbers[seed] = [seed + 60]
+    int[][] updated_number_values = numbers.values()
+    print(updated_number_values[0][0])
+    print(updated_number_values[1][0])
+
+    const map<int, int[]> fixed_numbers = {seed + 2: [seed + 70]}
+    int[][] fixed_number_values = fixed_numbers.values()
+    print(fixed_number_values[0][0])
+    map<int, int[]> empty_numbers = {}
+    print(empty_numbers.values().length())
+
+    int[][] reassigned = strings.values()
+    reassigned = strings.values()
+    print(reassigned.length())
+    strings.values()
+
+    int[][] borrowed_rows = copied_values(strings)
+    int[] escaped_row = first_row(borrowed_rows)
+    borrowed_rows = []
+    print(escaped_row[0])
+
+    SnapshotBox box = SnapshotBox(strings.values())
+    box.rows[0][0] = 904
+    print(strings[first_key][0])
+    SnapshotBox cloned = box
+    cloned.rows[0][0] = 905
+    print(box.rows[0][0])
+    box.rows = strings.values()
+    print(box.rows[0][0])
+
+    int[][] temporary_receiver_values = make_rows(seed).values()
+    print(temporary_receiver_values[0][0])
+    int[][] temporary_number_values = make_number_rows(seed).values()
+    print(temporary_number_values[0][0])
+    print(seed.values())
+    return 0
+
+# Case 4
+record MapHolder(map<string, int> counts, map<int, string> labels, map<string, int[]> rows);
+record _Nested(map<string, int> values);
+record Bundle(MapHolder holder, _Nested nested);
+record mapbox(map<int, int> items);
+
+MapHolder make_holder():
+    return MapHolder({}, {}, {})
+
+int combined_case_4_main(string[] args):
+    int seed = args.length()
+    MapHolder first = make_holder()
+    string first_key = 'first-' + seed
+    first.counts[first_key] = seed + 2
+    first.labels[seed + 3] = 'label-' + seed
+    first.rows['row-' + seed] = [seed + 4, seed + 5]
+    print(first.counts[first_key])
+    print(first.labels[seed + 3])
+    print(first.rows['row-' + seed][1])
+
+    MapHolder copied = first
+    copied.counts['copy-' + seed] = seed + 7
+    print(first.counts.length())
+    print(copied.counts.length())
+
+    first.counts = {}
+    first.labels = {}
+    first.rows = {}
+    print(first.counts.length())
+    print(first.labels.length())
+    print(first.rows.length())
+    print(copied.counts[first_key])
+
+    const MapHolder fixed = MapHolder({'fixed-' + seed: seed + 8}, {}, {})
+    print(fixed.counts['fixed-' + seed])
+    print(fixed.labels.length())
+
+    Bundle bundle = Bundle(make_holder(), _Nested({}))
+    bundle.holder.counts['nested-' + seed] = seed + 9
+    bundle.nested.values['nested-' + seed] = seed + 10
+    bundle.nested.values = {}
+    print(bundle.holder.counts['nested-' + seed])
+    print(bundle.nested.values.length())
+
+    if (seed > 0):
+        bundle.holder.counts = {}
+        bundle.holder.counts['if-' + seed] = seed + 11
+    for (int i = 0; i < seed; i++):
+        bundle.holder.labels = {}
+        bundle.holder.labels[i] = 'loop-' + seed
+    switch (seed):
+        case 1:
+            bundle.holder.rows = {}
+            bundle.holder.rows['switch-' + seed] = [seed + 12]
+        case 3:
+            bundle.holder.rows = {}
+            bundle.holder.rows['switch-' + seed] = [seed + 12]
+        default:
+            bundle.holder.rows = {}
+            bundle.holder.rows['switch-' + seed] = [seed + 12]
+    try:
+        bundle.holder.counts = {}
+        throw 'reset-' + seed
+    catch (exception err):
+        bundle.holder.counts['catch-' + seed] = seed + 13
+        print(err)
+    print(bundle.holder.counts.length())
+    print(bundle.holder.labels[seed - 1])
+    print(bundle.holder.rows['switch-' + seed][0])
+
+    mapbox lowercase = mapbox({})
+    lowercase.items[seed] = seed + 14
+    lowercase.items = {}
+    print(lowercase.items.length())
+    return 0
 
 int main(string[] args):
-    int count = args.length()
-
-    int[] values = [count + 10, count + 20]
-    print(last(values))
-    print(values.last())
-    print(values.length())
-    print(int_param_tail(values))
-    values.push(count + 30)
-    print(last(values))
-    print(values.pop())
-    print(values.last())
-    print(values.length())
-    values.insert(0, count + 5)
-    print(values.last())
-    print(values.length())
-    values.remove_at(0)
-    print(values.last())
-    print(values.length())
-
-    bool[] flags = [count > 1, false]
-    print(last(flags))
-    print(flags.last())
-    print(flags.length())
-    print(bool_param_tail(flags))
-    flags.push(count > 1)
-    print(last(flags))
-    print(flags.length())
-    flags.pop()
-    print(last(flags))
-    print(flags.length())
-
-    const int[] frozen_values = [count + 40]
-    const bool[] frozen_flags = [count > 1]
-    print(last(frozen_values))
-    print(frozen_values.last())
-    print(last(frozen_flags))
-    print(frozen_flags.last())
-
-    int[] singleton = [count + 50]
-    bool[] one_flag = [count > 1]
-    print(last(singleton))
-    print(one_flag.last())
-
-    LastBox box = LastBox([count + 60, count + 70], [false, count > 1])
-    print(last(box.values))
-    print(box.values.last())
-    print(last(box.flags))
-    print(box.flags.last())
-    print(box.values.length())
-    print(box.flags.length())
+    print('=== case 1 ===')
+    if (combined_case_1_main(args) != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main(args) != 0):
+        return 1
+    print('=== case 3 ===')
+    if (combined_case_3_main(args) != 0):
+        return 1
+    print('=== case 4 ===')
+    if (combined_case_4_main(args) != 0):
+        return 1
     return 0

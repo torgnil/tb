@@ -1,94 +1,35 @@
-string text_for(int value):
-    return 'n=' + value
+import regex;
 
-string suffix_text(string text):
-    return text + '!'
+void check(string pattern, string text):
+    Regex r = regex_compile(pattern)
+    print(r.valid && regex_match(r, text))
+    return
 
-string prefix_text(string prefix, string text):
-    return prefix + text
-
-string one_char_text():
-    return 'p' + ''
-
-string ordered_text(int[] values, int marker, string label):
-    values.push(marker)
-    return label + values.length()
-
-future<string> scoped_string(thread_pool pool, int value):
-    string local_text = text_for(value)
-    return pool.submit(() -> local_text + '!')
-
-int main(string[] args):
-    int seed = args.length() + 4
-    thread_pool pool = thread_pool(2)
-    int bias = 10
-
-    future<string> string_then_int = pool.submit(int value -> 'L' + value, seed)
-    future<string> int_then_string = pool.submit(int value -> value + 'R', seed)
-    future<string> zero_integer = pool.submit(int value -> 'zero=' + 0, seed)
-    future<string> negative_integer = pool.submit(int value -> -value + ':' + value, seed)
-    future<string> string_pair = pool.submit(string text -> text + ':' + 'end', 'base')
-    future<string> nested_helpers = pool.submit(int value -> text_for(value) + suffix_text(text_for(value)), seed)
-    future<string> helper_argument = pool.submit(int value -> prefix_text('id=', text_for(value) + '?'), seed)
-    future<string> empty_text = pool.submit(int value -> '' + '', 0)
-    future<string> block_result = pool.submit(int value -> {
-        if (value > 0) {
-            return 'block=' + value
-        }
-        return 'none'
-    }, seed)
-    bool choose_first = args.length() == 1
-    future<string> conditional_result = pool.submit(bool choose -> choose ? 'yes=' + 'ok' : 'no=' + 'ok', choose_first)
-    future<bool> composed_predicate = pool.submit(string text -> (text + '!').length() == 4 && (text + '!')[0] == 'a' && text + '!' == 'abc!', 'abc')
-
-    string captured_text = 'capture'
-    future<string> captured_result = pool.submit(() -> captured_text + '!')
-    captured_text = 'changed'
-    future<string> scoped_result = scoped_string(pool, seed)
-    string mutable_text = 'before'
-    future<string> parameter_snapshot = pool.submit(string text -> text + '!', mutable_text)
-    mutable_text = 'after'
-    const string fixed_text = 'fixed'
-    future<string> const_parameter = pool.submit(string text -> text + '!', fixed_text)
-    future<bool> ordered_result = pool.submit(int[] values -> ordered_text(values, 1, 'L') + ordered_text(values, 2, 'R') == 'L2R3', [0])
-    future<int> arithmetic_result = pool.submit(int value -> value + 2, seed)
-    future<bool> scalar_capture = pool.submit(int value -> 'total=' + (value + bias) == 'total=' + (value + 10), seed)
-    bias = 99
-    future<string> borrowed_return = pool.submit(string text -> text, 'borrowed')
-    future<string> indexed_concat = pool.submit(string text -> (text + '!')[0], 'abc')
-    future<string> indexed_helper = pool.submit(string text -> one_char_text()[0], 'ignored')
-    future<string> negative_index = pool.submit(string text -> text[-1], 'abc')
-    future<string> owned_negative_index = pool.submit(string text -> (text + '!')[-1], 'abc')
-    future<string> empty_index = pool.submit(string text -> (text + '')[0], '')
-    future<string> borrowed_index = pool.submit(string text -> text[0], 'borrowed')
-
-    print(string_then_int.await())
-    print(int_then_string.await())
-    print(zero_integer.await())
-    print(negative_integer.await())
-    print(string_pair.await())
-    print(nested_helpers.await())
-    print(helper_argument.await())
-    print(empty_text.await())
-    string empty_value = empty_text.await()
-    print(empty_value.length())
-    print(block_result.await())
-    print(conditional_result.await())
-    print(composed_predicate.await())
-    print(captured_result.await())
-    print(scoped_result.await())
-    print(parameter_snapshot.await())
-    print(const_parameter.await())
-    print(ordered_result.await())
-    print(ordered_result.await())
-    print(arithmetic_result.await())
-    print(scalar_capture.await())
-    print(borrowed_return.await())
-    print(('ordinary' + '!')[0])
-    print(indexed_concat.await())
-    print(indexed_helper.await())
-    print(negative_index.await())
-    print(owned_negative_index.await())
-    print(empty_index.await())
-    print(borrowed_index.await())
+int main():
+    check('[0-9]{4}', '2026')
+    check('[0-9]{4}', '202')
+    check('a{2,4}', 'aa')
+    check('a{2,4}', 'aaaa')
+    check('a{2,4}', 'aaaaa')
+    check('(ab|c){2,}', 'abcab')
+    check('(ab|c){2,}', 'ab')
+    check('a{0}', '')
+    check('a{0}', 'a')
+    check('a{0,2}', '')
+    check('a{0,2}', 'aa')
+    check('a{0,}', 'aaa')
+    check('(a{0}b){2}', 'bb')
+    check('(a?){2,3}', '')
+    check('(a?){2,3}', 'aaa')
+    check('(a?){2,3}', 'aaaa')
+    check('\\{2\\}', '{2}')
+    print(regex_compile('a{}').valid)
+    print(regex_compile('a{,2}').valid)
+    print(regex_compile('a{2,1}').valid)
+    print(regex_compile('a{1001}').valid)
+    print(regex_compile('a{2').valid)
+    print(regex_compile('a{2}*').valid)
+    print(regex_compile('a{999999999999999999999999}').valid)
+    print(regex_compile('(a{1000}){1000}').valid)
+    print(regex_compile('a{1000}').valid)
     return 0

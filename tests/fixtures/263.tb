@@ -1,69 +1,8 @@
-record NestedRows(int[][] ints, string[][] words);
-
-int[][] global_int_rows = []
-string[][] global_string_rows = []
-
-int[] make_int_row(int value):
-    return [value]
-
-string[] make_string_row(int value):
-    return [value.to_string()]
-
-int[][] empty_int_outer():
-    return []
-
-string[][] empty_string_outer():
-    return []
-
 int main(string[] args):
-    int seed = args.length() + 3
-    int[][] int_rows = []
-    int[] borrowed_int_row = [seed, seed + 1]
-    print(push(int_rows, borrowed_int_row))
-    borrowed_int_row[0] = 99
-    print(int_rows[0][0])
-    const int[] const_int_row = [seed + 2]
-    print(push(int_rows, const_int_row))
-    int[] empty_int_row = []
-    print(push(int_rows, empty_int_row))
-    print(int_rows[2].length())
-    print(push(int_rows, [seed + 4]))
-    print(int_rows[3][0])
-    print(push(int_rows, make_int_row(seed + 5)))
-    print(int_rows[4][0])
-    if (seed > 0):
-        print(push(int_rows, make_int_row(seed + 6)))
-    for (int i = 0; i < 2; i++):
-        print(push(int_rows, make_int_row(seed + 10 + i)))
-    print(push(empty_int_outer(), make_int_row(seed + 20)))
-    print(push(global_int_rows, make_int_row(seed + 21)))
-    string[][] string_rows = []
-    string[] borrowed_string_row = [seed.to_string(), 'tail']
-    print(push(string_rows, borrowed_string_row))
-    borrowed_string_row[0] = 'changed'
-    print(string_rows[0][0])
-    const string[] const_string_row = ['const', seed.to_string()]
-    print(push(string_rows, const_string_row))
-    string[] empty_string_row = []
-    print(push(string_rows, empty_string_row))
-    print(string_rows[2].length())
-    print(push(string_rows, [(seed + 4).to_string()]))
-    print(string_rows[3][0])
-    print(push(string_rows, make_string_row(seed + 5)))
-    print(string_rows[4][0])
-    if (seed > 0):
-        print(push(string_rows, make_string_row(seed + 6)))
-    for (int j = 0; j < 2; j++):
-        print(push(string_rows, make_string_row(seed + 10 + j)))
-    print(push(empty_string_outer(), make_string_row(seed + 20)))
-    print(push(global_string_rows, make_string_row(seed + 21)))
-    NestedRows holder = NestedRows(int_rows, string_rows)
-    print(push(holder.ints, make_int_row(seed + 22)))
-    print(push(holder.words, make_string_row(seed + 22)))
-    int[][] reused_int_rows = []
-    print(push(reused_int_rows, make_int_row(seed + 23)))
-    print(push(reused_int_rows, make_int_row(seed + 24)))
-    string[][] reused_string_rows = []
-    print(push(reused_string_rows, make_string_row(seed + 23)))
-    print(push(reused_string_rows, make_string_row(seed + 24)))
+    thread_pool pool = thread_pool(1)
+    int[] left = [1]
+    int[] right = [2]
+    string label = 'mixed'
+    future<int> invalid = pool.submit(() -> left[0] + right[0] + label.length())
+    print(invalid.await())
     return 0

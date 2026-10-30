@@ -1,80 +1,10 @@
-record Item(int value, string label, int[] values);
-record Empty();
-record Holder(Item[] items);
-record item(int[] values);
-
-Item[] global_items = []
-
-Item make_item(int value):
-    return Item(value, 'item-' + value.to_string(), [value, value + 1])
-
-Item[] empty_items():
-    return []
-
-Item[] make_items(int value):
-    return [make_item(value)]
-
-item[] make_payloads(int value):
-    return [item([value])]
-
-int append_item(Item[] receiver, Item value):
-    return receiver.push(value)
-
 int main(string[] args):
-    int seed = args.length() + 3
-
-    Item[] stored = []
-    Item source = make_item(seed)
-    print(stored.push(source))
-    source.value = 90
-    source.label = 'changed'
-    source.values[0] = 91
-    print(stored[0].value)
-    print(stored[0].label)
-    print(stored[0].values[0])
-
-    const Item const_source = make_item(seed + 1)
-    print(stored.push(const_source))
-    print(stored[1].value)
-    print(stored[1].values[1])
-    print(stored.push(Item(seed + 2, 'inline', [seed + 2])))
-    print(stored.push(make_item(seed + 3)))
-    print(stored[3].values[0])
-
-    if (seed > 0):
-        print(append_item(stored, make_item(seed + 4)))
-    for (int i = 0; i < 2; i++):
-        print(stored.push(make_item(seed + 5 + i)))
-    print(stored.length())
-
-    Empty[] empties = []
-    print(empties.push(Empty()))
-    print(empties.push(Empty()))
-    print(empty_items().push(make_item(seed + 10)))
-    print(make_items(seed + 11).push(make_item(seed + 12)))
-    print([make_item(seed + 13)].push(make_item(seed + 14)))
-
-    Item[] reused = make_items(seed + 15)
-    print(reused.push(const_source))
-    print(reused.push(make_item(seed + 16)))
-    print(reused[2].value)
-
-    print(global_items.push(make_item(seed + 17)))
-    print(global_items[0].label)
-    Holder holder = Holder([])
-    print(holder.items.push(make_item(seed + 18)))
-    print(holder.items[0].values[0])
-
-    print(push(empty_items(), make_item(seed + 19)))
-    int[] native_values = []
-    print(native_values.push(seed))
-    print(push([seed + 1], seed + 2))
-
-    item[] payloads = []
-    int[] payload_source = [seed + 20]
-    item borrowed_payload = item(payload_source)
-    print(payloads.push(borrowed_payload))
-    payload_source[0] = 99
-    print(payloads[0].values[0])
-    print(make_payloads(seed + 21).push(item([seed + 22])))
+    thread_pool pool = thread_pool(1)
+    int[] left = [1]
+    int[] right = [2]
+    future<int> invalid = pool.submit(() -> {
+        int[] local = [left[0]]
+        return local[0] + right[0]
+    })
+    print(invalid.await())
     return 0

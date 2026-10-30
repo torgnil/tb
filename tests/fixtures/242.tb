@@ -1,122 +1,95 @@
-map<int, int[]> empty_int_int(int seed):
-    return {seed: [], seed + 1: []}
+record Item(int code, string label);
+record Empty();
+record Bundle(map<int, Item[]> rows, map<string, Item[]> named);
 
-map<string, int[]> empty_string_int(int seed):
-    string key = 'k' + seed.to_string()
-    string next_key = 'k' + (seed + 1).to_string()
-    return {key: [], next_key: []}
+map<int, Item[]> GLOBAL_ROWS = {1: [], 2: [Item(20, 'old')], 1: [Item(21, 'last')]}
+map<string, Empty[]> GLOBAL_EMPTY = {'zero': [], 'one': [Empty()]}
 
-map<int, string[]> empty_int_string(int seed):
-    return {seed: [], seed + 1: []}
+map<int, Item[]> returned_rows(int value):
+    return {1: [], 2: [Item(value, 'return')], 1: [Item(value + 1, 'last-return')]}
 
-map<string, string[]> empty_string_string(int seed):
-    string key = 's' + seed.to_string()
-    string next_key = 's' + (seed + 1).to_string()
-    return {key: [], next_key: []}
-
-map<int, int[]> mixed_int_int(int seed):
-    if (seed > 0):
-        return {seed: [], seed + 1: [seed + 10]}
-    else:
-        return {seed: [seed + 20], seed + 1: []}
-
-map<string, int[]> mixed_string_int(int seed):
-    string key = 'k' + seed.to_string()
-    string next_key = 'k' + (seed + 1).to_string()
-    if (seed > 0):
-        return {key: [], next_key: [seed + 10]}
-    else:
-        return {key: [seed + 20], next_key: []}
-
-map<int, string[]> mixed_int_string(int seed):
-    if (seed > 0):
-        return {seed: [], seed + 1: ['v' + seed.to_string()]}
-    else:
-        return {seed: ['v' + seed.to_string()], seed + 1: []}
-
-map<string, string[]> mixed_string_string(int seed):
-    string key = 's' + seed.to_string()
-    string next_key = 's' + (seed + 1).to_string()
-    if (seed > 0):
-        return {key: [], next_key: ['w' + seed.to_string()]}
-    else:
-        return {key: ['w' + seed.to_string()], next_key: []}
-
-map<int, int[]> duplicate_empty(int seed):
-    return {seed: [seed + 1], seed + 1: [seed + 2], seed: []}
-
-map<int, int[]> duplicate_populated(int seed):
-    return {seed: [seed + 1], seed + 1: [seed + 2], seed: [seed + 3]}
+int summarize_rows(map<int, Item[]> rows):
+    return rows.length() + rows[1].length() + rows[2].length()
 
 int main(string[] args):
-    int n = args.length()
-    const map<int, int[]> empty_ii = empty_int_int(n)
-    const map<string, int[]> empty_si = empty_string_int(n)
-    const map<int, string[]> empty_is = empty_int_string(n)
-    const map<string, string[]> empty_ss = empty_string_string(n)
-    print(empty_ii.length())
-    print(empty_ii[n].length())
-    print(empty_si.length())
-    print(empty_si['k' + n.to_string()].length())
-    print(empty_is.length())
-    print(empty_is[n].length())
-    print(empty_ss.length())
-    print(empty_ss['s' + n.to_string()].length())
+    int seed = args.length() + 4
+    print(GLOBAL_ROWS.length())
+    print(GLOBAL_ROWS[1].length())
+    print(GLOBAL_ROWS[1][0].code)
+    print(GLOBAL_ROWS[2].length())
+    print(GLOBAL_EMPTY.length())
+    print(GLOBAL_EMPTY['zero'].length())
+    print(GLOBAL_EMPTY['one'].length())
 
-    int seed = n - 1
-    const map<int, int[]> mixed_ii = mixed_int_int(seed)
-    const map<string, int[]> mixed_si = mixed_string_int(seed)
-    const map<int, string[]> mixed_is = mixed_int_string(seed)
-    const map<string, string[]> mixed_ss = mixed_string_string(seed)
-    print(mixed_ii.length())
-    if (seed > 0):
-        print(mixed_ii[seed + 1][0])
-        print(mixed_ii[seed].length())
-    else:
-        print(mixed_ii[seed][0])
-        print(mixed_ii[seed + 1].length())
-    string key = 'k' + seed.to_string()
-    string next_key = 'k' + (seed + 1).to_string()
-    print(mixed_si.length())
-    if (seed > 0):
-        print(mixed_si[next_key][0])
-        print(mixed_si[key].length())
-    else:
-        print(mixed_si[key][0])
-        print(mixed_si[next_key].length())
-    print(mixed_is.length())
-    if (seed > 0):
-        print(mixed_is[seed + 1][0])
-        print(mixed_is[seed].length())
-    else:
-        print(mixed_is[seed][0])
-        print(mixed_is[seed + 1].length())
-    string string_key = 's' + seed.to_string()
-    string string_next_key = 's' + (seed + 1).to_string()
-    print(mixed_ss.length())
-    if (seed > 0):
-        print(mixed_ss[string_next_key][0])
-        print(mixed_ss[string_key].length())
-    else:
-        print(mixed_ss[string_key][0])
-        print(mixed_ss[string_next_key].length())
+    map<int, Item[]> rows = {seed: [], seed + 1: [Item(seed * 10, 'first')], seed: []}
+    print(rows.length())
+    print(rows[seed].length())
+    print(rows[seed + 1][0].code)
+    rows[seed] = [Item(seed + 1, 'reset-empty')]
+    rows[seed + 1] = []
+    print(rows[seed][0].code)
+    print(rows[seed + 1].length())
+    rows = {seed: [], seed + 1: [Item(seed + 2, 'reassigned')]}
+    print(rows.length())
+    print(rows[seed].length())
+    print(rows[seed + 1][0].code)
 
-    map<int, int[]> mutable_rows = mixed_int_int(n + 3)
-    int[][] snapshot = mutable_rows.values()
-    snapshot[1][0] = 999
-    print(mutable_rows[n + 4][0])
-    mutable_rows[n + 4][0] = 77
-    print(snapshot[1][0])
-    print(mutable_rows[n + 4][0])
-    map<int, int[]> independent_rows = mixed_int_int(n + 3)
-    print(independent_rows[n + 4][0])
+    Item[] typed_empty = []
+    map<string, Item[]> named = {'blank': typed_empty, 'ready': [Item(seed + 3, 'named')]}
+    named['ready'] = []
+    named['blank'] = []
+    print(named.length())
+    print(named['blank'].length())
+    print(named['ready'].length())
+    named['blank'] = [Item(seed + 4, 'named-reset')]
+    print(named['blank'][0].code)
 
-    map<int, int[]> empty_duplicate = duplicate_empty(n)
-    int[][] empty_duplicate_values = empty_duplicate.values()
-    map<int, int[]> populated_duplicate = duplicate_populated(n)
-    int[][] populated_duplicate_values = populated_duplicate.values()
-    print(empty_duplicate.length())
-    print(empty_duplicate_values[0].length())
-    print(empty_duplicate_values[1][0])
-    print(populated_duplicate_values[0][0])
+    const map<int, Item[]> fixed = {4: [], 5: [Item(50, 'const')]}
+    print(fixed.length())
+    print(fixed[4].length())
+    print(fixed[5][0].code)
+
+    Bundle bundle = Bundle({1: [], 2: [Item(seed + 5, 'constructor')]}, {'empty': []})
+    print(bundle.rows.length())
+    print(bundle.rows[1].length())
+    print(bundle.rows[2][0].code)
+    print(bundle.named['empty'].length())
+    bundle.rows = {1: [], 2: [Item(seed + 6, 'field-reset')]}
+    bundle.named['empty'] = [Item(seed + 7, 'field-index')]
+    print(bundle.rows[1].length())
+    print(bundle.rows[2][0].code)
+    print(bundle.named['empty'][0].code)
+
+    map<int, Item[]> copied = rows
+    copied[seed + 1] = []
+    copied[seed] = [Item(90, 'copy-only')]
+    print(rows[seed].length())
+    print(rows[seed + 1][0].code)
+    print(copied[seed].length())
+    print(copied[seed + 1].length())
+
+    map<int, Item[]> from_function = returned_rows(seed + 10)
+    print(from_function.length())
+    print(from_function[1][0].code)
+    print(from_function[2][0].code)
+    print(summarize_rows({1: [], 2: [Item(seed + 20, 'parameter')]}))
+    print({1: [], 2: [Item(seed + 21, 'ufcs-parameter')]}.summarize_rows())
+
+    map<int, Empty[]> empty_records = {1: [], 2: [Empty()], 1: []}
+    print(empty_records.length())
+    print(empty_records[1].length())
+    print(empty_records[2].length())
+
+    map<int, Item[]> loop_rows = {}
+    for (int index : range(3)):
+        loop_rows = {index: [], index + 10: [Item(index + 30, 'loop')]}
+    print(loop_rows.length())
+    print(loop_rows[2].length())
+    print(loop_rows[12][0].code)
+
+    map<int, int[]> numbers = {1: [], 2: [3]}
+    map<string, string[]> words = {'empty': [], 'full': ['word']}
+    print(numbers[1].length())
+    print(words['empty'].length())
+    print(words['full'][0])
     return 0

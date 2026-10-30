@@ -1,84 +1,135 @@
-int[] make_row(int value):
-    return [value, value + 1]
+import regex;
 
-int[] empty_row():
-    return []
+# Case 1
 
-int[][] make_grid(int value):
-    return [[value], make_row(value + 1)]
+void check(string pattern, string text):
+    Regex compiled = regex_compile(pattern)
+    print(compiled.valid && regex_match(compiled, text))
+    return
 
-int grid_sum(int[][] values):
-    return values[0][0] + values[1][0]
+int combined_case_1_main():
+    check('\\d+', '0123456789')
+    check('\\d+', '12a')
+    check('\\D+', 'abc_!')
+    check('\\D+', 'a0')
+    check('\\w+', 'Az09_')
+    check('\\w+', 'x-')
+    check('\\W+', '-.! ')
+    check('\\W+', '-a')
+    check('\\s+', ' \t\n\r')
+    check('\\s+', ' a')
+    check('\\S+', 'a1_')
+    check('\\S+', 'a\t')
+    check('(\\d|\\w)+\\s\\D?', 'a1 Z')
+    check('(\\d|\\w)+\\s\\D?', 'a1 5')
+    check('\\d*', '')
+    check('\\d', '')
+    check('\\.\\*\\[\\]', '.*[]')
+    print(regex_compile('\\q').valid)
+    print(regex_compile('[a-z]').valid)
+    return 0
 
-int mark_grid_length(int[][] values, int marker):
-    values.push([marker])
-    return values.length()
+# Case 2
 
-future<int[][]> submit_scoped_grid(thread_pool pool, int value):
-    int[][] local_grid = [[value], [value + 1]]
-    return pool.submit(int[][] input -> [input[0], input[1]], local_grid)
+int combined_case_2_main():
+    string text = ''
+    int index = 0
+    while (index < 20000):
+        text += 'a'
+        index++
+    Regex repeated = regex_compile('a*')
+    Regex late_mismatch = regex_compile('a*z')
+    Regex anchored = regex_compile('^a*$')
+    print(regex_match(repeated, text))
+    print(regex_match(repeated, text))
+    print(regex_match(late_mismatch, text))
+    print(regex_match(regex_compile('z'), text))
+    print(regex_match(anchored, text))
+    print(regex_match(anchored, text + '\n'))
+    print(text.length())
+    print(text[0])
+    print(text[-1])
+    Regex invalid = regex_compile('(')
+    print(regex_match(invalid, text))
+    Regex damaged = regex_compile('a')
+    damaged.start = 999
+    print(regex_match(damaged, text))
+    return 0
+
+# Case 3
+
+string literal_pattern(string text):
+    return '^' + regex_escape(text) + '$'
+
+int combined_case_3_main(string[] args):
+    string special = '\\.|*+?()[]{}^$'
+    string escaped_special = regex_escape(special)
+    print(escaped_special)
+    print(regex_match(regex_compile(literal_pattern(special)), special))
+    print(regex_match(regex_compile(literal_pattern(special)), special + 'x'))
+
+    string class_escapes = '\\d\\w\\s\\D\\W\\S'
+    string escaped_classes = regex_escape(class_escapes)
+    print(escaped_classes)
+    print(regex_match(regex_compile(literal_pattern(class_escapes)), class_escapes))
+    print(regex_match(regex_compile(literal_pattern(class_escapes)), 'dwsDWS'))
+
+    string ordinary = 'Az09 _- /:'
+    print(regex_escape(ordinary) == ordinary)
+    print(regex_match(regex_compile(regex_escape(ordinary)), ordinary))
+    print(regex_escape('') == '')
+    print(regex_match(regex_compile(regex_escape('')), ''))
+    print(regex_match(regex_compile(regex_escape('')), 'x'))
+
+    Regex repeated_last_atom = regex_compile(regex_escape('ab') + '+')
+    print(regex_match(repeated_last_atom, 'abbb'))
+    print(regex_match(repeated_last_atom, 'aabb'))
+    print(regex_match(regex_compile(literal_pattern('line\nbreak')), 'line\nbreak'))
+
+    string dynamic = 'default.*[value]'
+    if (args.length() > 1):
+        dynamic = args[1]
+    print(regex_match(regex_compile(literal_pattern(dynamic)), dynamic))
+    print(regex_match(regex_compile(literal_pattern(dynamic)), dynamic + '!'))
+    return 0
+
+# Case 4
+
+int combined_case_4_main(string[] args):
+    string[] alternatives = []
+    int index = 0
+    while (index < 4096):
+        alternatives.push('a')
+        index += 1
+
+    Regex many_alternatives = regex_compile('(' + alternatives.join('|') + ')!')
+    print(regex_match(many_alternatives, 'a!'))
+    print(regex_match(many_alternatives, 'b!'))
+    print(regex_match(regex_compile('(ab|c)*d'), 'abccd'))
+    print(regex_match(regex_compile('(ab|c)*d'), 'abccx'))
+    print(regex_match(regex_compile('(a|b)?c'), 'c'))
+    print(regex_match(regex_compile('(a|b)+c'), 'abbc'))
+    string padded_exact = 'a{0000000000000000000000000000000000000000000000000000000000000001}'
+    print(regex_match(regex_compile(padded_exact), 'a'))
+    print(regex_match(regex_compile(padded_exact), 'aa'))
+    string padded_range = 'a{1,0000000000000000000000000000000000000000000000000000000000000002}'
+    print(regex_match(regex_compile(padded_range), 'aa'))
+    print(regex_match(regex_compile(padded_range), 'aaa'))
+    string padded_invalid = 'a{0000000000000000000000000000000000000000000000000000000000001001}'
+    print(regex_compile(padded_invalid).valid)
+    return 0
 
 int main(string[] args):
-    int seed = args.length() + 3
-    const int[][] fixed_grid = [[seed + 10], [seed + 20, seed + 21]]
-    int[][] source_grid = [[seed, seed + 1], [seed + 2, seed + 3]]
-    thread_pool pool = thread_pool(2)
-
-    future<int[][]> direct = pool.submit(int value -> [[value, value + 1], [value + 2]], seed)
-    future<int[][]> block_grid = pool.submit(int value -> {
-        return [[value], [value + 1, value + 2]]
-    }, seed)
-    future<int[][]> computed_rows = pool.submit(int[][] grid -> [grid[0], make_row(grid[1][0])], source_grid)
-    future<int[][]> captured_rows = pool.submit(() -> [fixed_grid[0], make_row(5)])
-    future<int[][]> empty_typed_row = pool.submit(int value -> [empty_row(), make_row(value)], seed)
-    future<int[][]> conditional_rows = pool.submit(int value -> [value == 4 ? [value] : [value + 1], make_row(value)], seed)
-    future<int[]> indexed_literal_row = pool.submit(int value -> [[value], [value + 1, value + 2]][1], seed)
-    future<int> literal_grid_length = pool.submit(int value -> [[value], [value + 1]].length(), seed)
-    future<int[][]> helper_grid = pool.submit(int[][] grid -> make_grid(grid[0][0]), source_grid)
-    future<int> helper_argument = pool.submit(int[][] grid -> grid_sum([make_row(grid[0][0]), make_row(grid[1][0])]), source_grid)
-    future<int[][]> ordered_rows = pool.submit(int[][] grid -> [[mark_grid_length(grid, 1)], [mark_grid_length(grid, 2)]], source_grid)
-    future<int[][]> scoped_grid = submit_scoped_grid(pool, seed + 30)
-    future<int[]> scalar_control = pool.submit(int value -> [value, value + 1], seed)
-
-    source_grid[0][0] = 99
-
-    int[][] direct_first = direct.await()
-    direct_first[0][0] = 999
-    print(direct_first[0][0])
-    print(direct_first[1][0])
-    int[][] direct_second = direct.await()
-    print(direct_second[0][0])
-    print(direct_second[0][1])
-
-    int[][] block_result = block_grid.await()
-    print(block_result[1][1])
-    int[][] computed_result = computed_rows.await()
-    print(computed_result[0][0])
-    print(computed_result[1][0])
-    int[][] captured_result = captured_rows.await()
-    print(captured_result[0][0])
-    print(captured_result[1][1])
-    int[][] empty_result = empty_typed_row.await()
-    print(empty_result[0].length())
-    print(empty_result[1][0])
-    int[][] conditional_result = conditional_rows.await()
-    print(conditional_result[0][0])
-    print(conditional_result[1][1])
-    int[] indexed_row = indexed_literal_row.await()
-    print(indexed_row[0])
-    print(indexed_row[1])
-    print(literal_grid_length.await())
-    int[][] helper_result = helper_grid.await()
-    print(helper_result[0][0])
-    print(helper_result[1][1])
-    print(helper_argument.await())
-    int[][] order_result = ordered_rows.await()
-    print(order_result[0][0])
-    print(order_result[1][0])
-    print(source_grid[0][0])
-    int[][] scoped_result = scoped_grid.await()
-    print(scoped_result[0][0])
-    print(scoped_result[1][0])
-    int[] scalar_result = scalar_control.await()
-    print(scalar_result[1])
+    print('=== case 1 ===')
+    if (combined_case_1_main() != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main() != 0):
+        return 1
+    print('=== case 3 ===')
+    if (combined_case_3_main(args) != 0):
+        return 1
+    print('=== case 4 ===')
+    if (combined_case_4_main(args) != 0):
+        return 1
     return 0

@@ -1,32 +1,423 @@
-string last_from_local(string suffix):
-    string source = 'temporary-' + suffix
-    return source.last()
+
+
+# Case 1
+record sum(int[] values);
+record SumEnvelope(sum value);
+
+sum GLOBAL_SUM = sum([31, 32])
+
+int[] make_values(int seed):
+    return [seed, seed + 1]
+
+sum make_sum(int seed):
+    int[] values = [seed, seed + 1]
+    return sum(values)
+
+sum round_trip(sum value):
+    return value
+
+int combined_case_1_main(string[] args):
+    int count = args.length()
+
+    int[] borrowed = [count + 3, count + 4]
+    sum direct = sum(borrowed)
+    borrowed[0] = 99
+    print(direct.values[0])
+    print(borrowed[0])
+
+    const int[] fixed = [count + 5, count + 6]
+    sum from_const = sum(fixed)
+    print(from_const.values.sum())
+
+    sum from_literal = sum([count + 7, count + 8])
+    print(from_literal.values.sum())
+
+    sum from_owned_call = sum(make_values(count + 9))
+    print(from_owned_call.values.sum())
+
+    sum from_record_return = make_sum(count + 10)
+    print(from_record_return.values.sum())
+
+    sum empty = sum([])
+    print(empty.values.length())
+
+    sum cloned = direct
+    cloned.values[0] = 70
+    print(direct.values[0])
+    print(cloned.values[0])
+
+    SumEnvelope wrapped = SumEnvelope(direct)
+    wrapped.value.values[0] = 80
+    print(direct.values[0])
+    print(wrapped.value.values[0])
+    wrapped.value = sum([count + 11, count + 12])
+    print(wrapped.value.values.sum())
+
+    sum returned = round_trip(direct)
+    print(returned.values.sum())
+    print(GLOBAL_SUM.values.sum())
+
+    int[] native_values = [count + 13, count + 14]
+    bool[] native_flags = [count > 0, count > 2]
+    print(native_values.sum())
+    print(native_flags.sum())
+    return 0
+
+# Case 2
+record BoolBox(bool[] flags);
+
+map<string, bool> make_flags(int seed):
+    map<string, bool> flags = {'kept': seed > 0, 'tail': false}
+    return flags
+
+bool[] returned_flags(int seed):
+    return make_flags(seed).values()
+
+int count_flags(bool[] flags):
+    return flags.sum()
+
+bool[] return_flags(bool[] flags):
+    return flags
+
+int bool_mask(bool[] flags):
+    int mask = 0
+    for (int i : range(flags.length())):
+        if (flags[i]):
+            mask = mask + (1 << i)
+    return mask
+
+int combined_case_2_main(string[] args):
+    int seed = args.length() - 1
+
+    map<int, bool> empty_int = {}
+    bool[] empty_int_values = empty_int.values()
+    print(empty_int_values.length())
+    print(empty_int_values.is_empty())
+
+    map<string, bool> empty_string = {}
+    print(empty_string.values().length())
+
+    map<int, bool> all_false = {-1: false, 4: false}
+    print(all_false.values().sum())
+    map<string, bool> all_true = {'yes': true, 'also': true}
+    print(all_true.values().sum())
+
+    map<int, bool> indexed = {-20: false, 7: seed > 0, 100: true}
+    bool[] indexed_values = indexed.values()
+    indexed[-20] = true
+    indexed[7] = false
+    print(indexed_values[0])
+    print(indexed_values[1])
+    print(indexed_values[2])
+    print(indexed[-20])
+    print(indexed_values.sum())
+
+    const map<int, bool> const_indexed = {-5: true, 11: seed > 0, 90: false}
+    bool[] const_values = const_indexed.values()
+    print(const_values[0])
+    print(const_values[1])
+    print(const_values[2])
+
+    map<string, bool> ordered = {'first': false, 'second': true, 'third': seed > 0}
+    ordered['first'] = true
+    bool[] ordered_values = ordered.values()
+    print(ordered_values[0])
+    print(ordered_values[1])
+    print(ordered_values[2])
+    print(ordered_values.index_of(true))
+    print(ordered_values.sum())
+
+    map<string, bool> grown = {}
+    for (int i : range(13)):
+        grown['key-' + i] = (i % 2) == (seed % 2)
+    bool[] grown_values = grown.values()
+    print(grown_values.length())
+    print(bool_mask(grown_values))
+    grown['key-0'] = false
+    print(bool_mask(grown_values))
+    print(bool_mask(grown.values()))
+    print(grown.values().sum())
+
+    const map<string, bool> const_string = {'off': false, 'on': true}
+    bool[] const_string_values = const_string.values()
+    const_string_values[0] = true
+    print(const_string_values[0])
+    print(const_string['off'])
+
+    bool[] from_owned_map = returned_flags(seed)
+    print(from_owned_map[0])
+    print(from_owned_map[1])
+    print(from_owned_map.sum())
+    print(count_flags(make_flags(seed).values()))
+    bool[] copied_argument = return_flags(make_flags(seed).values())
+    print(copied_argument[0])
+    print(copied_argument[1])
+
+    BoolBox box = BoolBox(ordered.values())
+    BoolBox clone = box
+    clone.flags[0] = false
+    print(box.flags[0])
+    print(clone.flags[0])
+    box.flags = indexed.values()
+    indexed_values[1] = true
+    print(box.flags[1])
+    print(indexed_values[1])
+
+    bool[] loop_values = []
+    for (int i : range(3)):
+        if (i == 1):
+            loop_values.push(ordered.values()[i])
+        else:
+            loop_values.push(const_indexed.values()[i])
+    print(loop_values.length())
+    print(loop_values.sum())
+    print(ordered.values().length())
+    print(indexed.values()[2])
+    return 0
+
+# Case 3
+const map<int, string[]> GLOBAL_ROWS = {7: [], -3: ['global']}
+
+record Rows(map<int, string[]> text, map<string, int[]> numbers);
+
+map<int, string[]> make_rows(int seed):
+    string token = seed.to_string()
+    map<int, string[]> rows = {seed: [], seed + 1: ['returned-' + token]}
+    rows[seed].push('returned-empty-' + token)
+    return rows
+
+int combined_case_3_main(string[] args):
+    int seed = args.length()
+    string token = seed.to_string()
+
+    string[] global_row = GLOBAL_ROWS[7]
+    print(global_row.length())
+
+    map<int, string[]> all_empty = {11: [], -1: []}
+    all_empty[11].push('filled-' + token)
+    string[][] all_values = all_empty.values()
+    string[] first_all = all_values[0]
+    print(all_empty.length())
+    print(first_all[0])
+
+    map<int, string[]> mixed_int = {-4: ['mixed-' + token], 3: []}
+    mixed_int[3].push('late-' + token)
+    string[][] mixed_values = mixed_int.values()
+    string[] mixed_first = mixed_values[0]
+    string[] mixed_second = mixed_values[1]
+    print(mixed_first[0])
+    print(mixed_second[0])
+
+    map<string, int[]> all_string_empty = {'z': [], 'a': []}
+    all_string_empty['z'].push(seed + 1)
+    int[][] string_empty_values = all_string_empty.values()
+    int[] string_empty_first = string_empty_values[0]
+    print(string_empty_first[0])
+
+    map<string, int[]> mixed_string = {'empty': [], 'filled': [seed + 2]}
+    mixed_string['empty'].push(seed + 3)
+    int[][] mixed_string_values = mixed_string.values()
+    int[] mixed_string_first = mixed_string_values[0]
+    int[] mixed_string_second = mixed_string_values[1]
+    print(mixed_string_first[0])
+    print(mixed_string_second[0])
+
+    map<int, string[]> reset = {8: ['old']}
+    reset = {8: [], 9: ['new-' + token]}
+    reset[8].push('reset-' + token)
+    string[] reset_row = reset[8]
+    print(reset.length())
+    print(reset_row[0])
+
+    map<int, string[]> duplicate = {5: ['first'], 6: []}
+    duplicate[5] = ['last']
+    duplicate[6].push('six-' + token)
+    string[] duplicate_keys = duplicate.keys()
+    string[] duplicate_row = duplicate[5]
+    print(duplicate.length())
+    print(duplicate_row[0])
+    print(duplicate_keys[0])
+    print(duplicate_keys[1])
+
+    Rows box = Rows({7: [], 8: ['ctor-' + token]}, {'empty': [], 'one': [seed]})
+    box.text[7].push('ctor-empty-' + token)
+    box.numbers['empty'].push(seed + 4)
+    int[] constructor_number = box.numbers['empty']
+    string[] constructor_row = box.text[7]
+    print(constructor_row[0])
+    print(constructor_number[0])
+
+    Rows cloned = box
+    cloned.text[7] = ['clone-' + token]
+    string[] box_row_after_clone = box.text[7]
+    string[] cloned_row = cloned.text[7]
+    print(box_row_after_clone[0])
+    print(cloned_row[0])
+
+    box.text = {9: [], 10: ['field-' + token]}
+    box.text[9].push('field-empty-' + token)
+    string[] field_row = box.text[9]
+    print(field_row[0])
+
+    map<int, string[]> returned = make_rows(seed)
+    string[][] returned_values = returned.values()
+    string[] returned_first = returned_values[0]
+    print(returned_first[0])
+
+    map<int, string[]> flow = {}
+    if (seed > 0):
+        flow = {1: [], 2: ['if-' + token]}
+    for (int i = 0; i < 1; i++):
+        flow = {3: [], 4: ['loop-' + token]}
+    switch (seed):
+        case 1:
+            flow = {5: [], 6: ['switch-' + token]}
+        default:
+            flow = {5: [], 6: ['switch-' + token]}
+    try:
+        throw 'caught-' + token
+    catch (exception err):
+        flow = {7: [], 8: ['catch-' + token]}
+    flow[7].push('try-catch-' + token)
+    string[] flow_row = flow[7]
+    print(flow_row[0])
+    return 0
+
+# Case 4
+map<int, int[]> empty_int_int(int seed):
+    return {seed: [], seed + 1: []}
+
+map<string, int[]> empty_string_int(int seed):
+    string key = 'k' + seed.to_string()
+    string next_key = 'k' + (seed + 1).to_string()
+    return {key: [], next_key: []}
+
+map<int, string[]> empty_int_string(int seed):
+    return {seed: [], seed + 1: []}
+
+map<string, string[]> empty_string_string(int seed):
+    string key = 's' + seed.to_string()
+    string next_key = 's' + (seed + 1).to_string()
+    return {key: [], next_key: []}
+
+map<int, int[]> mixed_int_int(int seed):
+    if (seed > 0):
+        return {seed: [], seed + 1: [seed + 10]}
+    else:
+        return {seed: [seed + 20], seed + 1: []}
+
+map<string, int[]> mixed_string_int(int seed):
+    string key = 'k' + seed.to_string()
+    string next_key = 'k' + (seed + 1).to_string()
+    if (seed > 0):
+        return {key: [], next_key: [seed + 10]}
+    else:
+        return {key: [seed + 20], next_key: []}
+
+map<int, string[]> mixed_int_string(int seed):
+    if (seed > 0):
+        return {seed: [], seed + 1: ['v' + seed.to_string()]}
+    else:
+        return {seed: ['v' + seed.to_string()], seed + 1: []}
+
+map<string, string[]> mixed_string_string(int seed):
+    string key = 's' + seed.to_string()
+    string next_key = 's' + (seed + 1).to_string()
+    if (seed > 0):
+        return {key: [], next_key: ['w' + seed.to_string()]}
+    else:
+        return {key: ['w' + seed.to_string()], next_key: []}
+
+map<int, int[]> duplicate_empty(int seed):
+    return {seed: [seed + 1], seed + 1: [seed + 2], seed: []}
+
+map<int, int[]> duplicate_populated(int seed):
+    return {seed: [seed + 1], seed + 1: [seed + 2], seed: [seed + 3]}
+
+int combined_case_4_main(string[] args):
+    int n = args.length()
+    const map<int, int[]> empty_ii = empty_int_int(n)
+    const map<string, int[]> empty_si = empty_string_int(n)
+    const map<int, string[]> empty_is = empty_int_string(n)
+    const map<string, string[]> empty_ss = empty_string_string(n)
+    print(empty_ii.length())
+    print(empty_ii[n].length())
+    print(empty_si.length())
+    print(empty_si['k' + n.to_string()].length())
+    print(empty_is.length())
+    print(empty_is[n].length())
+    print(empty_ss.length())
+    print(empty_ss['s' + n.to_string()].length())
+
+    int seed = n - 1
+    const map<int, int[]> mixed_ii = mixed_int_int(seed)
+    const map<string, int[]> mixed_si = mixed_string_int(seed)
+    const map<int, string[]> mixed_is = mixed_int_string(seed)
+    const map<string, string[]> mixed_ss = mixed_string_string(seed)
+    print(mixed_ii.length())
+    if (seed > 0):
+        print(mixed_ii[seed + 1][0])
+        print(mixed_ii[seed].length())
+    else:
+        print(mixed_ii[seed][0])
+        print(mixed_ii[seed + 1].length())
+    string key = 'k' + seed.to_string()
+    string next_key = 'k' + (seed + 1).to_string()
+    print(mixed_si.length())
+    if (seed > 0):
+        print(mixed_si[next_key][0])
+        print(mixed_si[key].length())
+    else:
+        print(mixed_si[key][0])
+        print(mixed_si[next_key].length())
+    print(mixed_is.length())
+    if (seed > 0):
+        print(mixed_is[seed + 1][0])
+        print(mixed_is[seed].length())
+    else:
+        print(mixed_is[seed][0])
+        print(mixed_is[seed + 1].length())
+    string string_key = 's' + seed.to_string()
+    string string_next_key = 's' + (seed + 1).to_string()
+    print(mixed_ss.length())
+    if (seed > 0):
+        print(mixed_ss[string_next_key][0])
+        print(mixed_ss[string_key].length())
+    else:
+        print(mixed_ss[string_key][0])
+        print(mixed_ss[string_next_key].length())
+
+    map<int, int[]> mutable_rows = mixed_int_int(n + 3)
+    int[][] snapshot = mutable_rows.values()
+    snapshot[1][0] = 999
+    print(mutable_rows[n + 4][0])
+    mutable_rows[n + 4][0] = 77
+    print(snapshot[1][0])
+    print(mutable_rows[n + 4][0])
+    map<int, int[]> independent_rows = mixed_int_int(n + 3)
+    print(independent_rows[n + 4][0])
+
+    map<int, int[]> empty_duplicate = duplicate_empty(n)
+    int[][] empty_duplicate_values = empty_duplicate.values()
+    map<int, int[]> populated_duplicate = duplicate_populated(n)
+    int[][] populated_duplicate_values = populated_duplicate.values()
+    print(empty_duplicate.length())
+    print(empty_duplicate_values[0].length())
+    print(empty_duplicate_values[1][0])
+    print(populated_duplicate_values[0][0])
+    return 0
 
 int main(string[] args):
-    int count = args.length()
-    string source = 'value-' + count.to_string()
-    string inferred = last(source)
-    const string fixed = 'fixed-' + count.to_string()
-    string explicit = fixed.last()
-    string empty = ''
-    string empty_last = last(empty)
-    string one = 'Z'
-    string one_last = one.last()
-
-    print(inferred)
-    print(explicit)
-    print(empty_last)
-    print(one_last)
-
-    source = 'reassigned-' + count.to_string()
-    print(inferred)
-    print(source.last())
-    print(last_from_local(count.to_string()))
-
-    int[] ints = [count + 10, count + 20]
-    bool[] flags = [count > 0, false]
-    string[] words = ['first-' + count.to_string(), 'tail-' + count.to_string()]
-    print(last(ints))
-    print(flags.last())
-    print(last(words))
+    print('=== case 1 ===')
+    if (combined_case_1_main(args) != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main(args) != 0):
+        return 1
+    print('=== case 3 ===')
+    if (combined_case_3_main(args) != 0):
+        return 1
+    print('=== case 4 ===')
+    if (combined_case_4_main(args) != 0):
+        return 1
     return 0

@@ -1,83 +1,188 @@
-int named_worker(int value):
-    return value + 5
 
-int __tb_submit_lambda_0(int value):
-    return value + 100
+
+# Case 1
+int GLOBAL_ADJUST = 2
+int CALLBACK_CALLS = 0
+int PREDICATE_CALLS = 0
+int LEGACY_CALLS = 0
+
+string int_array_text(int[] values):
+    string text = '['
+    for (int index : range(values.length())):
+        if (index > 0):
+            text += ', '
+        text += values[index]
+    text += ']'
+    return text
+
+int[] global_values = [2, 3]
+int[] global_mapped = global_values.map_to(int item -> item > 0 ? later_adjust(item, 1) : 0)
+
+int forward_adjust(int value, int delta, const bool enabled):
+    return enabled ? later_adjust(value, delta) : value
+
+int combined_case_1_main(string[] args):
+    int seed = args.length()
+    int[] values = [seed, 0 - seed, 0, seed + 2]
+    print(int_array_text(global_mapped))
+
+    int[] nested = values.map_to(int item -> cached_double(add_values(forward_adjust(item, seed, true), current_offset())))
+    print(int_array_text(nested))
+
+    const int delta = seed + 4
+    int[] captured = values.map_to(int item -> add_values(item, delta))
+    print(int_array_text(captured))
+    if (true):
+        const int delta = seed + 6
+        int[] shadowed = values.map_to(int item -> add_values(item, delta))
+        print(int_array_text(shadowed))
+
+    int[] counted = values.map_to(int item -> count_item(item))
+    print(int_array_text(counted))
+    print(CALLBACK_CALLS)
+
+    int[] selected = values.filter(int item -> item != 0 && count_positive(item))
+    print(int_array_text(selected))
+    print(PREDICATE_CALLS)
+
+    int[] empty = []
+    int[] empty_map = empty.map_to(int item -> count_item(item))
+    int[] empty_filter = empty.filter(int item -> count_positive(item))
+    print(empty_map.length())
+    print(empty_filter.length())
+    print(CALLBACK_CALLS)
+    print(PREDICATE_CALLS)
+
+    int[] legacy_empty = empty.map_to(int item -> item + bump_legacy())
+    print(legacy_empty.length())
+    print(LEGACY_CALLS)
+
+    int[] ordered = change_receiver().map_to(int item -> add_current(item))
+    print(int_array_text(ordered))
+    print(GLOBAL_ADJUST)
+
+    int[] pipeline = make_values(seed).filter(int item -> is_positive(item)).map_to(int item -> add_values(item, seed))
+    print(int_array_text(pipeline))
+    print(CALLBACK_CALLS)
+    try:
+        int[] throwing = values.map_to(int item -> throw_if_negative(item))
+        print(int_array_text(throwing))
+    catch (string error):
+        print(error)
+    return 0
+
+int later_adjust(int value, int delta):
+    return value + delta + GLOBAL_ADJUST
+
+cached int cached_double(int value):
+    return value * 2
+
+int current_offset():
+    return GLOBAL_ADJUST
+
+int add_values(int left, int right):
+    return left + right
+
+int count_item(int value):
+    CALLBACK_CALLS += 1
+    return value + GLOBAL_ADJUST
+
+bool is_positive(int value):
+    return value > 0
+
+bool count_positive(int value):
+    PREDICATE_CALLS += 1
+    return is_positive(value)
+
+int bump_legacy():
+    LEGACY_CALLS += 1
+    return 10
+
+int[] change_receiver():
+    GLOBAL_ADJUST = 9
+    return [1, 2]
+
+int add_current(int value):
+    return value + GLOBAL_ADJUST
+
+int throw_if_negative(int value):
+    if (value < 0):
+        throw 'callback helper failure'
+    return value
+
+int[] make_values(int seed):
+    return [seed, 0 - seed, 0, seed + 2]
+
+# Case 2
+int offset = 2
+bool enabled = true
+int map_calls = 0
+int filter_calls = 0
+const bool stable = true
+const int bonus = 10
+int[] source = [7, 8, 9]
+int[] mapped = make_source().map_to(int item -> apply_delta(item, offset) + offset)
+int[] selected = source.filter(int item -> enabled && allow_item(item))
+int[] final_values = selected.map_to(int item -> stable ? item + bonus : item)
+int[] shadowed = selected.map_to(int enabled -> stable ? enabled + 1 : enabled)
+int[] empty_source = []
+int[] empty_mapped = empty_source.map_to(int item -> apply_delta(item, offset))
+int[] empty_filtered = empty_source.filter(int item -> item > 0 && item / zero_value() > offset)
+
+int combined_case_2_main(string[] args):
+    print(mapped[0])
+    print(mapped[1])
+    print(mapped[2])
+    print(offset)
+    print(enabled)
+    print(map_calls)
+    print(filter_calls)
+    print(selected.length())
+    print(final_values[0])
+    print(final_values[1])
+    print(shadowed[0])
+    print(shadowed[1])
+    print(empty_mapped.length())
+    print(empty_filtered.length())
+    return 0
+
+int[] make_source():
+    offset = 5
+    return [1, 2, 3]
+
+int apply_delta(int item, int delta):
+    map_calls += 1
+    offset += 1
+    return item + delta
+
+bool allow_item(int item):
+    filter_calls += 1
+    enabled = false
+    return item >= offset
+
+int zero_value():
+    return 0
+
+# Case 3
+int read_later():
+    return later
+
+int seen = read_later()
+int later = 7
+
+int combined_case_3_main(string[] args):
+    print(seen)
+    print(later)
+    return 0
 
 int main(string[] args):
-    int seed = args.length() + 2
-    const int fixed_seed = seed
-    const bool ready = args.length() == 1
-    const thread_pool pool = thread_pool(2)
-
-    future<int> int_to_int = pool.submit(int value -> {
-        if (value > 3) {
-            return value * 2
-        } else {
-            return value + 1
-        }
-    }, fixed_seed)
-    future<int> bool_to_int = pool.submit(bool flag -> {
-        if (flag) {
-            return 7
-        } else {
-            return 9
-        }
-    }, ready)
-    future<bool> int_to_bool = pool.submit(int value -> {
-        if (value > 3) {
-            return true
-        } else if (value == 3) {
-            return false
-        } else {
-            return value > 0
-        }
-    }, seed)
-    future<bool> bool_to_bool = pool.submit(bool flag -> {
-        if (flag) {
-            return false
-        } else {
-            return true
-        }
-    }, ready)
-    future<int> fallback = pool.submit(int value -> {
-        if (value == 5) {
-            return 50
-        }
-        return value + 6
-    }, seed)
-    future<int> nested = pool.submit(int value -> {
-        if (value > 3) {
-            if (value > 4) {
-                return value + 10
-            } else {
-                return value + 8
-            }
-        } else {
-            return value + 6
-        }
-    }, seed)
-    future<int> named = pool.submit(named_worker, seed)
-    future<int> expression = pool.submit(int value -> value * 2, seed)
-
-    print(int_to_int.await())
-    print(bool_to_int.await())
-    print(int_to_bool.await())
-    print(bool_to_bool.await())
-    print(fallback.await())
-    print(nested.await())
-    print(named.await())
-    print(expression.await())
-    print(int_to_int.await())
-
-    if (ready):
-        future<int> branch = pool.submit(int value -> {
-            if (value > 3) { return value * 2; } else { return value + 1; }
-        }, seed + 1)
-        print(branch.await())
-    for (int index = 0; index < 2; index++):
-        future<int> each = pool.submit(int value -> {
-            if (value > 0) { return value; } else { return 0; }
-        }, seed + index)
-        print(each.await())
+    print('=== case 1 ===')
+    if (combined_case_1_main(args) != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main(args) != 0):
+        return 1
+    print('=== case 3 ===')
+    if (combined_case_3_main(args) != 0):
+        return 1
     return 0

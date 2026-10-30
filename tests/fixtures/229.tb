@@ -1,74 +1,172 @@
-record MapHolder(map<string, int> counts, map<int, string> labels, map<string, int[]> rows);
-record _Nested(map<string, int> values);
-record Bundle(MapHolder holder, _Nested nested);
-record mapbox(map<int, int> items);
 
-MapHolder make_holder():
-    return MapHolder({}, {}, {})
+
+# Case 1
+record TextBox(string value);
+
+string GLOBAL_TEXT = 'global'
+
+string make_text(int value):
+    if (value == 0):
+        return ''
+    return 'line-' + value.to_string()
+
+string make_empty_text():
+    return ''
+
+string[] make_words(int value):
+    return ['word-' + value.to_string()]
+
+bool is_empty(int value):
+    return value == 0
+
+int combined_case_1_main(string[] args):
+    int seed = args.length()
+    thread_pool pool = thread_pool(2)
+
+    print(is_empty(0))
+
+    print(is_empty(make_empty_text()))
+    print(make_empty_text().is_empty())
+    print(make_text(seed).length())
+    print(make_text(seed).is_empty())
+    print(is_empty(make_text(seed)))
+    print(make_words(seed)[0].length())
+    print(is_empty(make_words(seed)[0]))
+    print(('segment-' + seed.to_string()).length())
+
+    string named_text = make_text(seed)
+    const string fixed_text = make_text(4)
+    TextBox box = TextBox(make_text(5))
+    print(named_text[0].length())
+    print(named_text.length())
+    print(named_text)
+    print(fixed_text.is_empty())
+    print(box.value.length())
+    print(box.value)
+    print(GLOBAL_TEXT.length())
+    print(is_empty(GLOBAL_TEXT))
+
+    string reused_text = make_text(6)
+    print(reused_text.length())
+    print(reused_text)
+
+    int total_length = 0
+    for (int index = 0; index < 3; index++):
+        total_length += make_text(index).length()
+    print(total_length)
+
+    if (make_empty_text().is_empty()):
+        print('branch-empty')
+    else:
+        print('branch-not-empty')
+
+    try:
+        int query_result = make_text(seed).length()
+        if (query_result > 0):
+            throw 'query then throw'
+    catch (exception error):
+        print(error)
+
+    future<int> worker_length = pool.submit(int value -> make_text(value).length(), seed)
+    future<bool> worker_method_empty = pool.submit(int value -> make_empty_text().is_empty(), 0)
+    future<int> worker_borrowed_length = pool.submit(string value -> value.length(), named_text)
+    print(worker_length.await())
+    print(worker_method_empty.await())
+    print(worker_borrowed_length.await())
+
+    return 0
+
+# Case 2
+int[] make_row(int value):
+    return [value, value + 1]
+
+int[] empty_row():
+    return []
+
+int[][] make_grid(int value):
+    return [[value], make_row(value + 1)]
+
+int grid_sum(int[][] values):
+    return values[0][0] + values[1][0]
+
+int mark_grid_length(int[][] values, int marker):
+    values.push([marker])
+    return values.length()
+
+future<int[][]> submit_scoped_grid(thread_pool pool, int value):
+    int[][] local_grid = [[value], [value + 1]]
+    return pool.submit(int[][] input -> [input[0], input[1]], local_grid)
+
+int combined_case_2_main(string[] args):
+    int seed = args.length() + 3
+    const int[][] fixed_grid = [[seed + 10], [seed + 20, seed + 21]]
+    int[][] source_grid = [[seed, seed + 1], [seed + 2, seed + 3]]
+    thread_pool pool = thread_pool(2)
+
+    future<int[][]> direct = pool.submit(int value -> [[value, value + 1], [value + 2]], seed)
+    future<int[][]> block_grid = pool.submit(int value -> {
+        return [[value], [value + 1, value + 2]]
+    }, seed)
+    future<int[][]> computed_rows = pool.submit(int[][] grid -> [grid[0], make_row(grid[1][0])], source_grid)
+    future<int[][]> captured_rows = pool.submit(() -> [fixed_grid[0], make_row(5)])
+    future<int[][]> empty_typed_row = pool.submit(int value -> [empty_row(), make_row(value)], seed)
+    future<int[][]> conditional_rows = pool.submit(int value -> [value == 4 ? [value] : [value + 1], make_row(value)], seed)
+    future<int[]> indexed_literal_row = pool.submit(int value -> [[value], [value + 1, value + 2]][1], seed)
+    future<int> literal_grid_length = pool.submit(int value -> [[value], [value + 1]].length(), seed)
+    future<int[][]> helper_grid = pool.submit(int[][] grid -> make_grid(grid[0][0]), source_grid)
+    future<int> helper_argument = pool.submit(int[][] grid -> grid_sum([make_row(grid[0][0]), make_row(grid[1][0])]), source_grid)
+    future<int[][]> ordered_rows = pool.submit(int[][] grid -> [[mark_grid_length(grid, 1)], [mark_grid_length(grid, 2)]], source_grid)
+    future<int[][]> scoped_grid = submit_scoped_grid(pool, seed + 30)
+    future<int[]> scalar_control = pool.submit(int value -> [value, value + 1], seed)
+
+    source_grid[0][0] = 99
+
+    int[][] direct_first = direct.await()
+    direct_first[0][0] = 999
+    print(direct_first[0][0])
+    print(direct_first[1][0])
+    int[][] direct_second = direct.await()
+    print(direct_second[0][0])
+    print(direct_second[0][1])
+
+    int[][] block_result = block_grid.await()
+    print(block_result[1][1])
+    int[][] computed_result = computed_rows.await()
+    print(computed_result[0][0])
+    print(computed_result[1][0])
+    int[][] captured_result = captured_rows.await()
+    print(captured_result[0][0])
+    print(captured_result[1][1])
+    int[][] empty_result = empty_typed_row.await()
+    print(empty_result[0].length())
+    print(empty_result[1][0])
+    int[][] conditional_result = conditional_rows.await()
+    print(conditional_result[0][0])
+    print(conditional_result[1][1])
+    int[] indexed_row = indexed_literal_row.await()
+    print(indexed_row[0])
+    print(indexed_row[1])
+    print(literal_grid_length.await())
+    int[][] helper_result = helper_grid.await()
+    print(helper_result[0][0])
+    print(helper_result[1][1])
+    print(helper_argument.await())
+    int[][] order_result = ordered_rows.await()
+    print(order_result[0][0])
+    print(order_result[1][0])
+    print(source_grid[0][0])
+    int[][] scoped_result = scoped_grid.await()
+    print(scoped_result[0][0])
+    print(scoped_result[1][0])
+    int[] scalar_result = scalar_control.await()
+    print(scalar_result[1])
+    return 0
 
 int main(string[] args):
-    int seed = args.length()
-    MapHolder first = make_holder()
-    string first_key = 'first-' + seed
-    first.counts[first_key] = seed + 2
-    first.labels[seed + 3] = 'label-' + seed
-    first.rows['row-' + seed] = [seed + 4, seed + 5]
-    print(first.counts[first_key])
-    print(first.labels[seed + 3])
-    print(first.rows['row-' + seed][1])
-
-    MapHolder copied = first
-    copied.counts['copy-' + seed] = seed + 7
-    print(first.counts.length())
-    print(copied.counts.length())
-
-    first.counts = {}
-    first.labels = {}
-    first.rows = {}
-    print(first.counts.length())
-    print(first.labels.length())
-    print(first.rows.length())
-    print(copied.counts[first_key])
-
-    const MapHolder fixed = MapHolder({'fixed-' + seed: seed + 8}, {}, {})
-    print(fixed.counts['fixed-' + seed])
-    print(fixed.labels.length())
-
-    Bundle bundle = Bundle(make_holder(), _Nested({}))
-    bundle.holder.counts['nested-' + seed] = seed + 9
-    bundle.nested.values['nested-' + seed] = seed + 10
-    bundle.nested.values = {}
-    print(bundle.holder.counts['nested-' + seed])
-    print(bundle.nested.values.length())
-
-    if (seed > 0):
-        bundle.holder.counts = {}
-        bundle.holder.counts['if-' + seed] = seed + 11
-    for (int i = 0; i < seed; i++):
-        bundle.holder.labels = {}
-        bundle.holder.labels[i] = 'loop-' + seed
-    switch (seed):
-        case 1:
-            bundle.holder.rows = {}
-            bundle.holder.rows['switch-' + seed] = [seed + 12]
-        case 3:
-            bundle.holder.rows = {}
-            bundle.holder.rows['switch-' + seed] = [seed + 12]
-        default:
-            bundle.holder.rows = {}
-            bundle.holder.rows['switch-' + seed] = [seed + 12]
-    try:
-        bundle.holder.counts = {}
-        throw 'reset-' + seed
-    catch (exception err):
-        bundle.holder.counts['catch-' + seed] = seed + 13
-        print(err)
-    print(bundle.holder.counts.length())
-    print(bundle.holder.labels[seed - 1])
-    print(bundle.holder.rows['switch-' + seed][0])
-
-    mapbox lowercase = mapbox({})
-    lowercase.items[seed] = seed + 14
-    lowercase.items = {}
-    print(lowercase.items.length())
+    print('=== case 1 ===')
+    if (combined_case_1_main(args) != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main(args) != 0):
+        return 1
     return 0

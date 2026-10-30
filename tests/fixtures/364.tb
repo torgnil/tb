@@ -1,111 +1,93 @@
-record Item(int value, string label);
-record Empty();
-record ItemMaps(map<int, Item> singles, map<int, Item[]> rows);
+import regex;
 
-int item_calls = 0
+# Case 1
 
-Item make_item(int value, string label):
-    item_calls += 1
-    return Item(value, label)
+int combined_case_1_main():
+    Regex literal = regex_compile('(ab|c)+')
+    print(regex_match(literal, 'abc'))
+    print(regex_contains(literal, 'xabc'))
+    print(regex_find_start(literal, 'xabc'))
 
-Item[] make_row(int value):
-    return [Item(value, 'row-' + value)]
+    Regex anchors = regex_compile('^a[0-9]?b$')
+    print(regex_match(anchors, 'a5b'))
+    print(regex_match(anchors, 'ab'))
+    print(regex_find_start(anchors, 'ab'))
 
-map<int, Item> returned_items(int key):
-    return {key: Item(1, 'old'), key + 1: Item(2, 'middle'), key: Item(key + 12, 'return-last')}
+    Regex invalid_class = Regex(true, 0, [6, 4], [1, -1], [-1, -1], ['z-a', ''])
+    print(regex_match(invalid_class, 'z'))
+    print(regex_contains(invalid_class, 'z'))
+    print(regex_find_start(invalid_class, 'z'))
+    return 0
 
-map<int, Item[]> returned_rows(int key):
-    Item[] empty_row = []
-    return {key: [Item(3, 'old-row')], key + 1: empty_row, key: [Item(key + 13, 'return-row-last')]}
+# Case 2
 
-map<int, Item> global_items = {3: Item(30, 'global-old'), 3: Item(31, 'global-last')}
-map<int, Item[]> global_rows = {4: [Item(40, 'global-row-old')], 4: [Item(41, 'global-row-last')]}
+int combined_case_2_main():
+    print(regex_reserved('['))
+    print(regex_reserved('[]'))
+    print(regex_reserved(''))
+    print(regex_class_escape('D'))
+    print(regex_class_escape('dD'))
+    print(regex_class_escape(''))
+    print(regex_escapable('\\'))
+    print(regex_escapable('??'))
+    print(regex_escapable(''))
+    print(regex_class_matches('DW', 'a'))
+    print(regex_match(regex_compile('^a+b?c*$'), 'aabc'))
+    print(regex_match(regex_compile('^a+b?c*$'), 'zaabc'))
+    print(regex_escape('a*b+c?'))
+    return 0
+
+# Case 3
+
+int combined_case_3_main():
+    Regex byte_pattern = regex_compile('b')
+    print(regex_find_start(byte_pattern, 'abc'))
+    print(regex_find_start_from(byte_pattern, 'abc', 0))
+    print(regex_find_start_from(byte_pattern, 'abc', 1))
+    print(regex_find_start_from(byte_pattern, 'abc', 2))
+    print(regex_find_start_from(byte_pattern, 'abc', 3))
+    print(regex_find_start_from(byte_pattern, 'abc', -1))
+    print(regex_find_start_from(byte_pattern, 'abc', 4))
+
+    Regex empty = regex_compile('')
+    print(regex_find_start_from(empty, '', 0))
+    print(regex_find_start_from(empty, 'abc', 0))
+    print(regex_find_start_from(empty, 'abc', 2))
+    print(regex_find_start_from(empty, 'abc', 3))
+
+    Regex nullable = regex_compile('a*')
+    print(regex_find_start_from(nullable, 'baac', 0))
+    print(regex_find_start_from(nullable, 'baac', 1))
+    print(regex_find_start_from(nullable, 'baac', 3))
+    print(regex_find_start_from(nullable, 'baac', 4))
+
+    Regex delayed = regex_compile('a.*z|b.*z')
+    print(regex_find_start_from(delayed, 'ab123z', 0))
+    print(regex_find_start_from(delayed, 'ab123z', 1))
+    print(regex_find_start_from(delayed, 'ab123z', 2))
+
+    Regex absolute_start = regex_compile('^a')
+    print(regex_find_start_from(absolute_start, 'ab', 0))
+    print(regex_find_start_from(absolute_start, 'ab', 1))
+    Regex absolute_end = regex_compile('$')
+    print(regex_find_start_from(absolute_end, 'abc\n', 0))
+    print(regex_find_start_from(absolute_end, 'abc\n', 3))
+    print(regex_find_start_from(absolute_end, 'abc\n', 4))
+
+    Regex invalid = regex_compile('(')
+    print(regex_find_start_from(invalid, 'abc', 0))
+    print(regex_find_start_from(regex_compile('x'), 'éx', 0))
+    print(regex_find_start_from(regex_compile('x'), 'éx', 1))
+    return 0
 
 int main(string[] args):
-    int seed = args.length() + 4
-    print(global_items.length())
-    print(global_items[3].value)
-    print(global_rows.length())
-    print(global_rows[4][0].value)
-
-    item_calls = 0
-    map<int, Item> items = {seed: make_item(10, 'first'), -seed: make_item(20, 'negative'), seed + 1: make_item(31, 'next-first'), seed + 2 - 1: make_item(32, 'next-last')}
-    print(item_calls)
-    print(items.length())
-    print(items[seed].value)
-    print(items[seed + 1].value)
-    string[] item_order = items.keys()
-    print(item_order[0])
-    print(item_order[1])
-    print(item_order[2])
-
-    map<int, Item> copied_items = items
-    copied_items[seed] = Item(90, 'copy')
-    print(items[seed].value)
-    print(copied_items[seed].value)
-
-    const map<int, Item> fixed_items = {1: Item(1, 'const-old'), 1: Item(2, 'const-last')}
-    print(fixed_items.length())
-    print(fixed_items[1].value)
-
-    Item[] source = [Item(seed + 40, 'source')]
-    Item[] no_items = []
-    map<int, Item[]> rows = {seed: source, -seed: no_items, seed: make_row(seed + 20), seed + 1: [Item(50, 'row-first')], seed + 2 - 1: [Item(60, 'row-last')]}
-    source[0].value = 900
-    print(rows.length())
-    print(rows[seed][0].value)
-    print(rows[-seed].length())
-    print(rows[seed + 1][0].value)
-    string[] row_order = rows.keys()
-    print(row_order[0])
-    print(row_order[1])
-
-    map<int, Item[]> copied_rows = rows
-    copied_rows[seed][0] = Item(777, 'row-copy')
-    print(rows[seed][0].value)
-    print(copied_rows[seed][0].value)
-
-    ItemMaps catalog = ItemMaps(items, rows)
-    catalog.singles[seed] = Item(88, 'field-single')
-    catalog.rows[seed] = make_row(89)
-    print(items[seed].value)
-    print(catalog.singles[seed].value)
-    print(rows[seed][0].value)
-    print(catalog.rows[seed][0].value)
-
-    Item[] empty_items = []
-    map<int, Item[]> empty_last = {0: make_row(70), 0: empty_items}
-    print(empty_last.length())
-    print(empty_last[0].length())
-    map<int, Empty> zero_fields = {0: Empty(), 0: Empty()}
-    print(zero_fields.length())
-    Empty[] no_empty_records = []
-    map<int, Empty[]> empty_records = {1: [Empty()], 1: no_empty_records}
-    print(empty_records.length())
-    print(empty_records[1].length())
-
-    map<int, Item> returned = returned_items(seed)
-    print(returned.length())
-    print(returned[seed].value)
-    map<int, Item[]> returned_array = returned_rows(seed)
-    print(returned_array.length())
-    print(returned_array[seed][0].value)
-
-    map<int, Item> loop_items = {}
-    item_calls = 0
-    for (int index : range(3)):
-        loop_items = {seed: make_item(index, 'loop-old'), seed: make_item(index + 10, 'loop-last')}
-    print(item_calls)
-    print(loop_items.length())
-    print(loop_items[seed].value)
-
-    map<int, bool> flags = {1: false, 2: false, 1: true}
-    print(flags.length())
-    print(flags[1])
-    map<int, int> counts = {1: 10, 2: 20}
-    print(counts.length())
-    print(counts[2])
-    map<string, Item> words = {'same': Item(1, 'old'), 'other': Item(2, 'other'), 'same': Item(3, 'last')}
-    print(words.length())
-    print(words['same'].value)
+    print('=== case 1 ===')
+    if (combined_case_1_main() != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main() != 0):
+        return 1
+    print('=== case 3 ===')
+    if (combined_case_3_main() != 0):
+        return 1
     return 0

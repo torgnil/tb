@@ -1,32 +1,10 @@
-record Point(int x);
+int combine(int left, int right):
+    return left + right
 
 int main(string[] args):
-    int point_total = 0
-    int seed = args.length()
-    Point[] points = [Point(seed),Point(seed+2)]
-    for (const Point point : points) {
-        point_total += point.x
-        continue
-    }
-    thread_pool pool = thread_pool(2)
-    int bound = args.length() + 4
-    future<int> result = pool.submit(() -> {
-        int total = 0
-        for (const int item : range(1, bound)) {
-            total += item
-        }
-        return total
+    int[] values = [1]
+    int[] mapped = values.map_to(int item -> {
+        return combine(item)
     })
-    future<bool> positive = pool.submit(int limit -> {
-        for (const int item : range(limit)) {
-            if (item == 0) {
-                continue
-            }
-        }
-        return limit > 1
-    }, args.length())
-    print(point_total)
-    print(points[1].x)
-    print(result.await())
-    print(positive.await())
+    print(mapped.length())
     return 0

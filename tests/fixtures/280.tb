@@ -1,86 +1,10 @@
-int increment(int value):
-    return value + 1
+string text_for(int value):
+    return 'value'
 
-int named_worker(int value):
-    return value + 10
+bool matches(string value):
+    return value == 'value'
 
 int main(string[] args):
-    thread_pool pool = thread_pool(2)
-    int bound = args.length() - 1
-
-    future<int> sum = pool.submit(int value -> {
-        int total = 0
-        const bool enabled = value > 0
-        for (int index = 0; enabled && index < value; index = increment(index)) {
-            total += index
-        }
-        return total
-    }, bound)
-    future<int> assigned = pool.submit(int value -> {
-        int index = -1
-        for (index = 0; index < value; index += 1) {
-        }
-        return index
-    }, bound)
-    future<int> omitted_condition = pool.submit(int value -> {
-        int total = 0
-        for (int index = 0; ; index += 1) {
-            if (index == 2) {
-                break
-            }
-            total += 1
-        }
-        return total
-    }, bound)
-    future<int> nested = pool.submit(int value -> {
-        int total = 0
-        for (int outer = 0; outer < value; outer += 1) {
-            int inner = 0
-            while (inner < 3) {
-                inner += 1
-                if (inner == 1) {
-                    continue
-                }
-                if (outer == 1) {
-                    break
-                }
-                total += outer + inner
-            }
-        }
-        return total
-    }, args.length() + 2)
-    future<bool> toggled = pool.submit(bool flag -> {
-        bool result = flag
-        for (int index = 0; index < 2; index++) {
-            if (index == 0) {
-                continue
-            }
-            result = !result
-        }
-        return result
-    }, true)
-    future<int> early = pool.submit(int value -> {
-        if (value < 0) {
-            return -1
-        }
-        for (int index = 0; index < value; index++) {
-            if (index == 1) {
-                return 9
-            }
-        }
-        return 4
-    }, bound)
-    future<int> named = pool.submit(named_worker, 2)
-    future<int> expression = pool.submit(int value -> value * 3, 4)
-
-    print(sum.await())
-    print(sum.await())
-    print(assigned.await())
-    print(omitted_condition.await())
-    print(nested.await())
-    print(nested.await())
-    print(toggled.await())
-    print(early.await())
-    print(named.await())
-    print(expression.await())
-    return 0
+    int[] values = [1, 2]
+    int[] selected = values.filter(int item -> matches(text_for(item)))
+    return selected.length()

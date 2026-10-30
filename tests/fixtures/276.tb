@@ -1,58 +1,7 @@
-int score = 100
-
-int twice(int value):
-    return value * 2
+bool positive(int value):
+    return value > 0
 
 int main(string[] args):
-    thread_pool pool = thread_pool(2)
-    future<int> calculated = pool.submit(int value -> {
-        int score = twice(value)
-        score += 1
-        const int result = score
-        if (value > 0) {
-            bool positive = result > 0
-            if (positive) {
-                return result
-            } else {
-                return 0
-            }
-        } else {
-            int fallback = 7
-            return fallback
-        }
-    }, args.length())
-    print(calculated.await())
-    print(calculated.await())
-
-    future<bool> inverted = pool.submit(bool flag -> {
-        bool result = flag
-        result = !result
-        const bool stable = result
-        return stable
-    }, args.length() == 1)
-    print(inverted.await())
-
-    future<int> fallback = pool.submit(int value -> {
-        if (value > 0) {
-            return value
-        } else {
-            int fallback_value = 7
-            return fallback_value
-        }
-    }, 0 - args.length())
-    print(fallback.await())
-
-    future<int> changed_parameter = pool.submit(int value -> {
-        value += 4
-        return value
-    }, args.length())
-    print(changed_parameter.await())
-
-    for (int index : range(args.length() - 1)) {
-        future<int> loop_value = pool.submit(int value -> {
-            int offset = value + 1
-            return offset
-        }, index + args.length())
-        print(loop_value.await())
-    }
-    return 0
+    int[] values = [1, 2]
+    int[] mapped = values.map_to(int item -> positive(item))
+    return mapped.length()
