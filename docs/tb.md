@@ -766,6 +766,14 @@ spans `[0, 0)`, `[1, 1)`, `[2, 2)`, and `[3, 3)`. Captured groups are not
 included. Each later search reuses `regex_find_from` and may rescan the input;
 for k matches, the work can be O((k+1)*n*m^2), plus bracket scans, with
 O(n+m^2) working space in addition to the output.
+`regex_replace(program, text, replacement)` replaces every span returned by
+`regex_find_all` from left to right and preserves the intervening text. The
+replacement is literal: `$1` and backslashes are copied without interpolation.
+An invalid program or no matches returns the original text. Empty matches use
+the same byte-boundary progress as `regex_find_all`, including one insertion
+at the end boundary. Anchors continue to refer to the complete original input.
+For example, `regex_replace(regex_compile('a+'), 'aa baaa', 'X')` returns
+`'X bX'`. Capture expansion and offset-bounded replacement are not provided.
 The span search uses ordered NFA paths and tracks progress through nested
 repetitions. It processes at most O(m^2) distinct states at each input boundary;
 with amortized constant-time map operations this is O(n*m^2) work, plus bracket

@@ -1198,6 +1198,19 @@ RegexMatch[] regex_find_all_from(Regex program, string text, int start):
 RegexMatch[] regex_find_all(Regex program, string text):
     return regex_find_all_from(program, text, 0)
 
+string regex_replace(Regex program, string text, string replacement):
+    RegexMatch[] matches = regex_find_all(program, text)
+    if (matches.is_empty()):
+        return text
+    string[] parts = []
+    int copied_until = 0
+    for (RegexMatch match : matches):
+        parts.push(text.substring(copied_until, match.start))
+        parts.push(replacement)
+        copied_until = match.end
+    parts.push(text.substring(copied_until))
+    return parts.join('')
+
 # Decimal metadata is validated before conversion, including for programs
 # manually constructed or modified by a caller.
 int regex_capture_number(string text, int limit):
