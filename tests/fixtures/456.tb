@@ -1,0 +1,90 @@
+string maybe_text(bool should_throw, string message):
+    if (should_throw):
+        throw message
+    return 'x'
+
+string replace_existing_value(map<int[], string> target, bool should_throw):
+    target[[2]] = 'RHS replacement'
+    if (should_throw):
+        throw 'existing string compound RHS failed'
+    return '!'
+
+string mutate_assignment_key(map<int[], string> target, int[] key, bool should_throw):
+    key[0] = 8
+    if (should_throw):
+        throw 'key snapshot string assignment failed'
+    return 'key value'
+
+int main(string[] args):
+    bool should_throw = args.length() > 1
+    map<int[], string> values = {[1]: 'seed', [2]: 'prior'}
+
+    try {
+        values[[1]] = maybe_text(should_throw, 'string map assignment failed')
+    } catch (exception error) {
+        print(error)
+    }
+    print(values[[1]])
+
+    try {
+        values[[3]] += maybe_text(should_throw, 'string map compound failed')
+    } catch (exception error) {
+        print(error)
+    }
+    print(values.contains([3]))
+    if (values.contains([3])):
+        print(values[[3]])
+
+    values[[6]] += 42
+    print(values[[6]])
+
+    try {
+        values[[2]] += replace_existing_value(values, should_throw)
+    } catch (exception error) {
+        print(error)
+    }
+    print(values[[2]])
+
+    try {
+        values[[2]] += replace_existing_value(values, true)
+    } catch (exception error) {
+        print(error)
+    }
+    print(values[[2]])
+
+    try {
+        try {
+            values[[5]] = maybe_text(true, 'nested string map failure')
+        } catch (exception inner) {
+            print('inner:' + inner)
+            throw inner
+        }
+    } catch (exception outer) {
+        print('outer:' + outer)
+    }
+
+    for (int index : range(0, 3)):
+        try {
+            values[[index + 10]] += maybe_text(should_throw, 'loop string compound failed')
+        } catch (exception error) {
+            print(error)
+        }
+
+    try {
+        values[[4]] = 'guard completed'
+        string ignored = maybe_text(true, 'throw after successful string guard')
+    } catch (exception error) {
+        print(error)
+    }
+    print(values[[4]])
+
+    int[] mutable_key = [7]
+    try {
+        values[mutable_key] = mutate_assignment_key(values, mutable_key, should_throw)
+    } catch (exception error) {
+        print(error)
+    }
+    print(values.contains([7]))
+    print(values.contains([8]))
+    print(mutable_key.length())
+    return 0

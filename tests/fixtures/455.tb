@@ -1,0 +1,48 @@
+map<int[], string> global_labels = {[1]: 'global'}
+const map<int[], string> fixed_global = {[2]: 'fixed-global'}
+
+record LabelBox(map<int[], string> labels);
+
+string owned_text():
+    return 'owned result'
+
+map<int[], string> make_labels():
+    return {[3]: owned_text(), [4]: 'temporary'}
+
+map<int[], string> return_labels(map<int[], string> source):
+    return source
+
+int main():
+    string local_text = 'borrowed local'
+    map<int[], string> source = {[5]: local_text, [6]: owned_text()}
+    source[[5]] = source[[5]]
+    print(source[[5]])
+    map<int[], string> copied = source
+    copied[[5]] = 'copy replacement'
+    print(source[[5]])
+    print(copied[[5]])
+    print(source[[6]])
+
+    copied = return_labels(source)
+    source[[6]] = 'source replacement'
+    print(copied[[6]])
+    print(source[[6]])
+
+    LabelBox box = LabelBox(source)
+    source[[5]] = 'source field replacement'
+    print(box.labels[[5]])
+    print(source[[5]])
+
+    string temporary_read = make_labels()[[3]]
+    string[] temporary_values = make_labels().values()
+    map<int[], string> churn = make_labels()
+    churn[[90]] = 'replace'
+    print(temporary_read)
+    print(temporary_values[0])
+    print(churn[[90]])
+
+    print(global_labels[[1]])
+    print(fixed_global[[2]])
+    global_labels[[1]] = 'global replacement'
+    print(global_labels[[1]])
+    return 0

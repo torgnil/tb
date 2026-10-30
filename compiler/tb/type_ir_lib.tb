@@ -271,7 +271,7 @@ RefineInstructionsResult contextualize_call_array_literal(LinearInstruction[] in
 
 RefineInstructionsResult contextualize_array_map_key(LinearInstruction[] instructions, string[] temp_types, string map_name, string key_name):
     string map_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, map_name))
-    if (map_type != 'map<int[], int>'):
+    if (map_type != 'map<int[], int>' && map_type != 'map<int[], string>'):
         return RefineInstructionsResult(instructions, temp_types)
     string key_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, key_name))
     if (!is_untyped_array_shape(key_type)):
@@ -693,7 +693,7 @@ bool type_contains_unsupported_array_map_key_inner(string type_name, bool allow_
     if (normalized_type.starts_with('map<') && normalized_type.ends_with('>')):
         string key_type = normalize_llvm_type_name(map_key_type(normalized_type))
         string value_type = normalize_llvm_type_name(map_value_type(normalized_type))
-        if (key_type == 'int[]' && (normalized_type != 'map<int[], int>' || !allow_root_array_key_map)):
+        if (key_type == 'int[]' && ((normalized_type != 'map<int[], int>' && normalized_type != 'map<int[], string>') || !allow_root_array_key_map)):
             return true
         return type_contains_unsupported_array_map_key_inner(key_type, false) || type_contains_unsupported_array_map_key_inner(value_type, false)
     if (normalized_type.ends_with('[]')):
@@ -705,7 +705,7 @@ bool type_contains_unsupported_array_map_key(string type_name):
 
 void validate_int_array_map_key_type(string type_name):
     if (type_contains_unsupported_array_map_key(type_name)):
-        throw 'int[] map keys are only supported for map<int[], int>: ' + type_name
+        throw 'int[] map keys are only supported for map<int[], int> and map<int[], string>: ' + type_name
 
 void validate_int_array_map_key_types(ProgramIR program):
     for (GlobalDeclIR global_decl in program.globals):
@@ -786,7 +786,7 @@ RefineInstructionsResult contextualize_map_literal_rows(LinearInstruction[] inst
     string row_type = normalize_llvm_type_name(map_value_type(normalized_expected_type))
     bool array_rows = is_supported_empty_map_array_value_type(record_names, row_type)
     bool map_rows = row_type.starts_with('map<') && row_type.ends_with('>')
-    bool array_key_map = key_type == 'int[]' && row_type == 'int'
+    bool array_key_map = key_type == 'int[]' && (row_type == 'int' || row_type == 'string')
     if ((key_type != 'int' && key_type != 'string' && !array_key_map) || (!array_key_map && !array_rows && !map_rows)):
         return RefineInstructionsResult(instructions, temp_types)
     LinearInstruction map_op = lookup_instruction(instructions, map_name)
@@ -1272,6 +1272,8 @@ string infer_method_call_type(string method_name, string base_type, FunctionSigI
         string value_type = map_value_type(base_type)
         if (normalize_llvm_type_name(map_key_type(base_type)) == 'int[]' && normalize_llvm_type_name(value_type) == 'int'):
             return 'int[]'
+        if (normalize_llvm_type_name(map_key_type(base_type)) == 'int[]' && normalize_llvm_type_name(value_type) == 'string'):
+            return 'string[]'
         if (value_type == 'int[]'):
             return 'int[][]'
         if (value_type == 'string[]'):
@@ -2129,7 +2131,7 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             return op
         string index_type = lookup_temp_type_slot(temp_types, op.args[1])
         string target_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[0]))
-        if (target_type == 'map<int[], int>'):
+        if (target_type == 'map<int[], int>' || target_type == 'map<int[], string>'):
             return refined_value_op(op, index_type, 'owned')
         return refined_value_op(op, index_type, refine_ownership_mode(op, index_type))
     if (op.detail == 'map-key-snapshot'):
@@ -2139,7 +2141,7 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             return op
         string index_type = lookup_temp_type_slot(temp_types, op.args[1])
         string target_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[0]))
-        if (target_type == 'map<int[], int>'):
+        if (target_type == 'map<int[], int>' || target_type == 'map<int[], string>'):
             return refined_value_op(op, index_type, 'owned')
         return refined_value_op(op, index_type, refine_ownership_mode(op, index_type))
     if (op.detail == 'index'):
@@ -2162,6 +2164,8 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
         if (base_type.starts_with('map<')):
             string result_type = map_value_type(base_type)
+            if (normalize_llvm_type_name(base_type) == 'map<int[], string>'):
+                return refined_value_op(op, result_type, 'managed')
             return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
         return op
     if (op.detail == 'slice'):
@@ -2508,6 +2512,12 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                                 actual_value_type = expected_value_type
                     if (actual_value_type != expected_value_type):
                         throw 'map element assignment requires ' + expected_value_type + '; got ' + actual_value_type
+        if (current.kind == 'assign_index_add' && current.args.length() >= 3):
+            string compound_base_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[0]))
+            if (compound_base_type == 'map<int[], string>'):
+                string compound_value_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[2]))
+                if (compound_value_type != 'string' && compound_value_type != 'int'):
+                    throw 'map string += requires string or int value; got ' + compound_value_type
         if (current.kind == 'assign_local'):
             string binding_type = lookup_binding_type(bindings, current.detail)
             if (current.args.length() == 1):
@@ -2665,7 +2675,7 @@ LinearInstruction[] flatten_type_function_instructions(ParsedFunction function_i
         result = append_instructions(result, block.instructions)
     return result
 
-ParsedFunction guard_one_int_array_map_assignment(ParsedFunction function_ir, string key_temp):
+ParsedFunction guard_one_int_array_map_assignment(ParsedFunction function_ir, string key_temp, string map_name, bool preserve_old_string):
     string catch_label = 'map.key.guard.catch.' + key_temp
     string after_label = 'map.key.guard.after.' + key_temp
     int key_block_index = -1
@@ -2679,7 +2689,7 @@ ParsedFunction guard_one_int_array_map_assignment(ParsedFunction function_ir, st
             if (op.kind == 'value' && (op.detail == 'target-index' || op.detail == 'assign-index-key') && op.lhs == key_temp):
                 key_block_index = block_index
                 key_instruction_index = instruction_index
-            if (op.kind == 'assign_index'):
+            if (op.kind == 'assign_index' || op.kind == 'assign_index_add'):
                 if (op.args.length() == 3):
                     if (op.args[1] == key_temp):
                         assign_block_index = block_index
@@ -2695,6 +2705,8 @@ ParsedFunction guard_one_int_array_map_assignment(ParsedFunction function_ir, st
             # The guard owns this cloned key snapshot; ordinary temp cleanup must not free it.
             guarded_key_instructions.push(LinearInstruction(op.kind, op.lhs, op.result_type, 'borrowed', op.detail, clone_instruction_args(op.args)))
             guarded_key_instructions.push(LinearInstruction('map_key_guard_snapshot', '', '', '', catch_label, [key_temp]))
+            if (preserve_old_string):
+                guarded_key_instructions.push(LinearInstruction('map_key_guard_value_snapshot', '', '', '', catch_label, [map_name, key_temp]))
             guarded_key_instructions.push(LinearInstruction('try', '', '', '', catch_label, []))
         else:
             guarded_key_instructions.push(op)
@@ -2714,7 +2726,7 @@ ParsedFunction guard_one_int_array_map_assignment(ParsedFunction function_ir, st
         BlockIR block = function_ir.blocks[block_index]
         for (int instruction_index = 0; instruction_index < block.instructions.length(); instruction_index += 1):
             LinearInstruction op = block.instructions[instruction_index]
-            if (op.kind == 'assign_index'):
+            if (op.kind == 'assign_index' || op.kind == 'assign_index_add'):
                 if (op.args.length() == 3):
                     if (op.args[1] == key_temp):
                         assign_block_index = block_index
@@ -2744,14 +2756,91 @@ ParsedFunction guard_one_int_array_map_assignment(ParsedFunction function_ir, st
             blocks.push(function_ir.blocks[block_index])
     return ParsedFunction(function_ir.header, function_ir.name, function_ir.source_name, function_ir.module_id, function_ir.is_private, function_ir.return_type, function_ir.params, function_ir.locals, blocks)
 
-ParsedFunction guard_int_array_map_assignments(ParsedFunction function_ir):
+int count_temp_uses(LinearInstruction[] instructions, string temp_name):
+    int count = 0
+    for (LinearInstruction op in instructions):
+        for (string arg in op.args):
+            if (arg == temp_name):
+                count += 1
+    return count
+
+ParsedFunction normalize_array_string_compound_assignments(ParsedFunction function_ir):
     LinearInstruction[] all_instructions = flatten_type_function_instructions(function_ir)
-    string[] guard_keys = []
+    string[] removed_temps = []
+    string[] add_rhs_temps = []
+    string[] add_map_temps = []
+    string[] add_key_temps = []
     for (LinearInstruction op in all_instructions):
         if (op.kind != 'assign_index' || op.args.length() != 3):
             continue
+        string map_type = normalize_llvm_type_name(lookup_temp_type(all_instructions, op.args[0]))
+        if (map_type != 'map<int[], string>'):
+            continue
+        LinearInstruction add_op = lookup_instruction(all_instructions, op.args[2])
+        if (add_op.kind != 'value' || add_op.detail != 'binary' || add_op.args.length() != 3):
+            continue
+        if (add_op.args[0] != '+'):
+            continue
+        LinearInstruction old_value_op = lookup_instruction(all_instructions, add_op.args[1])
+        if (old_value_op.kind != 'value' || old_value_op.detail != 'index' || old_value_op.args.length() != 2):
+            continue
+        if (old_value_op.args[0] != op.args[0] || old_value_op.args[1] != op.args[1]):
+            continue
+        if (count_temp_uses(all_instructions, add_op.lhs) != 1 || count_temp_uses(all_instructions, old_value_op.lhs) != 1):
+            continue
+        LinearInstruction key_op = lookup_instruction(all_instructions, op.args[1])
+        if (key_op.kind != 'value' || key_op.detail != 'target-index' || key_op.args.length() != 2):
+            continue
+        if (key_op.args[0] != op.args[0]):
+            continue
+        string rhs_type = normalize_llvm_type_name(lookup_temp_type(all_instructions, add_op.args[2]))
+        if (rhs_type != 'string' && rhs_type != 'int'):
+            throw 'map string += requires string or int value; got ' + rhs_type
+        removed_temps.push(add_op.lhs)
+        removed_temps.push(old_value_op.lhs)
+        add_rhs_temps.push(add_op.args[2])
+        add_map_temps.push(op.args[0])
+        add_key_temps.push(op.args[1])
+    if (add_rhs_temps.is_empty()):
+        return function_ir
+    BlockIR[] normalized_blocks = []
+    for (BlockIR block in function_ir.blocks):
+        LinearInstruction[] normalized_instructions = []
+        for (LinearInstruction op in block.instructions):
+            bool remove_instruction = false
+            for (string removed_temp in removed_temps):
+                if (op.lhs == removed_temp):
+                    remove_instruction = true
+            if (remove_instruction):
+                continue
+            bool replaced = false
+            if (op.kind == 'assign_index' && op.args.length() == 3):
+                int normalized_index = 0
+                while (normalized_index < add_rhs_temps.length()):
+                    if (op.args[0] == add_map_temps[normalized_index] && op.args[1] == add_key_temps[normalized_index]):
+                        normalized_instructions.push(LinearInstruction('assign_index_add', '', '', '', '', [add_map_temps[normalized_index], add_key_temps[normalized_index], add_rhs_temps[normalized_index]]))
+                        replaced = true
+                        break
+                    normalized_index += 1
+            if (!replaced):
+                normalized_instructions.push(op)
+        normalized_blocks.push(BlockIR(block.label, normalized_instructions, block.terminator))
+    return ParsedFunction(function_ir.header, function_ir.name, function_ir.source_name, function_ir.module_id, function_ir.is_private, function_ir.return_type, function_ir.params, function_ir.locals, normalized_blocks)
+
+ParsedFunction guard_int_array_map_assignments(ParsedFunction function_ir):
+    function_ir = normalize_array_string_compound_assignments(function_ir)
+    LinearInstruction[] all_instructions = flatten_type_function_instructions(function_ir)
+    string[] guard_keys = []
+    string[] guard_maps = []
+    bool[] guard_preserve_old_strings = []
+    for (LinearInstruction op in all_instructions):
+        if ((op.kind != 'assign_index' && op.kind != 'assign_index_add') || op.args.length() != 3):
+            continue
         string base_type = normalize_llvm_type_name(lookup_temp_type(all_instructions, op.args[0]))
-        if (base_type != 'map<int[], int>'):
+        if (base_type != 'map<int[], int>' && base_type != 'map<int[], string>'):
+            continue
+        bool preserve_old_string = op.kind == 'assign_index_add' && base_type == 'map<int[], string>'
+        if (op.kind == 'assign_index_add' && base_type != 'map<int[], string>' && base_type != 'map<int[], int>'):
             continue
         bool found_key = false
         for (LinearInstruction key_op in all_instructions):
@@ -2759,9 +2848,11 @@ ParsedFunction guard_int_array_map_assignments(ParsedFunction function_ir):
                 found_key = true
         if (found_key):
             guard_keys.push(op.args[1])
+            guard_maps.push(op.args[0])
+            guard_preserve_old_strings.push(preserve_old_string)
     int guard_index = guard_keys.length() - 1
     while (guard_index >= 0):
-        function_ir = guard_one_int_array_map_assignment(function_ir, guard_keys[guard_index])
+        function_ir = guard_one_int_array_map_assignment(function_ir, guard_keys[guard_index], guard_maps[guard_index], guard_preserve_old_strings[guard_index])
         guard_index -= 1
     return function_ir
 
