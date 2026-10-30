@@ -1593,6 +1593,11 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
     if (op.detail == 'call'):
         if (op.args.is_empty()):
             return op
+        if (op.args[0] == 'to_int'):
+            if (op.args.length() == 2):
+                string to_int_argument_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
+                if (to_int_argument_type != '' && to_int_argument_type != 'unknown' && to_int_argument_type != 'string'):
+                    throw 'to_int requires a string argument, got: ' + to_int_argument_type
         if (op.args[0] == 'random_bits' && lookup_function_return_type(functions, op.args[0]) == 'unknown' && record_type_exists(record_names, op.args[0])):
             return refined_value_op(op, op.args[0], refine_ownership_mode(op, op.args[0]))
         string result_type = infer_call_type_cached(op.args[0], functions, TYPE_IR_FUNCTION_TYPE_CACHE_NAMES, TYPE_IR_FUNCTION_TYPE_CACHE_VALUES)
@@ -1797,6 +1802,8 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
         if (method_name == 'slice' && (normalized_base_type == 'bool[]' || normalized_base_type == 'int[]' || normalized_base_type == 'string[]') && lookup_function_return_type(functions, method_name) == 'unknown'):
             throw 'array slice methods are not supported; use values[start:end]'
         if (method_name == 'to_int' && normalized_base_type == 'string'):
+            if (op.args.length() != 2):
+                throw 'to_int expects no arguments'
             return refined_value_op(op, 'int', 'plain')
         if (method_name == 'to_num'):
             if (lookup_function_return_type(functions, method_name) == 'unknown'):
