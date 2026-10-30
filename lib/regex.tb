@@ -508,6 +508,74 @@ int regex_postfix_operation(int kind):
             return REGEX_NFA_END
     return 0
 
+# SAVE states have one unconditional successor. Their otherwise-unused out2
+# stores destination * (state_count + 1) + distance, where destination is the
+# first non-SAVE successor and distance counts the SAVE states on that path.
+# Resolve each state once while compiling; capture matching keeps using out1.
+# Array lengths are at most 2^31-1, so this encoding fits in a signed int.
+void regex_cache_save_destinations(int[] operations, int[] out1, int[] out2):
+    int count = operations.length()
+    int stride = count + 1
+    int[] pending = []
+    for (int index = 0; index < count; index += 1):
+        if (operations[index] != REGEX_NFA_SAVE || out2[index] >= 0):
+            continue
+        pending.clear()
+        int state = index
+        while (true):
+            if (state < 0 || state >= count):
+                return
+            if (operations[state] != REGEX_NFA_SAVE || out2[state] >= 0):
+                break
+            if (pending.length() >= count):
+                # Compiler-generated graphs have no SAVE-only cycles; if that
+                # ever changes, leave the cache incomplete and use fallback.
+                return
+            pending.push(state)
+            state = out1[state]
+        int destination = state
+        int distance = 0
+        if (operations[state] == REGEX_NFA_SAVE):
+            destination = out2[state] / stride
+            distance = out2[state] % stride
+        while (!pending.is_empty()):
+            int saved = pending.pop()
+            distance += 1
+            out2[saved] = destination * stride + distance
+
+# Regex fields are public and can be changed after compilation. Check every
+# SAVE certificate before using the cache; a missing or stale certificate falls
+# back to ordinary epsilon traversal. The distance must strictly decrease along
+# a SAVE edge, so forged SAVE-only cycles cannot certify themselves.
+bool regex_save_cache_valid(Regex program):
+    int count = program.operations.length()
+    if (program.out1.length() != count || program.out2.length() != count):
+        return false
+    int stride = count + 1
+    bool has_saves = false
+    for (int state = 0; state < count; state += 1):
+        if (program.operations[state] != REGEX_NFA_SAVE):
+            continue
+        has_saves = true
+        int encoded = program.out2[state]
+        int next = program.out1[state]
+        if (encoded < 0 || next < 0 || next >= count):
+            return false
+        int destination = encoded / stride
+        int distance = encoded % stride
+        if (destination < 0 || destination >= count || distance < 1):
+            return false
+        if (program.operations[next] == REGEX_NFA_SAVE):
+            int next_encoded = program.out2[next]
+            if (next_encoded < 0):
+                return false
+            if (destination != next_encoded / stride || distance != next_encoded % stride + 1):
+                return false
+        else:
+            if (destination != next || distance != 1):
+                return false
+    return has_saves
+
 Regex regex_compile(string pattern):
     RegexPostfix postfix = regex_postfix(pattern)
     if (!postfix.valid):
@@ -636,6 +704,8 @@ Regex regex_compile(string pattern):
             return regex_invalid()
         start = starts.pop()
         regex_patch(out1, out2, patches.pop(), match)
+    if (group_count != '0'):
+        regex_cache_save_destinations(operations, out1, out2)
     return Regex(true, start, operations, out1, out2, characters)
 
 # Queue the successors of an epsilon instruction, preserving split priority.
@@ -675,7 +745,7 @@ bool regex_queue_epsilon(Regex program, int state, int[] pending, bool at_start,
 # Add an epsilon closure once per input position. A state is visited at most
 # once even if repetition creates epsilon cycles. Invalid mutated programs
 # fail rather than indexing outside their instruction arrays.
-bool regex_add_state(Regex program, int state, int[] seen, int[] pending, int[] active, bool at_start, bool at_end):
+bool regex_add_state(Regex program, int state, int[] seen, int[] pending, int[] active, bool at_start, bool at_end, bool fast_saves):
     pending.push(state)
     while (!pending.is_empty()):
         int current = pending.pop()
@@ -683,6 +753,8 @@ bool regex_add_state(Regex program, int state, int[] seen, int[] pending, int[] 
             return false
         if (current >= program.operations.length()):
             return false
+        if (fast_saves && program.operations[current] == REGEX_NFA_SAVE):
+            current = program.out2[current] / (program.operations.length() + 1)
         if (seen[current] == 0):
             seen[current] = 1
             int operation = program.operations[current]
@@ -733,6 +805,7 @@ bool regex_match(Regex program, string text):
         return false
     if (program.out1.length() != count || program.out2.length() != count || program.characters.length() != count):
         return false
+    bool fast_saves = regex_save_cache_valid(program)
     int[] seen = range(count)
     seen.fill(0)
     int[] pending = []
@@ -743,7 +816,7 @@ bool regex_match(Regex program, string text):
     if (text_length > 0):
         final_lf = text[text_length - 1] == '\n'
     bool initial_end = text_length == 0 || (text_length == 1 && final_lf)
-    if (!regex_add_state(program, program.start, seen, pending, current, true, initial_end)):
+    if (!regex_add_state(program, program.start, seen, pending, current, true, initial_end, fast_saves)):
         return false
     # Copy once into a managed string so indexed byte reads use its cached
     # length instead of rescanning the borrowed input with strlen each time.
@@ -759,7 +832,7 @@ bool regex_match(Regex program, string text):
             if (regex_state_match(program, state, character) == REGEX_CLASS_MATCH):
                 int boundary = text_index + 1
                 bool at_end = boundary == text_length || (final_lf && boundary == text_length - 1)
-                if (!regex_add_state(program, program.out1[state], seen, pending, next, false, at_end)):
+                if (!regex_add_state(program, program.out1[state], seen, pending, next, false, at_end, fast_saves)):
                     return false
             index += 1
         current.clear()
@@ -783,6 +856,7 @@ bool regex_contains(Regex program, string text):
         return false
     if (program.out1.length() != count || program.out2.length() != count || program.characters.length() != count):
         return false
+    bool fast_saves = regex_save_cache_valid(program)
     # Materialize bytes once. The specialized split helper caches the source
     # length and walks it directly, so matching does not rescan borrowed text.
     string[] text_bytes = text.split('')
@@ -803,7 +877,7 @@ bool regex_contains(Regex program, string text):
                 return false
             seen[state] = 1
         bool at_end = text_index == text_length || (final_lf && text_index == text_length - 1)
-        if (!regex_add_state(program, program.start, seen, pending, current, text_index == 0, at_end)):
+        if (!regex_add_state(program, program.start, seen, pending, current, text_index == 0, at_end, fast_saves)):
             return false
         for (int state : current):
             if (program.operations[state] == REGEX_NFA_MATCH):
@@ -819,7 +893,7 @@ bool regex_contains(Regex program, string text):
             if (regex_state_match(program, state, character) == REGEX_CLASS_MATCH):
                 int boundary = text_index + 1
                 bool next_end = boundary == text_length || (final_lf && boundary == text_length - 1)
-                if (!regex_add_state(program, program.out1[state], seen, pending, next, false, next_end)):
+                if (!regex_add_state(program, program.out1[state], seen, pending, next, false, next_end, fast_saves)):
                     return false
             index += 1
         current.clear()
@@ -831,12 +905,14 @@ bool regex_contains(Regex program, string text):
 # Add one start-origin's epsilon closure. Callers process seeds in increasing
 # origin order and share seen across the boundary, so the first visit to a
 # state always carries its earliest possible start.
-bool regex_add_start_state(Regex program, int state, int start, int[] seen, int[] pending, int[] active, int[] active_starts, bool at_start, bool at_end):
+bool regex_add_start_state(Regex program, int state, int start, int[] seen, int[] pending, int[] active, int[] active_starts, bool at_start, bool at_end, bool fast_saves):
     pending.push(state)
     while (!pending.is_empty()):
         int current = pending.pop()
         if (current < 0 || current >= program.operations.length()):
             return false
+        if (fast_saves && program.operations[current] == REGEX_NFA_SAVE):
+            current = program.out2[current] / (program.operations.length() + 1)
         if (seen[current] == -1):
             seen[current] = start
             int operation = program.operations[current]
@@ -872,6 +948,7 @@ int regex_find_start_from(Regex program, string text, int start):
         return -1
     if (program.out1.length() != count || program.out2.length() != count || program.characters.length() != count):
         return -1
+    bool fast_saves = regex_save_cache_valid(program)
     string[] text_bytes = text.split('')
     int text_length = text_bytes.length()
     if (start < 0 || start > text_length):
@@ -889,7 +966,7 @@ int regex_find_start_from(Regex program, string text, int start):
     int best = -1
     int text_index = start
     bool initial_end = text_index == text_length || (final_lf && text_index == text_length - 1)
-    if (!regex_add_start_state(program, program.start, start, seen, pending, current, current_starts, start == 0, initial_end)):
+    if (!regex_add_start_state(program, program.start, start, seen, pending, current, current_starts, start == 0, initial_end, fast_saves)):
         return -1
     while (true):
         int index = 0
@@ -919,7 +996,7 @@ int regex_find_start_from(Regex program, string text, int start):
             if (match_result == REGEX_CLASS_MATCH):
                 int boundary = text_index + 1
                 bool at_end = boundary == text_length || (final_lf && boundary == text_length - 1)
-                if (!regex_add_start_state(program, program.out1[state], current_starts[index], seen, pending, next, next_starts, false, at_end)):
+                if (!regex_add_start_state(program, program.out1[state], current_starts[index], seen, pending, next, next_starts, false, at_end, fast_saves)):
                     return -1
             index += 1
         current.clear()
@@ -929,7 +1006,7 @@ int regex_find_start_from(Regex program, string text, int start):
             current_starts.push(next_starts[next_index])
         int boundary = text_index + 1
         bool at_end = boundary == text_length || (final_lf && boundary == text_length - 1)
-        if (!regex_add_start_state(program, program.start, boundary, seen, pending, current, current_starts, false, at_end)):
+        if (!regex_add_start_state(program, program.start, boundary, seen, pending, current, current_starts, false, at_end, fast_saves)):
             return -1
         text_index += 1
     return best
@@ -993,6 +1070,7 @@ RegexMatch regex_find_from(Regex program, string text, int start):
     if (!regex_search_program_valid(program)):
         return RegexMatch(false, -1, -1)
     int count = program.operations.length()
+    bool fast_saves = regex_save_cache_valid(program)
     string[] text_bytes = text.split('')
     int text_length = text_bytes.length()
     if (start < 0 || start > text_length):
@@ -1028,6 +1106,11 @@ RegexMatch regex_find_from(Regex program, string text, int start):
             int state = pending.pop()
             if (state < 0 || state >= count || depth < 0 || depth > count || progress < 0 || progress > depth):
                 return RegexMatch(false, -1, -1)
+            int operation = program.operations[state]
+            if (operation == REGEX_NFA_SAVE):
+                if (fast_saves):
+                    state = program.out2[state] / (count + 1)
+                    operation = program.operations[state]
             if (state_depth[state] == -1):
                 state_depth[state] = depth
             else if (state_depth[state] != depth):
@@ -1037,7 +1120,6 @@ RegexMatch regex_find_from(Regex program, string text, int start):
                 if (seen[key] == position):
                     continue
             seen[key] = position
-            int operation = program.operations[state]
             if (operation == REGEX_NFA_MATCH):
                 if (depth != 0):
                     return RegexMatch(false, -1, -1)
