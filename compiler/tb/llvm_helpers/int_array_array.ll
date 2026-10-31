@@ -1,11 +1,41 @@
 %tb_bootstrap_int_array_array = type { i32, ptr, ptr }
 define private ptr @tb_bootstrap_int_array_array_new(i32 %len) {
 entry:
+  %len.negative = icmp slt i32 %len, 0
+  br i1 %len.negative, label %invalid.length, label %allocate.array
+invalid.length:
+  call void @abort()
+  unreachable
+allocate.array:
   %array = call ptr @malloc(i64 24)
+  %array.failed = icmp eq ptr %array, null
+  br i1 %array.failed, label %array.abort, label %allocate.data
+array.abort:
+  call void @abort()
+  unreachable
+allocate.data:
   %len64 = sext i32 %len to i64
-  %bytes = mul i64 %len64, 8
+  %is.empty = icmp eq i32 %len, 0
+  %bytes.required = mul i64 %len64, 8
+  %bytes = select i1 %is.empty, i64 8, i64 %bytes.required
+  %alloc.len64 = select i1 %is.empty, i64 1, i64 %len64
   %data = call ptr @malloc(i64 %bytes)
-  %owned = call ptr @malloc(i64 %len64)
+  %data.failed = icmp eq ptr %data, null
+  br i1 %data.failed, label %data.abort, label %allocate.owned
+data.abort:
+  call void @free(ptr %array)
+  call void @abort()
+  unreachable
+allocate.owned:
+  %owned = call ptr @malloc(i64 %alloc.len64)
+  %owned.failed = icmp eq ptr %owned, null
+  br i1 %owned.failed, label %owned.abort, label %initialize
+owned.abort:
+  call void @free(ptr %data)
+  call void @free(ptr %array)
+  call void @abort()
+  unreachable
+initialize:
   call void @llvm.memset.p0.i64(ptr %data, i8 0, i64 %bytes, i1 false)
   call void @llvm.memset.p0.i64(ptr %owned, i8 0, i64 %len64, i1 false)
   %len.ptr = getelementptr inbounds %tb_bootstrap_int_array_array, ptr %array, i32 0, i32 0
@@ -117,6 +147,8 @@ grow:
   %allocation.failed = or i1 %data.failed, %owned.failed
   br i1 %allocation.failed, label %allocation.abort, label %allocation.ready
 allocation.abort:
+  call void @free(ptr %data.new)
+  call void @free(ptr %owned.new)
   call void @abort()
   unreachable
 allocation.ready:
