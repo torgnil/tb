@@ -1,0 +1,93 @@
+import regex;
+
+# Case 1
+
+int combined_case_1_main():
+    Regex literal = regex_compile('(ab|c)+')
+    print(regex_match(literal, 'abc'))
+    print(regex_contains(literal, 'xabc'))
+    print(regex_find_start(literal, 'xabc'))
+
+    Regex anchors = regex_compile('^a[0-9]?b$')
+    print(regex_match(anchors, 'a5b'))
+    print(regex_match(anchors, 'ab'))
+    print(regex_find_start(anchors, 'ab'))
+
+    Regex invalid_class = Regex(true, 0, [6, 4], [1, -1], [-1, -1], ['z-a', ''])
+    print(regex_match(invalid_class, 'z'))
+    print(regex_contains(invalid_class, 'z'))
+    print(regex_find_start(invalid_class, 'z'))
+    return 0
+
+# Case 2
+
+int combined_case_2_main():
+    print(regex_reserved('['))
+    print(regex_reserved('[]'))
+    print(regex_reserved(''))
+    print(regex_class_escape('D'))
+    print(regex_class_escape('dD'))
+    print(regex_class_escape(''))
+    print(regex_escapable('\\'))
+    print(regex_escapable('??'))
+    print(regex_escapable(''))
+    print(regex_class_matches('DW', 'a'))
+    print(regex_match(regex_compile('^a+b?c*$'), 'aabc'))
+    print(regex_match(regex_compile('^a+b?c*$'), 'zaabc'))
+    print(regex_escape('a*b+c?'))
+    return 0
+
+# Case 3
+
+int combined_case_3_main():
+    Regex byte_pattern = regex_compile('b')
+    print(regex_find_start(byte_pattern, 'abc'))
+    print(regex_find_start_from(byte_pattern, 'abc', 0))
+    print(regex_find_start_from(byte_pattern, 'abc', 1))
+    print(regex_find_start_from(byte_pattern, 'abc', 2))
+    print(regex_find_start_from(byte_pattern, 'abc', 3))
+    print(regex_find_start_from(byte_pattern, 'abc', -1))
+    print(regex_find_start_from(byte_pattern, 'abc', 4))
+
+    Regex empty = regex_compile('')
+    print(regex_find_start_from(empty, '', 0))
+    print(regex_find_start_from(empty, 'abc', 0))
+    print(regex_find_start_from(empty, 'abc', 2))
+    print(regex_find_start_from(empty, 'abc', 3))
+
+    Regex nullable = regex_compile('a*')
+    print(regex_find_start_from(nullable, 'baac', 0))
+    print(regex_find_start_from(nullable, 'baac', 1))
+    print(regex_find_start_from(nullable, 'baac', 3))
+    print(regex_find_start_from(nullable, 'baac', 4))
+
+    Regex delayed = regex_compile('a.*z|b.*z')
+    print(regex_find_start_from(delayed, 'ab123z', 0))
+    print(regex_find_start_from(delayed, 'ab123z', 1))
+    print(regex_find_start_from(delayed, 'ab123z', 2))
+
+    Regex absolute_start = regex_compile('^a')
+    print(regex_find_start_from(absolute_start, 'ab', 0))
+    print(regex_find_start_from(absolute_start, 'ab', 1))
+    Regex absolute_end = regex_compile('$')
+    print(regex_find_start_from(absolute_end, 'abc\n', 0))
+    print(regex_find_start_from(absolute_end, 'abc\n', 3))
+    print(regex_find_start_from(absolute_end, 'abc\n', 4))
+
+    Regex invalid = regex_compile('(')
+    print(regex_find_start_from(invalid, 'abc', 0))
+    print(regex_find_start_from(regex_compile('x'), 'éx', 0))
+    print(regex_find_start_from(regex_compile('x'), 'éx', 1))
+    return 0
+
+int main(string[] args):
+    print('=== case 1 ===')
+    if (combined_case_1_main() != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main() != 0):
+        return 1
+    print('=== case 3 ===')
+    if (combined_case_3_main() != 0):
+        return 1
+    return 0

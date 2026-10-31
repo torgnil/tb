@@ -1,0 +1,351 @@
+
+
+# Case 1
+record TextBox(string text, string[] words);
+
+string GLOBAL_TEXT = 'global-borrowed';
+
+void consume_text(string value):
+    print('void:' + value)
+
+int length_of(string value):
+    return value.length()
+
+int length_user(string value):
+    return value.length()
+
+int consume_pair(string first, string second):
+    print('pair:' + first + ':' + second)
+    return first.length() + second.length()
+
+string make_text(int value):
+    return 'call-' + value.to_string()
+
+string identity(string value):
+    return value
+
+TextBox make_box(string value):
+    return TextBox(value, [value])
+
+string[] make_words(string value):
+    return [value]
+
+string read_box(TextBox value):
+    return value.text
+
+int sum_user(int[] values):
+    return values.sum()
+
+void inspect_parameter(string value):
+    consume_text(value)
+    print('parameter-owner:' + value)
+
+int combined_case_1_main(string[] args):
+    int count = args.length()
+
+    consume_text('direct-' + count.to_string())
+    int direct_length = length_of('scalar-' + count.to_string())
+    print('scalar:' + direct_length.to_string())
+
+    string ufcs_text = 'ufcs-' + count.to_string()
+    ufcs_text.consume_text()
+    int ufcs_length = ufcs_text.length_of()
+    print('ufcs-scalar:' + ufcs_length.to_string())
+    int receiver_length = ('receiver-' + count.to_string()).length_user()
+    print('ufcs-owned-receiver:' + receiver_length.to_string())
+
+    string left = 'left-' + count.to_string()
+    string right = 'right-' + count.to_string()
+    int pair_length = consume_pair(left, right)
+    print('pair-length:' + pair_length.to_string())
+    string repeated = 'repeat-' + count.to_string()
+    int repeated_length = consume_pair(repeated, repeated)
+    print('repeat-length:' + repeated_length.to_string())
+
+    consume_text(make_text(count))
+    consume_text(identity(make_text(count + 1)))
+
+    string kept = identity('identity-' + count.to_string())
+    print('kept:' + kept)
+    TextBox box = make_box('box-' + count.to_string())
+    print('box:' + box.text + ':' + box.words[0])
+    string[] words = make_words('array-' + count.to_string())
+    print('array:' + words[0])
+    string retained_field = read_box(make_box(make_text(count + 4)))
+    print('retained-field:' + retained_field)
+
+    string local = 'local-' + count.to_string()
+    consume_text(local)
+    print('local-owner:' + local)
+    local = 'local-changed-' + count.to_string()
+    print('local-reassigned:' + local)
+    const string fixed = 'const-' + count.to_string()
+    consume_text(fixed)
+    print('const-owner:' + fixed)
+
+    inspect_parameter('parameter-' + count.to_string())
+    consume_text('literal')
+    consume_text(GLOBAL_TEXT)
+    print('global-owner:' + GLOBAL_TEXT)
+    TextBox field_box = TextBox('field-' + count.to_string(), ['field-array'])
+    consume_text(field_box.text)
+    print('field-owner:' + field_box.text)
+
+    string cached_source = 'cache-' + count.to_string()
+    string cached_last = cached_source.last()
+    consume_text(cached_last)
+    print('cache-last:' + cached_last)
+    consume_text(cached_source.last())
+    string cached_at = cached_source.char_at(1)
+    consume_text(cached_at)
+    print('cache-at:' + cached_at)
+    consume_text(cached_source.char_at(1))
+
+    int[] number_values = [count, count + 1]
+    print('sum-array:' + sum_user(number_values).to_string())
+    consume_pair(make_text(count), make_text(count + 1))
+    TextBox cleanup_box = make_box(make_text(count + 2))
+    print('record-control:' + cleanup_box.text)
+    string[] cleanup_words = make_words(make_text(count + 3))
+    print('array-control:' + cleanup_words[0])
+    print('array-arg:' + number_values[0].to_string())
+    print('sum-owned-array:' + sum_user([count + 2, count + 3]).to_string())
+    return 0
+
+# Case 2
+record MatrixBox(int[][] numbers, string[][] words);
+
+int[][] return_int_slice(int[][] source):
+    return source[-2:]
+
+string[][] return_string_slice(string[][] source):
+    return source[1:]
+
+int[][] local_int_slice(int value):
+    int[][] source = [[value, value + 1], [], [value + 2]]
+    return source[:]
+
+string[][] local_string_slice(int value):
+    string[][] source = [['left' + value], [], ['right' + value]]
+    return source[:]
+
+int row_value(int[][] rows):
+    return rows[0][0]
+
+int combined_case_2_main(string[] args):
+    int value = args.length() - 1
+    int[][] numbers = [[10 + value, 11 + value], [20 + value], []]
+    int[][] selected = numbers[-2:]
+    print(selected.length())
+    print(selected[0].length())
+    print(selected[1].length())
+    selected[0][0] = 99
+    print(numbers[1][0])
+    print(selected[0][0])
+    numbers[1][0] = 77
+    print(selected[0][0])
+    numbers[0:1]
+    int[][] complete_numbers = numbers[:]
+    print(complete_numbers.length())
+
+    int low = value - 99
+    int high = value + 99
+    int[][] negative = numbers[low:-1]
+    int[][] reversed = numbers[2:1]
+    int[][] low_empty = numbers[low:low]
+    int[][] high_empty = numbers[high:]
+    int[][] no_rows = []
+    int[][] empty_outer = no_rows[0:]
+    print(negative.length())
+    print(reversed.length())
+    print(low_empty.length())
+    print(high_empty.length())
+    print(empty_outer.length())
+
+    const int[][] fixed_numbers = [[30], [40, 41], []]
+    int[][] const_slice = fixed_numbers[-2:-1]
+    const_slice[0][0] = 88
+    print(fixed_numbers[1][0])
+    print(const_slice[0][0])
+
+    int[][] returned_numbers = return_int_slice(numbers)
+    returned_numbers[0][0] = 66
+    print(numbers[1][0])
+    print(returned_numbers[0][0])
+    int[][] local_survivor = local_int_slice(value)
+    print(local_survivor[0][0])
+    print(row_value(numbers[0:1]))
+
+    string[][] word_box_source = [['a'], ['b']]
+    MatrixBox box = MatrixBox(numbers[0:2], word_box_source[0:])
+    box.numbers[0][0] = 55
+    box.words[0][0] = 'changed'
+    print(numbers[0][0])
+    print(box.numbers[0][0])
+    print(box.words[0][0])
+    box.numbers = fixed_numbers[1:]
+    string[][] replacement_words = [['x'], ['y']]
+    box.words = replacement_words[1:]
+    print(box.numbers[0][0])
+    print(box.words[0][0])
+    box.numbers = numbers[:]
+    print(box.numbers.length())
+
+    string marker = value.to_string()
+    string[][] words = [['a-' + marker], ['b-' + marker], []]
+    string[][] word_slice = words[-2:]
+    word_slice[0][0] = 'changed'
+    print(words[1][0])
+    print(word_slice[0][0])
+    string[][] returned_words = return_string_slice(words)
+    words[1][0] = 'updated'
+    print(returned_words[0][0])
+    string[][] local_words = local_string_slice(value)
+    print(local_words[0][0])
+    const string[][] fixed_words = [['fixed-a'], ['fixed-b'], []]
+    string[][] const_words_slice = fixed_words[-2:-1]
+    const_words_slice[0][0] = 'mutable-result'
+    print(fixed_words[1][0])
+    print(const_words_slice[0][0])
+    string[][] string_negative = words[low:-1]
+    string[][] string_reversed = words[2:1]
+    string[][] string_open = words[1:]
+    string[][] no_words = []
+    string[][] empty_words_slice = no_words[:]
+    print(string_negative.length())
+    print(string_reversed.length())
+    print(string_open.length())
+    print(empty_words_slice.length())
+    words[0:1]
+    print(words.length())
+    return 0
+
+# Case 3
+record Bounds(int start, int end);
+
+int bound_value(int value):
+    return value
+
+int[] take_int(int[] values, int start, int end):
+    return values[start:end]
+
+int combined_case_3_main(string[] args):
+    int shift = args.length() - 1
+    int low = shift - 2
+    int high = shift + 3
+    const int fixed_low = low
+    const int fixed_high = high
+    Bounds span = Bounds(low, high)
+
+    string text = 'abcdef'
+    string text_slice = text[span.start:bound_value(fixed_high)]
+    int[] numbers = [10, 20, 30, 40, 50]
+    int[] number_slice = take_int(numbers, fixed_low, fixed_high)
+    const int[] fixed_numbers = numbers
+    int[] const_number_slice = fixed_numbers[low:high]
+    bool[] flags = [true, false, true, false, true]
+    bool[] flag_slice = flags[low:high]
+    string[] words = ['a', 'b', 'c', 'd', 'e']
+    string[] word_slice = words[low:high]
+    int[][] rows = [[1], [2, 3], [], [4, 5], [6]]
+    int[][] row_slice = rows[low:high]
+    string[][] word_rows = [['a'], ['b', 'c'], [], ['d'], ['e', 'f']]
+    string[][] word_row_slice = word_rows[low:high]
+    int[] open_end = numbers[low:]
+    int[] open_start = numbers[:high]
+    int[] extreme = numbers[-9223372036854775807:9223372036854775807]
+
+    print(text_slice)
+    print(number_slice.length())
+    print(const_number_slice.length())
+    print(flag_slice.length())
+    print(word_slice.length())
+    print(row_slice.length())
+    print(word_row_slice.length())
+    print(open_end.length())
+    print(open_start.length())
+    print(extreme.length())
+    return 0
+
+# Case 4
+record StringBox(string[] values);
+record remove_at(string[] values);
+
+string remove_first(string[] values):
+    return values.remove_at(0)
+
+int combined_case_4_main(string[] args):
+    int count = args.length()
+
+    string[] first_values = ['first-' + count, 'middle-' + count, 'last-' + count]
+    const int first_index = 0
+    string first = first_values.remove_at(first_index)
+    print(first)
+    print(first_values)
+    print(first_values.remove_at(1))
+    print(first_values)
+    print(first_values.remove_at(0))
+    print(first_values.length())
+
+    string[] collision_values = ['constructor-' + count, 'method-' + count]
+    remove_at collision = remove_at(collision_values)
+    print(collision.values)
+    print(collision_values.remove_at(0))
+
+    string[] retained_values = ['retained-' + count, 'tail-' + count]
+    string retained = retained_values.remove_at(0)
+    retained_values.clear()
+    retained_values.push('reused-' + count)
+    print(retained)
+    print(retained_values)
+
+    string borrowed_value = 'borrowed-' + count
+    string[] borrowed_values = []
+    borrowed_values.push(borrowed_value)
+    string borrowed_result = borrowed_values.remove_at(0)
+    borrowed_value = 'changed-' + count
+    print(borrowed_result)
+    print(borrowed_values.length())
+
+    string[] invalid_values = ['keep-' + count]
+    int min_index = -9223372036854775807 - 1
+    int max_index = 9223372036854775807
+    print(invalid_values.remove_at(-1))
+    print(invalid_values.remove_at(1))
+    print(invalid_values.remove_at(min_index))
+    print(invalid_values.remove_at(max_index))
+    print(invalid_values)
+    string[] empty_values = []
+    print(empty_values.remove_at(min_index))
+    print(empty_values.length())
+
+    string[] returned_values = ['return-' + count, 'return-tail-' + count]
+    string returned = remove_first(returned_values)
+    returned_values.clear()
+    print(returned)
+
+    StringBox box = StringBox(['field-' + count, 'field-tail-' + count])
+    string field_value = box.values.remove_at(0)
+    box.values.clear()
+    print(field_value)
+    print(box.values.length())
+
+    string[] discarded = ['discard-' + count]
+    discarded.remove_at(0)
+    print(discarded.length())
+    return 0
+
+int main(string[] args):
+    print('=== case 1 ===')
+    if (combined_case_1_main(args) != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main(args) != 0):
+        return 1
+    print('=== case 3 ===')
+    if (combined_case_3_main(args) != 0):
+        return 1
+    print('=== case 4 ===')
+    if (combined_case_4_main(args) != 0):
+        return 1
+    return 0

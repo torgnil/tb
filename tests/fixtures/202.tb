@@ -1,0 +1,502 @@
+
+
+# Case 1
+record SliceBox(int[] values, string[] words, int[][] rows);
+
+const int[] GLOBAL_VALUES = [71, 72, 73]
+const string[] GLOBAL_WORDS = ['global-a', 'global-b']
+
+int[] make_values(int seed):
+    return [seed, seed + 1, seed + 2, seed + 3]
+
+bool[] make_flags(int seed):
+    return [seed > 0, seed % 2 == 0, seed > 1]
+
+string[] make_words(int seed):
+    return ['word-' + seed, 'tail-' + seed, 'last-' + seed]
+
+int[][] make_rows(int seed):
+    return [[seed, seed + 1], [seed + 2, seed + 3]]
+
+string[][] make_groups(int seed):
+    return [['group-' + seed], ['row-' + seed]]
+
+int[] return_slice(int seed):
+    return make_values(seed)[1:]
+
+int borrowed_slice_value(int[] values):
+    int[] tail = values[values.length():]
+    return values[0] + tail.length()
+
+int combined_case_1_main(string[] args):
+    int seed = args.length() + 4
+
+    int[] open_end = make_values(seed)[1:]
+    print(open_end[0])
+    print(open_end.length())
+
+    int[] omitted_start = make_values(seed)[:2]
+    print(omitted_start[0])
+    print(omitted_start[1])
+
+    int[] explicit = make_values(seed)[-3:-1]
+    print(explicit[0])
+    print(explicit[1])
+
+    int[] clamped = make_values(seed)[-20:20]
+    int[] reversed = make_values(seed)[3:1]
+    int[] empty = make_values(seed)[2:2]
+    print(clamped.length())
+    print(reversed.length())
+    print(empty.length())
+
+    int[] chained = make_values(seed)[:][1:3]
+    print(chained[0])
+    print(chained[1])
+
+    int[] copied = make_values(seed).copy()[1:3]
+    print(copied[0])
+    print(copied[1])
+
+    int[] literal_slice = [seed + 10, seed + 11, seed + 12][1:]
+    print(literal_slice[0])
+
+    bool[] flags = make_flags(seed)[1:]
+    print(flags[0])
+    print(flags[1])
+    bool[] explicit_flags = make_flags(seed)[0:2]
+    print(explicit_flags[0])
+    print(explicit_flags[1])
+
+    string[] words = make_words(seed)[1:]
+    print(words[0])
+    print(words[1])
+    string[] explicit_words = make_words(seed)[0:2]
+    print(explicit_words[0])
+    print(explicit_words[1])
+
+    int[][] row_slice = make_rows(seed)[0:1]
+    row_slice[0][0] += 50
+    print(row_slice[0][0])
+    print(row_slice[0][1])
+    int[][] row_open_end = make_rows(seed)[0:]
+    print(row_open_end[0][0])
+    print(row_open_end[0][1])
+
+    string[][] group_slice = make_groups(seed)[:]
+    print(group_slice[0][0])
+    print(group_slice[1][0])
+    string[][] explicit_group_slice = make_groups(seed)[0:1]
+    print(explicit_group_slice[0][0])
+
+    int[][] named_rows = make_rows(seed)
+    int[][] row_snapshot = named_rows[:]
+    row_snapshot[0][0] += 60
+    print(named_rows[0][0])
+    print(row_snapshot[0][0])
+
+    string[] churn = []
+    int churn_index = 0
+    while (churn_index < 3):
+        churn = make_words(seed + churn_index)
+        churn_index += 1
+    print(words[0])
+
+    const int[] fixed = make_values(seed + 20)
+    int[] fixed_slice = fixed[1:]
+    print(fixed[0])
+    print(fixed_slice[0])
+    print(GLOBAL_VALUES[0])
+    int[] global_slice = GLOBAL_VALUES[:]
+    print(global_slice[2])
+
+    int reused = borrowed_slice_value(named_rows[0])
+    print(reused)
+    print(named_rows[0][0])
+
+    SliceBox box = SliceBox(make_values(seed + 30)[1:], make_words(seed + 30)[1:], make_rows(seed + 30)[1:])
+    print(box.values[0])
+    print(box.words[0])
+    print(box.rows[0][0])
+    string[] box_word_slice = box.words[1:]
+    print(box_word_slice[0])
+    print(box.words[0])
+
+    int[] returned = return_slice(seed + 40)
+    print(returned[0])
+
+    int discard_index = 0
+    while (discard_index < 2):
+        if (discard_index == 0):
+            make_values(seed + discard_index)[1:]
+        else:
+            make_flags(seed + discard_index)[:]
+        discard_index += 1
+
+    try:
+        int[] in_try = make_values(seed + 50)[1:3]
+        print(in_try[0])
+        throw 'slice-try'
+    catch (exception error):
+        print(error)
+
+    print(GLOBAL_WORDS[1])
+    print(box.values[1])
+    return 0
+
+# Case 2
+int[] make_sum_values(int seed):
+    return [seed, seed + 1]
+
+bool[] make_sum_flags(int seed):
+    return [seed > 0, seed > 1, false]
+
+int copied_sum(int[] values):
+    return values.copy().sum()
+
+int copied_flag_sum(bool[] flags):
+    return flags.copy().sum()
+
+int combined_case_2_main(string[] args):
+    int seed = args.length() + 2
+
+    print(make_sum_values(seed).copy().sum())
+    print(make_sum_values(seed).copy().copy().sum())
+    print([seed, seed + 1].copy().sum())
+
+    int[] named_values = make_sum_values(seed)
+    const int[] const_values = make_sum_values(seed)
+    print(named_values.copy().sum())
+    print(const_values.copy().sum())
+    print(copied_sum(named_values))
+    named_values[0] += 10
+    print(named_values.sum())
+
+    bool[] named_flags = make_sum_flags(seed)
+    const bool[] const_flags = make_sum_flags(seed)
+    print(named_flags.copy().sum())
+    print(const_flags.copy().sum())
+    print(make_sum_flags(seed).copy().sum())
+    print([seed > 0, false].copy().sum())
+    print(copied_flag_sum(named_flags))
+
+    int[] empty_values = []
+    bool[] empty_flags = []
+    print(empty_values.copy().sum())
+    print(empty_flags.copy().sum())
+
+    int[][] rows = [[seed, seed + 1], [seed + 2, seed + 3]]
+    print(rows.copy().pop().sum())
+    print(rows.copy().last().sum())
+
+    if (seed == 3):
+        print(make_sum_values(seed).copy().sum())
+    else:
+        print(make_sum_values(seed).copy().sum())
+
+    switch (seed):
+        case 3:
+            print(make_sum_values(seed).copy().sum())
+        default:
+            print(make_sum_values(seed).copy().sum())
+
+    for (int offset : range(2)):
+        print(make_sum_values(seed + offset).copy().sum())
+
+    try:
+        print(make_sum_values(seed).copy().sum())
+        throw 'copy-sum'
+    catch (exception error):
+        print('caught-copy-sum')
+
+    return 0
+
+# Case 3
+record TextRows(string[][] rows);
+
+map<string, string[]> make_text_rows(int seed):
+    string token = seed.to_string()
+    return {'owned': ['owned-' + token]}
+
+string[][] return_snapshot(int seed):
+    string token = seed.to_string()
+    map<int, string[]> rows = {5: ['returned-' + token]}
+    return rows.values()
+
+int count_rows(string[][] rows):
+    return rows.length()
+
+string[][] return_rows(string[][] rows):
+    return rows
+
+int combined_case_3_main(string[] args):
+    int seed = args.length()
+    string token = seed.to_string()
+
+    map<int, string[]> empty_int = {}
+    map<string, string[]> empty_string = {}
+    print(empty_int.values().length())
+    print(empty_string.values().length())
+
+    string[] borrowed_row = ['borrowed-' + token]
+    map<int, string[]> indexed = {9: borrowed_row, -4: ['negative-' + token]}
+    indexed[31] = []
+    borrowed_row[0] = 'source-changed-' + token
+    string[][] indexed_values = indexed.values()
+    print(indexed_values.length())
+    string[] indexed_first = indexed_values[0]
+    string[] indexed_second = indexed_values[1]
+    string[] indexed_empty = indexed_values[2]
+    print(indexed_first[0])
+    print(indexed_second[0])
+    print(indexed_empty.is_empty())
+    string[] stored_first = indexed[9]
+    print(stored_first[0])
+    indexed[9] = ['updated-' + token]
+    print(indexed_first[0])
+    string[] updated_first = indexed[9]
+    print(updated_first[0])
+    indexed_values[0][0] = 'snapshot-changed-' + token
+    string[] still_updated = indexed[9]
+    print(still_updated[0])
+    indexed_values[1] = ['snapshot-row-' + token]
+    string[] still_negative = indexed[-4]
+    print(indexed_values[1][0])
+    print(still_negative[0])
+
+    const map<int, string[]> fixed_int = {-8: ['const-int-' + token]}
+    string[][] fixed_int_values = fixed_int.values()
+    string[] fixed_int_source = fixed_int[-8]
+    string[] fixed_int_snapshot = fixed_int_values[0]
+    print(fixed_int_source[0])
+    print(fixed_int_snapshot[0])
+    fixed_int_values[0][0] = 'changed-const-int'
+    print(fixed_int_source[0])
+
+    const map<string, string[]> fixed_string = {'const-key': ['const-string-' + token]}
+    string[][] fixed_string_values = fixed_string.values()
+    string[] fixed_string_source = fixed_string['const-key']
+    string[] fixed_string_snapshot = fixed_string_values[0]
+    print(fixed_string_source[0])
+    print(fixed_string_snapshot[0])
+    fixed_string_values[0][0] = 'changed-const-string'
+    print(fixed_string_source[0])
+
+    map<string, string[]> grown = {}
+    for (int i : range(13)):
+        string key = 'key-' + i
+        string value = 'growth-' + i + '-' + token
+        grown[key] = [value]
+    grown['key-2'] = ['updated-growth-' + token]
+    string[][] grown_values = grown.values()
+    print(grown_values.length())
+    for (int i : range(grown_values.length())):
+        string[] row = grown_values[i]
+        print(row[0])
+
+    string[][] temporary_values = make_text_rows(seed).values()
+    string[] temporary_row = temporary_values[0]
+    print(temporary_row[0])
+    string[][] returned_values = return_snapshot(seed)
+    string[] returned_row = returned_values[0]
+    print(returned_row[0])
+    print(count_rows(indexed.values()))
+    string[][] echoed_values = return_rows(indexed.values())
+    string[] echoed_first = echoed_values[0]
+    print(echoed_first[0])
+
+    string[][] reused_values = indexed.values()
+    reused_values = indexed.values()
+    print(reused_values.length())
+    TextRows box = TextRows(grown_values)
+    TextRows cloned = box
+    cloned.rows[0][0] = 'cloned-' + token
+    string[] box_first = box.rows[0]
+    string[] cloned_first = cloned.rows[0]
+    print(box_first[0])
+    print(cloned_first[0])
+    box.rows = indexed.values()
+    string[] replaced_box_first = box.rows[0]
+    print(replaced_box_first[0])
+    indexed.values()
+
+    string[][] loop_values = []
+    for (int i : range(2)):
+        if (i == 0):
+            string[][] local_values = indexed.values()
+            loop_values.push(local_values[0])
+        else:
+            string[][] local_values = fixed_string.values()
+            loop_values.push(local_values[0])
+    print(loop_values.length())
+    string[] loop_first = loop_values[0]
+    string[] loop_second = loop_values[1]
+    print(loop_first[0])
+    print(loop_second[0])
+    return 0
+
+# Case 4
+int EFFECT_COUNT = 0
+const map<int, int[]> GLOBAL_INT_ROWS = {0: [10], 0: [20], -1: []}
+const map<int, string[]> GLOBAL_TEXT_ROWS = {0: ['old-global'], 0: ['new-global'], -1: []}
+
+record RowMaps(map<int, int[]> ints, map<int, string[]> texts);
+
+int[] make_int_row(int value):
+    return [value]
+
+string[] make_text_row(int value):
+    string token = value.to_string()
+    return ['owned-' + token]
+
+map<int, int[]> make_int_rows(int seed):
+    map<int, int[]> rows = {seed: [seed], seed + 1: [], seed: [seed + 2]}
+    return rows
+
+int[][] return_int_snapshot(int seed):
+    map<int, int[]> rows = {seed: [seed + 3], seed + 1: [seed + 4]}
+    return rows.values()
+
+string[][] return_text_snapshot(int seed):
+    string token = seed.to_string()
+    map<int, string[]> rows = {seed: ['returned-' + token], seed + 1: []}
+    return rows.values()
+
+int next_effect_key():
+    EFFECT_COUNT += 1
+    return 77
+
+int[] next_effect_row():
+    EFFECT_COUNT += 1
+    return [EFFECT_COUNT]
+
+int combined_case_4_main(string[] args):
+    int n = args.length()
+    int base = n * 100
+
+    print(GLOBAL_INT_ROWS.length())
+    print(GLOBAL_INT_ROWS[0][0])
+    print(GLOBAL_INT_ROWS[-1].length())
+    print(GLOBAL_TEXT_ROWS.length())
+    print(GLOBAL_TEXT_ROWS[0][0])
+
+    map<int, int[]> positions = {base: [1], base + 1: [2], base + 2: [3], base: [4], base + 1: [5], base + 2: [6]}
+    int[][] position_values = positions.values()
+    print(positions.length())
+    print(position_values[0][0])
+    print(position_values[1][0])
+    print(position_values[2][0])
+
+    map<int, string[]> text_positions = {base: ['first'], base + 1: [], base + 2: ['third'], base: ['last'], base + 1: ['middle'], base + 2: []}
+    string[][] text_position_values = text_positions.values()
+    print(text_positions.length())
+    print(text_position_values[0][0])
+    print(text_position_values[1][0])
+    print(text_position_values[2].length())
+
+    map<int, int[]> empty_replacements = {base: [], base + 1: [7], base: [8], base + 1: []}
+    int[][] empty_values = empty_replacements.values()
+    print(empty_replacements.length())
+    print(empty_values[0][0])
+    print(empty_values[1].length())
+
+    map<int, string[]> text_replacements = {base: ['before'], base: [], base + 1: [], base + 1: ['after']}
+    string[][] replacement_values = text_replacements.values()
+    print(replacement_values[0].length())
+    print(replacement_values[1][0])
+
+    map<int, int[]> signed_keys = {0: [1], -1: [], 0: [2]}
+    print(signed_keys.length())
+    print(signed_keys[0][0])
+    print(signed_keys[-1].length())
+
+    map<int, int[]> runtime_equal = {base + 50: [1], 50 + base: [2]}
+    print(runtime_equal.length())
+    print(runtime_equal[base + 50][0])
+
+    map<int, int[]> unique_rows = {base + 60: [3], base + 61: [4]}
+    print(unique_rows.length())
+    print(unique_rows[base + 61][0])
+
+    int[] borrowed = [base + 20, base + 21]
+    map<int, int[]> borrowed_rows = {base: borrowed, base + 1: borrowed, base: borrowed}
+    borrowed[0] = 999
+    print(borrowed_rows[base][0])
+    print(borrowed_rows[base + 1][1])
+
+    string borrowed_token = n.to_string()
+    string[] borrowed_text = ['borrowed-' + borrowed_token]
+    map<int, string[]> borrowed_text_rows = {base: borrowed_text, base + 1: borrowed_text, base: borrowed_text}
+    borrowed_text[0] = 'changed'
+    print(borrowed_text_rows[base][0])
+    print(borrowed_text_rows[base + 1][0])
+
+    map<int, int[]> owned_rows = {base: make_int_row(base + 30), base: make_int_row(base + 31)}
+    map<int, string[]> owned_text_rows = {base: make_text_row(base + 32), base: make_text_row(base + 33)}
+    print(owned_rows.length())
+    print(owned_rows[base][0])
+    print(owned_text_rows.length())
+    print(owned_text_rows[base][0])
+
+    map<int, int[]> from_call = make_int_rows(base + 40)
+    print(from_call.length())
+    print(from_call[base + 40][0])
+    int[][] returned_int_values = return_int_snapshot(base + 50)
+    print(returned_int_values[0][0])
+    print(returned_int_values[1][0])
+    string[][] returned_text_values = return_text_snapshot(base + 60)
+    print(returned_text_values[0][0])
+    print(returned_text_values[1].length())
+
+    const map<int, int[]> fixed_rows = {base + 70: [], base + 70: [base + 71]}
+    const map<int, string[]> fixed_text_rows = {base + 72: ['old-const'], base + 72: ['new-const']}
+    print(fixed_rows.length())
+    print(fixed_rows[base + 70][0])
+    print(fixed_text_rows[base + 72][0])
+
+    RowMaps box = RowMaps({base + 80: [10], base + 81: [11], base + 80: [12]}, {base + 80: ['old-box'], base + 80: ['new-box']})
+    RowMaps cloned = box
+    cloned.ints[base + 80][0] = 99
+    print(box.ints.length())
+    print(box.ints[base + 80][0])
+    print(cloned.ints[base + 80][0])
+    print(box.texts[base + 80][0])
+    box.ints = {base + 82: [13], base + 82: [14]}
+    print(box.ints.length())
+    print(box.ints[base + 82][0])
+
+    int[][] after_cleanup = return_int_snapshot(base + 90)
+    string[][] text_after_cleanup = return_text_snapshot(base + 100)
+    print(after_cleanup[0][0])
+    print(text_after_cleanup[0][0])
+
+    for (int i : range(2)):
+        map<int, int[]> loop_rows = {base + 110 + i: [i], base + 110 + i: [i + 2]}
+        print(loop_rows.length())
+        print(loop_rows[base + 110 + i][0])
+
+    if (n > 0):
+        map<int, string[]> block_rows = {base + 120: [], base + 120: ['block']}
+        print(block_rows.length())
+        print(block_rows[base + 120][0])
+
+    map<int, int[]> effect_rows = {next_effect_key(): next_effect_row(), next_effect_key(): next_effect_row()}
+    print(EFFECT_COUNT)
+    print(effect_rows.length())
+    print(effect_rows[77][0])
+    return 0
+
+int main(string[] args):
+    print('=== case 1 ===')
+    if (combined_case_1_main(args) != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main(args) != 0):
+        return 1
+    print('=== case 3 ===')
+    if (combined_case_3_main(args) != 0):
+        return 1
+    print('=== case 4 ===')
+    if (combined_case_4_main(args) != 0):
+        return 1
+    return 0

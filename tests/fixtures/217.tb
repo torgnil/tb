@@ -1,0 +1,865 @@
+
+
+# Case 1
+int increment(int value):
+    return value + 1
+
+int named_worker(int value):
+    return value + 10
+
+int combined_case_1_main(string[] args):
+    thread_pool pool = thread_pool(2)
+    int bound = args.length() - 1
+
+    future<int> sum = pool.submit(int value -> {
+        int total = 0
+        const bool enabled = value > 0
+        for (int index = 0; enabled && index < value; index = increment(index)) {
+            total += index
+        }
+        return total
+    }, bound)
+    future<int> assigned = pool.submit(int value -> {
+        int index = -1
+        for (index = 0; index < value; index += 1) {
+        }
+        return index
+    }, bound)
+    future<int> omitted_condition = pool.submit(int value -> {
+        int total = 0
+        for (int index = 0; ; index += 1) {
+            if (index == 2) {
+                break
+            }
+            total += 1
+        }
+        return total
+    }, bound)
+    future<int> nested = pool.submit(int value -> {
+        int total = 0
+        for (int outer = 0; outer < value; outer += 1) {
+            int inner = 0
+            while (inner < 3) {
+                inner += 1
+                if (inner == 1) {
+                    continue
+                }
+                if (outer == 1) {
+                    break
+                }
+                total += outer + inner
+            }
+        }
+        return total
+    }, args.length() + 2)
+    future<bool> toggled = pool.submit(bool flag -> {
+        bool result = flag
+        for (int index = 0; index < 2; index++) {
+            if (index == 0) {
+                continue
+            }
+            result = !result
+        }
+        return result
+    }, true)
+    future<int> early = pool.submit(int value -> {
+        if (value < 0) {
+            return -1
+        }
+        for (int index = 0; index < value; index++) {
+            if (index == 1) {
+                return 9
+            }
+        }
+        return 4
+    }, bound)
+    future<int> named = pool.submit(named_worker, 2)
+    future<int> expression = pool.submit(int value -> value * 3, 4)
+
+    print(sum.await())
+    print(sum.await())
+    print(assigned.await())
+    print(omitted_condition.await())
+    print(nested.await())
+    print(nested.await())
+    print(toggled.await())
+    print(early.await())
+    print(named.await())
+    print(expression.await())
+    return 0
+
+# Case 2
+int double_value(int value):
+    return value * 2
+
+bool is_positive(int value):
+    return value > 0
+
+string label_value(int value):
+    return 'value ' + value.to_string()
+
+int[] array_value(int value):
+    return [value, value + 1]
+
+int[][] nested_value(int value):
+    return [[value, value + 1]]
+
+void check_borrowed_pool(thread_pool source):
+    const thread_pool alias = source
+    future<int> result = alias.submit(double_value, 15)
+    print(result.await())
+
+void check_borrowed_future(future<int> source):
+    future<int> alias = source
+    print(source.await())
+    print(alias.await())
+
+int combined_case_2_main(string[] args):
+    thread_pool pool = thread_pool(1)
+    const thread_pool original = pool
+    thread_pool alias = pool
+    thread_pool replacement = thread_pool(1)
+    alias = replacement
+    pool = thread_pool(1)
+    pool = pool
+
+    future<int> from_original = original.submit(double_value, 3)
+    future<int> from_alias = alias.submit(double_value, 4)
+    print(from_original.await())
+    print(from_alias.await())
+    check_borrowed_pool(original)
+    check_borrowed_future(from_original)
+
+    future<int> int_source = pool.submit(double_value, 5)
+    future<int> int_alias = int_source
+    int_source = pool.submit(double_value, 6)
+    int_alias = int_alias
+    print(int_source.await())
+    print(int_alias.await())
+
+    future<bool> bool_source = pool.submit(is_positive, 1)
+    const future<bool> bool_alias = bool_source
+    print(bool_source.await())
+    print(bool_alias.await())
+
+    future<bool> branch_source = pool.submit(is_positive, 2)
+    future<bool> branch_alias = branch_source
+    if (args.length() > 0):
+        branch_alias = branch_source
+    for (int index : range(args.length())):
+        branch_alias = branch_source
+    print(branch_source.await())
+    print(branch_alias.await())
+
+    future<string> string_source = pool.submit(label_value, 7)
+    future<string> string_alias = string_source
+    print(string_source.await())
+    print(string_alias.await())
+
+    future<int[]> array_source = pool.submit(array_value, 8)
+    future<int[]> array_alias = array_source
+    int[] array_a = array_source.await()
+    int[] array_b = array_alias.await()
+    print(array_a[0])
+    print(array_b[1])
+
+    future<int[][]> nested_source = pool.submit(nested_value, 9)
+    future<int[][]> nested_alias = nested_source
+    int[][] nested_a = nested_source.await()
+    int[][] nested_b = nested_alias.await()
+    print(nested_a[0][0])
+    print(nested_b[0][1])
+    return 0
+
+# Case 3
+int text_calls = 0
+int row_calls = 0
+int grid_calls = 0
+int index_calls = 0
+
+string next_managed_text(int suffix):
+    text_calls += 1
+    return 'managed-' + suffix.to_string() + '-' + text_calls.to_string()
+
+int[] next_managed_row():
+    row_calls += 1
+    return [5, 8]
+
+int[][] next_managed_grid():
+    grid_calls += 1
+    return [[2, 7], [4]]
+
+int next_index():
+    index_calls += 1
+    return 1
+
+int score_managed_row(int[] values, int offset):
+    values[0] += offset
+    return values[0] + values.length()
+
+int row_length(int[] values):
+    return values.length()
+
+int score_managed_grid(int[][] values, int offset):
+    values[0][0] += offset
+    return values[0][0] + values[0][1] + values[1][0]
+
+bool grid_has_value(int[][] values, int expected):
+    if (!values.is_empty()):
+        if (!values[0].is_empty()):
+            return values[0][0] == expected
+    return false
+
+int fail_on_text(string value):
+    if (value.length() > 0):
+        throw 'managed read failure ' + value
+    return 0
+
+int length(int[] values):
+    return 99
+
+bool is_empty(int[] values):
+    return true
+
+future<int> submit_scoped_grid(thread_pool pool):
+    int[][] source = [[10, 11], [12]]
+    return pool.submit(int[][] grid -> grid[0][0] + row_length(grid[1]), source)
+
+int combined_case_3_main(string[] args):
+    thread_pool pool = thread_pool(2)
+    const string fixed_text = 'fixed'
+    const int[] fixed_row = [6, 9]
+    int[] row_input = next_managed_row()
+    int[][] grid_input = next_managed_grid()
+    int[] empty_row_input = []
+    int[][] loop_grid_input = [[2, 7], empty_row_input, [4]]
+    int[][] empty_grid_input = []
+    int[][] empty_row_grid_input = [[]]
+    string empty_text_input = ''
+    string failing_text_input = 'bad'
+
+    future<int> text_length = pool.submit(string text -> text.length(), next_managed_text(args.length()))
+    future<bool> text_empty = pool.submit(string text -> text.is_empty(), fixed_text)
+    future<int> empty_text_length = pool.submit(string text -> text.length(), empty_text_input)
+    future<bool> empty_text_query = pool.submit(string text -> text.is_empty(), empty_text_input)
+    future<int> row_score = pool.submit(int[] row -> score_managed_row(row, 7), row_input)
+    future<bool> row_match = pool.submit(int[] row -> row[1] == 9, fixed_row)
+    future<int> grid_score = pool.submit(int[][] grid -> score_managed_grid(grid, 3), grid_input)
+    future<int> grid_query = pool.submit(int[][] grid -> grid[0][1] + grid[0].length() + grid.length(), [[2, 7], [4]])
+    future<bool> grid_match = pool.submit(int[][] grid -> grid_has_value(grid, 2), [[2, 7]])
+    future<int> grid_block = pool.submit(int[][] grid -> {
+        int total = 0
+        if (!grid.is_empty()) {
+            for (int index = 0; index < grid.length(); index += 1) {
+                if (!grid[index].is_empty()) {
+                    total += row_length(grid[index])
+                }
+            }
+        }
+        return total
+    }, loop_grid_input)
+    future<int> indexed = pool.submit(int[] row -> row[next_index()], [6, args.length() + 8])
+    future<int> empty_row_length = pool.submit(int[] row -> row.length(), empty_row_input)
+    future<bool> empty_row_query = pool.submit(int[] row -> row.is_empty(), empty_row_input)
+    future<int> empty_grid_length = pool.submit(int[][] grid -> grid.length(), empty_grid_input)
+    future<bool> empty_grid_query = pool.submit(int[][] grid -> grid.is_empty(), empty_grid_input)
+    future<bool> row_empty_in_grid = pool.submit(int[][] grid -> grid[0].is_empty(), empty_row_grid_input)
+    future<bool> row_grid_is_empty = pool.submit(int[][] grid -> grid.is_empty(), empty_row_grid_input)
+    future<int> scoped_grid = submit_scoped_grid(pool)
+    future<int> failed = pool.submit(string text -> fail_on_text(text), failing_text_input)
+
+    print(text_length.await())
+    print(text_length.await())
+    print(text_empty.await())
+    print(empty_text_length.await())
+    print(empty_text_query.await())
+    print(row_score.await())
+    print(row_score.await())
+    print(row_match.await())
+    print(row_input[0])
+    print(grid_score.await())
+    print(grid_score.await())
+    print(grid_match.await())
+    print(grid_input[0][0])
+    print(grid_query.await())
+    print(grid_block.await())
+    print(indexed.await())
+    print(indexed.await())
+    print(index_calls)
+    print(empty_row_length.await())
+    print(empty_row_query.await())
+    print(empty_grid_length.await())
+    print(empty_grid_query.await())
+    print(row_empty_in_grid.await())
+    print(row_grid_is_empty.await())
+    print(scoped_grid.await())
+    print(text_calls)
+    print(row_calls)
+    print(grid_calls)
+    print(fixed_row.length())
+    print(fixed_row.is_empty())
+    try:
+        failed.await()
+    catch (string error):
+        print(error)
+    try:
+        failed.await()
+    catch (string error):
+        print(error)
+    return 0
+
+# Case 4
+const string global_text = 'global-text'
+
+int mutate_first(int[] values, int amount):
+    values[0] += amount
+    return values[0]
+
+int fail_text(string value):
+    if (value == 'fail') {
+        throw 'managed capture failed'
+    }
+    return value.length()
+
+future<int> submit_scoped_text(thread_pool pool, int seed):
+    string scoped = 'scope' + seed
+    return pool.submit(() -> scoped.length())
+
+int combined_case_4_main(string[] args):
+    thread_pool pool = thread_pool(2)
+    int seed = args.length()
+
+    string dynamic = 'dynamic' + seed
+    const string fixed = 'const-' + seed
+    string empty_text = ''
+    future<int> dynamic_length = pool.submit(() -> dynamic.length())
+    future<int> fixed_length = pool.submit(() -> fixed.length())
+    future<int> empty_length = pool.submit(() -> empty_text.length())
+    future<bool> empty_text_check = pool.submit(() -> empty_text.is_empty())
+    future<int> global_length = pool.submit(() -> global_text.length())
+    future<int> scoped_length = submit_scoped_text(pool, seed)
+    dynamic = 'replaced'
+
+    int[] source = [seed + 4, 2]
+    future<int> changed_copy = pool.submit(() -> mutate_first(source, 5))
+    future<int> read_copy = pool.submit(() -> source[0] + source.length())
+    int[] foreach_source = [seed + 1, 2]
+    future<int> foreach_sum = pool.submit(() -> {
+        int total = 0
+        for (int item : foreach_source) {
+            total += item
+        }
+        return total
+    })
+    const int[] fixed_source = [seed, 3]
+    future<int> fixed_array = pool.submit(() -> fixed_source[0] + fixed_source[1])
+    int[] empty_source = []
+    future<bool> empty_array_check = pool.submit(() -> empty_source.is_empty())
+    int[][] nested = [[seed + 1, 2], [3]]
+    future<int> nested_read = pool.submit(() -> nested[0][0] + nested[1][0] + nested.length())
+
+    string block_text = 'block' + seed
+    future<bool> text_block = pool.submit(() -> {
+        if (block_text.length() > 0) {
+            return true
+        } else {
+            return false
+        }
+    })
+    string failing = 'fail'
+    future<int> failed = pool.submit(() -> fail_text(failing))
+
+    source[0] = 99
+    foreach_source[0] = -1
+
+    print(dynamic_length.await())
+    print(dynamic_length.await())
+    print(fixed_length.await())
+    print(empty_length.await())
+    print(empty_text_check.await())
+    print(global_length.await())
+    print(scoped_length.await())
+    print(changed_copy.await())
+    print(changed_copy.await())
+    print(source[0])
+    print(read_copy.await())
+    print(foreach_sum.await())
+    print(fixed_array.await())
+    print(empty_array_check.await())
+    print(nested_read.await())
+    print(text_block.await())
+    try {
+        failed.await()
+    } catch (string error) {
+        print(error)
+    }
+    try {
+        failed.await()
+    } catch (string error) {
+        print(error)
+    }
+    return 0
+
+# Case 5
+int global_count = 20;
+
+int parameter_shadow(int value) {
+    if (value > 0) {
+        string value = 'parameter-' + value;
+        print(value);
+    }
+    return value;
+}
+
+string retained_label(int seed) {
+    string label = 'outer-' + seed;
+    if (seed > 0) {
+        string label = 'inner-' + seed;
+        label += '!';
+        print(label);
+    }
+    return label;
+}
+
+int branch_value(int choice) {
+    int value = 7;
+    switch (choice) {
+        case 1: {
+            string value = 'case';
+            print(value);
+        }
+        default: {
+            bool value = true;
+            print(value);
+        }
+    }
+    return value;
+}
+
+int combined_case_5_main(string[] args) {
+    int seed = args.length();
+    int value = 3;
+    if (seed > 0) {
+        int value = value + 5;
+        print(value);
+    }
+    print(value);
+    if (seed == 1) {
+        string value = 'one';
+        print(value);
+    } else {
+        bool value = false;
+        print(value);
+    }
+    print(parameter_shadow(seed));
+    int global_count = global_count + seed;
+    print(global_count);
+    int value = value + 1;
+    print(value);
+
+    int total = 0;
+    for (int item : [seed, 2]) {
+        total += item;
+    }
+    for (const string item : ['x', 'yz']) {
+        total += item.length();
+    }
+    for (const int item : [4]) {
+        total += item;
+    }
+    print(total);
+    int cursor = 10;
+    for (int cursor = 0; cursor < 2; cursor += 1) {
+        total += cursor;
+        string cursor = 'body';
+        print(cursor);
+    }
+    print(cursor);
+    print(total);
+    while (value < 6) {
+        value += 1;
+        bool value = true;
+        print(value);
+    }
+    print(value);
+    print(branch_value(1));
+    print(branch_value(2));
+    int error = 9;
+    try {
+        string error = 'try';
+        throw error;
+    } catch (exception error) {
+        print(error);
+    }
+    print(error);
+
+    string[] lines = ['a', 'bbb'];
+    int[] lengths = [seed];
+    for (const string line : lines) {
+        if (line.length() > 0) {
+            int line = line.length();
+            lengths.push(line);
+        }
+    }
+    if (seed > 0) {
+        string[] lengths = ['private-' + seed];
+        print(lengths[0]);
+    }
+    print(lengths.sum());
+    print(retained_label(seed));
+
+    int left = 90;
+    int right = 80;
+    int[] ordered = [3, 1, 2];
+    ordered.sort((int left, int right) -> left - right);
+    print(ordered[0]);
+    print(left + right);
+    int name = 40;
+    int[] mapped = lines.map_to(string name -> length(name));
+    print(mapped.sum());
+    print(name);
+    int d = 50;
+    int r = 0;
+    int c = 0;
+    int WIDTH = 2;
+    int HEIGHT = 2;
+    int[][] directions = [[0, 1], [-1, 0], [1, 0]];
+    int[][] kept = directions.filter(int[] d -> r + d[0] >= 0 and r + d[0] < WIDTH and c + d[1] >= 0 and c + d[1] < HEIGHT);
+    print(kept.length());
+    if (seed > 0) {
+        int r = 1;
+        int WIDTH = 1;
+        int[][] kept = directions.filter(int[] d -> r + d[0] >= 0 and r + d[0] < WIDTH and c + d[1] >= 0 and c + d[1] < HEIGHT);
+        print(kept.length());
+    }
+    print(r);
+    print(d);
+
+    thread_pool pool = thread_pool(1);
+    const int config = seed + 10;
+    future<int> result = pool.submit(() -> {
+        int answer = config + 1;
+        return answer;
+    });
+    print(result.await());
+    return 0;
+}
+
+# Case 6
+int global_value = 40
+int iteration = 50
+int index = 60
+
+future<int> capture_parameter(thread_pool pool, int parameter):
+    future<int> outer_parameter = pool.submit(() -> parameter)
+    if (true):
+        int parameter = 18
+        future<int> inner_parameter = pool.submit(() -> parameter)
+        if (inner_parameter.await() != 18):
+            throw 'parameter capture selected the wrong binding'
+    return outer_parameter
+
+future<int> task_parameter_shadow(thread_pool pool, int value):
+    return pool.submit(int value -> value + 1, value)
+
+int combined_case_6_main(string[] args):
+    thread_pool pool = thread_pool(2)
+    int value = args.length() + 2
+    future<int> outer = pool.submit(() -> value)
+
+    if (args.length() > 0):
+        int value = 8
+        future<int> inner = pool.submit(() -> value)
+        print(inner.await())
+
+    value = 20
+    print(outer.await())
+
+    int typed = 5
+    future<int> outer_typed = pool.submit(() -> typed)
+    if (args.length() > 0):
+        bool typed = true
+        future<bool> inner_typed = pool.submit(() -> typed)
+        print(inner_typed.await())
+    print(outer_typed.await())
+
+    if (true):
+        int value = args.length() + 10
+        future<int> value = pool.submit(() -> value)
+        print(value.await())
+
+    string label = 'outer'
+    future<string> outer_label = pool.submit(() -> label)
+    if (args.length() > 0):
+        string label = 'inner'
+        future<string> inner_label = pool.submit(() -> label)
+        print(inner_label.await())
+    print(outer_label.await())
+
+    int[][] grid = [[2]]
+    future<int> outer_grid = pool.submit(() -> grid[0][0])
+    if (args.length() > 0):
+        int[][] grid = [[8]]
+        future<int> inner_grid = pool.submit(() -> grid[0][0])
+        print(inner_grid.await())
+    print(outer_grid.await())
+
+    for (int iteration : [args.length(), 7]):
+        future<int> foreach_task = pool.submit(() -> iteration)
+        print(foreach_task.await())
+    future<int> after_foreach = pool.submit(() -> iteration)
+    print(after_foreach.await())
+
+    int index = 70
+    for (int index = 0; index < 1; index += 1):
+        future<int> c_style_iteration = pool.submit(() -> index)
+        print(c_style_iteration.await())
+    future<int> after_c_style_for = pool.submit(() -> index)
+    if (after_c_style_for.await() != 70):
+        throw 'for capture escaped its loop scope'
+
+    if (args.length() == 1):
+        int sibling = 31
+        future<int> first_sibling = pool.submit(() -> sibling)
+        print(first_sibling.await())
+    else:
+        int sibling = 32
+        future<int> second_sibling = pool.submit(() -> sibling)
+        print(second_sibling.await())
+
+    switch (args.length()):
+        case 1:
+            int branch = 33
+            future<int> selected_case = pool.submit(() -> branch)
+            print(selected_case.await())
+        default:
+            int branch = 44
+            future<int> selected_default = pool.submit(() -> branch)
+            print(selected_default.await())
+
+    try:
+        int attempt = 12
+        future<int> try_capture = pool.submit(() -> attempt)
+        print(try_capture.await())
+    catch (string error):
+        print(error)
+
+    try:
+        throw 'caught'
+    catch (string label):
+        future<string> catch_capture = pool.submit(() -> label)
+        if (catch_capture.await() != 'caught'):
+            throw 'catch capture selected the wrong binding'
+    future<string> after_catch = pool.submit(() -> label)
+    if (after_catch.await() != 'outer'):
+        throw 'catch capture escaped its scope'
+
+    future<int> parameter_capture = capture_parameter(pool, 6)
+    print(parameter_capture.await())
+    future<int> parameter_shadow = task_parameter_shadow(pool, 6)
+    print(parameter_shadow.await())
+
+    if (args.length() > 0):
+        int global_value = 99
+        future<int> local_global = pool.submit(() -> global_value)
+        print(local_global.await())
+    future<int> fallback_global = pool.submit(() -> global_value)
+    print(fallback_global.await())
+
+    future<int> global_before_local = pool.submit(() -> global_value)
+    int global_value = 70
+    future<int> local_after_global = pool.submit(() -> global_value)
+    print(global_before_local.await())
+    print(local_after_global.await())
+
+    int bias = 3
+    future<int> explicit_task = pool.submit(int input -> input + bias, args.length())
+    bias = 100
+    print(explicit_task.await())
+    return 0
+
+# Case 7
+int hits = 0
+int order = 0
+bool global_first = mark(1, false) && mark(2, true)
+bool global_second = mark(3, true) || mark(4, false)
+bool[] global_flags = [mark(5, false) or mark(6, true), true]
+
+bool mark(int digit, bool value):
+    hits += 1
+    order = order * 10 + digit
+    return value
+
+bool explode():
+    throw 'evaluated'
+
+string make_text(int seed):
+    return 'value-' + seed.to_string()
+
+int[] make_values(int seed):
+    return [seed, seed + 1]
+
+bool[] make_flags(int seed):
+    return [seed > 0, seed < 0]
+
+string[] make_words(int seed):
+    return ['word', seed.to_string()]
+
+string expected_word(bool enabled):
+    if (enabled):
+        return 'word'
+    return 'other'
+
+bool identity(bool value):
+    return value
+
+bool worker(int seed):
+    return seed < 0 && explode() || seed > 0 and make_values(seed).length() == 2
+
+int combined_case_7_main(string[] args):
+    print(global_first)
+    print(global_second)
+    print(global_flags[0])
+    print(global_flags[1])
+    print(hits)
+    print(order)
+    bool yes = args.length() > 0
+    bool no = args.length() < 0
+    print(no && mark(7, true))
+    print(no && mark(7, false))
+    print(yes && mark(7, true))
+    print(yes && mark(7, false))
+    print(no || mark(8, true))
+    print(no || mark(8, false))
+    print(yes || mark(8, true))
+    print(yes || mark(8, false))
+    print(hits)
+    hits = 0
+    order = 0
+    bool result = mark(1, yes) and mark(2, no) or mark(3, yes) && mark(4, yes)
+    print(identity(result))
+    print(hits)
+    print(order)
+    print(mark(5, no) && (mark(6, yes) || mark(7, yes)))
+    print(mark(8, yes) || (mark(9, no) && mark(1, yes)))
+    print(order)
+    result = no or yes and yes
+    print(result)
+    if (yes && make_text(args.length()).length() > 0):
+        print('if')
+    int loops = 0
+    while (loops < 2 && make_values(args.length()).length() == 2):
+        loops += 1
+    for (int i = 0; i < 2 and yes; i += 1):
+        loops += 1
+    print(loops)
+    print(make_flags(args.length()).contains(yes && yes))
+    print(yes && make_words(args.length())[0] == expected_word(no || yes && yes))
+    int[] empty = []
+    int[] populated = [9]
+    print(empty.length() > 0 && empty[0] == 9)
+    print(populated.length() > 0 && populated[0] == 9)
+    int divisor = args.length() - args.length()
+    print(divisor != 0 && 5 / divisor > 0)
+    try:
+        print(no && explode())
+        print(yes || explode())
+        print(yes && make_values(args.length()).sum() > 0)
+        print(no || make_text(args.length()).length() > 0)
+        print(yes && explode())
+    catch (string message):
+        print(message)
+    print(yes || explode())
+    thread_pool pool = thread_pool(1)
+    future<bool> answer = pool.submit(worker, args.length())
+    print(answer.await())
+    future<bool> inline_answer = pool.submit(int value -> value < 0 && explode() || value > 0, args.length())
+    print(inline_answer.await())
+    return 0
+
+# Case 8
+int global_seed = 14
+
+int global_divisor():
+    return global_seed
+
+int global_quotient = (global_seed * 3) / global_divisor()
+int global_remainder = (global_seed * 3) % global_divisor()
+
+int combined_case_8_main(string[] args):
+    print((0 - 17) / 5)
+    print((0 - 17) % 5)
+    print(17 / (0 - 5))
+    print(17 % (0 - 5))
+    print((0 - 17) / (0 - 5))
+    print((0 - 17) % (0 - 5))
+
+    const int fixed_divisor = 4
+    int dynamic_divisor = args.length() + 1
+    print(29 / fixed_divisor)
+    print(29 % fixed_divisor)
+    print(25 / dynamic_divisor)
+    print(25 % dynamic_divisor)
+
+    int minimum = (0 - 9223372036854775807) - 1
+    print(minimum / 2)
+    print(minimum % 3)
+    print(9223372036854775807 / 3)
+    print(9223372036854775807 % 3)
+
+    int compound = 29
+    compound /= 4
+    compound %= 3
+    print(compound)
+
+    print(global_quotient)
+    print(global_remainder)
+
+    int[] dividends = [7, (0 - 7), 8]
+    int map_divisor = 3
+    print(dividends.map_to(int value -> value / map_divisor))
+    print(dividends.map_to(int value -> value % map_divisor))
+    int[] empty = []
+    print(empty.map_to(int value -> value / 0))
+    print(empty.map_to(int value -> value % 0))
+
+    bool false_and = false && (10 / 0 == 0)
+    bool true_or = true || (10 % 0 == 0)
+    int skipped_ternary = false ? 10 / 0 : 9
+    print(false_and)
+    print(true_or)
+    print(skipped_ternary)
+
+    thread_pool pool = thread_pool(1)
+    future<int> worker_quotient = pool.submit(int value -> value / dynamic_divisor, 25)
+    future<int> worker_remainder = pool.submit(int value -> value % dynamic_divisor, (0 - 25))
+    print(worker_quotient.await())
+    print(worker_remainder.await())
+    return 0
+
+int main(string[] args):
+    print('=== case 1 ===')
+    if (combined_case_1_main(args) != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main(args) != 0):
+        return 1
+    print('=== case 3 ===')
+    if (combined_case_3_main(args) != 0):
+        return 1
+    print('=== case 4 ===')
+    if (combined_case_4_main(args) != 0):
+        return 1
+    print('=== case 5 ===')
+    if (combined_case_5_main(args) != 0):
+        return 1
+    print('=== case 6 ===')
+    if (combined_case_6_main(args) != 0):
+        return 1
+    print('=== case 7 ===')
+    if (combined_case_7_main(args) != 0):
+        return 1
+    print('=== case 8 ===')
+    if (combined_case_8_main(args) != 0):
+        return 1
+    return 0

@@ -1,0 +1,88 @@
+import regex;
+
+# Case 1
+
+string[] split(int value, Regex separator):
+    return ['custom']
+
+int combined_case_1_main():
+    int value = 7
+    print(value.split(regex_compile(','))[0])
+    return 0
+
+# Case 2
+
+void show(string pattern, string text, int offset):
+    Regex program = regex_compile(pattern)
+    RegexCapture capture = regex_find_captures_from(program, text, offset)
+    print(capture.matched)
+    if (capture.matched):
+        for (int index = 0; index < capture.starts.length(); index += 1):
+            print(capture.starts[index])
+            print(capture.ends[index])
+            print('[' + regex_group(capture, text, index) + ']')
+    print('<' + regex_group(capture, text, -1) + '>')
+    print('<' + regex_group(capture, text, 99) + '>')
+
+int combined_case_2_main():
+    show('(a(b)?)+', 'aba', 0)
+    show('((b*|ab)+)+', 'bab', 0)
+    show('(a){0}', 'b', 0)
+    show('(a)|(b)', 'b', 0)
+    show('(a?)', 'b', 0)
+    show('((a){1,2})', 'xaa', 1)
+    show('(x)', 'éx', 0)
+    show('(a)', 'b', 0)
+    show('(', 'abc', 0)
+    show('(a)', 'a', -1)
+    Regex program = regex_compile('(a+)')
+    RegexCapture first = regex_find_captures(program, 'zaa')
+    RegexCapture copy = first
+    first.starts[1] = 0
+    print(regex_group(copy, 'zaa', 1))
+    print(regex_group(copy, 'x', 1))
+    Regex legacy = Regex(true, 0, [4], [-1], [-1], [''])
+    RegexCapture legacy_match = regex_find_captures(legacy, '')
+    print(legacy_match.matched)
+    print(legacy_match.starts.length())
+    Regex malformed = Regex(true, 0, [12, 4], [1, -1], [-1, -1], ['9', '0'])
+    print(regex_find_captures(malformed, 'a').matched)
+    RegexCapture full = regex_match_captures(regex_compile('(a|ab)'), 'ab')
+    print(full.matched)
+    print(regex_group(full, 'ab', 1))
+    print(regex_match_captures(regex_compile('(a)'), 'ab').matched)
+    RegexCapture empty_full = regex_match_captures(regex_compile('(a*)'), '')
+    print(empty_full.matched)
+    print(empty_full.starts[1])
+    print(empty_full.ends[1])
+    print(regex_match_captures(regex_compile('(^a$)'), 'a\n').matched)
+    return 0
+
+# Case 3
+
+int combined_case_3_main(string[] args):
+    Regex repeated = regex_compile('a+')
+    print(regex_replace(repeated, 'aa baaa', 'X'))
+    print(regex_replace(regex_compile('a'), 'baac', 'X'))
+    print(regex_replace(regex_compile('z+'), 'baac', 'X'))
+    print(regex_replace(regex_compile('('), 'baac', 'X'))
+    print(regex_replace(regex_compile('a+'), 'baac', ''))
+    print(regex_replace(regex_compile('(a)'), 'a ba', '$$1\\'))
+    print(regex_replace(regex_compile(''), '', '<'))
+    print(regex_replace(regex_compile(''), 'abc', '-'))
+    print(regex_replace(regex_compile('^'), 'abc', '<'))
+    print(regex_replace(regex_compile('$'), 'abc', '>'))
+    print(regex_replace(regex_compile('^|$'), 'abc', '|'))
+    return 0
+
+int main(string[] args):
+    print('=== case 1 ===')
+    if (combined_case_1_main() != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main() != 0):
+        return 1
+    print('=== case 3 ===')
+    if (combined_case_3_main(args) != 0):
+        return 1
+    return 0

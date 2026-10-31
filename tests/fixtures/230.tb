@@ -1,0 +1,108 @@
+int[] make_values(int value):
+    return [value, value + 1]
+
+int[] empty_values():
+    return []
+
+int[] fail_values():
+    throw 'unselected array arm'
+    return []
+
+string make_text(int value):
+    return 'text-' + value.to_string()
+
+string fail_text():
+    throw 'unselected string arm'
+    return ''
+
+int first_value(int[] values):
+    return values[0]
+
+int[] choose_values(bool choose, int value):
+    return choose ? make_values(value) : make_values(value + 10)
+
+future<int[]> submit_scoped_values(thread_pool pool, int value):
+    int[] values = make_values(value)
+    return pool.submit(int[] input -> input.length() > 0 ? input : empty_values(), values)
+
+int[] global_values = false ? make_values(1) : make_values(7)
+string global_text = true ? make_text(8) : make_text(9)
+int condition_calls = 0
+
+bool checked_condition(bool value):
+    condition_calls += 1
+    return value
+
+int main(string[] args):
+    bool choose_first = args.length() == 1
+    bool choose_second = args.length() > 1
+    bool always_true = args.length() > 0
+    bool always_false = args.length() < 0
+    print(choose_first ? 1 : 0)
+    print(choose_second ? 1 : 0)
+
+    int[] selected = choose_first ? make_values(10) : make_values(20)
+    print(selected[0])
+    int[] once = checked_condition(choose_first) ? make_values(61) : make_values(62)
+    print(once[0])
+    print(condition_calls)
+    int[] literal_choice = choose_second ? [15, 16] : [17, 18]
+    print(literal_choice[0])
+    int[] returned = choose_values(choose_second, 30)
+    print(returned[0])
+    int[] nested = choose_first ? make_values(50) : (choose_second ? make_values(60) : empty_values())
+    print(nested.length())
+    int[] empty_choice = choose_first ? empty_values() : make_values(70)
+    print(empty_choice.length())
+    int[] lazy_first = always_true ? make_values(31) : fail_values()
+    int[] lazy_second = always_false ? fail_values() : make_values(41)
+    print(lazy_first[0])
+    print(lazy_second[0])
+    print(global_values[0])
+    print(global_text)
+
+    string native_text = choose_first ? make_text(1) : make_text(2)
+    print(native_text)
+    int[] left = make_values(80)
+    int[] right = make_values(90)
+    print(first_value(choose_first ? left : right))
+    const int[] fixed_values = make_values(70)
+    print(first_value(choose_second ? fixed_values : left))
+    print(fixed_values[0])
+
+    thread_pool pool = thread_pool(2)
+    future<string> positive_text = pool.submit(int value -> value > 0 ? make_text(value) : fail_text(), 3)
+    future<string> negative_text = pool.submit(int value -> value > 0 ? fail_text() : make_text(0 - value), 0 - 4)
+    future<string> block_text = pool.submit(int value -> {
+        if (value > 0) {
+            return value > 5 ? make_text(value) : make_text(5)
+        }
+        return make_text(0 - value)
+    }, 2)
+    future<int[]> positive_values = pool.submit(int value -> value > 0 ? make_values(value) : fail_values(), 4)
+    future<int[]> negative_values = pool.submit(int value -> value > 0 ? fail_values() : make_values(0 - value), 0 - 5)
+    future<int[]> block_values = pool.submit(int value -> {
+        if (value > 0) {
+            return make_values(value)
+        }
+        return value == 0 ? empty_values() : make_values(0 - value)
+    }, 0 - 6)
+    future<int> scalar_compatibility = pool.submit(int value -> value > 0 ? 71 : 72, 1)
+    future<int[]> scoped_values = submit_scoped_values(pool, 11)
+
+    print(positive_text.await())
+    print(negative_text.await())
+    print(block_text.await())
+    int[] first_result = positive_values.await()
+    int[] second_result = positive_values.await()
+    first_result[0] = 999
+    print(first_result[0])
+    print(second_result[0])
+    int[] negative_result = negative_values.await()
+    int[] block_result = block_values.await()
+    int[] scoped_result = scoped_values.await()
+    print(negative_result[0])
+    print(block_result.length())
+    print(scoped_result[0])
+    print(scalar_compatibility.await())
+    return 0

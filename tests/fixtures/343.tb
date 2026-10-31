@@ -1,0 +1,73 @@
+import regex;
+
+# Case 1
+
+void check(string pattern, string text):
+    Regex r = regex_compile(pattern)
+    print(r.valid && regex_match(r, text))
+    return
+
+int combined_case_1_main():
+    check('[a-z]+', 'hello')
+    check('[a-z]+', 'Hello')
+    check('[^0-9]+', 'abc!')
+    check('[^0-9]+', 'ab1')
+    check('[a-zA-Z_][a-zA-Z_0-9]*', 'foo_42')
+    check('[a-zA-Z_][a-zA-Z_0-9]*', '9foo')
+    check('[\\dA-F]+', '1FA2')
+    check('[\\D]+', 'abc')
+    check('[-a]+', '-a-')
+    check('[a-]+', 'a--')
+    check('[a\\-z]+', 'a-z')
+    check('[\\]\\\\]+', ']\\')
+    check('[a^]+', 'a^')
+    check('([a-c]|\\d)+', 'abc9')
+    print(regex_compile('[]').valid)
+    print(regex_compile('[^]').valid)
+    print(regex_compile('[z-a]').valid)
+    print(regex_compile('[a-\\d]').valid)
+    print(regex_compile('[\\d-a]').valid)
+    print(regex_compile('[a-b-c]').valid)
+    print(regex_compile('[a').valid)
+    print(regex_compile('[\\q]').valid)
+    Regex damaged = regex_compile('[a]')
+    damaged.characters[0] = 'z-a'
+    print(regex_match(damaged, 'z'))
+    Regex changed = regex_compile('[a]')
+    changed.characters[0] = 'z'
+    print(regex_match(changed, 'z'))
+    print(regex_match(changed, 'a'))
+    print(regex_match(regex_compile('[b-d]'), 'b'))
+    print(regex_match(regex_compile('[b-d]'), 'd'))
+    print(regex_match(regex_compile('[b-d]'), 'a'))
+    print(regex_match(regex_compile('[b-d]'), 'e'))
+    return 0
+
+# Case 2
+
+int combined_case_2_main(string[] args):
+    print(regex_find_start(regex_compile('ab+'), 'xxabbb'))
+    print(regex_find_start(regex_compile('a.*z|b'), 'abxxz'))
+    print(regex_find_start(regex_compile('\\d+'), 'x12y3'))
+    print(regex_find_start(regex_compile('a*'), 'bbb'))
+    print(regex_find_start(regex_compile('^b'), 'ab'))
+    print(regex_find_start(regex_compile('$'), 'abc'))
+    print(regex_find_start(regex_compile('$'), 'abc\n'))
+    print(regex_find_start(regex_compile('z$'), 'abz'))
+    print(regex_find_start(regex_compile('^'), ''))
+    print(regex_find_start(regex_compile(''), 'abc'))
+    print(regex_find_start(regex_compile(''), args[0]))
+    print(regex_find_start(regex_compile('((b*|ab)+)+'), 'bab'))
+    print(regex_find_start(regex_compile('('), 'abc'))
+    Regex malformed = Regex(true, 0, [1, 4], [99, -1], [-1, -1], ['a', ''])
+    print(regex_find_start(malformed, 'a'))
+    return 0
+
+int main(string[] args):
+    print('=== case 1 ===')
+    if (combined_case_1_main() != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main(args) != 0):
+        return 1
+    return 0

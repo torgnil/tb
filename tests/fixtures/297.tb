@@ -1,0 +1,281 @@
+
+
+# Case 1
+int[] source_ints = [1]
+bool[] source_flags = [true]
+string[] source_words = ['source']
+int[][] source_int_rows = [[1, 2]]
+string[][] source_word_rows = [['source', 'row']]
+
+int[] initialized_ints = source_ints
+bool[] initialized_flags = source_flags
+string[] initialized_words = source_words
+int[][] initialized_int_rows = source_int_rows
+string[][] initialized_word_rows = source_word_rows
+
+int[] saved_ints = []
+bool[] saved_flags = []
+string[] saved_words = []
+int[][] saved_int_rows = []
+string[][] saved_word_rows = []
+
+void print_saved():
+    print(saved_ints[0])
+    print(saved_flags[0])
+    print(saved_words[0])
+    print(saved_int_rows[0][0])
+    print(saved_word_rows[0][0])
+
+void save_locals(int seed):
+    int[] ints = [seed]
+    bool[] flags = [true]
+    string[] words = ['local-' + seed.to_string()]
+    int[][] int_rows = [[seed, seed + 1]]
+    string[][] word_rows = [['nested-' + seed.to_string()]]
+    saved_ints = ints
+    saved_flags = flags
+    saved_words = words
+    saved_int_rows = int_rows
+    saved_word_rows = word_rows
+    ints[0] = 90
+    flags[0] = false
+    words[0] = 'changed-local'
+    int_rows[0][0] = 91
+    word_rows[0][0] = 'changed-nested'
+
+void save_parameters(const int[] ints, const bool[] flags, const string[] words, const int[][] int_rows, const string[][] word_rows):
+    saved_ints = ints
+    saved_flags = flags
+    saved_words = words
+    saved_int_rows = int_rows
+    saved_word_rows = word_rows
+
+void replace_ints(const int[] old_value):
+    saved_ints = [99]
+    print(old_value[0])
+
+void save_empty():
+    int[] ints = []
+    bool[] flags = []
+    string[] words = []
+    int[][] int_rows = []
+    string[][] word_rows = []
+    saved_ints = ints
+    saved_flags = flags
+    saved_words = words
+    saved_int_rows = int_rows
+    saved_word_rows = word_rows
+
+int combined_case_1_main(string[] args):
+    int seed = args.length() + 10
+
+    print(initialized_ints[0])
+    print(initialized_flags[0])
+    print(initialized_words[0])
+    print(initialized_int_rows[0][0])
+    print(initialized_word_rows[0][0])
+    source_ints[0] = 2
+    source_flags[0] = false
+    source_words[0] = 'changed-source'
+    source_int_rows[0][0] = 3
+    source_word_rows[0][0] = 'changed-source-row'
+    print(initialized_ints[0])
+    print(initialized_flags[0])
+    print(initialized_words[0])
+    print(initialized_int_rows[0][0])
+    print(initialized_word_rows[0][0])
+
+    save_locals(seed)
+    print_saved()
+
+    int[] input_ints = [seed + 1]
+    bool[] input_flags = [false]
+    string[] input_words = ['parameter-' + seed.to_string()]
+    int[][] input_int_rows = [[seed + 2]]
+    string[][] input_word_rows = [['parameter-row-' + seed.to_string()]]
+    save_parameters(input_ints, input_flags, input_words, input_int_rows, input_word_rows)
+    input_ints[0] = 92
+    input_flags[0] = true
+    input_words[0] = 'changed-parameter'
+    input_int_rows[0][0] = 93
+    input_word_rows[0][0] = 'changed-parameter-row'
+    print_saved()
+
+    saved_ints = saved_ints
+    saved_flags = saved_flags
+    saved_words = saved_words
+    saved_int_rows = saved_int_rows
+    saved_word_rows = saved_word_rows
+    print_saved()
+    replace_ints(saved_ints)
+
+    saved_ints = [seed + 20]
+    saved_flags = [true]
+    saved_words = ['owned-' + seed.to_string()]
+    saved_int_rows = [[seed + 21]]
+    saved_word_rows = [['owned-row-' + seed.to_string()]]
+    print_saved()
+
+    save_empty()
+    print(saved_ints.length())
+    print(saved_flags.length())
+    print(saved_words.length())
+    print(saved_int_rows.length())
+    print(saved_word_rows.length())
+    return 0
+
+# Case 2
+enum Mode {
+    READY,
+    DONE
+}
+
+string decorate(const Mode value):
+    return value + '!'
+
+string forward_mode(const Mode value):
+    return value
+
+Mode choose_mode(int seed):
+    if (seed > 1):
+        return Mode.DONE
+    return Mode.READY
+
+string dynamic_label(const Mode value, int seed):
+    string prefix = 'runtime-' + seed
+    return prefix + ':' + value
+
+string build_mode(int seed):
+    const Mode value = 'built-' + seed
+    return forward_mode(value)
+
+const Mode fixed_mode = Mode.READY
+const Mode runtime_mode = choose_mode(1)
+string global_label = decorate(forward_mode(runtime_mode))
+const Mode dynamic_global = build_mode(4)
+
+int combined_case_2_main(string[] args):
+    const Mode local_mode = Mode.DONE
+    const Mode selected_mode = choose_mode(args.length())
+    print(fixed_mode)
+    print(runtime_mode)
+    print(global_label)
+    print(local_mode)
+    print(decorate(forward_mode(local_mode)))
+    print(Mode.READY.decorate())
+    print(selected_mode)
+    print(dynamic_label(selected_mode, args.length()))
+    print(selected_mode.length())
+    const Mode local_dynamic = build_mode(args.length())
+    print(local_dynamic)
+    print(decorate(local_dynamic))
+    print(dynamic_global)
+    Mode mutable_mode = Mode.READY
+    mutable_mode = Mode.DONE
+    print(mutable_mode)
+    return 0
+
+# Case 3
+set<int> global_ids = {5, 6}
+int helper_calls = 0
+
+record SetBox(set<int> values);
+record NestedBox(SetBox box);
+record ArrayBox(int[] values);
+
+SetBox global_box = SetBox(global_ids)
+SetBox global_copy = global_box
+
+set<int> make_set(int seed):
+    helper_calls += 1
+    return {seed, seed + 1, seed + 1}
+
+SetBox make_local_box(int seed):
+    set<int> local = {seed, seed + 1}
+    return SetBox(local)
+
+SetBox snapshot(const set<int> source):
+    return SetBox(source)
+
+set<int> read_current(set<int> values):
+    print(values.contains(9))
+    return {values.length(), 11}
+
+int combined_case_3_main(string[] args):
+    int seed = args.length()
+    set<int> source = {1, 2}
+    SetBox from_local = SetBox(source)
+    source.add(99)
+    print(from_local.values.contains(99))
+
+    const set<int> fixed = {3, 4}
+    SetBox from_const = SetBox(fixed)
+    print(from_const.values.contains(4))
+    SetBox from_parameter = snapshot(fixed)
+    print(from_parameter.values.contains(3))
+    SetBox from_global = SetBox(global_ids)
+    print(from_global.values.contains(5))
+    global_box.values.add(13)
+    print(global_copy.values.contains(13))
+
+    SetBox from_owned = SetBox(make_set(seed))
+    print(from_owned.values.length())
+    SetBox from_local_owner = make_local_box(seed + 10)
+    print(from_local_owner.values.contains(seed + 11))
+
+    NestedBox nested = NestedBox(from_owned)
+    NestedBox copied = nested
+    nested.box.values.add(88)
+    print(copied.box.values.contains(88))
+    SetBox other_field = SetBox(from_owned.values)
+    from_owned.values.add(77)
+    print(other_field.values.contains(77))
+
+    SetBox replaced = SetBox({7, 8})
+    set<int> replacement = {9, 10}
+    replaced.values = replacement
+    replacement.add(11)
+    print(replaced.values.contains(11))
+    replaced.values = replaced.values
+    replaced.values = read_current(replaced.values)
+    print(replaced.values.length())
+    replaced.values = make_set(seed + 20)
+    print(replaced.values.length())
+
+    set<int> empty = {}
+    SetBox empty_box = SetBox(empty)
+    empty_box.values.add(seed)
+    print(empty_box.values.length())
+
+    for (int index : range(2)):
+        SetBox loop_box = SetBox(make_set(index + 30))
+        print(loop_box.values.length())
+    print(helper_calls)
+
+    int[] array_source = [5, 6]
+    ArrayBox array_box = ArrayBox(array_source)
+    array_source[0] = 99
+    print(array_box.values[0])
+    return 0
+
+# Case 4
+record EmptySetBox(set<int> values);
+
+int combined_case_4_main(string[] args):
+    print('set-field-helpers')
+    return 0
+
+int main(string[] args):
+    print('=== case 1 ===')
+    if (combined_case_1_main(args) != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main(args) != 0):
+        return 1
+    print('=== case 3 ===')
+    if (combined_case_3_main(args) != 0):
+        return 1
+    print('=== case 4 ===')
+    if (combined_case_4_main(args) != 0):
+        return 1
+    return 0

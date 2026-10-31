@@ -1,0 +1,80 @@
+int maybe_fail(bool should_throw, string message):
+    if (should_throw):
+        throw message
+    return 6
+
+int guarded_write(map<int[], int> target, bool should_throw):
+    target[[6]] = maybe_fail(should_throw, 'caller RHS failed')
+    return target[[6]]
+
+int main(string[] args):
+    bool should_throw = args.length() > 0
+    map<int[], int> values = {[1]: 4, [2]: 8}
+
+    try {
+        values[[1]] = maybe_fail(should_throw, 'array map RHS failed')
+    } catch (exception error) {
+        print(error)
+    }
+    print(values[[1]])
+
+    try {
+        values[[2]] += maybe_fail(should_throw, 'array map RHS failed')
+    } catch (exception error) {
+        print(error)
+    }
+    print(values[[2]])
+
+    try {
+        values[[4]] = 17
+        int ignored = maybe_fail(should_throw, 'throw after successful guarded assignment')
+    } catch (exception error) {
+        print(error)
+    }
+    print(values[[4]])
+    print(values[[5]])
+
+    try {
+        try {
+            values[[3]] = maybe_fail(should_throw, 'array map RHS failed')
+        } catch (exception inner) {
+            print('inner:' + inner)
+            throw inner
+        }
+    } catch (exception outer) {
+        print('outer:' + outer)
+    }
+    print(values[[3]])
+
+    for (int index : range(0, 3)):
+        try {
+            values[[index + 10]] += maybe_fail(should_throw, 'array map RHS failed')
+        } catch (exception error) {
+            print(error)
+        }
+
+    values[[1]] = 9
+    values[[2]] += 3
+    print(values[[1]])
+    print(values[[2]])
+
+    try {
+        values[[20]] = maybe_fail(!should_throw, 'conditional RHS failed')
+    } catch (exception error) {
+        print(error)
+    }
+    print(values[[20]])
+
+    try {
+        int caller_result = guarded_write(values, should_throw)
+        print(caller_result)
+    } catch (exception error) {
+        print('caller:' + error)
+    }
+    try {
+        int caller_result = guarded_write(values, !should_throw)
+        print(caller_result)
+    } catch (exception error) {
+        print('unexpected:' + error)
+    }
+    return 0

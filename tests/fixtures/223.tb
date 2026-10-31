@@ -1,0 +1,45 @@
+record Entry(int base);
+
+int combine_entry(int value, Entry entry):
+    return value + entry.base
+
+int double_value(int value):
+    return value * 2
+
+future<int> schedule(thread_pool pool, int value):
+    return pool.submit(double_value, value)
+
+future<int> schedule_const(const thread_pool pool, const int value):
+    return pool.submit(double_value, value)
+
+void append_line(file destination, string value):
+    write_line(destination, value)
+
+void append_const_line(const file destination, const string value):
+    write_line(destination, value)
+
+int main(string[] args):
+    int argc = args.length()
+    print(combine_entry(argc, Entry(6)))
+
+    thread_pool pool = thread_pool(1)
+    const thread_pool fixed_pool = thread_pool(1)
+    const int fixed_value = 5 + argc
+    future<int> first = schedule(pool, 3 + argc)
+    future<int> second = pool.schedule_const(fixed_value)
+    future<int> third = fixed_pool.schedule_const(fixed_value + 1)
+    future<int> fourth = schedule_const(fixed_pool, fixed_value + 2)
+    print(first.await())
+    print(second.await())
+    print(third.await())
+    print(fourth.await())
+    print(first.await())
+
+    string path = 'handle-call-types-' + argc.to_string() + '.tmp'
+    file destination = open(path)
+    append_line(destination, 'direct')
+    destination.append_const_line('ufcs')
+    write_line(destination, 'caller')
+    close(destination)
+    print(read_file(path))
+    return 0

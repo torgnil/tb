@@ -2,12 +2,27 @@
 %tb_bootstrap_prio_q_int = type { ptr, ptr }
 define private ptr @tb_bootstrap_int_array_new(i32 %len) {
 entry:
+  %len.negative = icmp slt i32 %len, 0
+  br i1 %len.negative, label %invalid.length, label %allocate.object
+invalid.length:
+  call void @abort()
+  unreachable
+allocate.object:
   %array = call ptr @malloc(i64 16)
+  %array.null = icmp eq ptr %array, null
+  br i1 %array.null, label %allocation.failed, label %allocate.data
+allocate.data:
   %cap.small = icmp slt i32 %len, 4
   %cap = select i1 %cap.small, i32 4, i32 %len
   %cap64 = sext i32 %cap to i64
   %bytes = mul i64 %cap64, 8
   %data = call ptr @malloc(i64 %bytes)
+  %data.null = icmp eq ptr %data, null
+  br i1 %data.null, label %allocation.failed, label %initialize
+allocation.failed:
+  call void @abort()
+  unreachable
+initialize:
   call void @llvm.memset.p0.i64(ptr %data, i8 0, i64 %bytes, i1 false)
   %len.ptr = getelementptr inbounds %tb_bootstrap_int_array, ptr %array, i32 0, i32 0
   store i32 %len, ptr %len.ptr
@@ -67,16 +82,43 @@ loop.body:
 done:
   ret ptr %result
 }
+; Validate a direct range loop using the same length limit as range arrays.
+define private void @tb_bootstrap_range_guard(i64 %start, i64 %end) {
+entry:
+  %reversed = icmp sle i64 %end, %start
+  br i1 %reversed, label %done, label %check.length
+check.length:
+  %delta = sub i64 %end, %start
+  %too.large = icmp ugt i64 %delta, 2147483647
+  br i1 %too.large, label %invalid.length, label %done
+invalid.length:
+  call void @abort()
+  unreachable
+done:
+  ret void
+}
+
 define private ptr @tb_bootstrap_range(i64 %start, i64 %end) {
 entry:
+  %reversed = icmp sle i64 %end, %start
+  br i1 %reversed, label %empty, label %check.length
+empty:
+  %empty.array = call ptr @tb_bootstrap_int_array_new(i32 0)
+  ret ptr %empty.array
+check.length:
   %delta = sub i64 %end, %start
-  %has.items = icmp sgt i64 %delta, 0
-  %len64 = select i1 %has.items, i64 %delta, i64 0
+  %too.large = icmp ugt i64 %delta, 2147483647
+  br i1 %too.large, label %invalid.length, label %allocate
+invalid.length:
+  call void @abort()
+  unreachable
+allocate:
+  %len64 = phi i64 [ %delta, %check.length ]
   %len = trunc i64 %len64 to i32
   %array = call ptr @tb_bootstrap_int_array_new(i32 %len)
   br label %loop.cond
 loop.cond:
-  %index = phi i32 [0, %entry], [%next.index, %loop.body]
+  %index = phi i32 [0, %allocate], [%next.index, %loop.body]
   %index64 = sext i32 %index to i64
   %keep.loop = icmp slt i64 %index64, %len64
   br i1 %keep.loop, label %loop.body, label %done
@@ -88,12 +130,78 @@ loop.body:
 done:
   ret ptr %array
 }
+define private ptr @tb_bootstrap_range_step(i64 %start, i64 %end, i64 %step) {
+entry:
+  %step.zero = icmp eq i64 %step, 0
+  br i1 %step.zero, label %invalid.step, label %direction
+invalid.step:
+  call void @abort()
+  unreachable
+direction:
+  %step.positive = icmp sgt i64 %step, 0
+  %ascending = icmp slt i64 %start, %end
+  %descending = icmp sgt i64 %start, %end
+  %active.direction = select i1 %step.positive, i1 %ascending, i1 %descending
+  br i1 %active.direction, label %count, label %empty
+count:
+  %distance.up = sub i64 %end, %start
+  %distance.down = sub i64 %start, %end
+  %distance = select i1 %step.positive, i64 %distance.up, i64 %distance.down
+  %step.negative.magnitude = sub i64 0, %step
+  %step.magnitude = select i1 %step.positive, i64 %step, i64 %step.negative.magnitude
+  %quotient = udiv i64 %distance, %step.magnitude
+  %remainder = urem i64 %distance, %step.magnitude
+  %has.remainder = icmp ne i64 %remainder, 0
+  %quotient.too.large = icmp ugt i64 %quotient, 2147483647
+  %quotient.at.limit = icmp eq i64 %quotient, 2147483647
+  %rounded.too.large = and i1 %has.remainder, %quotient.at.limit
+  %too.large = or i1 %quotient.too.large, %rounded.too.large
+  br i1 %too.large, label %invalid.length, label %allocate
+invalid.length:
+  call void @abort()
+  unreachable
+allocate:
+  %remainder.count = zext i1 %has.remainder to i64
+  %count64 = add i64 %quotient, %remainder.count
+  %count32 = trunc i64 %count64 to i32
+  %array = call ptr @tb_bootstrap_int_array_new(i32 %count32)
+  br label %loop.cond
+loop.cond:
+  %index = phi i32 [0, %allocate], [%next.index, %loop.body]
+  %keep.loop = icmp slt i32 %index, %count32
+  br i1 %keep.loop, label %loop.body, label %done
+loop.body:
+  %index64 = sext i32 %index to i64
+  %offset = mul i64 %index64, %step
+  %value = add i64 %start, %offset
+  call void @tb_bootstrap_int_array_set(ptr %array, i32 %index, i64 %value)
+  %next.index = add i32 %index, 1
+  br label %loop.cond
+empty:
+  %empty.array = call ptr @tb_bootstrap_int_array_new(i32 0)
+  ret ptr %empty.array
+done:
+  ret ptr %array
+}
 define private i64 @tb_bootstrap_int_array_get(ptr %array, i32 %index) {
 entry:
   %data.ptr = getelementptr inbounds %tb_bootstrap_int_array, ptr %array, i32 0, i32 2
   %data = load ptr, ptr %data.ptr
   %slot = getelementptr inbounds i64, ptr %data, i32 %index
   %value = load i64, ptr %slot
+  ret i64 %value
+}
+define private i64 @tb_bootstrap_int_array_last(ptr %array) {
+entry:
+  %len = call i32 @tb_bootstrap_int_array_length(ptr %array)
+  %empty = icmp eq i32 %len, 0
+  br i1 %empty, label %empty.abort, label %nonempty
+empty.abort:
+  call void @abort()
+  unreachable
+nonempty:
+  %last.index = sub i32 %len, 1
+  %value = call i64 @tb_bootstrap_int_array_get(ptr %array, i32 %last.index)
   ret i64 %value
 }
 define private i1 @tb_bootstrap_int_array_contains(ptr %array, i64 %needle) {
@@ -115,6 +223,27 @@ found:
   ret i1 true
 notfound:
   ret i1 false
+}
+define private i64 @tb_bootstrap_int_array_index_of(ptr %array, i64 %needle) {
+entry:
+  %len = call i32 @tb_bootstrap_int_array_length(ptr %array)
+  br label %loop.cond
+loop.cond:
+  %index = phi i32 [0, %entry], [%next.index, %loop.step]
+  %keep.loop = icmp slt i32 %index, %len
+  br i1 %keep.loop, label %loop.body, label %notfound
+loop.body:
+  %item = call i64 @tb_bootstrap_int_array_get(ptr %array, i32 %index)
+  %matches = icmp eq i64 %item, %needle
+  br i1 %matches, label %found, label %loop.step
+loop.step:
+  %next.index = add i32 %index, 1
+  br label %loop.cond
+found:
+  %found.index = sext i32 %index to i64
+  ret i64 %found.index
+notfound:
+  ret i64 -1
 }
 define private void @tb_bootstrap_int_array_set(ptr %array, i32 %index, i64 %value) {
 entry:
@@ -265,13 +394,28 @@ entry:
   %cap = load i32, ptr %cap.ptr
   %data.ptr = getelementptr inbounds %tb_bootstrap_int_array, ptr %array, i32 0, i32 2
   %data.old = load ptr, ptr %data.ptr
+  %at.limit = icmp eq i32 %len, 2147483647
+  br i1 %at.limit, label %length.failed, label %check.growth
+length.failed:
+  call void @abort()
+  unreachable
+check.growth:
   %need.grow = icmp eq i32 %len, %cap
   br i1 %need.grow, label %grow, label %store
 grow:
-  %new.cap = mul i32 %cap, 2
-  %new.cap64 = sext i32 %new.cap to i64
+  %cap64 = sext i32 %cap to i64
+  %doubled.cap64 = mul i64 %cap64, 2
+  %cap.too.large = icmp sgt i64 %doubled.cap64, 2147483647
+  %new.cap64 = select i1 %cap.too.large, i64 2147483647, i64 %doubled.cap64
+  %new.cap = trunc i64 %new.cap64 to i32
   %new.bytes = mul i64 %new.cap64, 8
   %new.data = call ptr @malloc(i64 %new.bytes)
+  %new.data.null = icmp eq ptr %new.data, null
+  br i1 %new.data.null, label %allocation.failed, label %copy
+allocation.failed:
+  call void @abort()
+  unreachable
+copy:
   %old.cap64 = sext i32 %cap to i64
   %old.bytes = mul i64 %old.cap64, 8
   call void @llvm.memcpy.p0.p0.i64(ptr %new.data, ptr %data.old, i64 %old.bytes, i1 false)

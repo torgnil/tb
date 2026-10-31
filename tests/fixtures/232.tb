@@ -1,0 +1,137 @@
+record Item(int value, string label, int[] samples);
+record Empty();
+record Holder(Item[] items);
+record EmptyHolder(Empty[] items);
+
+Item[] global_items = []
+
+Item make_item(int value):
+    return Item(value, 'I' + value.to_string(), [value])
+
+Item[] make_items(int value):
+    return [make_item(value)]
+
+Holder make_holder(int value):
+    return Holder(make_items(value))
+
+EmptyHolder make_empty_holder():
+    return EmptyHolder([Empty(), Empty()])
+
+Item[] field_from_local(int value):
+    Holder owner = make_holder(value)
+    return owner.items
+
+Item[] field_from_local_alias(int value):
+    Holder owner = make_holder(value)
+    Item[] alias = owner.items
+    return alias
+
+Item[] field_from_const_local_alias(int value):
+    Holder owner = make_holder(value)
+    const Item[] alias = owner.items
+    return alias
+
+Item[] field_from_parameter(Holder owner):
+    return owner.items
+
+Item[] from_parameter(Item[] values):
+    return values
+
+Item[] from_global():
+    return global_items
+
+Item[] owned_local(int value):
+    Item[] values = make_items(value)
+    return values
+
+Item[] owned_const_local(int value):
+    const Item[] values = make_items(value)
+    return values
+
+Item[] owned_call(int value):
+    return make_items(value)
+
+Item[] owned_literal(int value):
+    return [make_item(value)]
+
+Item[] owned_item_variable(int value):
+    Item item = make_item(value)
+    return [item]
+
+Item[] branch_field(int value):
+    Holder owner = make_holder(value)
+    if (value > 0):
+        return owner.items
+    else:
+        return owner.items
+
+Item[] catch_field(int value):
+    Holder owner = make_holder(value)
+    try:
+        throw 'caught'
+    catch (exception error):
+        return owner.items
+
+Item[] try_or_catch_field(int value):
+    Holder owner = make_holder(value)
+    try:
+        if (value > 0):
+            return owner.items
+        throw 'caught'
+    catch (exception error):
+        return owner.items
+
+Empty[] empty_field():
+    EmptyHolder owner = make_empty_holder()
+    return owner.items
+
+Empty[] owned_empty():
+    Empty[] values = []
+    return values
+
+Empty[] owned_zero_field():
+    Empty[] values = [Empty()]
+    return values
+
+int main(string[] args):
+    int seed = args.length() + 3
+
+    Item[] from_owner = field_from_local(seed)
+    print(from_owner[0].value)
+    print(from_owner[0].label)
+    print(from_owner[0].samples[0])
+
+    Item[] from_alias = field_from_local_alias(seed + 1)
+    print(from_alias[0].value)
+    Item[] from_const_alias = field_from_const_local_alias(seed + 2)
+    print(from_const_alias[0].value)
+
+    Item[] source = make_items(seed + 3)
+    Item[] copied_parameter = from_parameter(source)
+    source[0] = make_item(seed + 30)
+    print(copied_parameter[0].value)
+    print(source[0].value)
+
+    Item[] from_holder_parameter = field_from_parameter(make_holder(seed + 4))
+    print(from_holder_parameter[0].value)
+
+    global_items.push(make_item(80))
+    Item[] copied_global = from_global()
+    global_items[0] = make_item(81)
+    print(copied_global[0].value)
+
+    print(owned_local(seed + 5)[0].value)
+    print(owned_const_local(seed + 6)[0].value)
+    print(owned_call(seed + 7)[0].value)
+    print(owned_literal(seed + 8)[0].value)
+    print(owned_item_variable(seed + 9)[0].value)
+
+    print(branch_field(seed + 10)[0].value)
+    print(catch_field(seed + 11)[0].value)
+    print(try_or_catch_field(seed + 12)[0].value)
+    print(try_or_catch_field(0)[0].value)
+
+    print(empty_field().length())
+    print(owned_empty().length())
+    print(owned_zero_field().length())
+    return 0

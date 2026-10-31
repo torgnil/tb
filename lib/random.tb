@@ -1,0 +1,41 @@
+# Random integers from the operating system. Bounds are exclusive at the top.
+int random():
+    return random_bits()
+
+int random_below(int upper):
+    return random_between(0, upper)
+
+int random_between(int lower, int upper):
+    if (lower >= upper):
+        throw 'random: invalid range'
+    int width = upper - lower
+    if (width <= 0):
+        while (true):
+            int value = random()
+            if (value >= lower && value < upper):
+                return value
+    int threshold = (9223372036854775807 % width + 1) % width
+    while (true):
+        int value = random() & 9223372036854775807
+        if (value >= threshold):
+            return lower + value % width
+    return 0
+
+# A deterministic xorshift64 generator. State is stored as a signed int, but
+# every operation is defined on its 64-bit two's-complement bit pattern.
+record RandomGenerator(int state);
+
+RandomGenerator seeded_random(int seed):
+    if (seed == 0):
+        seed = -7046029254386353131
+    return RandomGenerator(seed)
+
+int random_next(RandomGenerator generator):
+    int value = generator.state
+    if (value == 0):
+        value = -7046029254386353131
+    value ^= value << 13
+    value ^= (value >> 7) & 144115188075855871
+    value ^= value << 17
+    generator.state = value
+    return value

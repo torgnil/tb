@@ -48,12 +48,15 @@ def discover_fixtures(fixtures_dir: Path, max_phase: int | None = None) -> list[
             continue
         if max_phase is not None and int(input_path.stem) > max_phase:
             continue
-        expected_path = input_path.with_suffix(".out")
-        if not expected_path.exists():
+        expected_paths = [input_path.with_suffix(suffix) for suffix in (".out", ".err")]
+        expected_paths = [path for path in expected_paths if path.exists()]
+        if not expected_paths:
             raise FileNotFoundError(
-                f"Missing expected output file for {input_path.name}: {expected_path.name}"
+                f"Missing .out or .err expectation for {input_path.name}"
             )
-        fixtures.append((input_path, expected_path))
+        if len(expected_paths) != 1:
+            raise RuntimeError(f"Ambiguous expectations for {input_path.name}: use either .out or .err")
+        fixtures.append((input_path, expected_paths[0]))
     return fixtures
 
 
@@ -71,6 +74,44 @@ def find_runtime_output_target(source_text: str) -> Path | None:
     return Path(matches[0])
 
 
+def prepare_fixture_workspace(
+    workspace_path: Path,
+    fixtures_dir: Path,
+    input_path: Path,
+    source_text: str,
+) -> None:
+    fixture_names = [fixtures_dir.name]
+    if fixtures_dir.name != "test-files":
+        fixture_names.append("test-files")
+
+    fixture_assets: set[Path] = set()
+    for suffix in (".in", ".out", ".err", ".tb"):
+        companion = input_path.with_suffix(suffix)
+        if companion.is_file():
+            fixture_assets.add(Path(companion.name))
+
+    for literal_path in re.findall(r"['\"]([^'\"]+)['\"]", source_text):
+        path_parts = Path(literal_path).parts
+        if len(path_parts) < 2 or path_parts[0] not in fixture_names:
+            continue
+        relative_path = Path(*path_parts[1:])
+        if ".." in relative_path.parts:
+            continue
+        if (fixtures_dir / relative_path).is_file():
+            fixture_assets.add(relative_path)
+
+    for fixture_name in fixture_names:
+        fixture_workspace = workspace_path / fixture_name
+        fixture_workspace.mkdir(parents=True, exist_ok=True)
+        for relative_path in sorted(fixture_assets):
+            source_path = fixtures_dir / relative_path
+            if not source_path.is_file():
+                continue
+            destination = fixture_workspace / relative_path
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source_path, destination)
+
+
 def run_fixture(
     compiler_bin: Path,
     fixtures_dir: Path,
@@ -86,23 +127,33 @@ def run_fixture(
         tmp_path = Path(tmp_dir)
         output_path = tmp_path / f"{input_path.stem}.ll"
         binary_path = tmp_path / input_path.stem
-        workspace_path = tmp_path / "workspace"
-        fixture_workspace = workspace_path / fixtures_dir.name
-        shutil.copytree(fixtures_dir, fixture_workspace)
-        if fixtures_dir.name != "test-files":
-            compat_workspace = workspace_path / "test-files"
-            shutil.copytree(fixtures_dir, compat_workspace)
-
         compile_result = subprocess.run(
             [str(compiler_bin), str(input_path), str(output_path)],
             capture_output=True,
             text=True,
             check=False,
         )
+        if expected_path.suffix == ".err":
+            if not expected_output.strip():
+                raise RuntimeError(f"Empty diagnostic expectation for {input_path.name}")
+            if compile_result.returncode != 1 or compile_result.stderr or output_path.exists():
+                raise RuntimeError(
+                    f"Expected compiler rejection for {input_path.name}: status 1, empty stderr, no LLVM; "
+                    f"got status {compile_result.returncode}, LLVM present: {output_path.exists()}\n"
+                    f"{compile_result.stdout}{compile_result.stderr}"
+                )
+            return FixtureResult(
+                name=input_path.stem,
+                output=compile_result.stdout,
+                expected_output=expected_output,
+            )
         if compile_result.returncode != 0:
             raise RuntimeError(
                 f"tb compiler failed for {input_path.name}:\n{compile_result.stdout}{compile_result.stderr}"
             )
+
+        workspace_path = tmp_path / "workspace"
+        prepare_fixture_workspace(workspace_path, fixtures_dir, input_path, source_text)
 
         linkflags_path = Path(f"{output_path}.linkflags")
         cflags_path = Path(f"{output_path}.cflags")
@@ -170,14 +221,14 @@ def verify_fixtures(
     build_root: Path,
     max_phase: int | None = None,
 ) -> list[FixtureResult]:
-    if shutil.which("clang") is None:
-        raise RuntimeError("clang is required to verify fixtures")
     if not compiler_bin.exists():
         raise FileNotFoundError(f"Missing tb compiler binary: {compiler_bin}")
 
     fixtures = discover_fixtures(fixtures_dir, max_phase=max_phase)
     if not fixtures:
         raise FileNotFoundError(f"No .tb fixtures found in {fixtures_dir}")
+    if any(expected.suffix == ".out" for _, expected in fixtures) and shutil.which("clang") is None:
+        raise RuntimeError("clang is required to verify runtime fixtures")
 
     build_root.mkdir(parents=True, exist_ok=True)
     return [run_fixture(compiler_bin, fixtures_dir, build_root, input_path, expected_path) for input_path, expected_path in fixtures]
@@ -185,13 +236,13 @@ def verify_fixtures(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Compile and verify tb fixtures with the self-hosted compiler."
+        description="Verify tb runtime outputs (.out) and compiler rejections (.err)."
     )
     parser.add_argument(
         "fixtures_dir",
         nargs="?",
         default="tests/fixtures",
-        help="Directory containing .tb and .out fixture pairs",
+        help="Directory containing numbered .tb files paired with either .out or .err",
     )
     parser.add_argument(
         "--compiler",

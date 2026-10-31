@@ -16,9 +16,9 @@ import ir_lib;
 import lowerer;
 import foreign_modules;
 
-record FunctionSigIR(string name, string return_type, string[] param_types);
+record FunctionSigIR(string name, string source_name, string return_type, string[] param_types);
 record RecordFieldIR(string record_name, string field_name, string field_type);
-record EnumTypeIR(string name, string[] values);
+record EnumTypeIR(string name, string[] values, bool integer_backed);
 record RefineInstructionsResult(LinearInstruction[] instructions, string[] temp_types);
 
 int TYPE_IR_PROFILE_ACTIVE = 0;
@@ -219,6 +219,74 @@ bool is_untyped_array_shape(string type_name):
         current += 2
     return current == type_name.length()
 
+bool is_supported_call_array_type(string type_name):
+    string normalized_type = normalize_llvm_type_name(type_name)
+    return normalized_type == 'int[]' || normalized_type == 'bool[]' || normalized_type == 'string[]' || normalized_type == 'int[][]' || normalized_type == 'string[][]'
+
+bool can_contextualize_call_array_literal(LinearInstruction[] instructions, string[] temp_types, string array_name, string expected_type):
+    string normalized_expected_type = normalize_llvm_type_name(expected_type)
+    if (!is_supported_call_array_type(normalized_expected_type)):
+        return false
+    string actual_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, array_name))
+    if (actual_type == normalized_expected_type):
+        return true
+    if (!is_untyped_array_shape(actual_type)):
+        return false
+    LinearInstruction array_op = lookup_instruction(instructions, array_name)
+    if (array_op.lhs != array_name || array_op.kind != 'value' || array_op.detail != 'array'):
+        return false
+    string expected_item_type = array_item_type(normalized_expected_type)
+    if (!expected_item_type.ends_with('[]')):
+        return actual_type == normalized_expected_type || array_op.args.is_empty()
+    for (string row_name in array_op.args):
+        string row_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, row_name))
+        if (row_type == expected_item_type):
+            continue
+        if (!is_untyped_array_shape(row_type)):
+            return false
+        if (!can_contextualize_call_array_literal(instructions, temp_types, row_name, expected_item_type)):
+            return false
+    return true
+
+RefineInstructionsResult contextualize_call_array_literal(LinearInstruction[] instructions, string[] temp_types, string array_name, string expected_type):
+    string normalized_expected_type = normalize_llvm_type_name(expected_type)
+    string actual_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, array_name))
+    if (!is_untyped_array_shape(actual_type)):
+        return RefineInstructionsResult(instructions, temp_types)
+    if (!can_contextualize_call_array_literal(instructions, temp_types, array_name, normalized_expected_type)):
+        return RefineInstructionsResult(instructions, temp_types)
+    LinearInstruction array_op = lookup_instruction(instructions, array_name)
+    string expected_item_type = array_item_type(normalized_expected_type)
+    if (expected_item_type.ends_with('[]')):
+        for (string row_name in array_op.args):
+            string row_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, row_name))
+            if (row_type != expected_item_type):
+                RefineInstructionsResult contextual_row = contextualize_call_array_literal(instructions, temp_types, row_name, expected_item_type)
+                instructions = contextual_row.instructions
+                temp_types = contextual_row.temp_types
+    if (actual_type != normalized_expected_type):
+        instructions = set_temp_type(instructions, array_name, normalized_expected_type)
+        temp_types = set_temp_type_slot(temp_types, array_name, normalized_expected_type)
+    return RefineInstructionsResult(instructions, temp_types)
+
+RefineInstructionsResult contextualize_array_map_key(LinearInstruction[] instructions, string[] temp_types, string map_name, string key_name):
+    string map_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, map_name))
+    if (map_type != 'map<int[], int>' && map_type != 'map<int[], string>' && map_type != 'map<int[], bool[]>'):
+        return RefineInstructionsResult(instructions, temp_types)
+    string key_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, key_name))
+    if (!is_untyped_array_shape(key_type)):
+        return RefineInstructionsResult(instructions, temp_types)
+    return contextualize_call_array_literal(instructions, temp_types, key_name, 'int[]')
+
+bool is_builtin_ufcs_array_context_name(string method_name):
+    # Conservative eligibility check, not the compiler's authoritative dispatch resolver.
+    FunctionSigIR[] empty_functions = []
+    if (infer_call_type(method_name, empty_functions) != 'unknown'):
+        return true
+    if (infer_method_call_type(method_name, 'unknown', empty_functions) != 'unknown'):
+        return true
+    return method_name == 'abs' || method_name == 'add' || method_name == 'await' || method_name == 'char_at' || method_name == 'clear' || method_name == 'contains' || method_name == 'copy' || method_name == 'create_prio_q' || method_name == 'ends_with' || method_name == 'ends_with_at' || method_name == 'fill' || method_name == 'hash' || method_name == 'index_of' || method_name == 'insert' || method_name == 'is_alnum' || method_name == 'is_alpha' || method_name == 'is_digit' || method_name == 'is_done' || method_name == 'is_empty' || method_name == 'is_space' || method_name == 'is_whitespace' || method_name == 'join' || method_name == 'keys' || method_name == 'last' || method_name == 'max' || method_name == 'min' || method_name == 'pop' || method_name == 'print' || method_name == 'push' || method_name == 'remove_at' || method_name == 'replace' || method_name == 'sort' || method_name == 'starts_with' || method_name == 'starts_with_at' || method_name == 'submit' || method_name == 'sum' || method_name == 'to_int' || method_name == 'union' || method_name == 'values' || method_name == 'wait_for' || method_name == 'write_all'
+
 bool is_same_known_type(string left, string right):
     return left != '' && left != 'unknown' && left == right
 
@@ -256,9 +324,15 @@ FunctionSigIR lookup_function_sig(FunctionSigIR[] functions, string name):
     while (index >= 0):
         FunctionSigIR function_sig = functions[index]
         if (function_sig.name.length() == name_length && function_sig.name == name):
-            return FunctionSigIR(function_sig.name.substring(0), function_sig.return_type.substring(0), clone_string_array(function_sig.param_types))
+            return FunctionSigIR(function_sig.name.substring(0), function_sig.source_name.substring(0), function_sig.return_type.substring(0), clone_string_array(function_sig.param_types))
         index -= 1
-    return FunctionSigIR('', 'unknown', [])
+    return FunctionSigIR('', '', 'unknown', [])
+
+string source_name_for_function_sig(FunctionSigIR[] functions, string name):
+    FunctionSigIR function_sig = lookup_function_sig(functions, name)
+    if (function_sig.source_name != ''):
+        return function_sig.source_name
+    return name.substring(0)
 
 string lookup_record_field_type(RecordFieldIR[] fields, string record_name, string field_name):
     if (TYPE_IR_PROFILE_ACTIVE != 0):
@@ -275,18 +349,37 @@ string lookup_record_field_type(RecordFieldIR[] fields, string record_name, stri
         index -= 1
     return 'unknown'
 
-bool record_type_exists(RecordFieldIR[] fields, string record_name):
+bool record_type_exists(string[] record_names, string record_name):
     if (TYPE_IR_PROFILE_ACTIVE != 0):
         TYPE_IR_RECORD_TYPE_EXISTS_CALLS += 1
     int record_name_length = record_name.length()
-    int index = fields.length() - 1
+    int index = record_names.length() - 1
     while (index >= 0):
         if (TYPE_IR_PROFILE_ACTIVE != 0):
             TYPE_IR_RECORD_TYPE_EXISTS_SCAN_TOTAL += 1
-        if (fields[index].record_name.length() == record_name_length && fields[index].record_name == record_name):
+        if (record_names[index].length() == record_name_length && record_names[index] == record_name):
             return true
         index -= 1
     return false
+
+bool is_supported_empty_map_array_value_type(string[] record_names, string type_name):
+    type_name = normalize_llvm_type_name(type_name)
+    if (type_name == 'int[]' || type_name == 'bool[]' || type_name == 'string[]'):
+        return true
+    if (!type_name.ends_with('[]')):
+        return false
+    return record_type_exists(record_names, array_item_type(type_name))
+
+bool is_checked_record_field_assignment_type(string[] record_names, string type_name):
+    type_name = normalize_llvm_type_name(type_name)
+    if (type_name == 'int' || type_name == 'bool' || type_name == 'num' || type_name == 'string'):
+        return true
+    if (type_name == 'int[]' || type_name == 'bool[]' || type_name == 'string[]' || type_name == 'int[][]' || type_name == 'string[][]'):
+        return true
+    if (type_name.starts_with('map<') && type_name.ends_with('>')):
+        return true
+    string record_name = record_name_from_type(type_name)
+    return record_name != '' && record_type_exists(record_names, record_name)
 
 string[] record_constructor_arg_types(RecordFieldIR[] fields, string record_name):
     if (TYPE_IR_PROFILE_ACTIVE != 0):
@@ -331,13 +424,14 @@ LinearInstruction[] set_temp_type(LinearInstruction[] instructions, string name,
         index += 1
     return rewritten
 
-FunctionSigIR[] collect_function_sigs(ParsedFunction[] functions):
+FunctionSigIR[] collect_function_sigs(ParsedFunction[] functions, EnumTypeIR[] enum_types):
     FunctionSigIR[] result = []
     for (ParsedFunction function_ir in functions):
         string[] param_types = []
         for (BindingIR param in function_ir.params):
-            param_types.push(param.type_name)
-        result.push(FunctionSigIR(function_name_from_header(function_ir.header), function_return_type_from_header(function_ir.header), param_types))
+            param_types.push(normalize_integer_enum_type_name(param.type_name, enum_types))
+        string return_type = normalize_integer_enum_type_name(function_return_type_from_header(function_ir.header), enum_types)
+        result.push(FunctionSigIR(function_ir.name, function_ir.source_name, return_type, param_types))
     return result
 
 string thread_pool_submit_result_type(FunctionSigIR[] functions, string function_name, int argument_count):
@@ -367,6 +461,12 @@ RecordFieldIR[] collect_record_fields(RecordDeclIR[] records):
             result.push(RecordFieldIR(record_name, binding.name, binding.type_name))
     return result
 
+string[] collect_declared_record_names(RecordDeclIR[] records):
+    string[] result = []
+    for (RecordDeclIR record_decl in records):
+        result.push(strip_prefix(record_decl.header, 'record '))
+    return result
+
 EnumTypeIR[] collect_enum_types(EnumDeclIR[] enums):
     EnumTypeIR[] result = []
     for (EnumDeclIR enum_decl in enums):
@@ -374,8 +474,34 @@ EnumTypeIR[] collect_enum_types(EnumDeclIR[] enums):
         string[] values = []
         for (string value in enum_decl.values):
             values.push(strip_prefix(value, 'value '))
-        result.push(EnumTypeIR(enum_name, values))
+        bool integer_backed = false
+        if (!values.is_empty()):
+            integer_backed = values[0].contains('=')
+        result.push(EnumTypeIR(enum_name, values, integer_backed))
     return result
+
+string enum_value_name(string value):
+    int separator = value.index_of('=')
+    if (separator >= 0):
+        return value.substring(0, separator)
+    return value
+
+bool integer_enum_exists(EnumTypeIR[] enums, string name):
+    for (EnumTypeIR enum_type : enums):
+        if (enum_type.name == name):
+            return enum_type.integer_backed
+    return false
+
+bool integer_enum_array_exists(EnumTypeIR[] enums, string type_name):
+    return type_name.ends_with('[]') && integer_enum_exists(enums, array_item_type(type_name))
+
+string integer_enum_value(EnumTypeIR[] enums, string enum_name, string value_name):
+    for (EnumTypeIR enum_type : enums):
+        if (enum_type.name == enum_name && enum_type.integer_backed):
+            for (string value : enum_type.values):
+                if (enum_value_name(value) == value_name):
+                    return value.substring(value.index_of('=') + 1)
+    return ''
 
 bool enum_name_exists(EnumTypeIR[] enums, string name):
     int name_length = name.length()
@@ -394,16 +520,219 @@ bool enum_has_value(EnumTypeIR[] enums, string enum_name, string value_name):
         EnumTypeIR enum_type = enums[index]
         if (enum_type.name.length() == enum_name_length && enum_type.name == enum_name):
             for (string value in enum_type.values):
-                if (value.length() == value_name_length && value == value_name):
+                string member_name = enum_value_name(value)
+                if (member_name.length() == value_name_length && member_name == value_name):
                     return true
             return false
         index -= 1
     return false
 
 string normalize_enum_type_name(string type_name, EnumTypeIR[] enums):
-    if (enum_name_exists(enums, type_name)):
-        return 'string'
+    string qualifier = ''
+    string base_type = type_name
+    if (type_name.starts_with('const ')):
+        qualifier = 'const '
+        base_type = type_name.substring(6)
+    string integer_type = normalize_integer_enum_type_name(base_type, enums)
+    if (integer_type != base_type):
+        return qualifier + integer_type
+    if (enum_name_exists(enums, base_type)):
+        return qualifier + 'string'
     return type_name
+
+void validate_range_bound_type(string bound, string[] temp_types, EnumTypeIR[] enum_types):
+    string bound_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, bound)), enum_types)
+    if (bound_type != 'int' && bound_type != 'unknown'):
+        throw 'range requires integer bounds; got ' + bound_type
+
+# Normalize integer enums in native map types without changing other
+# composite types. Nested maps may contain scalar enums and one-dimensional
+# enum arrays as values.
+string normalize_integer_enum_map_key_type(string type_name, EnumTypeIR[] enums):
+    if (integer_enum_exists(enums, type_name)):
+        return 'int'
+    if (integer_enum_array_exists(enums, type_name)):
+        return 'int[]'
+    return type_name
+
+string normalize_integer_enum_map_value_type(string type_name, EnumTypeIR[] enums):
+    if (integer_enum_exists(enums, type_name)):
+        return 'int'
+    if (integer_enum_array_exists(enums, type_name)):
+        return 'int[]'
+    if (type_name.starts_with('map<') && type_name.ends_with('>')):
+        return normalize_integer_enum_map_type_name(type_name, enums)
+    return type_name
+
+string normalize_integer_enum_map_type_name(string type_name, EnumTypeIR[] enums):
+    string key_type = map_key_type(type_name)
+    string value_type = map_value_type(type_name)
+    if (key_type == 'unknown' || value_type == 'unknown'):
+        return type_name
+    string normalized_key_type = normalize_integer_enum_map_key_type(key_type, enums)
+    string normalized_value_type = normalize_integer_enum_map_value_type(value_type, enums)
+    return 'map<' + normalized_key_type + ', ' + normalized_value_type + '>'
+
+string normalize_integer_enum_type_name(string type_name, EnumTypeIR[] enums):
+    string qualifier = ''
+    string base_type = type_name
+    if (type_name.starts_with('const ')):
+        qualifier = 'const '
+        base_type = type_name.substring(6)
+    if (base_type.starts_with('map<') && base_type.ends_with('>')):
+        return qualifier + normalize_integer_enum_map_type_name(base_type, enums)
+    if (integer_enum_exists(enums, base_type)):
+        return qualifier + 'int'
+    if (integer_enum_array_exists(enums, base_type)):
+        return qualifier + 'int[]'
+    return qualifier + base_type
+
+# Composite enum declarations need separate array, map and record layout work.
+# Scan complete identifier tokens, so an unrelated longer type name is allowed.
+bool type_contains_integer_enum(string type_name, EnumTypeIR[] enums):
+    int index = 0
+    while (index < type_name.length()):
+        string character = type_name[index]
+        if (character.is_alnum() || character == '_'):
+            int start = index
+            while (index < type_name.length()):
+                string item = type_name[index]
+                if (!(item.is_alnum() || item == '_')):
+                    break
+                index += 1
+            if (integer_enum_exists(enums, type_name.substring(start, index))):
+                return true
+        else:
+            index += 1
+    return false
+
+bool integer_enum_map_component_is_supported(string type_name, EnumTypeIR[] enums):
+    if (!type_contains_integer_enum(type_name, enums)):
+        return true
+    if (integer_enum_exists(enums, type_name)):
+        return true
+    if (integer_enum_array_exists(enums, type_name)):
+        return true
+    if (type_name.starts_with('map<') && type_name.ends_with('>')):
+        return integer_enum_map_type_is_supported(type_name, enums)
+    return false
+
+bool integer_enum_map_value_is_supported(string type_name, EnumTypeIR[] enums):
+    if (!type_contains_integer_enum(type_name, enums)):
+        return true
+    if (integer_enum_exists(enums, type_name)):
+        return true
+    if (integer_enum_array_exists(enums, type_name)):
+        return true
+    if (type_name.starts_with('map<') && type_name.ends_with('>')):
+        return integer_enum_map_type_is_supported(type_name, enums)
+    return false
+
+bool integer_enum_map_type_is_supported(string type_name, EnumTypeIR[] enums):
+    string key_type = map_key_type(type_name)
+    string value_type = map_value_type(type_name)
+    if (key_type == 'unknown' || value_type == 'unknown'):
+        return false
+    return integer_enum_map_component_is_supported(key_type, enums) && integer_enum_map_value_is_supported(value_type, enums)
+
+void validate_integer_enum_declared_type(string type_name, EnumTypeIR[] enums):
+    string base_type = type_name
+    if (base_type.starts_with('const ')):
+        base_type = base_type.substring(6)
+    if (integer_enum_exists(enums, base_type)):
+        return
+    if (integer_enum_array_exists(enums, base_type)):
+        return
+    if (type_contains_integer_enum(base_type, enums)):
+        if (base_type.starts_with('map<') && base_type.ends_with('>') && integer_enum_map_type_is_supported(base_type, enums)):
+            return
+        throw 'integer enum composite types are not yet supported: ' + type_name
+
+bool has_string_enum_record_fields(RecordDeclIR[] records, EnumTypeIR[] enums):
+    if (enums.is_empty()):
+        return false
+    for (RecordDeclIR record_decl : records):
+        for (string field : record_decl.fields):
+            BindingIR binding = ir_parse_binding_decl(strip_prefix(field, 'field '))
+            string field_type = binding.type_name
+            if (field_type.starts_with('const ')):
+                field_type = field_type.substring(6)
+            if (enum_name_exists(enums, field_type) && !integer_enum_exists(enums, field_type)):
+                return true
+    return false
+
+RecordDeclIR[] normalize_enum_record_fields(RecordDeclIR[] records, EnumTypeIR[] enums):
+    RecordDeclIR[] result = []
+    for (RecordDeclIR record_decl : records):
+        string[] fields = []
+        for (string field : record_decl.fields):
+            BindingIR binding = ir_parse_binding_decl(strip_prefix(field, 'field '))
+            string type_name = normalize_enum_type_name(binding.type_name, enums)
+            fields.push('field ' + type_name + ' ' + binding.name)
+        result.push(RecordDeclIR(record_decl.header, fields))
+    return result
+
+bool validate_integer_enum_declared_types(ProgramIR program, EnumTypeIR[] enums):
+    bool has_integer_enum = false
+    for (EnumTypeIR enum_type : enums):
+        if (enum_type.integer_backed):
+            has_integer_enum = true
+            break
+    if (!has_integer_enum):
+        return false
+    for (GlobalDeclIR global_decl : program.globals):
+        BindingIR binding = ir_parse_binding_decl(strip_prefix(global_decl.header, 'global '))
+        validate_integer_enum_declared_type(binding.type_name, enums)
+    for (RecordDeclIR record_decl : program.records):
+        for (string field : record_decl.fields):
+            BindingIR binding = ir_parse_binding_decl(strip_prefix(field, 'field '))
+            validate_integer_enum_declared_type(binding.type_name, enums)
+    for (ParsedFunction function_ir : program.functions):
+        validate_integer_enum_declared_type(function_ir.return_type, enums)
+        for (BindingIR param : function_ir.params):
+            validate_integer_enum_declared_type(param.type_name, enums)
+        for (BindingIR local : function_ir.locals):
+            validate_integer_enum_declared_type(local.type_name, enums)
+    return true
+
+bool type_contains_unsupported_array_map_key_inner(string type_name, bool allow_root_array_key_map, EnumTypeIR[] enums):
+    string normalized_type = normalize_llvm_type_name(normalize_integer_enum_type_name(type_name, enums))
+    if (normalized_type.starts_with('map<') && normalized_type.ends_with('>')):
+        string key_type = normalize_llvm_type_name(map_key_type(normalized_type))
+        string value_type = normalize_llvm_type_name(map_value_type(normalized_type))
+        if (key_type == 'int[]' && ((normalized_type != 'map<int[], int>' && normalized_type != 'map<int[], string>' && normalized_type != 'map<int[], bool[]>') || !allow_root_array_key_map)):
+            return true
+        return type_contains_unsupported_array_map_key_inner(key_type, false, enums) || type_contains_unsupported_array_map_key_inner(value_type, false, enums)
+    if (normalized_type.ends_with('[]')):
+        return type_contains_unsupported_array_map_key_inner(array_item_type(normalized_type), false, enums)
+    return false
+
+bool type_contains_unsupported_array_map_key(string type_name, EnumTypeIR[] enums):
+    return type_contains_unsupported_array_map_key_inner(type_name, true, enums)
+
+void validate_int_array_map_key_type(string type_name, EnumTypeIR[] enums):
+    if (type_contains_unsupported_array_map_key(type_name, enums)):
+        throw 'int[] map keys are only supported for direct map<int[], int>, map<int[], string>, or map<int[], bool[]> types: ' + type_name
+
+void validate_int_array_map_key_types(ProgramIR program, EnumTypeIR[] enums):
+    for (GlobalDeclIR global_decl in program.globals):
+        BindingIR binding = ir_parse_binding_decl(strip_prefix(global_decl.header, 'global '))
+        validate_int_array_map_key_type(binding.type_name, enums)
+        for (LinearInstruction op in global_decl.instructions):
+            validate_int_array_map_key_type(op.result_type, enums)
+    for (RecordDeclIR record_decl in program.records):
+        for (string field in record_decl.fields):
+            BindingIR binding = ir_parse_binding_decl(strip_prefix(field, 'field '))
+            validate_int_array_map_key_type(binding.type_name, enums)
+    for (ParsedFunction function_ir in program.functions):
+        validate_int_array_map_key_type(function_ir.return_type, enums)
+        for (BindingIR param in function_ir.params):
+            validate_int_array_map_key_type(param.type_name, enums)
+        for (BindingIR local in function_ir.locals):
+            validate_int_array_map_key_type(local.type_name, enums)
+        for (BlockIR block in function_ir.blocks):
+            for (LinearInstruction op in block.instructions):
+                validate_int_array_map_key_type(op.result_type, enums)
 
 BindingIR normalize_enum_binding(BindingIR binding, EnumTypeIR[] enums):
     return BindingIR(normalize_enum_type_name(binding.type_name, enums), binding.name)
@@ -432,12 +761,12 @@ BindingIR[] collect_global_bindings(GlobalDeclIR[] globals):
 string infer_container_type(string[] item_types, string prefix, string suffix):
     if (item_types.is_empty()):
         return prefix + suffix
-    string first = item_types[0]
+    string first = normalize_llvm_type_name(item_types[0])
     if (first == '' || first == 'unknown'):
         return prefix + suffix
     int index = 1
     while (index < item_types.length()):
-        if (item_types[index] != first):
+        if (normalize_llvm_type_name(item_types[index]) != first):
             return prefix + suffix
         index += 1
     return prefix + first + suffix
@@ -455,6 +784,114 @@ string infer_map_literal_type(string[] entry_types):
     if (key_type == '' || value_type == '' || key_type == 'unknown' || value_type == 'unknown'):
         return 'unknown'
     return 'map<' + key_type + ', ' + value_type + '>'
+
+RefineInstructionsResult contextualize_map_literal_rows(LinearInstruction[] instructions, string[] temp_types, string map_name, string expected_map_type, string[] record_names):
+    string normalized_expected_type = normalize_llvm_type_name(expected_map_type)
+    if (!normalized_expected_type.starts_with('map<') || !normalized_expected_type.ends_with('>')):
+        return RefineInstructionsResult(instructions, temp_types)
+    string key_type = normalize_llvm_type_name(map_key_type(normalized_expected_type))
+    string row_type = normalize_llvm_type_name(map_value_type(normalized_expected_type))
+    bool array_rows = is_supported_empty_map_array_value_type(record_names, row_type)
+    bool map_rows = row_type.starts_with('map<') && row_type.ends_with('>')
+    bool array_key_map = key_type == 'int[]' && (row_type == 'int' || row_type == 'string' || row_type == 'bool[]')
+    if ((key_type != 'int' && key_type != 'string' && !array_key_map) || (!array_key_map && !array_rows && !map_rows)):
+        return RefineInstructionsResult(instructions, temp_types)
+    LinearInstruction map_op = lookup_instruction(instructions, map_name)
+    if (map_op.lhs != map_name || map_op.kind != 'value' || map_op.detail != 'map' || map_op.args.is_empty()):
+        return RefineInstructionsResult(instructions, temp_types)
+    if (array_key_map):
+        string[] key_sources = []
+        string[] key_snapshots = []
+        int next_temp_index = temp_types.length()
+        int key_index = 0
+        while (key_index + 1 < map_op.args.length()):
+            string key_name = map_op.args[key_index]
+            string actual_key_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, key_name))
+            if (is_untyped_array_shape(actual_key_type)):
+                RefineInstructionsResult contextual_key = contextualize_call_array_literal(instructions, temp_types, key_name, 'int[]')
+                instructions = contextual_key.instructions
+                temp_types = contextual_key.temp_types
+                actual_key_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, key_name))
+            if (actual_key_type != 'int[]'):
+                throw 'map literal key requires int[]; got ' + actual_key_type
+            LinearInstruction key_op = lookup_instruction(instructions, key_name)
+            if (key_op.detail != 'map-key-snapshot'):
+                key_sources.push(key_name)
+                key_snapshots.push('t' + next_temp_index.to_string())
+                next_temp_index += 1
+            key_index += 2
+        if (!key_sources.is_empty()):
+            string[] new_map_args = []
+            for (string argument in map_op.args):
+                new_map_args.push(argument)
+            key_index = 0
+            while (key_index + 1 < new_map_args.length()):
+                for (int snapshot_index = 0; snapshot_index < key_sources.length(); snapshot_index += 1):
+                    if (new_map_args[key_index] == key_sources[snapshot_index]):
+                        new_map_args[key_index] = key_snapshots[snapshot_index]
+                key_index += 2
+            LinearInstruction[] snapped_instructions = []
+            for (LinearInstruction instruction in instructions):
+                if (instruction.lhs == map_name && instruction.kind == 'value' && instruction.detail == 'map'):
+                    snapped_instructions.push(LinearInstruction(instruction.kind, instruction.lhs, instruction.result_type, instruction.ownership_mode, instruction.detail, new_map_args))
+                else:
+                    snapped_instructions.push(instruction)
+                for (int snapshot_index = 0; snapshot_index < key_sources.length(); snapshot_index += 1):
+                    if (instruction.lhs == key_sources[snapshot_index]):
+                        snapped_instructions.push(LinearInstruction('value', key_snapshots[snapshot_index], 'int[]', 'owned', 'map-key-snapshot', [key_sources[snapshot_index]]))
+            instructions = snapped_instructions
+            for (int snapshot_index = 0; snapshot_index < key_snapshots.length(); snapshot_index += 1):
+                temp_types = set_temp_type_slot(temp_types, key_snapshots[snapshot_index], 'int[]')
+            map_op = lookup_instruction(instructions, map_name)
+    bool changed_row = false
+    int index = 0
+    while (index + 1 < map_op.args.length()):
+        string row_name = map_op.args[index + 1]
+        LinearInstruction row_op = lookup_instruction(instructions, row_name)
+        string actual_row_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, row_name))
+        bool empty_array_literal = array_rows && actual_row_type == '[]' && row_op.lhs == row_name && row_op.kind == 'value' && row_op.detail == 'array' && row_op.result_type == '[]' && row_op.args.is_empty()
+        bool empty_map_literal = map_rows && actual_row_type == 'unknown' && row_op.lhs == row_name && row_op.kind == 'value' && row_op.detail == 'map' && row_op.result_type == 'unknown' && row_op.args.is_empty()
+        if (empty_array_literal || empty_map_literal):
+            changed_row = true
+        index += 2
+    if (!changed_row && !array_key_map):
+        return RefineInstructionsResult(instructions, temp_types)
+    index = 0
+    while (index + 1 < map_op.args.length()):
+        string key_name = map_op.args[index]
+        string row_name = map_op.args[index + 1]
+        string actual_key_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, key_name))
+        if (actual_key_type != key_type):
+            throw 'map literal key requires ' + key_type + '; got ' + actual_key_type
+        string actual_row_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, row_name))
+        LinearInstruction row_op = lookup_instruction(instructions, row_name)
+        bool empty_array_literal = array_rows && actual_row_type == '[]' && row_op.lhs == row_name && row_op.kind == 'value' && row_op.detail == 'array' && row_op.result_type == '[]' && row_op.args.is_empty()
+        bool empty_map_literal = map_rows && actual_row_type == 'unknown' && row_op.lhs == row_name && row_op.kind == 'value' && row_op.detail == 'map' && row_op.result_type == 'unknown' && row_op.args.is_empty()
+        bool empty_row_literal = empty_array_literal || empty_map_literal
+        if (!empty_row_literal && actual_row_type != row_type):
+            throw 'map literal value requires ' + row_type + '; got ' + actual_row_type
+        index += 2
+    index = 0
+    while (index + 1 < map_op.args.length()):
+        string row_name = map_op.args[index + 1]
+        string actual_row_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, row_name))
+        LinearInstruction row_op = lookup_instruction(instructions, row_name)
+        bool empty_array_literal = array_rows && actual_row_type == '[]' && row_op.lhs == row_name && row_op.kind == 'value' && row_op.detail == 'array' && row_op.result_type == '[]' && row_op.args.is_empty()
+        bool empty_map_literal = map_rows && actual_row_type == 'unknown' && row_op.lhs == row_name && row_op.kind == 'value' && row_op.detail == 'map' && row_op.result_type == 'unknown' && row_op.args.is_empty()
+        if (empty_array_literal || empty_map_literal):
+            instructions = set_temp_type(instructions, row_name, row_type)
+            temp_types = set_temp_type_slot(temp_types, row_name, row_type)
+        index += 2
+    map_op = lookup_instruction(instructions, map_name)
+    string[] entry_types = []
+    for (string argument in map_op.args):
+        entry_types.push(lookup_temp_type_slot(temp_types, argument))
+    string inferred_type = infer_map_literal_type(entry_types)
+    if (inferred_type != normalized_expected_type):
+        throw 'map literal requires ' + normalized_expected_type + '; got ' + inferred_type
+    instructions = set_temp_type(instructions, map_name, inferred_type)
+    temp_types = set_temp_type_slot(temp_types, map_name, inferred_type)
+    return RefineInstructionsResult(instructions, temp_types)
 
 string[] instruction_result_types(LinearInstruction[] instructions):
     string[] result = []
@@ -519,6 +956,36 @@ int temp_slot_index(string name):
         value = value * 10 + digit
         index += 1
     return value
+
+int max_temp_slot_index(LinearInstruction[] instructions):
+    int max_index = -1
+    for (LinearInstruction op in instructions):
+        int index = temp_slot_index(op.lhs)
+        if (index > max_index):
+            max_index = index
+    return max_index
+
+string[] unknown_temp_type_slots(int slot_count):
+    string[] slots = []
+    while (slots.length() < slot_count):
+        slots.push('unknown')
+    return slots
+
+int max_function_temp_slot_index(ParsedFunction function_ir):
+    int max_index = -1
+    for (BlockIR block in function_ir.blocks):
+        int block_max = max_temp_slot_index(block.instructions)
+        if (block_max > max_index):
+            max_index = block_max
+    return max_index
+
+int max_global_temp_slot_index(GlobalDeclIR[] globals):
+    int max_index = -1
+    for (GlobalDeclIR global_decl in globals):
+        int global_max = max_temp_slot_index(global_decl.instructions)
+        if (global_max > max_index):
+            max_index = global_max
+    return max_index
 
 string[] set_temp_type_slot(string[] slots, string name, string type_name):
     int index = temp_slot_index(name)
@@ -663,6 +1130,8 @@ string infer_call_type(string name, FunctionSigIR[] functions):
         return 'void'
     if (name == 'time_ms'):
         return 'int'
+    if (name == 'random_bits'):
+        return 'int'
     if (name == 'has_flag'):
         return 'bool'
     if (name == 'option_value'):
@@ -675,6 +1144,8 @@ string infer_call_type(string name, FunctionSigIR[] functions):
         return 'void'
     if (name == 'to_int'):
         return 'int'
+    if (name == 'to_num'):
+        return 'num'
     if (name == 'to_string'):
         return 'string'
     if (name == 'round'):
@@ -718,6 +1189,10 @@ string lookup_cached_field_type(string[] keys, string[] types, string record_nam
     return lookup_cached_name_type(keys, types, record_name + '.' + field_name)
 
 string infer_call_type_cached(string name, FunctionSigIR[] functions, string[] cache_names, string[] cache_types):
+    if (name == 'random_bits' || name == 'to_num'):
+        string user_result_type = lookup_function_return_type(functions, name)
+        if (user_result_type != 'unknown'):
+            return user_result_type
     if (name == 'write_all'):
         string user_result_type = lookup_function_return_type(functions, name)
         if (user_result_type != 'unknown'):
@@ -736,6 +1211,51 @@ string infer_call_type_cached(string name, FunctionSigIR[] functions, string[] c
         cache_types.push(result_type)
     return result_type
 
+bool is_native_contains_receiver_type(string base_type):
+    string normalized_type = normalize_llvm_type_name(base_type)
+    if (normalized_type == 'string' || normalized_type == 'int[]' || normalized_type == 'bool[]' || normalized_type == 'string[]'):
+        return true
+    return normalized_type.starts_with('map<') || normalized_type.starts_with('set<')
+
+bool is_native_record_array_query_type(string base_type):
+    if (!base_type.ends_with('[]')):
+        return false
+    return record_name_from_type(array_item_type(base_type)) != ''
+
+bool is_native_set_query_type(string base_type):
+    if (base_type == 'set<int>'):
+        return true
+    if (!base_type.starts_with('set<')):
+        return false
+    return record_name_from_type(set_item_type(base_type)) != ''
+
+bool is_native_prio_q_query_type(string base_type):
+    if (base_type == 'prio_q<int>'):
+        return true
+    if (!base_type.starts_with('prio_q<')):
+        return false
+    return record_name_from_type(prio_q_item_type(base_type)) != ''
+
+bool is_native_query_receiver_type(string method_name, string base_type):
+    string normalized_type = normalize_llvm_type_name(base_type)
+    if (method_name == 'length'):
+        if (normalized_type == 'string' || normalized_type == 'int[]' || normalized_type == 'bool[]' || normalized_type == 'string[]' || normalized_type == 'int[][]' || normalized_type == 'string[][]'):
+            return true
+        if (normalized_type.starts_with('map<') || is_native_set_query_type(normalized_type) || is_native_record_array_query_type(normalized_type)):
+            return true
+        return false
+    if (method_name == 'is_empty'):
+        if (normalized_type == 'string' || normalized_type == 'int[]' || normalized_type == 'bool[]' || normalized_type == 'string[]' || normalized_type == 'int[][]' || normalized_type == 'string[][]'):
+            return true
+        if (normalized_type.starts_with('map<') || is_native_set_query_type(normalized_type) || is_native_record_array_query_type(normalized_type) || is_native_prio_q_query_type(normalized_type)):
+            return true
+        return false
+    if (method_name == 'index_of'):
+        return normalized_type == 'string'
+    if (method_name == 'hash'):
+        return normalized_type == 'int' || normalized_type == 'num' || normalized_type == 'string'
+    return false
+
 string infer_method_call_type(string method_name, string base_type, FunctionSigIR[] functions):
     if (method_name == 'await' && is_future_type(base_type)):
         return future_value_type(base_type)
@@ -743,18 +1263,30 @@ string infer_method_call_type(string method_name, string base_type, FunctionSigI
         return 'bool'
     if (method_name == 'wait_for' && is_future_type(base_type)):
         return 'bool'
-    if (method_name == 'length'):
+    if (method_name == 'length' && is_native_query_receiver_type(method_name, base_type)):
         return 'int'
     if (method_name == 'add' && base_type.starts_with('set<')):
         return 'int'
     if (method_name == 'union' && base_type.starts_with('set<')):
         return base_type
-    if (method_name == 'hash'):
+    if (method_name == 'hash' && is_native_query_receiver_type(method_name, base_type)):
         return 'int'
     if (method_name == 'keys' && base_type.starts_with('map<')):
+        if (normalize_llvm_type_name(map_key_type(base_type)) == 'int[]'):
+            return 'int[][]'
         return 'string[]'
     if (method_name == 'values' && base_type.starts_with('map<')):
         string value_type = map_value_type(base_type)
+        if (normalize_llvm_type_name(map_key_type(base_type)) == 'int[]' && normalize_llvm_type_name(value_type) == 'int'):
+            return 'int[]'
+        if (normalize_llvm_type_name(map_key_type(base_type)) == 'int[]' && normalize_llvm_type_name(value_type) == 'string'):
+            return 'string[]'
+        if (value_type == 'int[]'):
+            return 'int[][]'
+        if (value_type == 'string[]'):
+            return 'string[][]'
+        if (value_type == 'bool'):
+            return 'bool[]'
         if (value_type == 'int' || value_type == 'string'):
             return 'string[]'
         return 'unknown'
@@ -762,11 +1294,11 @@ string infer_method_call_type(string method_name, string base_type, FunctionSigI
         return 'string'
     if (method_name == 'char_at'):
         return 'string'
-    if (method_name == 'index_of'):
+    if (method_name == 'index_of' && is_native_query_receiver_type(method_name, base_type)):
         return 'int'
     if (method_name == 'starts_with' || method_name == 'ends_with' || method_name == 'starts_with_at'):
         return 'bool'
-    if (method_name == 'contains'):
+    if (method_name == 'contains' && is_native_contains_receiver_type(base_type)):
         return 'bool'
     if (method_name == 'is_alpha' || method_name == 'is_digit' || method_name == 'is_alnum' || method_name == 'is_space' || method_name == 'is_whitespace'):
         return 'bool'
@@ -794,9 +1326,7 @@ string infer_method_call_type(string method_name, string base_type, FunctionSigI
         return 'int'
     if (method_name == 'push'):
         return 'int'
-    if (method_name == 'is_empty'):
-        return 'bool'
-    if (method_name == 'contains' && base_type.starts_with('set<')):
+    if (method_name == 'is_empty' && is_native_query_receiver_type(method_name, base_type)):
         return 'bool'
     if (method_name == 'trim' || method_name == 'trim_left' || method_name == 'trim_right'):
         return 'string'
@@ -852,7 +1382,7 @@ bool is_array_copy_type(string type_name):
 string refine_ownership_mode(LinearInstruction op, string result_type):
     if (result_type == 'int' || result_type == 'bool' || result_type == 'num'):
         return 'plain'
-    if (op.detail == 'identifier' || op.detail == 'field' || op.detail == 'index' || op.detail == 'target-index'):
+    if (op.detail == 'identifier' || op.detail == 'field' || op.detail == 'index' || op.detail == 'target-index' || op.detail == 'assign-index-key'):
         if (is_managed_ir_type(result_type)):
             return 'borrowed'
         return 'plain'
@@ -883,6 +1413,9 @@ string[] clone_instruction_args(string[] args):
 
 LinearInstruction refined_value_op(LinearInstruction op, string result_type, string ownership_mode):
     return LinearInstruction(op.kind.substring(0), op.lhs.substring(0), result_type.substring(0), ownership_mode.substring(0), op.detail.substring(0), clone_instruction_args(op.args))
+
+bool is_integer_only_binary_operator(string op_name):
+    return op_name == '%' || op_name == '&' || op_name == '|' || op_name == '^' || op_name == '<<' || op_name == '>>'
 
 LinearInstruction clone_linear_instruction(LinearInstruction op):
     if (TYPE_IR_PROFILE_ACTIVE != 0):
@@ -921,11 +1454,234 @@ BlockIR clone_block_ir(BlockIR block):
     return BlockIR(block.label.substring(0), clone_linear_instructions(block.instructions), clone_terminator_ir(block.terminator))
 
 GlobalDeclIR clone_global_decl_ir(GlobalDeclIR global_decl):
-    return GlobalDeclIR(global_decl.header.substring(0), clone_linear_instructions(global_decl.instructions), global_decl.value_name.substring(0))
+    return GlobalDeclIR(global_decl.header.substring(0), clone_linear_instructions(global_decl.instructions), global_decl.value_name.substring(0), global_decl.module_id.substring(0))
 
-LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bindings, FunctionSigIR[] functions, RecordFieldIR[] record_fields, EnumTypeIR[] enum_types, string[] temp_types):
+bool is_string_signature_method(string method_name):
+    return method_name == 'trim' || method_name == 'trim_left' || method_name == 'trim_right' || method_name == 'char_at' || method_name == 'substring' || method_name == 'replace'
+
+bool has_matching_ufcs_signature(LinearInstruction op, string method_name, FunctionSigIR[] functions, EnumTypeIR[] enum_types, string[] temp_types):
+    FunctionSigIR method_sig = lookup_function_sig(functions, method_name)
+    if (method_sig.name == '' || op.args.length() != method_sig.param_types.length() + 1):
+        return false
+    int index = 0
+    while (index < method_sig.param_types.length()):
+        string expected_type = normalize_enum_type_name(normalize_llvm_type_name(method_sig.param_types[index]), enum_types)
+        string actual_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[index + 1])), enum_types)
+        if (expected_type != actual_type):
+            return false
+        index += 1
+    return true
+
+LinearInstruction refine_string_method_signature(LinearInstruction op, string method_name, EnumTypeIR[] enum_types, string[] temp_types):
+    if (method_name == 'trim' || method_name == 'trim_left' || method_name == 'trim_right'):
+        if (op.args.length() != 2):
+            throw method_name + ' expects 0 arguments; got ' + (op.args.length() - 2).to_string()
+        return refined_value_op(op, 'string', 'managed')
+    if (method_name == 'char_at'):
+        if (op.args.length() != 3):
+            throw 'char_at expects 1 argument; got ' + (op.args.length() - 2).to_string()
+        string char_at_index_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2])), enum_types)
+        if (char_at_index_type != 'int'):
+            throw 'char_at argument 1 requires int; got ' + char_at_index_type
+        return refined_value_op(op, 'string', 'managed')
+    if (method_name == 'substring'):
+        if (op.args.length() != 3 && op.args.length() != 4):
+            throw 'substring expects 1 or 2 arguments; got ' + (op.args.length() - 2).to_string()
+        int substring_arg_index = 2
+        while (substring_arg_index < op.args.length()):
+            string substring_bound_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[substring_arg_index])), enum_types)
+            if (substring_bound_type != 'int'):
+                throw 'substring argument ' + (substring_arg_index - 1).to_string() + ' requires int; got ' + substring_bound_type
+            substring_arg_index += 1
+        return refined_value_op(op, 'string', 'managed')
+    if (method_name == 'replace'):
+        if (op.args.length() != 4):
+            throw 'replace expects 2 arguments; got ' + (op.args.length() - 2).to_string()
+        int replace_arg_index = 2
+        while (replace_arg_index < op.args.length()):
+            string replace_arg_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[replace_arg_index])), enum_types)
+            if (replace_arg_type != 'string'):
+                throw 'replace argument ' + (replace_arg_index - 1).to_string() + ' requires string; got ' + replace_arg_type
+            replace_arg_index += 1
+        return refined_value_op(op, 'string', 'managed')
+    if (method_name == 'contains' || method_name == 'index_of'):
+        if (op.args.length() != 3):
+            throw method_name + ' expects 1 argument; got ' + (op.args.length() - 2).to_string()
+        string query_needle_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2])), enum_types)
+        if (query_needle_type != 'string'):
+            throw method_name + ' argument 1 requires string; got ' + query_needle_type
+        if (method_name == 'contains'):
+            return refined_value_op(op, 'bool', 'plain')
+        return refined_value_op(op, 'int', 'plain')
+    return op
+
+LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bindings, FunctionSigIR[] functions, RecordFieldIR[] record_fields, string[] record_names, EnumTypeIR[] enum_types, string[] temp_types):
     if (op.kind != 'value'):
         return op
+    if (op.detail == 'foreach-value'):
+        if (op.args.length() != 1):
+            throw 'foreach iterable marker requires one source value'
+        string iterable_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[0]))
+        return refined_value_op(op, iterable_type, 'borrowed')
+    if (op.detail == 'method-call'):
+        if (op.args.length() >= 2):
+            string method_name = op.args[0]
+            if (is_string_signature_method(method_name)):
+                string method_receiver_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
+                if (method_receiver_type == 'string'):
+                    return refine_string_method_signature(op, method_name, enum_types, temp_types)
+                if (method_receiver_type != 'unknown'):
+                    if ((method_name == 'char_at' || method_name == 'substring') && !record_type_exists(record_names, method_name) && has_matching_ufcs_signature(op, method_name, functions, enum_types, temp_types)):
+                        FunctionSigIR method_sig = lookup_function_sig(functions, method_name)
+                        return refined_value_op(op, method_sig.return_type, refine_ownership_mode(op, method_sig.return_type))
+                    throw method_name + ' requires string receiver; got ' + method_receiver_type
+            if ((method_name == 'contains' || method_name == 'index_of') && normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types) == 'string'):
+                return refine_string_method_signature(op, method_name, enum_types, temp_types)
+            if (op.args[0] == 'last'):
+                string last_receiver_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+                if (last_receiver_type == 'string'):
+                    string last_user_result = lookup_function_return_type(functions, 'last')
+                    if (last_user_result != 'unknown'):
+                        return refined_value_op(op, last_user_result, refine_ownership_mode(op, last_user_result))
+                    if (record_type_exists(record_names, 'last')):
+                        return refined_value_op(op, 'last', refine_ownership_mode(op, 'last'))
+                    if (op.args.length() != 2):
+                        throw 'string last requires no arguments'
+                    return refined_value_op(op, 'string', 'managed')
+                if (last_receiver_type.ends_with('[]')):
+                    if (last_receiver_type == 'int[]' || last_receiver_type == 'bool[]' || last_receiver_type == 'string[]' || last_receiver_type == 'int[][]' || last_receiver_type == 'string[][]'):
+                        string last_user_result = lookup_function_return_type(functions, 'last')
+                        if (last_user_result != 'unknown'):
+                            return refined_value_op(op, last_user_result, refine_ownership_mode(op, last_user_result))
+                        if (record_type_exists(record_names, 'last')):
+                            return refined_value_op(op, 'last', refine_ownership_mode(op, 'last'))
+                        if (op.args.length() != 2):
+                            throw 'array last requires no arguments'
+                        return refined_value_op(op, array_item_type(last_receiver_type), refine_ownership_mode(op, array_item_type(last_receiver_type)))
+                    if (lookup_function_return_type(functions, 'last') == 'unknown' && !record_type_exists(record_names, 'last')):
+                        throw 'array last requires int[], bool[], string[], int[][], or string[][]; got ' + last_receiver_type
+            if (op.args[0] == 'index_of'):
+                string unsupported_index_of_receiver_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+                if (unsupported_index_of_receiver_type.ends_with('[]')):
+                    if (unsupported_index_of_receiver_type != 'int[]' && unsupported_index_of_receiver_type != 'bool[]' && unsupported_index_of_receiver_type != 'string[]'):
+                        if (lookup_function_return_type(functions, 'index_of') == 'unknown'):
+                            if (!record_type_exists(record_names, 'index_of')):
+                                throw 'array index_of requires int[], bool[], or string[]; got ' + unsupported_index_of_receiver_type
+            if (op.args[0] == 'index_of'):
+                string index_of_receiver_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+                if (index_of_receiver_type == 'int[]' || index_of_receiver_type == 'bool[]' || index_of_receiver_type == 'string[]'):
+                    string index_of_user_result = lookup_function_return_type(functions, 'index_of')
+                    if (index_of_user_result != 'unknown'):
+                        return refined_value_op(op, index_of_user_result, refine_ownership_mode(op, index_of_user_result))
+                    if (record_type_exists(record_names, 'index_of')):
+                        return refined_value_op(op, 'index_of', refine_ownership_mode(op, 'index_of'))
+                    if (op.args.length() != 3):
+                        throw 'array index_of requires exactly one needle argument'
+                    string index_of_expected_type = array_item_type(index_of_receiver_type)
+                    string index_of_actual_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2]))
+                    if (index_of_actual_type != index_of_expected_type):
+                        throw 'array index_of requires ' + index_of_expected_type + '; got ' + index_of_actual_type
+                    return refined_value_op(op, 'int', 'plain')
+            if (op.args[0] == 'sort'):
+                string sort_receiver_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+                if (sort_receiver_type == 'int[]'):
+                    if (op.args.length() != 3):
+                        throw 'int[] sort requires exactly one comparator'
+                    return refined_value_op(op, 'int[]', 'borrowed')
+    if (op.detail == 'method-call' && op.args.length() >= 2):
+        string query_method_name = op.args[0]
+        if (query_method_name == 'length' || query_method_name == 'is_empty' || query_method_name == 'index_of' || query_method_name == 'hash'):
+            string query_base_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+            string query_result_type = infer_method_call_type_cached(query_method_name, query_base_type, functions, TYPE_IR_FUNCTION_TYPE_CACHE_NAMES, TYPE_IR_FUNCTION_TYPE_CACHE_VALUES)
+            return refined_value_op(op, query_result_type, refine_ownership_mode(op, query_result_type))
+    if (op.detail == 'binary' && op.args.length() >= 3):
+        if (is_integer_only_binary_operator(op.args[0])):
+            string integer_left_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
+            string integer_right_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2])), enum_types)
+            if ((integer_left_type != '' && integer_left_type != 'unknown' && integer_left_type != 'int') || (integer_right_type != '' && integer_right_type != 'unknown' && integer_right_type != 'int')):
+                throw 'operator ' + op.args[0] + ' requires int operands; got ' + integer_left_type + ' and ' + integer_right_type
+    if (op.detail == 'method-call-lambda' && op.args.length() == 5):
+        if (op.args[0] == 'map_to'):
+            string map_receiver_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+            if (map_receiver_type == 'int[]' && is_integer_map_to_operator(op.args[3])):
+                BindingIR map_parameter = ir_parse_binding_decl(op.args[2])
+                string map_parameter_type = normalize_enum_type_name(normalize_llvm_type_name(map_parameter.type_name), enum_types)
+                string map_right_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[4])), enum_types)
+                if (map_parameter_type != 'int' || (map_right_type != '' && map_right_type != 'unknown' && map_right_type != 'int')):
+                    throw 'int[] map_to operator ' + op.args[3] + ' requires int operands; got ' + map_parameter_type + ' and ' + map_right_type
+    if (op.detail == 'method-call-lambda' && op.args.length() == 4):
+        if (op.args[0] == 'map_to_self'):
+            string map_receiver_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+            BindingIR map_parameter = ir_parse_binding_decl(op.args[2])
+            string map_parameter_type = normalize_enum_type_name(normalize_llvm_type_name(map_parameter.type_name), enum_types)
+            if (!is_integer_map_to_operator(op.args[3])):
+                throw 'unsupported int[] map_to self operator: ' + op.args[3]
+            if (map_receiver_type != 'int[]'):
+                throw 'int[] map_to self arithmetic requires int[] receiver; got ' + map_receiver_type
+            if (map_parameter_type != 'int'):
+                throw 'int[] map_to self operator ' + op.args[3] + ' requires int parameter; got ' + map_parameter_type
+            return refined_value_op(op, 'int[]', 'owned')
+    if (op.detail == 'method-call-lambda'):
+        if (op.args.length() > 0):
+            if (op.args[0] == 'map_to_expr'):
+                if (op.args.length() != 4):
+                    throw 'int[] map_to expression has invalid IR arity'
+                string expression_receiver_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+                BindingIR expression_parameter = ir_parse_binding_decl(op.args[2])
+                string expression_parameter_type = normalize_enum_type_name(normalize_llvm_type_name(expression_parameter.type_name), enum_types)
+                FunctionSigIR expression_callback = lookup_function_sig(functions, op.args[3])
+                if (expression_receiver_type != 'int[]'):
+                    throw 'int[] map_to expression requires int[] receiver; got ' + expression_receiver_type
+                if (expression_parameter_type != 'int'):
+                    throw 'int[] map_to expression requires int parameter; got ' + expression_parameter_type
+                if (expression_callback.name == '' || expression_callback.param_types.length() != 1):
+                    throw 'int[] map_to expression callback must have signature int(int)'
+                if (normalize_llvm_type_name(expression_callback.param_types[0]) != 'int'):
+                    throw 'int[] map_to expression callback must have signature int(int)'
+                string expression_return_type = normalize_llvm_type_name(expression_callback.return_type)
+                if (expression_return_type != 'int'):
+                    throw 'int[] map_to expression must return int; got ' + expression_return_type
+                return refined_value_op(op, 'int[]', 'owned')
+            if (op.args[0] == 'filter_int_expr'):
+                if (op.args.length() != 4):
+                    throw 'int[] filter expression has invalid IR arity'
+                string filter_receiver_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+                if (filter_receiver_type != 'int[]'):
+                    throw 'int[] filter expression requires int[] receiver; got ' + filter_receiver_type
+                BindingIR filter_parameter = ir_parse_binding_decl(op.args[2])
+                string filter_parameter_type = normalize_enum_type_name(normalize_llvm_type_name(filter_parameter.type_name), enum_types)
+                if (filter_parameter_type != 'int'):
+                    throw 'int[] filter expression requires int parameter; got ' + filter_parameter_type
+                FunctionSigIR filter_callback = lookup_function_sig(functions, op.args[3])
+                if (filter_callback.name == ''):
+                    throw 'int[] filter expression callback must have signature bool(int)'
+                if (filter_callback.param_types.length() != 1):
+                    throw 'int[] filter expression callback must have signature bool(int)'
+                if (normalize_llvm_type_name(filter_callback.param_types[0]) != 'int'):
+                    throw 'int[] filter expression callback must have signature bool(int)'
+                string filter_return_type = normalize_llvm_type_name(filter_callback.return_type)
+                if (filter_return_type != 'bool'):
+                    throw 'int[] filter expression must return bool; got ' + filter_return_type
+                return refined_value_op(op, 'int[]', 'owned')
+    if (op.detail == 'unary'):
+        if (op.args.length() < 2):
+            return op
+        string operand_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
+        bool operand_type_known = operand_type != '' && operand_type != 'unknown'
+        string result_type = infer_unary_type(op.args[0], operand_type)
+        if (!operand_type_known && op.result_type != 'unknown'):
+            result_type = op.result_type
+        if (op.args[0] == '!' || op.args[0] == 'not'):
+            if (operand_type_known && operand_type != 'bool'):
+                throw 'unary ' + op.args[0] + ' requires bool operand; got ' + operand_type
+            return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
+        if (op.args[0] == '-'):
+            if (operand_type_known && operand_type != 'int' && operand_type != 'num'):
+                throw 'unary - requires int or num operand; got ' + operand_type
+            return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
+        if (op.result_type != 'unknown'):
+            result_type = op.result_type
+        return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
     if (op.result_type != 'unknown' && op.detail != 'array' && op.detail != 'set' && op.detail != 'map'):
         return refined_value_op(op, op.result_type, refine_ownership_mode(op, op.result_type))
     if (op.detail == 'identifier'):
@@ -946,48 +1702,147 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             return op
         string left_type = lookup_temp_type_slot(temp_types, op.args[1])
         string right_type = lookup_temp_type_slot(temp_types, op.args[2])
+        string normalized_left_type = normalize_llvm_type_name(left_type)
+        string normalized_right_type = normalize_llvm_type_name(right_type)
+        if (normalized_left_type == 'int' || normalized_left_type == 'num'):
+            left_type = normalized_left_type
+        if (normalized_right_type == 'int' || normalized_right_type == 'num'):
+            right_type = normalized_right_type
+        if (op.args[0] == '<' || op.args[0] == '<=' || op.args[0] == '>' || op.args[0] == '>='):
+            bool left_is_string = normalize_llvm_type_name(left_type) == 'string'
+            bool right_is_string = normalize_llvm_type_name(right_type) == 'string'
+            if (left_is_string || right_is_string):
+                if (!(left_is_string && right_is_string)):
+                    throw 'string ordering requires two string operands; got ' + normalize_llvm_type_name(left_type) + ' and ' + normalize_llvm_type_name(right_type)
         string result_type = infer_binary_type(op.args[0], left_type, right_type)
         return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
     if (op.detail == 'ternary'):
         if (op.args.length() < 3):
             return op
-        string true_type = lookup_temp_type_slot(temp_types, op.args[1])
-        string false_type = lookup_temp_type_slot(temp_types, op.args[2])
-        string result_type = 'unknown'
-        if (true_type == false_type):
-            result_type = true_type
-        else if (true_type == 'unknown'):
-            result_type = false_type
-        else if (false_type == 'unknown'):
-            result_type = true_type
-        return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
-    if (op.detail == 'unary'):
-        if (op.args.length() < 2):
-            return op
-        string operand_type = lookup_temp_type_slot(temp_types, op.args[1])
-        string result_type = infer_unary_type(op.args[0], operand_type)
-        return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
+        string condition_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[0]))
+        if (condition_type != 'bool'):
+            throw 'conditional expression requires bool condition; got ' + condition_type
+        string true_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+        string false_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2]))
+        if (true_type != false_type):
+            throw 'conditional expression requires matching arm types; got ' + true_type + ' and ' + false_type
+        if (!(true_type == 'int' || true_type == 'bool' || true_type == 'num' || true_type == 'string' || true_type == 'bool[]' || true_type == 'int[]' || true_type == 'string[]' || true_type == 'int[][]' || true_type == 'string[][]' || true_type == 'set<int>' || true_type.starts_with('map<') || record_type_exists(record_names, true_type))):
+            throw 'unsupported conditional expression result type: ' + true_type
+        string ownership_mode = 'borrowed'
+        if (true_type == 'int' || true_type == 'bool' || true_type == 'num'):
+            ownership_mode = 'plain'
+        return refined_value_op(op, true_type, ownership_mode)
     if (op.detail == 'call'):
         if (op.args.is_empty()):
             return op
+        if (op.args[0] == 'to_int'):
+            if (op.args.length() == 2):
+                string to_int_argument_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
+                if (to_int_argument_type != '' && to_int_argument_type != 'unknown' && to_int_argument_type != 'string'):
+                    throw 'to_int requires a string argument, got: ' + to_int_argument_type
+        if (op.args[0] == 'random_bits' && lookup_function_return_type(functions, op.args[0]) == 'unknown' && record_type_exists(record_names, op.args[0])):
+            return refined_value_op(op, op.args[0], refine_ownership_mode(op, op.args[0]))
         string result_type = infer_call_type_cached(op.args[0], functions, TYPE_IR_FUNCTION_TYPE_CACHE_NAMES, TYPE_IR_FUNCTION_TYPE_CACHE_VALUES)
-        if (result_type == 'unknown' && op.args[0] == 'clear' && lookup_function_return_type(functions, 'clear') == 'unknown' && !record_type_exists(record_fields, 'clear')):
+        if (result_type == 'unknown'):
+            if (op.args[0] == 'is_empty'):
+                if (op.args.length() == 2):
+                    FunctionSigIR is_empty_function = lookup_function_sig(functions, 'is_empty')
+                    if (is_empty_function.name == ''):
+                        if (!record_type_exists(record_names, 'is_empty')):
+                            string is_empty_receiver_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+                            if (is_array_copy_type(is_empty_receiver_type)):
+                                result_type = 'bool'
+                            else if (is_empty_receiver_type.ends_with('[]')):
+                                string is_empty_record_name = record_name_from_type(array_item_type(is_empty_receiver_type))
+                                if (is_empty_record_name != ''):
+                                    if (record_type_exists(record_names, is_empty_record_name)):
+                                        result_type = 'bool'
+        if (op.args[0] == 'sum' && record_type_exists(record_names, 'sum')):
+            return refined_value_op(op, 'sum', refine_ownership_mode(op, 'sum'))
+        if (op.args[0] == 'last' && result_type == 'unknown' && lookup_function_return_type(functions, 'last') == 'unknown' && !record_type_exists(record_names, 'last')):
+            if (op.args.length() < 2):
+                throw 'last requires one string or array argument'
+            string last_array_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+            if (last_array_type == 'string'):
+                if (op.args.length() != 2):
+                    throw 'string last requires exactly one argument'
+                return refined_value_op(op, 'string', 'managed')
+            if (last_array_type.ends_with('[]')):
+                if (last_array_type != 'int[]' && last_array_type != 'bool[]' && last_array_type != 'string[]' && last_array_type != 'int[][]' && last_array_type != 'string[][]'):
+                    throw 'array last requires int[], bool[], string[], int[][], or string[][]; got ' + last_array_type
+                if (op.args.length() != 2):
+                    throw 'array last requires exactly one array argument'
+                return refined_value_op(op, array_item_type(last_array_type), refine_ownership_mode(op, array_item_type(last_array_type)))
+            throw 'last requires string, int[], bool[], string[], int[][], or string[][]; got ' + last_array_type
+        if (result_type == 'unknown' && op.args[0] == 'clear' && lookup_function_return_type(functions, 'clear') == 'unknown' && !record_type_exists(record_names, 'clear')):
             if (op.args.length() != 2):
                 throw 'clear requires exactly one array argument'
             string clear_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
             if (clear_type == 'bool[]'):
                 result_type = 'void'
-        if (op.args[0] == 'pop' && op.args.length() >= 2):
+            if (clear_type == 'int[][]' || clear_type == 'string[][]'):
+                result_type = 'void'
+        if (op.args[0] == 'pop' && lookup_function_return_type(functions, 'pop') == 'unknown' && !record_type_exists(record_names, 'pop')):
+            if (op.args.length() != 2):
+                throw 'pop requires exactly one array argument'
             string pop_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
             if (pop_type == 'bool[]'):
-                if (lookup_function_return_type(functions, 'pop') == 'unknown'):
-                    if (!record_type_exists(record_fields, 'pop')):
-                        if (op.args.length() != 2):
-                            throw 'pop requires exactly one bool[] argument'
-                        result_type = 'bool'
-                        return refined_value_op(op, result_type, 'plain')
+                result_type = 'bool'
+                return refined_value_op(op, result_type, 'plain')
+            if (pop_type == 'int[]'):
+                result_type = 'int'
+                return refined_value_op(op, result_type, 'plain')
+            if (pop_type == 'string[]'):
+                result_type = 'string'
+                return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
+            if (pop_type == 'int[][]' || pop_type == 'string[][]'):
+                result_type = array_item_type(pop_type)
+                return refined_value_op(op, result_type, 'owned')
+        if (op.args[0] == 'push' && result_type == 'unknown' && lookup_function_return_type(functions, 'push') == 'unknown' && !record_type_exists(record_names, 'push')):
+            if (op.args.length() != 3):
+                throw 'push requires an array and one value'
+            string push_array_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+            bool supported_push_array = push_array_type == 'int[]' || push_array_type == 'bool[]' || push_array_type == 'string[]' || push_array_type == 'int[][]' || push_array_type == 'string[][]'
+            if (!supported_push_array && push_array_type.ends_with('[]')):
+                string record_item_type = array_item_type(push_array_type)
+                if (record_type_exists(record_names, record_item_type)):
+                    supported_push_array = true
+            if (!supported_push_array):
+                throw 'direct push requires int[], bool[], string[], int[][], string[][], or a declared record array; got ' + push_array_type
+            string push_item_type = array_item_type(push_array_type)
+            string push_value_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2]))
+            if (push_value_type != push_item_type):
+                throw 'push requires ' + push_item_type + ' value; got ' + push_value_type
+            return refined_value_op(op, 'int', 'plain')
+        if (op.args[0] == 'insert' && result_type == 'unknown' && lookup_function_return_type(functions, 'insert') == 'unknown' && !record_type_exists(record_names, 'insert')):
+            if (op.args.length() != 4):
+                throw 'insert requires an array, index, and value'
+            string insert_array_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+            if (insert_array_type != 'int[]' && insert_array_type != 'bool[]' && insert_array_type != 'string[]'):
+                throw 'insert requires int[], bool[], or string[]; got ' + insert_array_type
+            string insert_index_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2]))
+            string insert_value_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[3]))
+            string insert_item_type = array_item_type(insert_array_type)
+            if (insert_index_type != 'int'):
+                throw 'insert requires an int index; got ' + insert_index_type
+            if (insert_value_type != insert_item_type):
+                throw 'insert requires ' + insert_item_type + ' value; got ' + insert_value_type
+            if (insert_array_type == 'int[]'):
+                return refined_value_op(op, 'int', 'plain')
+            return refined_value_op(op, 'void', 'plain')
+        if (op.args[0] == 'remove_at' && result_type == 'unknown' && lookup_function_return_type(functions, 'remove_at') == 'unknown' && !record_type_exists(record_names, 'remove_at')):
+            if (op.args.length() != 3):
+                throw 'remove_at requires an array and exactly one index'
+            string remove_array_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+            if (remove_array_type != 'int[]' && remove_array_type != 'bool[]' && remove_array_type != 'string[]'):
+                throw 'remove_at requires int[], bool[], or string[]; got ' + remove_array_type
+            string remove_index_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2]))
+            if (remove_index_type != 'int'):
+                throw 'remove_at requires an int index; got ' + remove_index_type
+            result_type = array_item_type(remove_array_type)
+            return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
         if (op.args[0] == 'copy'):
-            if (lookup_function_return_type(functions, 'copy') == 'unknown' && !record_type_exists(record_fields, 'copy')):
+            if (lookup_function_return_type(functions, 'copy') == 'unknown' && !record_type_exists(record_names, 'copy')):
                 if (op.args.length() != 2):
                     throw 'copy requires exactly one array argument'
                 string copy_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
@@ -995,7 +1850,7 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
                     throw 'copy requires int[], bool[], string[], int[][], or string[][]; got ' + copy_type
                 result_type = copy_type
         if (op.args[0] == 'fill'):
-            if (lookup_function_return_type(functions, 'fill') == 'unknown' && !record_type_exists(record_fields, 'fill')):
+            if (lookup_function_return_type(functions, 'fill') == 'unknown' && !record_type_exists(record_names, 'fill')):
                 if (op.args.length() != 3):
                     throw 'fill requires exactly an array and a value'
                 string fill_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
@@ -1019,6 +1874,19 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
                     result_type = 'bool'
                 if (receiver_type == 'int[]' || receiver_type == 'bool[]' || receiver_type == 'string[]'):
                     result_type = 'bool'
+        if (result_type == 'unknown' && op.args[0] == 'index_of' && lookup_function_return_type(functions, 'index_of') == 'unknown'):
+            if (!record_type_exists(record_names, 'index_of')):
+                if (op.args.length() != 3):
+                    throw 'array index_of requires an array and exactly one needle argument'
+                string index_of_array_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+                if (index_of_array_type == 'int[]' || index_of_array_type == 'bool[]' || index_of_array_type == 'string[]'):
+                    string index_of_expected_type = array_item_type(index_of_array_type)
+                    string index_of_actual_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2]))
+                    if (index_of_actual_type != index_of_expected_type):
+                        throw 'array index_of requires ' + index_of_expected_type + '; got ' + index_of_actual_type
+                    result_type = 'int'
+                else:
+                    throw 'array index_of requires int[], bool[], or string[]; got ' + index_of_array_type
         if (result_type == 'unknown' && op.args[0] == 'clear' && op.args.length() == 2):
             if (lookup_temp_type_slot(temp_types, op.args[1]) == 'string[]'):
                 result_type = 'void'
@@ -1028,7 +1896,7 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             if (left_type == right_type && (left_type == 'int' || left_type == 'num')):
                 result_type = left_type
         if (result_type == 'unknown' && !op.args.is_empty()):
-            if (record_type_exists(record_fields, op.args[0])):
+            if (record_type_exists(record_names, op.args[0])):
                 result_type = op.args[0]
         return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
     if (op.detail == 'call-expr'):
@@ -1037,7 +1905,14 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
         if (op.args.length() < 2):
             return op
         string base_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
-        if (could_be_named_type(base_type) && enum_name_exists(enum_types, base_type) && enum_has_value(enum_types, base_type, op.args[0])):
+        if (could_be_named_type(base_type) && integer_enum_exists(enum_types, base_type)):
+            string integer_value = integer_enum_value(enum_types, base_type, op.args[0])
+            if (integer_value == ''):
+                throw 'unknown integer enum member: ' + base_type + '.' + op.args[0]
+            return LinearInstruction('value', op.lhs, 'int', 'plain', 'int', [integer_value])
+        if (could_be_named_type(base_type) && enum_name_exists(enum_types, base_type)):
+            if (!enum_has_value(enum_types, base_type, op.args[0])):
+                throw 'unknown enum member: ' + base_type + '.' + op.args[0]
             return refined_value_op(op, 'string', 'borrowed')
         string record_name = record_name_from_type(base_type)
         string result_type = lookup_cached_field_type(TYPE_IR_FIELD_TYPE_CACHE_KEYS, TYPE_IR_FIELD_TYPE_CACHE_VALUES, record_name, op.args[0])
@@ -1050,10 +1925,79 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
         if (op.args.length() < 2):
             return op
         string method_name = op.args[0]
+        if (method_name == 'values' && lookup_function_return_type(functions, method_name) == 'unknown' && !record_type_exists(record_names, method_name) && normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])) == 'map<int[], bool[]>'):
+            throw 'map.values is unsupported for map<int[], bool[]>'
+        if ((method_name == 'copy' || method_name == 'fill') && lookup_function_return_type(functions, method_name) == 'unknown' && record_type_exists(record_names, method_name)):
+            string[] constructor_arg_types = record_constructor_arg_types(record_fields, method_name)
+            if (constructor_arg_types.is_empty()):
+                throw 'record constructor arity mismatch: ' + method_name
+        if (method_name == 'clear' && (normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])) == 'int[][]' || normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])) == 'string[][]') && lookup_function_return_type(functions, 'clear') == 'unknown'):
+            if (op.args.length() != 2):
+                throw 'nested array clear requires no arguments'
+            return refined_value_op(op, 'void', 'plain')
+        if (method_name == 'pop' && lookup_function_return_type(functions, 'pop') == 'unknown' && op.args.length() != 2):
+            throw 'pop requires exactly one array receiver'
         string base_type = lookup_temp_type_slot(temp_types, op.args[1])
         if (method_name == 'clear' && normalize_llvm_type_name(base_type) == 'bool[]' && lookup_function_return_type(functions, 'clear') == 'unknown'):
             if (op.args.length() != 2):
                 throw 'bool[] clear requires no arguments'
+            return refined_value_op(op, 'void', 'plain')
+        string normalized_base_type = normalize_llvm_type_name(base_type)
+        if (method_name == 'slice' && (normalized_base_type == 'bool[]' || normalized_base_type == 'int[]' || normalized_base_type == 'string[]') && lookup_function_return_type(functions, method_name) == 'unknown'):
+            throw 'array slice methods are not supported; use values[start:end]'
+        if (method_name == 'to_int' && normalized_base_type == 'string'):
+            if (op.args.length() != 2):
+                throw 'to_int expects no arguments'
+            return refined_value_op(op, 'int', 'plain')
+        if (method_name == 'to_num'):
+            if (lookup_function_return_type(functions, method_name) == 'unknown'):
+                if (!record_type_exists(record_names, method_name)):
+                    if (normalized_base_type != 'string'):
+                        throw 'to_num requires string receiver; got ' + normalized_base_type
+                    if (op.args.length() != 2):
+                        throw 'to_num expects no arguments'
+                    return refined_value_op(op, 'num', 'plain')
+        if (method_name == 'push' && normalized_base_type.ends_with('[]')):
+            string push_item_type = array_item_type(normalized_base_type)
+            bool supported_push_type = push_item_type == 'int' || push_item_type == 'bool' || push_item_type == 'string' || push_item_type == 'int[]' || push_item_type == 'string[]'
+            if (!supported_push_type && record_name_from_type(push_item_type) != ''):
+                supported_push_type = record_type_exists(record_names, push_item_type)
+            if (supported_push_type):
+                if (op.args.length() != 3):
+                    throw 'array push requires exactly one value'
+                string push_value_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2]))
+                if (push_value_type != push_item_type):
+                    throw 'array push requires ' + push_item_type + '; got ' + push_value_type
+                return refined_value_op(op, 'int', 'plain')
+        if ((method_name == 'insert' || method_name == 'remove_at') && normalized_base_type == 'int[]'):
+            if (method_name == 'insert'):
+                if (op.args.length() != 4):
+                    throw 'int[] insert requires an int index and int value (exactly two arguments)'
+                string insert_index_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2]))
+                string insert_value_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[3]))
+                if (insert_index_type != 'int' || insert_value_type != 'int'):
+                    throw 'int[] insert requires an int index and int value; got ' + insert_index_type + ' and ' + insert_value_type
+                return refined_value_op(op, 'int', 'plain')
+            if (op.args.length() != 3):
+                throw 'int[] remove_at requires an int index (exactly one argument)'
+            string remove_index_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2]))
+            if (remove_index_type != 'int'):
+                throw 'int[] remove_at requires an int index; got ' + remove_index_type
+            return refined_value_op(op, 'int', 'plain')
+        if (method_name == 'remove_at' && normalize_llvm_type_name(base_type) == 'string[]' && lookup_function_return_type(functions, 'remove_at') == 'unknown'):
+            if (op.args.length() != 3):
+                throw 'string[] remove_at requires exactly one index'
+            string remove_index_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2]))
+            if (remove_index_type != 'int'):
+                throw 'string[] remove_at requires an int index; got ' + remove_index_type
+            return refined_value_op(op, 'string', 'managed')
+        if (method_name == 'insert' && normalize_llvm_type_name(base_type) == 'string[]' && lookup_function_return_type(functions, 'insert') == 'unknown'):
+            if (op.args.length() != 4):
+                throw 'string[] insert requires an index and a string value'
+            string insert_index_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2]))
+            string insert_value_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[3]))
+            if (insert_index_type != 'int' || insert_value_type != 'string'):
+                throw 'string[] insert requires an int index and string value; got ' + insert_index_type + ' and ' + insert_value_type
             return refined_value_op(op, 'void', 'plain')
         if ((method_name == 'insert' || method_name == 'remove_at') && normalize_llvm_type_name(base_type) == 'bool[]' && lookup_function_return_type(functions, method_name) == 'unknown'):
             if (method_name == 'insert'):
@@ -1072,17 +2016,25 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             return refined_value_op(op, 'bool', 'plain')
         if (method_name == 'pop'):
             string pop_type = normalize_llvm_type_name(base_type)
-            if (pop_type == 'bool[]'):
+            if ((pop_type == 'int[][]' || pop_type == 'string[][]') && lookup_function_return_type(functions, 'pop') == 'unknown'):
+                if (op.args.length() != 2):
+                    throw 'pop requires exactly one array receiver'
+                return refined_value_op(op, array_item_type(pop_type), 'owned')
+            if (pop_type == 'bool[]' || pop_type == 'string[]'):
                 if (lookup_function_return_type(functions, 'pop') == 'unknown'):
-                    if (record_type_exists(record_fields, 'pop')):
+                    if (record_type_exists(record_names, 'pop')):
                         if (op.args.length() != 2):
-                            throw 'pop requires exactly one bool[] receiver'
-                        return refined_value_op(op, 'bool', 'plain')
+                            throw 'pop requires exactly one array receiver'
+                        if (pop_type == 'bool[]'):
+                            return refined_value_op(op, 'bool', 'plain')
+                        return refined_value_op(op, 'string', refine_ownership_mode(op, 'string'))
                     if (op.args.length() != 2):
-                        throw 'pop requires exactly one bool[] receiver'
-                    return LinearInstruction(op.kind.substring(0), op.lhs.substring(0), 'bool', 'plain', 'call', ['pop', op.args[1]])
+                        throw 'pop requires exactly one array receiver'
+                    if (pop_type == 'bool[]'):
+                        return LinearInstruction(op.kind.substring(0), op.lhs.substring(0), 'bool', 'plain', 'call', ['pop', op.args[1]])
+                    return LinearInstruction(op.kind.substring(0), op.lhs.substring(0), 'string', refine_ownership_mode(op, 'string'), 'call', ['pop', op.args[1]])
         if (method_name == 'fill'):
-            if (lookup_function_return_type(functions, 'fill') == 'unknown' && !record_type_exists(record_fields, 'fill')):
+            if (lookup_function_return_type(functions, 'fill') == 'unknown' && !record_type_exists(record_names, 'fill')):
                 if (op.args.length() != 3):
                     throw 'fill requires exactly one value'
                 string fill_type = normalize_llvm_type_name(base_type)
@@ -1091,7 +2043,7 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
                     throw 'fill requires int[] with int, bool[] with bool, string[] with string, int[][] with int[], or string[][] with string[]; got ' + fill_type + ' and ' + value_type
                 return LinearInstruction(op.kind.substring(0), op.lhs.substring(0), 'void', 'plain', 'call', ['fill', op.args[1], op.args[2]])
         if (method_name == 'copy'):
-            if (lookup_function_return_type(functions, 'copy') == 'unknown' && !record_type_exists(record_fields, 'copy')):
+            if (lookup_function_return_type(functions, 'copy') == 'unknown' && !record_type_exists(record_names, 'copy')):
                 if (op.args.length() != 2):
                     throw 'copy requires exactly one array argument'
                 string copy_type = normalize_llvm_type_name(base_type)
@@ -1113,11 +2065,38 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
                 return refined_value_op(op, left_type, refine_ownership_mode(op, left_type))
         if (method_name == 'submit' && base_type == 'thread_pool' && (op.args.length() == 3 || op.args.length() == 4)):
             string future_type = thread_pool_submit_result_type(functions, op.args[2], op.args.length() - 3)
+            if (op.args.length() == 4):
+                FunctionSigIR worker_sig = lookup_function_sig(functions, op.args[2])
+                string expected_type = normalize_llvm_type_name(worker_sig.param_types[0])
+                string actual_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[3]))
+                if (expected_type != actual_type):
+                    throw 'thread_pool.submit argument for ' + source_name_for_function_sig(functions, op.args[2]) + ' requires ' + expected_type + '; got ' + actual_type
             return refined_value_op(op, future_type, refine_ownership_mode(op, future_type))
-        if (method_name == 'length' || method_name == 'index_of' || method_name == 'hash'):
-            string result_type = infer_method_call_type(method_name, 'unknown', functions)
+        if (method_name == 'contains'):
+            string result_type = infer_method_call_type_cached(method_name, base_type, functions, TYPE_IR_FUNCTION_TYPE_CACHE_NAMES, TYPE_IR_FUNCTION_TYPE_CACHE_VALUES)
             return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
-        if (method_name == 'is_empty' || method_name == 'contains' || method_name == 'starts_with' || method_name == 'ends_with' || method_name == 'starts_with_at' || method_name == 'is_alpha' || method_name == 'is_digit' || method_name == 'is_alnum' || method_name == 'is_space' || method_name == 'is_whitespace'):
+        if (method_name == 'starts_with' || method_name == 'ends_with' || method_name == 'starts_with_at' || method_name == 'is_alpha' || method_name == 'is_digit' || method_name == 'is_alnum' || method_name == 'is_space' || method_name == 'is_whitespace'):
+            string predicate_receiver_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
+            if (predicate_receiver_type != 'string'):
+                if (predicate_receiver_type != 'unknown' && has_matching_ufcs_signature(op, method_name, functions, enum_types, temp_types)):
+                    FunctionSigIR predicate_method_sig = lookup_function_sig(functions, method_name)
+                    return refined_value_op(op, predicate_method_sig.return_type, refine_ownership_mode(op, predicate_method_sig.return_type))
+                throw method_name + ' requires string receiver; got ' + predicate_receiver_type
+            int expected_arity = 2
+            if (method_name == 'starts_with' || method_name == 'ends_with'):
+                expected_arity = 3
+            if (method_name == 'starts_with_at'):
+                expected_arity = 4
+            if (op.args.length() != expected_arity):
+                throw method_name + ' expects ' + (expected_arity - 2).to_string() + ' arguments; got ' + (op.args.length() - 2).to_string()
+            if (method_name == 'starts_with' || method_name == 'ends_with' || method_name == 'starts_with_at'):
+                string prefix_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2])), enum_types)
+                if (prefix_type != 'string'):
+                    throw method_name + ' argument 1 requires string; got ' + prefix_type
+            if (method_name == 'starts_with_at'):
+                string index_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[3]))
+                if (index_type != 'int'):
+                    throw 'starts_with_at argument 2 requires int; got ' + index_type
             return refined_value_op(op, 'bool', 'plain')
         if (method_name == 'char_at' || method_name == 'replace' || method_name == 'trim' || method_name == 'trim_left' || method_name == 'trim_right' || method_name == 'substring' || method_name == 'to_string'):
             return refined_value_op(op, 'string', 'managed')
@@ -1160,6 +2139,19 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
         if (op.args.length() < 2):
             return op
         string index_type = lookup_temp_type_slot(temp_types, op.args[1])
+        string target_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[0]))
+        if (target_type == 'map<int[], int>' || target_type == 'map<int[], string>' || target_type == 'map<int[], bool[]>'):
+            return refined_value_op(op, index_type, 'owned')
+        return refined_value_op(op, index_type, refine_ownership_mode(op, index_type))
+    if (op.detail == 'map-key-snapshot'):
+        return refined_value_op(op, 'int[]', 'owned')
+    if (op.detail == 'assign-index-key'):
+        if (op.args.length() < 2):
+            return op
+        string index_type = lookup_temp_type_slot(temp_types, op.args[1])
+        string target_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[0]))
+        if (target_type == 'map<int[], int>' || target_type == 'map<int[], string>' || target_type == 'map<int[], bool[]>'):
+            return refined_value_op(op, index_type, 'owned')
         return refined_value_op(op, index_type, refine_ownership_mode(op, index_type))
     if (op.detail == 'index'):
         if (op.args.is_empty()):
@@ -1167,7 +2159,7 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
         string base_type = lookup_temp_type_slot(temp_types, op.args[0])
         if (base_type.starts_with('const ')):
             string canonical_base_type = normalize_llvm_type_name(base_type)
-            if (canonical_base_type.starts_with('map<')):
+            if (canonical_base_type.starts_with('map<') || canonical_base_type == 'string'):
                 base_type = canonical_base_type
         if (base_type == 'string'):
             return refined_value_op(op, 'string', 'managed')
@@ -1181,12 +2173,23 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
         if (base_type.starts_with('map<')):
             string result_type = map_value_type(base_type)
+            if (normalize_llvm_type_name(base_type) == 'map<int[], string>'):
+                return refined_value_op(op, result_type, 'managed')
+            if (normalize_llvm_type_name(base_type) == 'map<int[], bool[]>'):
+                return refined_value_op(op, result_type, 'owned')
             return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
         return op
     if (op.detail == 'slice'):
         if (op.args.is_empty()):
             return op
         string base_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[0]))
+        if (base_type == 'string' || base_type == 'string[]' || base_type == 'int[]' || base_type == 'bool[]' || base_type == 'int[][]' || base_type == 'string[][]'):
+            int bound_index = 1
+            while (bound_index < op.args.length()):
+                string bound_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[bound_index]))
+                if (bound_type != 'int'):
+                    throw 'slice bound requires int; got ' + bound_type
+                bound_index += 1
         if (base_type == 'string'):
             return refined_value_op(op, 'string', 'managed')
         if (base_type == 'string[]'):
@@ -1195,6 +2198,10 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             return refined_value_op(op, 'int[]', 'owned')
         if (base_type == 'bool[]'):
             return refined_value_op(op, 'bool[]', 'owned')
+        if (base_type == 'int[][]'):
+            return refined_value_op(op, 'int[][]', 'owned')
+        if (base_type == 'string[][]'):
+            return refined_value_op(op, 'string[][]', 'owned')
         return op
     if (op.detail == 'array'):
         string[] item_types = []
@@ -1216,7 +2223,38 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
         return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
     return op
 
-RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, BindingIR[] globals, BindingIR[] params, BindingIR[] locals, FunctionSigIR[] functions, RecordFieldIR[] record_fields, EnumTypeIR[] enum_types, LinearInstruction[] prior_instructions, string[] temp_types):
+void validate_sequence_index_type(string base_type, string index_type):
+    string normalized_base_type = normalize_llvm_type_name(base_type)
+    if (normalized_base_type == 'string' || normalized_base_type.ends_with('[]')):
+        string normalized_index_type = normalize_llvm_type_name(index_type)
+        if (normalized_index_type != 'int'):
+            throw 'sequence index requires int; got ' + normalized_index_type
+
+void validate_map_index_type(string base_type, string index_type):
+    string normalized_base_type = normalize_llvm_type_name(base_type)
+    if (normalized_base_type.starts_with('map<')):
+        string expected_type = normalize_llvm_type_name(map_key_type(normalized_base_type))
+        string actual_type = normalize_llvm_type_name(index_type)
+        if (actual_type != expected_type):
+            throw 'map index requires ' + expected_type + '; got ' + actual_type
+
+void validate_future_binding_type(string binding_name, string expected_type, string actual_type):
+    string normalized_expected_type = normalize_llvm_type_name(expected_type)
+    string normalized_actual_type = normalize_llvm_type_name(actual_type)
+    if (normalized_expected_type != 'unknown' && normalized_actual_type != 'unknown'):
+        if (is_future_type(normalized_expected_type) || is_future_type(normalized_actual_type)):
+            if (normalized_actual_type != normalized_expected_type):
+                throw 'future binding ' + ir_source_binding_name(binding_name) + ' requires ' + normalized_expected_type + '; got ' + normalized_actual_type
+
+void validate_map_binding_type(string binding_name, string expected_type, string actual_type):
+    string normalized_expected_type = normalize_llvm_type_name(expected_type)
+    string normalized_actual_type = normalize_llvm_type_name(actual_type)
+    if (normalized_expected_type != 'unknown' && normalized_actual_type != 'unknown'):
+        if (normalized_expected_type.starts_with('map<') || normalized_actual_type.starts_with('map<')):
+            if (normalized_actual_type != normalized_expected_type):
+                throw 'map binding ' + ir_source_binding_name(binding_name) + ' requires ' + normalized_expected_type + '; got ' + normalized_actual_type
+
+RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, BindingIR[] globals, BindingIR[] params, BindingIR[] locals, FunctionSigIR[] functions, RecordFieldIR[] record_fields, string[] record_names, EnumTypeIR[] enum_types, LinearInstruction[] prior_instructions, string[] temp_types, bool regex_imported):
     BindingIR[] bindings = []
     for (BindingIR binding in globals):
         bindings.push(binding)
@@ -1225,26 +2263,161 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
     for (BindingIR binding in locals):
         bindings.push(binding)
 
+    bool has_integer_enum = false
+    for (EnumTypeIR enum_type : enum_types):
+        if (enum_type.integer_backed):
+            has_integer_enum = true
+            break
     LinearInstruction[] block_refined = []
     int op_index = 0
     while (op_index < instructions.length()):
         LinearInstruction op = instructions[op_index]
-        LinearInstruction current = refine_value_instruction(op, bindings, functions, record_fields, enum_types, temp_types)
+        if (has_integer_enum && op.kind == 'value' && op.detail == 'identifier' && !op.args.is_empty()):
+            string identifier = op.args[0]
+            if (integer_enum_exists(enum_types, identifier) && lookup_binding_type(bindings, identifier) == 'unknown'):
+                if (op_index + 1 >= instructions.length()):
+                    throw 'integer enum name requires a member: ' + identifier
+                LinearInstruction member_access = instructions[op_index + 1]
+                if (member_access.kind != 'value' || member_access.detail != 'field' || member_access.args.length() < 2):
+                    throw 'integer enum name requires a member: ' + identifier
+                if (member_access.args[1] != op.lhs):
+                    throw 'integer enum name requires a member: ' + identifier
+        if (op.kind == 'range_guard'):
+            for (string bound in op.args):
+                validate_range_bound_type(bound, temp_types, enum_types)
+        if (op.kind == 'value' && op.detail == 'call'):
+            if (op.args.length() >= 2):
+                if (op.args[0] == 'range'):
+                    if (op.args.length() >= 2 && op.args.length() <= 4):
+                        int bound_index = 1
+                        while (bound_index < op.args.length()):
+                            validate_range_bound_type(op.args[bound_index], temp_types, enum_types)
+                            bound_index += 1
+        if (op.kind == 'value' && (op.detail == 'index' || op.detail == 'target-index' || op.detail == 'assign-index-key') && op.args.length() >= 2):
+            string index_base_type = lookup_temp_type_slot(temp_types, op.args[0])
+            string index_type = lookup_temp_type_slot(temp_types, op.args[1])
+            RefineInstructionsResult contextual_key = contextualize_array_map_key(block_refined, temp_types, op.args[0], op.args[1])
+            block_refined = contextual_key.instructions
+            temp_types = contextual_key.temp_types
+            index_type = lookup_temp_type_slot(temp_types, op.args[1])
+            validate_sequence_index_type(index_base_type, index_type)
+            validate_map_index_type(index_base_type, index_type)
+        if (op.kind == 'value' && op.detail == 'binary'):
+            if (op.args.length() >= 3):
+                if (op.args[0] == 'in' || op.args[0] == 'not in'):
+                    RefineInstructionsResult contextual_key = contextualize_array_map_key(block_refined, temp_types, op.args[2], op.args[1])
+                    block_refined = contextual_key.instructions
+                    temp_types = contextual_key.temp_types
+        if (op.kind == 'value' && op.detail == 'call'):
+            if (op.args.length() == 3):
+                if (op.args[0] == 'contains'):
+                    RefineInstructionsResult contextual_key = contextualize_array_map_key(block_refined, temp_types, op.args[1], op.args[2])
+                    block_refined = contextual_key.instructions
+                    temp_types = contextual_key.temp_types
+        if (op.kind == 'value' && op.detail == 'method-call'):
+            if (op.args.length() == 3):
+                if (op.args[0] == 'contains'):
+                    RefineInstructionsResult contextual_key = contextualize_array_map_key(block_refined, temp_types, op.args[1], op.args[2])
+                    block_refined = contextual_key.instructions
+                    temp_types = contextual_key.temp_types
+        LinearInstruction current = refine_value_instruction(op, bindings, functions, record_fields, record_names, enum_types, temp_types)
+        if (current.kind == 'value' && (current.detail == 'call' || current.detail == 'method-call')):
+            if (current.args.length() == 3):
+                if (current.args[0] == 'split'):
+                    string receiver_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[1]))
+                    if (receiver_type == 'string'):
+                        string separator_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[2]))
+                        if (separator_type == 'Regex' && regex_imported):
+                            current = LinearInstruction('value', current.lhs, 'string[]', 'owned', 'call', ['__tb_regex_split', current.args[1], current.args[2]])
+                        else if (separator_type != 'string' && separator_type != 'unknown'):
+                            throw 'split separator requires string or imported Regex; got ' + separator_type
+        if (current.kind == 'value' && (current.detail == 'call' || current.detail == 'method-call') && enum_name_exists(enum_types, current.result_type)):
+            string enum_result_type = normalize_enum_type_name(current.result_type, enum_types)
+            current = refined_value_op(current, enum_result_type, refine_ownership_mode(current, enum_result_type))
         if (current.kind == 'value'):
             if (current.detail == 'call'):
                 if (!current.args.is_empty()):
-                    if (record_type_exists(record_fields, current.args[0])):
+                    if (record_type_exists(record_names, current.args[0])):
                         string[] arg_types = record_constructor_arg_types(record_fields, current.args[0])
                         int index = 1
                         while (index < current.args.length() && index - 1 < arg_types.length()):
-                            if (lookup_temp_type_slot(temp_types, current.args[index]) == '[]' && arg_types[index - 1].ends_with('[]')):
-                                block_refined = set_temp_type(block_refined, current.args[index], arg_types[index - 1])
-                                temp_types = set_temp_type_slot(temp_types, current.args[index], arg_types[index - 1])
+                            string arg_type_name = arg_types[index - 1]
+                            string normalized_arg_type = normalize_llvm_type_name(arg_type_name)
+                            if (normalized_arg_type.starts_with('map<') && current.result_type == current.args[0] && lookup_function_return_type(functions, current.args[0]) == 'unknown'):
+                                RefineInstructionsResult contextual_map = contextualize_map_literal_rows(block_refined, temp_types, current.args[index], normalized_arg_type, record_names)
+                                block_refined = contextual_map.instructions
+                                temp_types = contextual_map.temp_types
+                            string arg_val_type = lookup_temp_type_slot(temp_types, current.args[index])
+                            if (arg_val_type == '[]' && arg_type_name.ends_with('[]')):
+                                block_refined = set_temp_type(block_refined, current.args[index], arg_type_name)
+                                temp_types = set_temp_type_slot(temp_types, current.args[index], arg_type_name)
+                            else if (is_untyped_array_shape(arg_val_type) && arg_type_name.ends_with('[]')):
+                                block_refined = set_temp_type(block_refined, current.args[index], arg_type_name)
+                                temp_types = set_temp_type_slot(temp_types, current.args[index], arg_type_name)
+                                string item_type = array_item_type(arg_type_name)
+                                LinearInstruction candidate = lookup_instruction_pair(block_refined, prior_instructions, current.args[index])
+                                if (candidate.lhs == current.args[index]):
+                                    for (string arg_name in candidate.args):
+                                        if (lookup_temp_type_slot(temp_types, arg_name) == '[]' && item_type.ends_with('[]')):
+                                            block_refined = set_temp_type(block_refined, arg_name, item_type)
+                                            temp_types = set_temp_type_slot(temp_types, arg_name, item_type)
+                            string expected_arg_type = normalize_llvm_type_name(arg_types[index - 1])
+                            if (lookup_temp_type_slot(temp_types, current.args[index]) == 'unknown' && current.result_type == current.args[0] && lookup_function_return_type(functions, current.args[0]) == 'unknown' && expected_arg_type.starts_with('map<')):
+                                LinearInstruction candidate = lookup_instruction_pair(block_refined, prior_instructions, current.args[index])
+                                if (candidate.lhs == current.args[index]):
+                                    if (candidate.kind == 'value'):
+                                        if (candidate.detail == 'map'):
+                                            if (candidate.args.is_empty()):
+                                                block_refined = set_temp_type(block_refined, current.args[index], expected_arg_type)
+                                                temp_types = set_temp_type_slot(temp_types, current.args[index], expected_arg_type)
                             index += 1
+                    else:
+                        FunctionSigIR call_sig = lookup_function_sig(functions, current.args[0])
+                        FunctionSigIR[] empty_functions = []
+                        bool builtin_call = infer_call_type(current.args[0], empty_functions) != 'unknown'
+                        bool ambiguous_direct_builtin = current.args[0] == 'print' || current.args[0] == 'sum' || current.args[0] == 'min' || current.args[0] == 'max'
+                        if (call_sig.name != '' && !builtin_call && !ambiguous_direct_builtin && current.args.length() == call_sig.param_types.length() + 1):
+                            int index = 1
+                            while (index < current.args.length()):
+                                string expected_type = normalize_llvm_type_name(call_sig.param_types[index - 1])
+                                string actual_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[index]))
+                                if (expected_type.starts_with('map<')):
+                                    RefineInstructionsResult contextual_map = contextualize_map_literal_rows(block_refined, temp_types, current.args[index], expected_type, record_names)
+                                    block_refined = contextual_map.instructions
+                                    temp_types = contextual_map.temp_types
+                                    actual_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[index]))
+                                if (is_untyped_array_shape(actual_type) && is_supported_call_array_type(expected_type)):
+                                    RefineInstructionsResult contextual_array = contextualize_call_array_literal(block_refined, temp_types, current.args[index], expected_type)
+                                    block_refined = contextual_array.instructions
+                                    temp_types = contextual_array.temp_types
+                                index += 1
+            else if (current.detail == 'method-call' && current.args.length() >= 2):
+                string method_name = current.args[0]
+                FunctionSigIR method_sig = lookup_function_sig(functions, method_name)
+                bool user_priority_copy_fill = (method_name == 'copy' || method_name == 'fill') && method_sig.name != '' && !record_type_exists(record_names, method_name)
+                if (method_sig.name != '' && !record_type_exists(record_names, method_name) && (!is_builtin_ufcs_array_context_name(method_name) || user_priority_copy_fill) && current.args.length() == method_sig.param_types.length() + 1):
+                    int index = 1
+                    while (index < current.args.length()):
+                        string expected_type = normalize_llvm_type_name(method_sig.param_types[index - 1])
+                        string actual_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[index]))
+                        if (expected_type.starts_with('map<')):
+                            RefineInstructionsResult contextual_map = contextualize_map_literal_rows(block_refined, temp_types, current.args[index], expected_type, record_names)
+                            block_refined = contextual_map.instructions
+                            temp_types = contextual_map.temp_types
+                            actual_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[index]))
+                        if (is_untyped_array_shape(actual_type) && is_supported_call_array_type(expected_type)):
+                            RefineInstructionsResult contextual_array = contextualize_call_array_literal(block_refined, temp_types, current.args[index], expected_type)
+                            block_refined = contextual_array.instructions
+                            temp_types = contextual_array.temp_types
+                        index += 1
         if (current.kind == 'set'):
-            BindingIR binding = ir_parse_binding_decl(current.detail)
+            BindingIR parsed_binding = ir_parse_binding_decl(current.detail)
+            BindingIR binding = normalize_enum_binding(parsed_binding, enum_types)
+            if (binding.type_name != parsed_binding.type_name):
+                current = LinearInstruction(current.kind, current.lhs, current.result_type, current.ownership_mode, binding.type_name + ' ' + binding.name, clone_instruction_args(current.args))
             if (current.args.length() == 1):
                 string value_type = lookup_temp_type_slot(temp_types, current.args[0])
+                validate_future_binding_type(binding.name, binding.type_name, value_type)
                 if (value_type == 'unknown' && binding.type_name.starts_with('set<')):
                     block_refined = set_temp_type(block_refined, current.args[0], binding.type_name)
                     temp_types = set_temp_type_slot(temp_types, current.args[0], binding.type_name)
@@ -1256,6 +2429,11 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                             if (candidate.args.is_empty()):
                                 block_refined = set_temp_type(block_refined, current.args[0], declared_map_type)
                                 temp_types = set_temp_type_slot(temp_types, current.args[0], declared_map_type)
+                if (declared_map_type.starts_with('map<')):
+                    RefineInstructionsResult contextual_map = contextualize_map_literal_rows(block_refined, temp_types, current.args[0], declared_map_type, record_names)
+                    block_refined = contextual_map.instructions
+                    temp_types = contextual_map.temp_types
+                validate_map_binding_type(binding.name, binding.type_name, lookup_temp_type_slot(temp_types, current.args[0]))
                 if (value_type == '[]' && binding.type_name.ends_with('[]')):
                     block_refined = set_temp_type(block_refined, current.args[0], binding.type_name)
                     temp_types = set_temp_type_slot(temp_types, current.args[0], binding.type_name)
@@ -1285,10 +2463,77 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                                         if (candidate.args.is_empty()):
                                             block_refined = set_temp_type(block_refined, value_name, field_type)
                                             temp_types = set_temp_type_slot(temp_types, value_name, field_type)
+                    if (field_type.starts_with('map<') && lookup_temp_type_slot(temp_types, current.args[1]) == 'unknown'):
+                        LinearInstruction candidate = lookup_instruction_pair(block_refined, prior_instructions, current.args[1])
+                        if (candidate.lhs == current.args[1]):
+                            if (candidate.kind == 'value'):
+                                if (candidate.detail == 'map'):
+                                    if (candidate.args.is_empty()):
+                                        block_refined = set_temp_type(block_refined, current.args[1], field_type)
+                                        temp_types = set_temp_type_slot(temp_types, current.args[1], field_type)
+                    if (field_type.starts_with('map<')):
+                        RefineInstructionsResult contextual_map = contextualize_map_literal_rows(block_refined, temp_types, current.args[1], field_type, record_names)
+                        block_refined = contextual_map.instructions
+                        temp_types = contextual_map.temp_types
+                    if (is_checked_record_field_assignment_type(record_names, field_type)):
+                        string actual_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[1]))
+                        if (actual_type != field_type):
+                            throw 'record field assignment requires ' + field_type + '; got ' + actual_type
+        if ((current.kind == 'assign_index' || current.kind == 'assign_index_add') && current.args.length() >= 3):
+            string base_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[0]))
+            RefineInstructionsResult contextual_key = contextualize_array_map_key(block_refined, temp_types, current.args[0], current.args[1])
+            block_refined = contextual_key.instructions
+            temp_types = contextual_key.temp_types
+            validate_sequence_index_type(base_type, lookup_temp_type_slot(temp_types, current.args[1]))
+            validate_map_index_type(base_type, lookup_temp_type_slot(temp_types, current.args[1]))
+        if (current.kind == 'assign_index'):
+            if (current.args.length() >= 3):
+                string base_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[0]))
+                if (base_type == 'int[][]' || base_type == 'string[][]'):
+                    string item_type = array_item_type(base_type)
+                    string value_name = current.args[2]
+                    if (lookup_temp_type_slot(temp_types, value_name) == '[]'):
+                        LinearInstruction candidate = lookup_instruction_pair(block_refined, prior_instructions, value_name)
+                        if (candidate.lhs == value_name):
+                            if (candidate.kind == 'value'):
+                                if (candidate.detail == 'array'):
+                                    if (candidate.args.is_empty()):
+                                        block_refined = set_temp_type(block_refined, value_name, item_type)
+                                        temp_types = set_temp_type_slot(temp_types, value_name, item_type)
+                    string value_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, value_name))
+                    if (value_type != item_type):
+                        throw 'indexed row assignment requires ' + item_type + '; got ' + value_type
+                if (base_type == 'int[]' || base_type == 'bool[]' || base_type == 'string[]' || (base_type.ends_with('[]') && record_type_exists(record_names, array_item_type(base_type)))):
+                    string expected_item_type = array_item_type(base_type)
+                    string actual_stored_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[2]))
+                    if (actual_stored_type != expected_item_type):
+                        throw 'array element assignment requires ' + expected_item_type + '; got ' + actual_stored_type
+                if (base_type.starts_with('map<')):
+                    string expected_value_type = normalize_llvm_type_name(map_value_type(base_type))
+                    string value_name = current.args[2]
+                    string actual_value_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, value_name))
+                    bool empty_array_value = actual_value_type == '[]' && is_supported_empty_map_array_value_type(record_names, expected_value_type)
+                    bool empty_map_value = actual_value_type == 'unknown' && expected_value_type.starts_with('map<')
+                    if (empty_array_value || empty_map_value):
+                        LinearInstruction candidate = lookup_instruction(block_refined, value_name)
+                        if (candidate.lhs == value_name && candidate.kind == 'value' && candidate.args.is_empty()):
+                            if ((empty_array_value && candidate.detail == 'array' && candidate.result_type == '[]') || (empty_map_value && candidate.detail == 'map' && candidate.result_type == 'unknown')):
+                                block_refined = set_temp_type(block_refined, value_name, expected_value_type)
+                                temp_types = set_temp_type_slot(temp_types, value_name, expected_value_type)
+                                actual_value_type = expected_value_type
+                    if (actual_value_type != expected_value_type):
+                        throw 'map element assignment requires ' + expected_value_type + '; got ' + actual_value_type
+        if (current.kind == 'assign_index_add' && current.args.length() >= 3):
+            string compound_base_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[0]))
+            if (compound_base_type == 'map<int[], string>'):
+                string compound_value_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[2]))
+                if (compound_value_type != 'string' && compound_value_type != 'int'):
+                    throw 'map string += requires string or int value; got ' + compound_value_type
         if (current.kind == 'assign_local'):
             string binding_type = lookup_binding_type(bindings, current.detail)
             if (current.args.length() == 1):
                 string value_type = lookup_temp_type_slot(temp_types, current.args[0])
+                validate_future_binding_type(current.detail, binding_type, value_type)
                 if (value_type == 'unknown' && binding_type.starts_with('set<')):
                     block_refined = set_temp_type(block_refined, current.args[0], binding_type)
                     temp_types = set_temp_type_slot(temp_types, current.args[0], binding_type)
@@ -1299,6 +2544,12 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                             if (candidate.args.is_empty()):
                                 block_refined = set_temp_type(block_refined, current.args[0], binding_type)
                                 temp_types = set_temp_type_slot(temp_types, current.args[0], binding_type)
+                string normalized_binding_type = normalize_llvm_type_name(binding_type)
+                if (normalized_binding_type.starts_with('map<')):
+                    RefineInstructionsResult contextual_map = contextualize_map_literal_rows(block_refined, temp_types, current.args[0], normalized_binding_type, record_names)
+                    block_refined = contextual_map.instructions
+                    temp_types = contextual_map.temp_types
+                validate_map_binding_type(current.detail, binding_type, lookup_temp_type_slot(temp_types, current.args[0]))
                 if (value_type == '[]' && binding_type.ends_with('[]')):
                     block_refined = set_temp_type(block_refined, current.args[0], binding_type)
                     temp_types = set_temp_type_slot(temp_types, current.args[0], binding_type)
@@ -1318,83 +2569,530 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
         op_index += 1
     return RefineInstructionsResult(block_refined, temp_types)
 
-BlockIR refine_block(BlockIR block, BindingIR[] globals, BindingIR[] params, BindingIR[] locals, FunctionSigIR[] functions, RecordFieldIR[] record_fields, EnumTypeIR[] enum_types, LinearInstruction[] prior_instructions):
+BlockIR refine_block(BlockIR block, BindingIR[] globals, BindingIR[] params, BindingIR[] locals, FunctionSigIR[] functions, RecordFieldIR[] record_fields, string[] record_names, EnumTypeIR[] enum_types, LinearInstruction[] prior_instructions):
     string[] temp_types = collect_temp_type_slots(prior_instructions)
+    int max_index = max_temp_slot_index(prior_instructions)
+    int block_max_index = max_temp_slot_index(block.instructions)
+    if (block_max_index > max_index):
+        max_index = block_max_index
+    while (temp_types.length() <= max_index):
+        temp_types.push('unknown')
     reset_type_ir_lookup_caches()
-    RefineInstructionsResult refined = refine_instructions(block.instructions, globals, params, locals, functions, record_fields, enum_types, prior_instructions, temp_types)
+    RefineInstructionsResult refined = refine_instructions(block.instructions, globals, params, locals, functions, record_fields, record_names, enum_types, prior_instructions, temp_types, false)
     return BlockIR(block.label.substring(0), refined.instructions, clone_terminator_ir(block.terminator))
 
-GlobalDeclIR refine_global(GlobalDeclIR global_decl, BindingIR[] globals, FunctionSigIR[] functions, RecordFieldIR[] record_fields, EnumTypeIR[] enum_types, LinearInstruction[] prior_instructions):
+GlobalDeclIR refine_global(GlobalDeclIR global_decl, BindingIR[] globals, FunctionSigIR[] functions, RecordFieldIR[] record_fields, string[] record_names, EnumTypeIR[] enum_types, LinearInstruction[] prior_instructions):
     BindingIR[] empty_params = []
     BindingIR[] empty_locals = []
     reset_type_ir_lookup_caches()
     string[] temp_types = collect_temp_type_slots(prior_instructions)
-    RefineInstructionsResult refined_result = refine_instructions(global_decl.instructions, globals, empty_params, empty_locals, functions, record_fields, enum_types, prior_instructions, temp_types)
+    int max_index = max_temp_slot_index(prior_instructions)
+    int global_max_index = max_temp_slot_index(global_decl.instructions)
+    if (global_max_index > max_index):
+        max_index = global_max_index
+    while (temp_types.length() <= max_index):
+        temp_types.push('unknown')
+    RefineInstructionsResult refined_result = refine_instructions(global_decl.instructions, globals, empty_params, empty_locals, functions, record_fields, record_names, enum_types, prior_instructions, temp_types, false)
     LinearInstruction[] refined = refined_result.instructions
     BindingIR binding = ir_parse_binding_decl(strip_prefix(global_decl.header, 'global '))
     string value_type = lookup_temp_type(refined, global_decl.value_name)
+    validate_future_binding_type(binding.name, binding.type_name, value_type)
     if (value_type == 'unknown' && binding.type_name.starts_with('set<')):
         refined = set_temp_type(refined, global_decl.value_name, binding.type_name)
     string declared_map_type = normalize_llvm_type_name(binding.type_name)
     if (value_type == 'unknown' && declared_map_type.starts_with('map<')):
         refined = set_temp_type(refined, global_decl.value_name, declared_map_type)
+    if (declared_map_type.starts_with('map<')):
+        RefineInstructionsResult contextual_map = contextualize_map_literal_rows(refined, refined_result.temp_types, global_decl.value_name, declared_map_type, record_names)
+        refined = contextual_map.instructions
+    validate_map_binding_type(binding.name, binding.type_name, lookup_temp_type(refined, global_decl.value_name))
     if (value_type == '[]' && binding.type_name.ends_with('[]')):
         refined = set_temp_type(refined, global_decl.value_name, binding.type_name)
     else if (is_untyped_array_shape(value_type) && binding.type_name.ends_with('[]')):
         refined = set_temp_type(refined, global_decl.value_name, binding.type_name)
-    return GlobalDeclIR(global_decl.header.substring(0), refined, global_decl.value_name.substring(0))
+    return GlobalDeclIR(global_decl.header.substring(0), refined, global_decl.value_name.substring(0), global_decl.module_id.substring(0))
 
-ParsedFunction refine_function(ParsedFunction function_ir, BindingIR[] globals, FunctionSigIR[] functions, RecordFieldIR[] record_fields, EnumTypeIR[] enum_types):
+# Arm stores precede the merge's type metadata. Resolve them only after all
+# blocks have been refined, without reading either arm at runtime at the merge.
+ParsedFunction resolve_conditional_bindings(ParsedFunction function_ir):
+    BindingIR[] locals = clone_binding_irs(function_ir.locals)
+    string[] temp_types = []
+    for (BlockIR block in function_ir.blocks):
+        for (LinearInstruction op in block.instructions):
+            if (op.kind == 'value' && op.detail == 'ternary'):
+                locals.push(BindingIR(op.result_type, 'choice.' + op.lhs))
+                temp_types = set_temp_type_slot(temp_types, op.lhs, op.result_type)
+    BlockIR[] blocks = []
+    for (BlockIR block in function_ir.blocks):
+        LinearInstruction[] instructions = []
+        for (LinearInstruction op in block.instructions):
+            if (op.kind == 'choice_set'):
+                string result_type = lookup_temp_type_slot(temp_types, op.detail.substring(7))
+                instructions.push(LinearInstruction('set', '', '', '', result_type + ' ' + op.detail, clone_instruction_args(op.args)))
+            else if (op.kind == 'value' && op.detail == 'ternary'):
+                instructions.push(LinearInstruction('value', op.lhs, op.result_type, op.ownership_mode, 'identifier', ['choice.' + op.lhs]))
+            else:
+                instructions.push(op)
+        blocks.push(BlockIR(block.label, instructions, block.terminator))
+    return ParsedFunction(function_ir.header, function_ir.name, function_ir.source_name, function_ir.module_id, function_ir.is_private, function_ir.return_type, function_ir.params, locals, blocks)
+
+ParsedFunction refine_function(ParsedFunction function_ir, BindingIR[] globals, FunctionSigIR[] functions, RecordFieldIR[] record_fields, string[] record_names, EnumTypeIR[] enum_types, bool regex_imported):
     string function_return_type = function_return_type_from_header(function_ir.header)
+    string normalized_return_type = normalize_llvm_type_name(normalize_integer_enum_type_name(function_return_type, enum_types))
     BindingIR[] params = normalize_enum_bindings(function_ir.params, enum_types)
     BindingIR[] locals = normalize_enum_bindings(function_ir.locals, enum_types)
     BlockIR[] blocks = []
     LinearInstruction[] prior_instructions = []
-    string[] temp_types = []
+    string[] temp_types = unknown_temp_type_slots(max_function_temp_slot_index(function_ir) + 1)
     reset_type_ir_lookup_caches()
     for (BlockIR block in function_ir.blocks):
-        RefineInstructionsResult refined_result = refine_instructions(block.instructions, globals, params, locals, functions, record_fields, enum_types, prior_instructions, temp_types)
+        RefineInstructionsResult refined_result = refine_instructions(block.instructions, globals, params, locals, functions, record_fields, record_names, enum_types, prior_instructions, temp_types, regex_imported)
         BlockIR refined_block = BlockIR(block.label.substring(0), refined_result.instructions, clone_terminator_ir(block.terminator))
         temp_types = refined_result.temp_types
-        if ((refined_block.terminator.kind == 'return' || refined_block.terminator.kind == 'return_owned') && refined_block.terminator.args.length() == 1 && function_return_type.ends_with('[]')):
+        if ((refined_block.terminator.kind == 'return' || refined_block.terminator.kind == 'return_owned') && refined_block.terminator.args.length() == 1 && normalized_return_type.ends_with('[]')):
             string return_temp = refined_block.terminator.args[0]
             if (is_untyped_array_shape(lookup_temp_type(refined_block.instructions, return_temp))):
-                refined_block = BlockIR(refined_block.label, set_temp_type(refined_block.instructions, return_temp, function_return_type), refined_block.terminator)
+                refined_block = BlockIR(refined_block.label, set_temp_type(refined_block.instructions, return_temp, normalized_return_type), refined_block.terminator)
+        if ((refined_block.terminator.kind == 'return' || refined_block.terminator.kind == 'return_owned') && refined_block.terminator.args.length() == 1 && normalized_return_type.starts_with('map<')):
+            string return_temp = refined_block.terminator.args[0]
+            RefineInstructionsResult contextual_map = contextualize_map_literal_rows(refined_block.instructions, temp_types, return_temp, normalized_return_type, record_names)
+            LinearInstruction[] return_instructions = contextual_map.instructions
+            temp_types = contextual_map.temp_types
+            LinearInstruction return_op = lookup_instruction(return_instructions, return_temp)
+            if (return_op.lhs == return_temp):
+                if (return_op.kind == 'value' && return_op.detail == 'map' && return_op.args.is_empty()):
+                    return_instructions = set_temp_type(return_instructions, return_temp, normalized_return_type)
+                    temp_types = set_temp_type_slot(temp_types, return_temp, normalized_return_type)
+            refined_block = BlockIR(refined_block.label, return_instructions, refined_block.terminator)
+        if ((refined_block.terminator.kind == 'return' || refined_block.terminator.kind == 'return_owned') && refined_block.terminator.args.length() == 1 && normalized_return_type == 'set<int>'):
+            string return_temp = refined_block.terminator.args[0]
+            LinearInstruction return_op = lookup_instruction(refined_block.instructions, return_temp)
+            if (return_op.lhs == return_temp && return_op.kind == 'value' && return_op.detail == 'map' && return_op.args.is_empty()):
+                LinearInstruction[] return_instructions = set_temp_type(refined_block.instructions, return_temp, normalized_return_type)
+                temp_types = set_temp_type_slot(temp_types, return_temp, normalized_return_type)
+                refined_block = BlockIR(refined_block.label, return_instructions, refined_block.terminator)
         blocks.push(refined_block)
         int block_op_index = 0
         while (block_op_index < refined_block.instructions.length()):
             prior_instructions.push(refined_block.instructions[block_op_index])
             block_op_index += 1
     string normalized_header = normalize_enum_function_header(function_ir.header, enum_types).substring(0)
-    return ParsedFunction(normalized_header, function_name_from_header(normalized_header).substring(0), function_return_type_from_header(normalized_header).substring(0), clone_binding_irs(params), clone_binding_irs(locals), blocks)
+    ParsedFunction refined_function = resolve_conditional_bindings(ParsedFunction(normalized_header, function_ir.name, function_ir.source_name, function_ir.module_id, function_ir.is_private, function_return_type_from_header(normalized_header).substring(0), clone_binding_irs(params), clone_binding_irs(locals), blocks))
+    return guard_int_array_map_assignments(refined_function)
 
-ProgramIR refine_program_ir(ProgramIR program):
+LinearInstruction[] flatten_type_function_instructions(ParsedFunction function_ir):
+    LinearInstruction[] result = []
+    for (BlockIR block in function_ir.blocks):
+        result = append_instructions(result, block.instructions)
+    return result
+
+ParsedFunction guard_one_int_array_map_assignment(ParsedFunction function_ir, string key_temp, string map_name, bool preserve_old_string):
+    string catch_label = 'map.key.guard.catch.' + key_temp
+    string after_label = 'map.key.guard.after.' + key_temp
+    int key_block_index = -1
+    int key_instruction_index = -1
+    int assign_block_index = -1
+    int assign_instruction_index = -1
+    for (int block_index = 0; block_index < function_ir.blocks.length(); block_index += 1):
+        BlockIR block = function_ir.blocks[block_index]
+        for (int instruction_index = 0; instruction_index < block.instructions.length(); instruction_index += 1):
+            LinearInstruction op = block.instructions[instruction_index]
+            if (op.kind == 'value' && (op.detail == 'target-index' || op.detail == 'assign-index-key') && op.lhs == key_temp):
+                key_block_index = block_index
+                key_instruction_index = instruction_index
+            if (op.kind == 'assign_index' || op.kind == 'assign_index_add'):
+                if (op.args.length() == 3):
+                    if (op.args[1] == key_temp):
+                        assign_block_index = block_index
+                        assign_instruction_index = instruction_index
+    if (key_block_index < 0 || assign_block_index < 0):
+        return function_ir
+
+    BlockIR key_block = function_ir.blocks[key_block_index]
+    LinearInstruction[] guarded_key_instructions = []
+    for (int instruction_index = 0; instruction_index < key_block.instructions.length(); instruction_index += 1):
+        LinearInstruction op = key_block.instructions[instruction_index]
+        if (instruction_index == key_instruction_index):
+            # The guard owns this cloned key snapshot; ordinary temp cleanup must not free it.
+            guarded_key_instructions.push(LinearInstruction(op.kind, op.lhs, op.result_type, 'borrowed', op.detail, clone_instruction_args(op.args)))
+            guarded_key_instructions.push(LinearInstruction('map_key_guard_snapshot', '', '', '', catch_label, [key_temp]))
+            if (preserve_old_string):
+                guarded_key_instructions.push(LinearInstruction('map_key_guard_value_snapshot', '', '', '', catch_label, [map_name, key_temp]))
+            guarded_key_instructions.push(LinearInstruction('try', '', '', '', catch_label, []))
+        else:
+            guarded_key_instructions.push(op)
+    BlockIR guarded_key_block = BlockIR(key_block.label, guarded_key_instructions, key_block.terminator)
+
+    BlockIR[] with_guard_start = []
+    for (int block_index = 0; block_index < function_ir.blocks.length(); block_index += 1):
+        if (block_index == key_block_index):
+            with_guard_start.push(guarded_key_block)
+        else:
+            with_guard_start.push(function_ir.blocks[block_index])
+    function_ir = ParsedFunction(function_ir.header, function_ir.name, function_ir.source_name, function_ir.module_id, function_ir.is_private, function_ir.return_type, function_ir.params, function_ir.locals, with_guard_start)
+
+    assign_block_index = -1
+    assign_instruction_index = -1
+    for (int block_index = 0; block_index < function_ir.blocks.length(); block_index += 1):
+        BlockIR block = function_ir.blocks[block_index]
+        for (int instruction_index = 0; instruction_index < block.instructions.length(); instruction_index += 1):
+            LinearInstruction op = block.instructions[instruction_index]
+            if (op.kind == 'assign_index' || op.kind == 'assign_index_add'):
+                if (op.args.length() == 3):
+                    if (op.args[1] == key_temp):
+                        assign_block_index = block_index
+                        assign_instruction_index = instruction_index
+    if (assign_block_index < 0):
+        return function_ir
+    BlockIR assign_block = function_ir.blocks[assign_block_index]
+    LinearInstruction[] before_assignment = []
+    LinearInstruction[] after_assignment = []
+    for (int instruction_index = 0; instruction_index < assign_block.instructions.length(); instruction_index += 1):
+        if (instruction_index <= assign_instruction_index):
+            before_assignment.push(assign_block.instructions[instruction_index])
+        else:
+            after_assignment.push(assign_block.instructions[instruction_index])
+    before_assignment.push(LinearInstruction('map_key_guard_normal', '', '', '', catch_label, [key_temp]))
+    BlockIR guarded_assign_block = BlockIR(assign_block.label, before_assignment, TerminatorIR('jump', [after_label]))
+    BlockIR guard_catch_block = BlockIR(catch_label, [LinearInstruction('map_key_guard_exception', '', '', '', catch_label, [])], TerminatorIR('guard_unreachable', []))
+    BlockIR guard_after_block = BlockIR(after_label, after_assignment, assign_block.terminator)
+
+    BlockIR[] blocks = []
+    for (int block_index = 0; block_index < function_ir.blocks.length(); block_index += 1):
+        if (block_index == assign_block_index):
+            blocks.push(guarded_assign_block)
+            blocks.push(guard_catch_block)
+            blocks.push(guard_after_block)
+        else:
+            blocks.push(function_ir.blocks[block_index])
+    return ParsedFunction(function_ir.header, function_ir.name, function_ir.source_name, function_ir.module_id, function_ir.is_private, function_ir.return_type, function_ir.params, function_ir.locals, blocks)
+
+int count_temp_uses(LinearInstruction[] instructions, string temp_name):
+    int count = 0
+    for (LinearInstruction op in instructions):
+        for (string arg in op.args):
+            if (arg == temp_name):
+                count += 1
+    return count
+
+ParsedFunction normalize_array_string_compound_assignments(ParsedFunction function_ir):
+    LinearInstruction[] all_instructions = flatten_type_function_instructions(function_ir)
+    string[] removed_temps = []
+    string[] add_rhs_temps = []
+    string[] add_map_temps = []
+    string[] add_key_temps = []
+    for (LinearInstruction op in all_instructions):
+        if (op.kind != 'assign_index' || op.args.length() != 3):
+            continue
+        string map_type = normalize_llvm_type_name(lookup_temp_type(all_instructions, op.args[0]))
+        if (map_type != 'map<int[], string>'):
+            continue
+        LinearInstruction add_op = lookup_instruction(all_instructions, op.args[2])
+        if (add_op.kind != 'value' || add_op.detail != 'binary' || add_op.args.length() != 3):
+            continue
+        if (add_op.args[0] != '+'):
+            continue
+        LinearInstruction old_value_op = lookup_instruction(all_instructions, add_op.args[1])
+        if (old_value_op.kind != 'value' || old_value_op.detail != 'index' || old_value_op.args.length() != 2):
+            continue
+        if (old_value_op.args[0] != op.args[0] || old_value_op.args[1] != op.args[1]):
+            continue
+        if (count_temp_uses(all_instructions, add_op.lhs) != 1 || count_temp_uses(all_instructions, old_value_op.lhs) != 1):
+            continue
+        LinearInstruction key_op = lookup_instruction(all_instructions, op.args[1])
+        if (key_op.kind != 'value' || key_op.detail != 'target-index' || key_op.args.length() != 2):
+            continue
+        if (key_op.args[0] != op.args[0]):
+            continue
+        string rhs_type = normalize_llvm_type_name(lookup_temp_type(all_instructions, add_op.args[2]))
+        if (rhs_type != 'string' && rhs_type != 'int'):
+            throw 'map string += requires string or int value; got ' + rhs_type
+        removed_temps.push(add_op.lhs)
+        removed_temps.push(old_value_op.lhs)
+        add_rhs_temps.push(add_op.args[2])
+        add_map_temps.push(op.args[0])
+        add_key_temps.push(op.args[1])
+    if (add_rhs_temps.is_empty()):
+        return function_ir
+    BlockIR[] normalized_blocks = []
+    for (BlockIR block in function_ir.blocks):
+        LinearInstruction[] normalized_instructions = []
+        for (LinearInstruction op in block.instructions):
+            bool remove_instruction = false
+            for (string removed_temp in removed_temps):
+                if (op.lhs == removed_temp):
+                    remove_instruction = true
+            if (remove_instruction):
+                continue
+            bool replaced = false
+            if (op.kind == 'assign_index' && op.args.length() == 3):
+                int normalized_index = 0
+                while (normalized_index < add_rhs_temps.length()):
+                    if (op.args[0] == add_map_temps[normalized_index] && op.args[1] == add_key_temps[normalized_index]):
+                        normalized_instructions.push(LinearInstruction('assign_index_add', '', '', '', '', [add_map_temps[normalized_index], add_key_temps[normalized_index], add_rhs_temps[normalized_index]]))
+                        replaced = true
+                        break
+                    normalized_index += 1
+            if (!replaced):
+                normalized_instructions.push(op)
+        normalized_blocks.push(BlockIR(block.label, normalized_instructions, block.terminator))
+    return ParsedFunction(function_ir.header, function_ir.name, function_ir.source_name, function_ir.module_id, function_ir.is_private, function_ir.return_type, function_ir.params, function_ir.locals, normalized_blocks)
+
+ParsedFunction guard_int_array_map_assignments(ParsedFunction function_ir):
+    function_ir = normalize_array_string_compound_assignments(function_ir)
+    LinearInstruction[] all_instructions = flatten_type_function_instructions(function_ir)
+    string[] guard_keys = []
+    string[] guard_maps = []
+    bool[] guard_preserve_old_strings = []
+    for (LinearInstruction op in all_instructions):
+        if ((op.kind != 'assign_index' && op.kind != 'assign_index_add') || op.args.length() != 3):
+            continue
+        string base_type = normalize_llvm_type_name(lookup_temp_type(all_instructions, op.args[0]))
+        if (base_type != 'map<int[], int>' && base_type != 'map<int[], string>' && base_type != 'map<int[], bool[]>'):
+            continue
+        bool preserve_old_string = op.kind == 'assign_index_add' && base_type == 'map<int[], string>'
+        if (op.kind == 'assign_index_add' && base_type != 'map<int[], string>' && base_type != 'map<int[], int>'):
+            continue
+        bool found_key = false
+        for (LinearInstruction key_op in all_instructions):
+            if (key_op.kind == 'value' && (key_op.detail == 'target-index' || key_op.detail == 'assign-index-key') && key_op.lhs == op.args[1]):
+                found_key = true
+        if (found_key):
+            guard_keys.push(op.args[1])
+            guard_maps.push(op.args[0])
+            guard_preserve_old_strings.push(preserve_old_string)
+    int guard_index = guard_keys.length() - 1
+    while (guard_index >= 0):
+        function_ir = guard_one_int_array_map_assignment(function_ir, guard_keys[guard_index], guard_maps[guard_index], guard_preserve_old_strings[guard_index])
+        guard_index -= 1
+    return function_ir
+
+bool is_builtin_named_function_reference(string name):
+    FunctionSigIR[] no_functions = []
+    return infer_call_type(name, no_functions) != 'unknown'
+
+bool is_builtin_named_method_reference(string name):
+    if (is_builtin_ufcs_array_context_name(name)):
+        return true
+    FunctionSigIR[] no_functions = []
+    if (infer_method_call_type(name, 'string', no_functions) != 'unknown'):
+        return true
+    if (infer_method_call_type(name, 'int[]', no_functions) != 'unknown'):
+        return true
+    if (infer_method_call_type(name, 'map<int, int>', no_functions) != 'unknown'):
+        return true
+    return infer_method_call_type(name, 'thread_pool', no_functions) != 'unknown'
+
+bool named_binding_exists(BindingIR[] bindings, string name):
+    for (BindingIR binding in bindings):
+        if (binding.name == name):
+            return true
+    return false
+
+string resolve_module_function_reference(string module_id, string source_name, ParsedFunction[] functions, string[] record_names, bool method_reference, bool name_shadowed):
+    if (name_shadowed):
+        return source_name.substring(0)
+    string private_identity = ''
+    bool public_visible = false
+    bool private_exists = false
+    int index = functions.length() - 1
+    while (index >= 0):
+        ParsedFunction candidate = functions[index]
+        string candidate_source_name = candidate.source_name
+        if (candidate_source_name == ''):
+            candidate_source_name = candidate.name
+        if (candidate_source_name == source_name):
+            if (candidate.is_private):
+                private_exists = true
+                if (candidate.module_id == module_id && private_identity == ''):
+                    private_identity = candidate.name
+            else:
+                public_visible = true
+        index -= 1
+    if (private_identity != ''):
+        return private_identity
+    if (public_visible):
+        return source_name.substring(0)
+    if (private_exists):
+        bool builtin_visible = is_builtin_named_function_reference(source_name) || record_type_exists(record_names, source_name)
+        if (method_reference):
+            builtin_visible = is_builtin_named_method_reference(source_name)
+        if (!builtin_visible):
+            throw 'private function is not visible in this module: ' + source_name
+    return source_name.substring(0)
+
+string[] append_unique_reference_temp(string[] names, string name):
+    if (name == ''):
+        return names
+    for (string existing : names):
+        if (existing == name):
+            return names
+    names.push(name.substring(0))
+    return names
+
+LinearInstruction[] bind_module_function_references(LinearInstruction[] instructions, string module_id, ParsedFunction[] functions, string[] record_names, BindingIR[] bindings, BindingIR[] global_bindings):
+    string[] comparator_temps = []
+    string[] member_base_temps = []
+    for (LinearInstruction op in instructions):
+        if (op.kind == 'value' && op.detail == 'field'):
+            if (op.args.length() >= 2):
+                member_base_temps = append_unique_reference_temp(member_base_temps, op.args[1])
+        if (op.kind != 'value' || op.detail != 'method-call'):
+            continue
+        if (op.args.length() >= 3):
+            if (op.args[0] == 'sort' || op.args[0] == 'create_prio_q'):
+                comparator_temps = append_unique_reference_temp(comparator_temps, op.args[2])
+    LinearInstruction[] bound = []
+    for (LinearInstruction op in instructions):
+        string[] args = clone_instruction_args(op.args)
+        if (op.kind == 'value' && op.detail == 'call'):
+            if (args.length() >= 1):
+                args[0] = resolve_module_function_reference(module_id, args[0], functions, record_names, false, false)
+        else if (op.kind == 'value' && op.detail == 'method-call'):
+            if (args.length() >= 1):
+                args[0] = resolve_module_function_reference(module_id, args[0], functions, record_names, true, false)
+            if (args.length() >= 3):
+                if (args[0] == 'submit'):
+                    bool callback_shadowed = named_binding_exists(bindings, args[2]) || named_binding_exists(global_bindings, args[2])
+                    args[2] = resolve_module_function_reference(module_id, args[2], functions, record_names, false, callback_shadowed)
+        else if (op.kind == 'value' && op.detail == 'identifier' && args.length() == 1):
+            bool is_member_base = false
+            for (string member_base_temp : member_base_temps):
+                if (op.lhs == member_base_temp):
+                    is_member_base = true
+            bool is_comparator_reference = false
+            for (string comparator_temp : comparator_temps):
+                if (op.lhs == comparator_temp):
+                    is_comparator_reference = true
+            if (!is_member_base):
+                if (is_comparator_reference):
+                    bool comparator_shadowed = named_binding_exists(bindings, args[0]) || named_binding_exists(global_bindings, args[0])
+                    args[0] = resolve_module_function_reference(module_id, args[0], functions, record_names, false, comparator_shadowed)
+                else:
+                    bool name_shadowed = named_binding_exists(bindings, args[0]) || named_binding_exists(global_bindings, args[0])
+                    if (!name_shadowed):
+                        string resolved_name = resolve_module_function_reference(module_id, args[0], functions, record_names, false, false)
+                        if (resolved_name != args[0]):
+                            throw 'private function values are unsupported outside named call positions: ' + args[0]
+        else if (op.kind == 'value' && op.detail == 'call-expr' && args.length() >= 1):
+            for (LinearInstruction callee in instructions):
+                if (callee.lhs == args[0] && callee.kind == 'value' && callee.detail == 'identifier' && callee.args.length() == 1):
+                    bool name_shadowed = named_binding_exists(bindings, callee.args[0]) || named_binding_exists(global_bindings, callee.args[0])
+                    if (!name_shadowed):
+                        string resolved_name = resolve_module_function_reference(module_id, callee.args[0], functions, record_names, false, false)
+                        if (resolved_name != callee.args[0]):
+                            throw 'private function values are unsupported outside named call positions: ' + callee.args[0]
+        bound.push(LinearInstruction(op.kind, op.lhs, op.result_type, op.ownership_mode, op.detail, args))
+    return bound
+
+ParsedFunction[] bind_program_private_functions(ParsedFunction[] input_functions, BindingIR[] global_bindings, string[] record_names):
+    ParsedFunction[] functions = []
+    int private_index = 0
+    for (ParsedFunction original in input_functions):
+        string source_name = original.source_name
+        if (source_name == ''):
+            source_name = original.name.substring(0)
+        string symbol_name = original.name
+        if (original.is_private):
+            int matching_private_count = 0
+            bool matching_public = false
+            for (ParsedFunction existing in input_functions):
+                string existing_source_name = existing.source_name
+                if (existing_source_name == ''):
+                    existing_source_name = existing.name
+                if (existing.module_id == original.module_id && existing_source_name == source_name):
+                    if (existing.is_private):
+                        matching_private_count += 1
+                    else:
+                        matching_public = true
+            if (matching_public):
+                throw 'private function conflicts with public function in module: ' + source_name
+            if (matching_private_count > 1):
+                throw 'duplicate private function in module: ' + source_name
+            symbol_name = '__tb.private.function.' + private_index.to_string()
+            private_index += 1
+        functions.push(ParsedFunction(original.header, symbol_name, source_name, original.module_id, original.is_private, original.return_type, original.params, original.locals, original.blocks))
+    ParsedFunction[] bound_functions = []
+    for (ParsedFunction function_ir in functions):
+        BindingIR[] bindings = []
+        for (BindingIR param in function_ir.params):
+            bindings.push(param)
+        for (BindingIR local in function_ir.locals):
+            bindings.push(local)
+        BlockIR[] blocks = []
+        for (BlockIR block in function_ir.blocks):
+            blocks.push(BlockIR(block.label, bind_module_function_references(block.instructions, function_ir.module_id, functions, record_names, bindings, global_bindings), block.terminator))
+        bound_functions.push(ParsedFunction(function_ir.header, function_ir.name, function_ir.source_name, function_ir.module_id, function_ir.is_private, function_ir.return_type, function_ir.params, function_ir.locals, blocks))
+    return bound_functions
+
+GlobalDeclIR[] bind_global_private_functions(GlobalDeclIR[] globals, ParsedFunction[] functions, string[] record_names):
+    GlobalDeclIR[] bound = []
+    BindingIR[] global_bindings = collect_global_bindings(globals)
+    BindingIR[] no_local_bindings = []
+    for (GlobalDeclIR global_decl in globals):
+        bound.push(GlobalDeclIR(global_decl.header, bind_module_function_references(global_decl.instructions, global_decl.module_id, functions, record_names, no_local_bindings, global_bindings), global_decl.value_name, global_decl.module_id))
+    return bound
+
+ProgramIR refine_program_ir_with_regex(ProgramIR program, bool regex_imported):
+    BindingIR[] unnormalized_globals = collect_global_bindings(program.globals)
+    string[] record_names = collect_declared_record_names(program.records)
+    ParsedFunction[] bound_functions = bind_program_private_functions(program.functions, unnormalized_globals, record_names)
+    GlobalDeclIR[] bound_globals = bind_global_private_functions(program.globals, bound_functions, record_names)
+    program = ProgramIR(program.imports, bound_globals, program.records, program.enums, bound_functions)
+    if (regex_imported):
+        int helper_count = 0
+        for (ParsedFunction function_ir : program.functions):
+            if (function_ir.source_name == '__tb_regex_split'):
+                helper_count += 1
+        if (helper_count != 1):
+            throw 'regex split internal helper must be declared exactly once'
     EnumTypeIR[] enum_types = collect_enum_types(program.enums)
-    BindingIR[] globals = normalize_enum_bindings(collect_global_bindings(program.globals), enum_types)
-    FunctionSigIR[] functions = collect_function_sigs(program.functions)
+    validate_int_array_map_key_types(program, enum_types)
+    bool has_integer_enum = validate_integer_enum_declared_types(program, enum_types)
+    bool has_string_enum_record_field = has_string_enum_record_fields(program.records, enum_types)
+    bool normalize_records = has_integer_enum || has_string_enum_record_field
+    RecordDeclIR[] records = []
     RecordFieldIR[] record_fields = collect_record_fields(program.records)
+    string[] record_names = collect_declared_record_names(program.records)
+    if (normalize_records):
+        records = normalize_enum_record_fields(program.records, enum_types)
+        record_fields = collect_record_fields(records)
+        record_names = collect_declared_record_names(records)
+    BindingIR[] globals = normalize_enum_bindings(collect_global_bindings(program.globals), enum_types)
+    FunctionSigIR[] functions = collect_function_sigs(program.functions, enum_types)
 
     GlobalDeclIR[] refined_globals = []
     LinearInstruction[] prior_global_instructions = []
-    string[] prior_global_temp_types = []
+    string[] prior_global_temp_types = unknown_temp_type_slots(max_global_temp_slot_index(program.globals) + 1)
     for (GlobalDeclIR global_decl in program.globals):
         reset_type_ir_lookup_caches()
         BindingIR[] empty_params = []
         BindingIR[] empty_locals = []
-        RefineInstructionsResult refined_global_result = refine_instructions(global_decl.instructions, globals, empty_params, empty_locals, functions, record_fields, enum_types, prior_global_instructions, prior_global_temp_types)
-        prior_global_temp_types = refined_global_result.temp_types
-        GlobalDeclIR refined_global = GlobalDeclIR(global_decl.header.substring(0), refined_global_result.instructions, global_decl.value_name.substring(0))
+        RefineInstructionsResult refined_global_result = refine_instructions(global_decl.instructions, globals, empty_params, empty_locals, functions, record_fields, record_names, enum_types, prior_global_instructions, prior_global_temp_types, regex_imported)
         BindingIR binding = ir_parse_binding_decl(strip_prefix(global_decl.header, 'global '))
+        string normalized_global_type = normalize_integer_enum_type_name(binding.type_name, enum_types)
+        string global_header = global_decl.header
+        if (normalized_global_type != binding.type_name):
+            global_header = 'global ' + normalized_global_type + ' ' + binding.name
+            binding = BindingIR(normalized_global_type, binding.name)
+        GlobalDeclIR refined_global = GlobalDeclIR(global_header.substring(0), refined_global_result.instructions, global_decl.value_name.substring(0), global_decl.module_id.substring(0))
         string value_type = lookup_temp_type(refined_global.instructions, global_decl.value_name)
+        validate_future_binding_type(binding.name, binding.type_name, value_type)
         if (value_type == 'unknown' && binding.type_name.starts_with('set<')):
-            refined_global = GlobalDeclIR(refined_global.header, set_temp_type(refined_global.instructions, global_decl.value_name, binding.type_name), refined_global.value_name)
+            refined_global = GlobalDeclIR(refined_global.header, set_temp_type(refined_global.instructions, global_decl.value_name, binding.type_name), refined_global.value_name, refined_global.module_id)
         string declared_map_type = normalize_llvm_type_name(binding.type_name)
         if (value_type == 'unknown' && declared_map_type.starts_with('map<')):
-            refined_global = GlobalDeclIR(refined_global.header, set_temp_type(refined_global.instructions, global_decl.value_name, declared_map_type), refined_global.value_name)
-        if (value_type == '[]' && binding.type_name.ends_with('[]')):
-            refined_global = GlobalDeclIR(refined_global.header, set_temp_type(refined_global.instructions, global_decl.value_name, binding.type_name), refined_global.value_name)
-        else if (is_untyped_array_shape(value_type) && binding.type_name.ends_with('[]')):
-            refined_global = GlobalDeclIR(refined_global.header, set_temp_type(refined_global.instructions, global_decl.value_name, binding.type_name), refined_global.value_name)
+            refined_global = GlobalDeclIR(refined_global.header, set_temp_type(refined_global.instructions, global_decl.value_name, declared_map_type), refined_global.value_name, refined_global.module_id)
+        if (declared_map_type.starts_with('map<')):
+            RefineInstructionsResult contextual_map = contextualize_map_literal_rows(refined_global.instructions, refined_global_result.temp_types, global_decl.value_name, declared_map_type, record_names)
+            refined_global = GlobalDeclIR(refined_global.header, contextual_map.instructions, refined_global.value_name, refined_global.module_id)
+            refined_global_result.temp_types = contextual_map.temp_types
+        validate_map_binding_type(binding.name, binding.type_name, lookup_temp_type(refined_global.instructions, global_decl.value_name))
+        prior_global_temp_types = refined_global_result.temp_types
+        if (value_type == '[]' && normalized_global_type.ends_with('[]')):
+            refined_global = GlobalDeclIR(refined_global.header, set_temp_type(refined_global.instructions, global_decl.value_name, normalized_global_type), refined_global.value_name, refined_global.module_id)
+        else if (is_untyped_array_shape(value_type) && normalized_global_type.ends_with('[]')):
+            refined_global = GlobalDeclIR(refined_global.header, set_temp_type(refined_global.instructions, global_decl.value_name, normalized_global_type), refined_global.value_name, refined_global.module_id)
         refined_globals.push(refined_global)
         int global_op_index = 0
         while (global_op_index < refined_global.instructions.length()):
@@ -1403,8 +3101,13 @@ ProgramIR refine_program_ir(ProgramIR program):
 
     ParsedFunction[] refined_functions = []
     for (ParsedFunction function_ir in program.functions):
-        refined_functions.push(refine_function(function_ir, globals, functions, record_fields, enum_types))
+        refined_functions.push(refine_function(function_ir, globals, functions, record_fields, record_names, enum_types, regex_imported))
+    if (normalize_records):
+        return ProgramIR(program.imports, refined_globals, records, program.enums, refined_functions)
     return ProgramIR(program.imports, refined_globals, program.records, program.enums, refined_functions)
+
+ProgramIR refine_program_ir(ProgramIR program):
+    return refine_program_ir_with_regex(program, false)
 
 ProgramIR typed_source_ir(string source):
     ProgramIR lowered = lower_source_ir(source)

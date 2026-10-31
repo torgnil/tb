@@ -14,6 +14,7 @@
 
 import ir_lib;
 import parser;
+import local_bindings;
 
 record TempResult(string name, string[] lines, int next_temp);
 record TempListResult(string[] names, string[] lines, int next_temp);
@@ -24,6 +25,33 @@ record TempIRListResult(string[] names, LinearInstruction[] instructions, int ne
 record LinearIRBlockResult(LinearInstruction[] instructions, int next_temp);
 record LinearIRListResult(LinearInstruction[] instructions, int next_temp, int next_label);
 record LoweredFunctionDeclIR(ParsedFunction function_ir, int next_index);
+record SubmitLambdaRewrite(Node node, Node[] generated, string[] used_names, int next_index);
+record SubmitScopedRewrite(Node node, Node[] generated, string[] used_names, int next_index, BindingIR[] bindings);
+record SubmitScopedListRewrite(Node[] nodes, Node[] generated, string[] used_names, int next_index, BindingIR[] bindings);
+record SubmitLambdaBlockCheck(string return_type, bool returns_all_paths);
+record SubmitLambdaScope(string[] names, string[] types, string[] const_names, string[] declared_names, string parameter_name);
+record SubmitLambdaValidation(SubmitLambdaBlockCheck check, SubmitLambdaScope scope);
+record SubmitRangeListRewrite(Node[] nodes, string[] used_names, int next_index);
+record ArrayScalarCaptureResult(BindingIR[] captures, bool complete);
+record ArrayScalarCallbackRewrite(BindingIR[] captures, bool recognized);
+
+# Set once per program after checking for declarations named `range`.
+bool LOWER_DIRECT_RANGE_FOREACH = false;
+
+bool submit_lambda_managed_type(string type_name):
+    return type_name == 'string' || type_name == 'int[]' || type_name == 'int[][]'
+
+bool submit_lambda_result_type(string type_name):
+    return type_name == 'int' || type_name == 'bool' || submit_lambda_managed_type(type_name)
+
+int submit_lambda_array_capture_index(BindingIR[] captured):
+    for (int index = 0; index < captured.length(); index += 1):
+        string capture_type = captured[index].type_name
+        if (capture_type.starts_with('const ')):
+            capture_type = capture_type.substring(6)
+        if (capture_type == 'int[]'):
+            return index
+    return -1
 
 string quote_string(string value):
     return '\'' + value + '\''
@@ -60,6 +88,14 @@ LinearInstruction[] append_instructions(LinearInstruction[] left, LinearInstruct
         result.push(op)
     return result
 
+Node[] append_nodes(Node[] left, Node[] right):
+    Node[] result = []
+    for (Node node : left):
+        result.push(node)
+    for (Node node : right):
+        result.push(node)
+    return result
+
 string[] indent_lines(string[] lines, string indent):
     string[] result = []
     for (string line in lines):
@@ -85,11 +121,1560 @@ Node[] copy_nodes(Node[] nodes):
         copied.push(node)
     return copied
 
+bool contains_name(string[] names, string name):
+    for (string existing : names):
+        if (existing == name):
+            return true
+    return false
+
+string[] add_unique_name(string[] names, string name):
+    if (!contains_name(names, name)):
+        names.push(name)
+    return names
+
+string binding_name(string value):
+    return ir_parse_binding_decl(value).name
+
+int submit_lambda_name_index(string[] names, string name):
+    int index = names.length() - 1
+    while (index >= 0):
+        if (names[index] == name):
+            return index
+        index -= 1
+    return -1
+
+SubmitLambdaScope copy_submit_lambda_scope(SubmitLambdaScope scope):
+    string[] names = []
+    string[] types = []
+    string[] const_names = []
+    string[] declared_names = []
+    for (string name : scope.names):
+        names.push(name)
+    for (string type_name : scope.types):
+        types.push(type_name)
+    for (string name : scope.const_names):
+        const_names.push(name)
+    for (string name : scope.declared_names):
+        declared_names.push(name)
+    return SubmitLambdaScope(names, types, const_names, declared_names, scope.parameter_name)
+
+string[] collect_submit_unavailable_names(Node node, string[] names):
+    names = add_unique_name(names, node.value)
+    if (node.kind == 'Param' || node.kind == 'VarDecl' || node.kind == 'ForEach' || node.kind == 'Catch' || node.kind == 'Function' || node.kind == 'CachedFunction' || node.kind == 'PrivateFunction'):
+        names = add_unique_name(names, binding_name(node.value))
+    for (Node child : node.children):
+        names = collect_submit_unavailable_names(child, names)
+    return names
+
+Node submit_lambda_helper(Node[] functions, string name):
+    int index = functions.length() - 1
+    while (index >= 0):
+        Node function_node = functions[index]
+        if (function_node.kind == 'Function' || function_node.kind == 'CachedFunction' || function_node.kind == 'PrivateFunction'):
+            BindingIR signature = ir_parse_binding_decl(function_node.value)
+            if (signature.name == name):
+                return function_node
+        index -= 1
+    return Node('', '', [])
+
+Node[] program_visible_function_nodes(Node[] declarations, string module_id):
+    Node[] visible = []
+    string active_module = ''
+    for (Node child : declarations):
+        if (child.kind == 'ModuleMarker'):
+            active_module = child.value
+        else if (child.kind == 'Function' || child.kind == 'CachedFunction'):
+            visible.push(child)
+    active_module = ''
+    for (Node child : declarations):
+        if (child.kind == 'ModuleMarker'):
+            active_module = child.value
+        else if (child.kind == 'PrivateFunction' && active_module == module_id):
+            visible.push(child)
+    return visible
+
+string submit_lambda_expression_type_context(Node node, SubmitLambdaScope scope, Node[] functions, bool array_callback_context, string callback_name):
+    if (node.kind == 'Int'):
+        return 'int'
+    if (node.kind == 'Bool'):
+        return 'bool'
+    if (node.kind == 'String'):
+        return 'string'
+    if (node.kind == 'Array'):
+        if (node.children.is_empty()):
+            return ''
+        string element_type = ''
+        int index = 0
+        while (index < node.children.length()):
+            string current_type = submit_lambda_expression_type_context(node.children[index], scope, functions, array_callback_context, callback_name)
+            if (!(current_type == 'int' || current_type == 'int[]')):
+                return ''
+            if (element_type == ''):
+                element_type = current_type
+            else if (current_type != element_type):
+                return ''
+            index += 1
+        if (element_type == 'int'):
+            return 'int[]'
+        if (element_type == 'int[]'):
+            return 'int[][]'
+        return ''
+    if (node.kind == 'Identifier'):
+        int local_index = submit_lambda_name_index(scope.names, node.value)
+        if (local_index >= 0):
+            return scope.types[local_index]
+        return ''
+    if (node.kind == 'Index'):
+        if (node.children.length() != 2):
+            return ''
+        string base_type = submit_lambda_expression_type_context(node.children[0], scope, functions, array_callback_context, callback_name)
+        string index_type = submit_lambda_expression_type_context(node.children[1], scope, functions, array_callback_context, callback_name)
+        if (index_type != 'int'):
+            throw 'thread_pool.submit lambda array index must have type int'
+        if (base_type == 'int[]'):
+            return 'int'
+        if (base_type == 'int[][]'):
+            return 'int[]'
+        if (base_type == 'string'):
+            return 'string'
+        if (base_type == 'string[]' || base_type == 'string[][]'):
+            throw 'thread_pool.submit lambda string indexing is not supported'
+        throw 'thread_pool.submit lambda indexing requires string, int[], or int[][]'
+    if (node.kind == 'MethodCall'):
+        if (node.children.length() < 1):
+            return ''
+        if (node.value != 'length' && node.value != 'is_empty'):
+            return ''
+        if (node.children.length() != 1):
+            throw 'thread_pool.submit lambda ' + node.value + ' query takes no arguments'
+        string receiver_type = submit_lambda_expression_type_context(node.children[0], scope, functions, array_callback_context, callback_name)
+        if (!(receiver_type == 'string' || receiver_type == 'int[]' || receiver_type == 'int[][]')):
+            throw 'thread_pool.submit lambda ' + node.value + ' query requires string, int[], or int[][]'
+        if (node.value == 'length'):
+            return 'int'
+        return 'bool'
+    if (node.kind == 'Unary'):
+        if (node.children.length() != 1):
+            return ''
+        if (node.value == '-'):
+            if (submit_lambda_expression_type_context(node.children[0], scope, functions, array_callback_context, callback_name) == 'int'):
+                return 'int'
+            return ''
+        if (node.value == '!' || node.value == 'not'):
+            if (submit_lambda_expression_type_context(node.children[0], scope, functions, array_callback_context, callback_name) == 'bool'):
+                return 'bool'
+        return ''
+    if (node.kind == 'Binary'):
+        if (node.children.length() != 2):
+            return ''
+        string left_type = submit_lambda_expression_type_context(node.children[0], scope, functions, array_callback_context, callback_name)
+        if (left_type == ''):
+            return ''
+        string right_type = submit_lambda_expression_type_context(node.children[1], scope, functions, array_callback_context, callback_name)
+        if (right_type == ''):
+            return ''
+        if (node.value == '+'):
+            if (left_type == 'int' && right_type == 'int'):
+                return 'int'
+            if (left_type == 'string' && (right_type == 'string' || right_type == 'int')):
+                return 'string'
+            if (left_type == 'int' && right_type == 'string'):
+                return 'string'
+            return ''
+        if (node.value == '-' || node.value == '*' || node.value == '/' || node.value == '%' || node.value == '&' || node.value == '|' || node.value == '^' || node.value == '<<' || node.value == '>>'):
+            if (left_type == 'int' && right_type == 'int'):
+                return 'int'
+            return ''
+        if (node.value == '<' || node.value == '<=' || node.value == '>' || node.value == '>='):
+            if (left_type == 'string' && right_type == 'string'):
+                return 'bool'
+            if (left_type == 'int' && right_type == 'int'):
+                return 'bool'
+            return ''
+        if (node.value == '==' || node.value == '!='):
+            if (left_type == right_type && (left_type == 'int' || left_type == 'bool' || left_type == 'string')):
+                return 'bool'
+            return ''
+        if (node.value == '&&' || node.value == '||' || node.value == 'and' || node.value == 'or'):
+            if (left_type == 'bool' && right_type == 'bool'):
+                return 'bool'
+        return ''
+    if (node.kind == 'Ternary'):
+        if (node.children.length() != 3):
+            return ''
+        if (submit_lambda_expression_type_context(node.children[0], scope, functions, array_callback_context, callback_name) != 'bool'):
+            return ''
+        string true_type = submit_lambda_expression_type_context(node.children[1], scope, functions, array_callback_context, callback_name)
+        string false_type = submit_lambda_expression_type_context(node.children[2], scope, functions, array_callback_context, callback_name)
+        if (true_type == false_type && submit_lambda_result_type(true_type)):
+            return true_type
+        return ''
+    if (node.kind == 'Call'):
+        Node function_node = submit_lambda_helper(functions, node.value)
+        if (function_node.kind == ''):
+            return ''
+        BindingIR signature = ir_parse_binding_decl(function_node.value)
+        if (!array_callback_context && !submit_lambda_result_type(signature.type_name)):
+            return ''
+        int parameter_count = 0
+        int index = 0
+        bool invalid_callback_parameter = false
+        while (index < function_node.children.length()):
+            if (function_node.children[index].kind != 'Param'):
+                break
+            BindingIR parameter = ir_parse_binding_decl(function_node.children[index].value)
+            string helper_decl_type = parameter.type_name
+            if (helper_decl_type.starts_with('const ')):
+                helper_decl_type = helper_decl_type.substring(6)
+            if (array_callback_context):
+                if (!(helper_decl_type == 'int' || helper_decl_type == 'bool')):
+                    invalid_callback_parameter = true
+            else if (!(helper_decl_type == 'int' || helper_decl_type == 'bool' || submit_lambda_managed_type(helper_decl_type))):
+                return ''
+            parameter_count += 1
+            index += 1
+        if (node.children.length() != parameter_count):
+            if (array_callback_context):
+                throw 'int[] ' + callback_name + ' callback helper ' + node.value + ' expects ' + parameter_count.to_string() + ' arguments but received ' + node.children.length().to_string()
+            throw 'thread_pool.submit lambda helper ' + node.value + ' expects ' + parameter_count.to_string() + ' arguments but received ' + node.children.length().to_string()
+        if (array_callback_context):
+            if (!(signature.type_name == 'int' || signature.type_name == 'bool')):
+                throw 'int[] ' + callback_name + ' callback helper ' + node.value + ' must return int or bool; got ' + signature.type_name
+            if (invalid_callback_parameter):
+                throw 'int[] ' + callback_name + ' callback helper ' + node.value + ' parameters must use int or bool'
+        index = 0
+        while (index < parameter_count):
+            BindingIR parameter = ir_parse_binding_decl(function_node.children[index].value)
+            string helper_decl_type = parameter.type_name
+            if (helper_decl_type.starts_with('const ')):
+                helper_decl_type = helper_decl_type.substring(6)
+            string argument_type = submit_lambda_expression_type_context(node.children[index], scope, functions, array_callback_context, callback_name)
+            if (argument_type == ''):
+                return ''
+            if (argument_type != helper_decl_type):
+                if (array_callback_context):
+                    throw 'int[] ' + callback_name + ' callback helper ' + node.value + ' argument ' + (index + 1).to_string() + ' must have type ' + helper_decl_type + '; got ' + argument_type
+                throw 'thread_pool.submit lambda helper ' + node.value + ' argument ' + (index + 1).to_string() + ' must have type ' + helper_decl_type + '; got ' + argument_type
+            index += 1
+        return signature.type_name
+    return ''
+
+string submit_lambda_expression_type(Node node, SubmitLambdaScope scope, Node[] functions):
+    return submit_lambda_expression_type_context(node, scope, functions, false, '')
+
+string merge_submit_return_types(string left, string right):
+    if (left == ''):
+        return right
+    if (right == ''):
+        return left
+    if (left != right):
+        throw 'thread_pool.submit lambda block returns must all have the same type'
+    return left
+
+string array_callback_block_expression_type(Node node, SubmitLambdaScope scope, Node[] functions, bool callback_context, string callback_name):
+    if (!callback_context):
+        return submit_lambda_expression_type(node, scope, functions)
+    if (!int_array_scalar_expression(node, scope.names, functions)):
+        return ''
+    return submit_lambda_expression_type_context(node, scope, functions, true, callback_name)
+
+SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements, SubmitLambdaScope initial_scope, Node[] functions, int loop_depth, bool callback_context, string callback_name):
+    SubmitLambdaScope scope = initial_scope
+    string return_type = ''
+    bool previous_paths_return = false
+    for (Node statement : statements):
+        SubmitLambdaBlockCheck current = SubmitLambdaBlockCheck('', false)
+        if (statement.kind == 'VarDecl'):
+            if (statement.children.length() != 1):
+                throw 'thread_pool.submit lambda local declaration requires an initializer'
+            BindingIR binding = ir_parse_binding_decl(statement.value)
+            string local_type = binding.type_name
+            bool is_const = local_type.starts_with('const ')
+            if (is_const):
+                local_type = local_type.substring(6)
+            if (!(local_type == 'int' || local_type == 'bool')):
+                throw 'thread_pool.submit lambda locals must have type int or bool'
+            if (contains_name(scope.declared_names, binding.name)):
+                throw 'thread_pool.submit lambda local names must be unique, including the parameter'
+            string initializer_type = array_callback_block_expression_type(statement.children[0], scope, functions, callback_context, callback_name)
+            if (initializer_type == ''):
+                throw 'thread_pool.submit lambda local initializer must use only in-scope scalar values and declared scalar helper calls'
+            if (initializer_type != local_type):
+                throw 'thread_pool.submit lambda local initializer must have type ' + local_type + '; got ' + initializer_type
+            scope.declared_names = append_lines(scope.declared_names, [binding.name])
+            scope.names = append_lines(scope.names, [binding.name])
+            scope.types = append_lines(scope.types, [local_type])
+            if (is_const):
+                scope.const_names = append_lines(scope.const_names, [binding.name])
+        else if (statement.kind == 'Assign'):
+            if (statement.children.length() != 2):
+                throw 'thread_pool.submit lambda assignments must target a mutable scalar local'
+            if (statement.children[0].kind != 'Identifier'):
+                throw 'thread_pool.submit lambda assignments must target a mutable scalar local'
+            string target_name = statement.children[0].value
+            int target_index = submit_lambda_name_index(scope.names, target_name)
+            if (target_index < 0):
+                throw 'thread_pool.submit lambda assignment target must be an in-scope scalar local'
+            if (contains_name(scope.const_names, target_name)):
+                if (submit_lambda_managed_type(scope.types[target_index])):
+                    throw 'thread_pool.submit lambda cannot assign to managed task parameter ' + target_name
+                throw 'thread_pool.submit lambda cannot assign to const local ' + target_name
+            string value_type = array_callback_block_expression_type(statement.children[1], scope, functions, callback_context, callback_name)
+            if (value_type == ''):
+                throw 'thread_pool.submit lambda assignment value must use only in-scope scalar values and declared scalar helper calls'
+            if (value_type != scope.types[target_index]):
+                throw 'thread_pool.submit lambda assignment must have type ' + scope.types[target_index] + '; got ' + value_type
+        else if (statement.kind == 'Return'):
+            if (statement.children.length() != 1):
+                throw 'thread_pool.submit lambda block requires value returns'
+            current.return_type = array_callback_block_expression_type(statement.children[0], scope, functions, callback_context, callback_name)
+            if (callback_context && !(current.return_type == 'int' || current.return_type == 'bool')):
+                throw 'int[] ' + callback_name + ' callback return must use scalar int or bool expressions and declared scalar helper calls'
+            if (!submit_lambda_result_type(current.return_type)):
+                throw 'thread_pool.submit lambda return must be an int, bool, string, int[], or int[][] expression using only in-scope values and declared helper calls'
+            current.returns_all_paths = true
+        else if (statement.kind == 'Throw'):
+            if (statement.children.length() != 1):
+                throw 'thread_pool.submit lambda throw requires a string literal'
+            if (statement.children[0].kind != 'String'):
+                throw 'thread_pool.submit lambda throw requires a string literal'
+            current.returns_all_paths = true
+        else if (statement.kind == 'If'):
+            if (statement.children.length() < 1):
+                throw 'thread_pool.submit lambda block contains an invalid if statement'
+            if (array_callback_block_expression_type(statement.children[0], scope, functions, callback_context, callback_name) != 'bool'):
+                throw 'thread_pool.submit lambda condition must be a bool expression using only in-scope scalar values and declared scalar helper calls'
+            Node[] then_statements = []
+            Node[] else_statements = []
+            bool has_else = false
+            int child_index = 1
+            while (child_index < statement.children.length()):
+                Node child = statement.children[child_index]
+                if (child.kind == 'Else'):
+                    if (has_else || child_index + 1 != statement.children.length()):
+                        throw 'thread_pool.submit lambda block contains an invalid else branch'
+                    has_else = true
+                    else_statements = child.children
+                else:
+                    then_statements.push(child)
+                child_index += 1
+            SubmitLambdaValidation then_validation = validate_submit_lambda_block_statements(then_statements, copy_submit_lambda_scope(scope), functions, loop_depth, callback_context, callback_name)
+            SubmitLambdaBlockCheck then_check = then_validation.check
+            return_type = merge_submit_return_types(return_type, then_check.return_type)
+            current.returns_all_paths = false
+            if (has_else):
+                SubmitLambdaScope else_scope = copy_submit_lambda_scope(scope)
+                else_scope.declared_names = then_validation.scope.declared_names
+                SubmitLambdaValidation else_validation = validate_submit_lambda_block_statements(else_statements, else_scope, functions, loop_depth, callback_context, callback_name)
+                SubmitLambdaBlockCheck else_check = else_validation.check
+                return_type = merge_submit_return_types(return_type, else_check.return_type)
+                current.returns_all_paths = then_check.returns_all_paths && else_check.returns_all_paths
+                scope.declared_names = else_validation.scope.declared_names
+            else:
+                scope.declared_names = then_validation.scope.declared_names
+            current.return_type = return_type
+        else if (statement.kind == 'While'):
+            if (statement.children.length() < 1):
+                throw 'thread_pool.submit lambda block contains an invalid while statement'
+            if (array_callback_block_expression_type(statement.children[0], scope, functions, callback_context, callback_name) != 'bool'):
+                throw 'thread_pool.submit lambda while condition must be a bool expression using only in-scope scalar values and declared scalar helper calls'
+            Node[] body_statements = tail_nodes(statement.children, 1)
+            SubmitLambdaValidation body_validation = validate_submit_lambda_block_statements(body_statements, copy_submit_lambda_scope(scope), functions, loop_depth + 1, callback_context, callback_name)
+            scope.declared_names = body_validation.scope.declared_names
+            current.return_type = body_validation.check.return_type
+        else if (statement.kind == 'For'):
+            if (statement.children.length() < 3):
+                throw 'thread_pool.submit lambda block contains an invalid for statement'
+            Node init_statement = statement.children[0]
+            if (!(init_statement.kind == 'VarDecl' || init_statement.kind == 'Assign')):
+                throw 'thread_pool.submit lambda for initializer must be an initialized scalar declaration or assignment'
+            SubmitLambdaValidation init_validation = validate_submit_lambda_block_statements([init_statement], copy_submit_lambda_scope(scope), functions, loop_depth, callback_context, callback_name)
+            SubmitLambdaScope loop_scope = init_validation.scope
+            if (array_callback_block_expression_type(statement.children[1], loop_scope, functions, callback_context, callback_name) != 'bool'):
+                throw 'thread_pool.submit lambda for condition must be a bool expression using only in-scope scalar values and declared scalar helper calls'
+            Node update_statement = statement.children[2]
+            if (update_statement.kind != 'Assign'):
+                throw 'thread_pool.submit lambda for update must assign to a mutable scalar local'
+            SubmitLambdaValidation update_validation = validate_submit_lambda_block_statements([update_statement], copy_submit_lambda_scope(loop_scope), functions, loop_depth, callback_context, callback_name)
+            Node[] body_statements = tail_nodes(statement.children, 3)
+            SubmitLambdaValidation body_validation = validate_submit_lambda_block_statements(body_statements, copy_submit_lambda_scope(loop_scope), functions, loop_depth + 1, callback_context, callback_name)
+            scope.declared_names = body_validation.scope.declared_names
+            current.return_type = body_validation.check.return_type
+        else if (statement.kind == 'ForEach'):
+            if (statement.children.length() < 1):
+                throw 'thread_pool.submit lambda foreach iterable must be a direct range call'
+            bool is_range = statement.children[0].kind == 'Call' && statement.children[0].value == 'range'
+            if (is_range):
+                Node range_call = statement.children[0]
+                if (!(range_call.children.length() == 1 || range_call.children.length() == 2)):
+                    throw 'thread_pool.submit lambda range requires one or two int bounds'
+                for (Node bound : range_call.children):
+                    if (array_callback_block_expression_type(bound, scope, functions, callback_context, callback_name) != 'int'):
+                        throw 'thread_pool.submit lambda range bounds must be int expressions using only in-scope scalar values and declared scalar helper calls'
+            else:
+                bool is_array_binding = false
+                if (statement.children[0].kind == 'Identifier'):
+                    int iterable_index = submit_lambda_name_index(scope.names, statement.children[0].value)
+                    if (iterable_index >= 0):
+                        is_array_binding = scope.types[iterable_index] == 'int[]'
+                if (!is_array_binding):
+                    throw 'thread_pool.submit lambda foreach iterable must be an int[] task parameter, a captured int[] binding, or a direct range call'
+            BindingIR iterator = ir_parse_binding_decl(statement.value)
+            string iterator_type = iterator.type_name
+            bool iterator_is_const = iterator_type.starts_with('const ')
+            if (iterator_is_const):
+                iterator_type = iterator_type.substring(6)
+            if (iterator_type != 'int'):
+                if (is_range):
+                    throw 'thread_pool.submit lambda range iterator must have type int'
+                throw 'thread_pool.submit lambda array iterator must have type int'
+            if (contains_name(scope.declared_names, iterator.name)):
+                throw 'thread_pool.submit lambda local names must be unique, including the parameter'
+            SubmitLambdaScope loop_scope = copy_submit_lambda_scope(scope)
+            loop_scope.names = append_lines(loop_scope.names, [iterator.name])
+            loop_scope.types = append_lines(loop_scope.types, ['int'])
+            loop_scope.declared_names = append_lines(loop_scope.declared_names, [iterator.name])
+            if (iterator_is_const):
+                loop_scope.const_names = append_lines(loop_scope.const_names, [iterator.name])
+            SubmitLambdaValidation body_validation = validate_submit_lambda_block_statements(tail_nodes(statement.children, 1), loop_scope, functions, loop_depth + 1, callback_context, callback_name)
+            scope.declared_names = body_validation.scope.declared_names
+            current.return_type = body_validation.check.return_type
+        else if (statement.kind == 'Switch'):
+            if (statement.children.length() < 1):
+                throw 'thread_pool.submit lambda block contains an invalid switch statement'
+            if (array_callback_block_expression_type(statement.children[0], scope, functions, callback_context, callback_name) != 'int'):
+                throw 'thread_pool.submit lambda switch subject must be an int expression using only in-scope scalar values and declared scalar helper calls'
+            bool has_default = false
+            string[] declared_names = scope.declared_names
+            int child_index = 1
+            while (child_index < statement.children.length()):
+                Node branch = statement.children[child_index]
+                Node[] branch_statements = []
+                if (branch.kind == 'Case'):
+                    if (branch.children.length() < 1):
+                        throw 'thread_pool.submit lambda block contains an invalid switch case'
+                    if (array_callback_block_expression_type(branch.children[0], scope, functions, callback_context, callback_name) != 'int'):
+                        throw 'thread_pool.submit lambda switch case must be an int expression using only in-scope scalar values and declared scalar helper calls'
+                    branch_statements = tail_nodes(branch.children, 1)
+                else if (branch.kind == 'Default'):
+                    if (has_default):
+                        throw 'thread_pool.submit lambda switch can contain only one default branch'
+                    has_default = true
+                    branch_statements = branch.children
+                else:
+                    throw 'thread_pool.submit lambda block contains an invalid switch branch'
+                SubmitLambdaScope branch_scope = copy_submit_lambda_scope(scope)
+                branch_scope.declared_names = declared_names
+                SubmitLambdaValidation branch_validation = validate_submit_lambda_block_statements(branch_statements, branch_scope, functions, loop_depth, callback_context, callback_name)
+                return_type = merge_submit_return_types(return_type, branch_validation.check.return_type)
+                declared_names = branch_validation.scope.declared_names
+                child_index += 1
+            scope.declared_names = declared_names
+            current.return_type = return_type
+        else if (statement.kind == 'Try'):
+            Node[] try_statements = try_body_nodes(statement)
+            Node catch_clause = catch_node(statement)
+            SubmitLambdaValidation try_validation = validate_submit_lambda_block_statements(try_statements, copy_submit_lambda_scope(scope), functions, loop_depth, callback_context, callback_name)
+            BindingIR catch_binding = ir_parse_binding_decl(catch_clause.value)
+            if (!(catch_binding.type_name == 'exception' || catch_binding.type_name == 'string')):
+                throw 'thread_pool.submit lambda catch binding must have type exception or string'
+            if (contains_name(try_validation.scope.declared_names, catch_binding.name)):
+                throw 'thread_pool.submit lambda local names must be unique, including the parameter'
+            SubmitLambdaScope catch_scope = copy_submit_lambda_scope(scope)
+            catch_scope.declared_names = append_lines(try_validation.scope.declared_names, [catch_binding.name])
+            SubmitLambdaValidation catch_validation = validate_submit_lambda_block_statements(catch_clause.children, catch_scope, functions, loop_depth, callback_context, callback_name)
+            return_type = merge_submit_return_types(return_type, try_validation.check.return_type)
+            return_type = merge_submit_return_types(return_type, catch_validation.check.return_type)
+            scope.declared_names = catch_validation.scope.declared_names
+            current.return_type = return_type
+            current.returns_all_paths = try_validation.check.returns_all_paths && catch_validation.check.returns_all_paths
+        else if (statement.kind == 'Break'):
+            if (loop_depth == 0):
+                throw 'thread_pool.submit lambda break is only supported inside a while or for loop'
+        else if (statement.kind == 'Continue'):
+            if (loop_depth == 0):
+                throw 'thread_pool.submit lambda continue is only supported inside a while or for loop'
+        else:
+            throw 'thread_pool.submit lambda block supports only scalar locals, assignments, return, literal throw, if/else, while, for, range foreach, switch and try/catch statements with break/continue'
+        return_type = merge_submit_return_types(return_type, current.return_type)
+        if (!previous_paths_return):
+            previous_paths_return = current.returns_all_paths
+    return SubmitLambdaValidation(SubmitLambdaBlockCheck(return_type, previous_paths_return), scope)
+
+string validate_submit_lambda(Node lambda_node, Node[] functions, BindingIR[] captured):
+    if (lambda_node.children.length() != 1):
+        throw 'thread_pool.submit lambda must have one int or bool parameter and a scalar body'
+    SubmitLambdaScope initial_scope = SubmitLambdaScope([], [], [], [], '')
+    if (lambda_node.kind == 'Lambda'):
+        BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+        string parameter_type = parameter.type_name
+        if (!(parameter_type == 'int' || parameter_type == 'bool' || submit_lambda_managed_type(parameter_type))):
+            throw 'thread_pool.submit lambda parameter must have type int, bool, string, int[], or int[][]'
+        string[] const_names = []
+        if (submit_lambda_managed_type(parameter_type)):
+            const_names.push(parameter.name)
+        initial_scope = SubmitLambdaScope([parameter.name], [parameter_type], const_names, [parameter.name], parameter.name)
+    else if (lambda_node.kind != 'Lambda0' || lambda_node.value != ''):
+        throw 'thread_pool.submit lambda must have one int or bool parameter and a scalar body'
+    if (lambda_node.kind == 'Lambda0'):
+        int array_capture_index = submit_lambda_array_capture_index(captured)
+        if (array_capture_index >= 0):
+            BindingIR binding = captured[array_capture_index]
+            string captured_type = binding.type_name
+            if (captured_type.starts_with('const ')):
+                captured_type = captured_type.substring(6)
+            if (captured_type == 'int[]'):
+                initial_scope.parameter_name = binding.name
+    for (BindingIR binding : captured):
+        string captured_type = binding.type_name
+        if (captured_type.starts_with('const ')):
+            captured_type = captured_type.substring(6)
+        initial_scope.names = append_lines(initial_scope.names, [binding.name])
+        initial_scope.types = append_lines(initial_scope.types, [captured_type])
+        initial_scope.const_names = append_lines(initial_scope.const_names, [binding.name])
+        initial_scope.declared_names = append_lines(initial_scope.declared_names, [binding.name])
+    Node body = lambda_node.children[0]
+    if (body.kind == 'Block'):
+        SubmitLambdaValidation validation = validate_submit_lambda_block_statements(body.children, initial_scope, functions, 0, false, '')
+        SubmitLambdaBlockCheck block_check = validation.check
+        if (!submit_lambda_result_type(block_check.return_type) || !block_check.returns_all_paths):
+            throw 'thread_pool.submit lambda block must return a value on every path'
+        return block_check.return_type
+    string result_type = submit_lambda_expression_type(body, initial_scope, functions)
+    if (!submit_lambda_result_type(result_type)):
+        throw 'thread_pool.submit lambda body must be an int, bool, string, int[], or int[][] expression using only in-scope values and declared helper calls'
+    return result_type
+
+string[] submit_lambda_local_names(Node node, string[] names):
+    if (node.kind == 'Lambda' || node.kind == 'Lambda0' || node.kind == 'Lambda2'):
+        return names
+    # Catch binders are reserved by the validator, but must not hide an outer
+    # scalar reference when collecting captures for the whole lambda.
+    if (node.kind == 'VarDecl' || node.kind == 'ForEach'):
+        names = add_unique_name(names, binding_name(node.value))
+    for (Node child : node.children):
+        names = submit_lambda_local_names(child, names)
+    return names
+
+string[] submit_lambda_free_identifiers(Node node, string[] locals, string[] names):
+    if (node.kind == 'Lambda' || node.kind == 'Lambda0' || node.kind == 'Lambda2'):
+        return names
+    if (node.kind == 'Identifier'):
+        if (!contains_name(locals, node.value)):
+            names = add_unique_name(names, node.value)
+        return names
+    for (Node child : node.children):
+        names = submit_lambda_free_identifiers(child, locals, names)
+    return names
+
+bool is_integer_map_to_operator(string op_name):
+    return op_name == '+' || op_name == '-' || op_name == '*' || op_name == '/' || op_name == '%'
+
+bool map_to_arithmetic_rhs_uses_item(Node lambda_node):
+    if (lambda_node.kind != 'Lambda' || lambda_node.children.length() != 1):
+        return false
+    BindingIR binding = ir_parse_binding_decl(lambda_node.value)
+    Node body = lambda_node.children[0]
+    if (body.kind != 'Binary' || body.children.length() != 2 || !is_integer_map_to_operator(body.value)):
+        return false
+    if (body.children[0].kind != 'Identifier' || body.children[0].value != binding.name):
+        return false
+    string[] rhs_names = submit_lambda_free_identifiers(body.children[1], [], [])
+    return contains_name(rhs_names, binding.name)
+
+bool map_to_arithmetic_uses_same_item(Node lambda_node):
+    if (lambda_node.kind != 'Lambda' || lambda_node.children.length() != 1):
+        return false
+    BindingIR binding = ir_parse_binding_decl(lambda_node.value)
+    Node body = lambda_node.children[0]
+    if (body.kind != 'Binary' || body.children.length() != 2 || !is_integer_map_to_operator(body.value)):
+        return false
+    if (body.children[0].kind != 'Identifier' || body.children[0].value != binding.name):
+        return false
+    return body.children[1].kind == 'Identifier' && body.children[1].value == binding.name
+
+bool int_array_scalar_expression(Node node, string[] allowed_names, Node[] functions):
+    if (node.kind == 'Int' || node.kind == 'Bool'):
+        return true
+    if (node.kind == 'Identifier'):
+        return contains_name(allowed_names, node.value)
+    if (node.kind == 'Call'):
+        if (submit_lambda_helper(functions, node.value).kind == ''):
+            return false
+        for (Node argument : node.children):
+            if (!int_array_scalar_expression(argument, allowed_names, functions)):
+                return false
+        return true
+    if (node.kind == 'Unary'):
+        if (node.children.length() != 1 || !(node.value == '-' || node.value == '!' || node.value == 'not')):
+            return false
+        return int_array_scalar_expression(node.children[0], allowed_names, functions)
+    if (node.kind == 'Binary'):
+        if (node.children.length() != 2):
+            return false
+        if (!(node.value == '+' || node.value == '-' || node.value == '*' || node.value == '/' || node.value == '%' || node.value == '&' || node.value == '|' || node.value == '^' || node.value == '<<' || node.value == '>>' || node.value == '==' || node.value == '!=' || node.value == '<' || node.value == '<=' || node.value == '>' || node.value == '>=' || node.value == '&&' || node.value == '||' || node.value == 'and' || node.value == 'or')):
+            return false
+        return int_array_scalar_expression(node.children[0], allowed_names, functions) && int_array_scalar_expression(node.children[1], allowed_names, functions)
+    if (node.kind == 'Ternary'):
+        if (node.children.length() != 3):
+            return false
+        return int_array_scalar_expression(node.children[0], allowed_names, functions) && int_array_scalar_expression(node.children[1], allowed_names, functions) && int_array_scalar_expression(node.children[2], allowed_names, functions)
+    return false
+
+bool legacy_int_map_lambda(Node lambda_node):
+    if (lambda_node.kind != 'Lambda' || lambda_node.children.length() != 1):
+        return false
+    if (is_parse_binding_call_lambda(lambda_node) || is_string_length_map_lambda(lambda_node) || is_edge_distance_map_lambda(lambda_node)):
+        return true
+    BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+    Node body = lambda_node.children[0]
+    if (body.kind != 'Binary' || body.children.length() != 2 || !is_integer_map_to_operator(body.value)):
+        return false
+    if (body.children[0].kind != 'Identifier' || body.children[0].value != parameter.name):
+        return false
+    if (map_to_arithmetic_uses_same_item(lambda_node)):
+        return true
+    string[] rhs_names = submit_lambda_free_identifiers(body.children[1], [], [])
+    return !contains_name(rhs_names, parameter.name)
+
+string map_expression_helper_name(string[] used_names, int start_index):
+    int index = start_index
+    while (contains_name(used_names, '__tb_int_map_expression_' + index.to_string())):
+        index += 1
+    return '__tb_int_map_expression_' + index.to_string()
+
+string filter_expression_helper_name(string[] used_names, int start_index):
+    int index = start_index
+    while (contains_name(used_names, '__tb_int_filter_expression_' + index.to_string())):
+        index += 1
+    return '__tb_int_filter_expression_' + index.to_string()
+
+SubmitLambdaRewrite rewrite_int_array_expression(Node node, string[] used_names, int next_index, Node[] functions):
+    if (node.kind == 'Lambda' || node.kind == 'Lambda0' || node.kind == 'Lambda2'):
+        return SubmitLambdaRewrite(node, [], used_names, next_index)
+    Node[] children = []
+    Node[] generated = []
+    string[] current_names = used_names
+    int current_index = next_index
+    for (Node child : node.children):
+        SubmitLambdaRewrite rewritten_child = rewrite_int_array_expression(child, current_names, current_index, functions)
+        children.push(rewritten_child.node)
+        generated = append_nodes(generated, rewritten_child.generated)
+        current_names = rewritten_child.used_names
+        current_index = rewritten_child.next_index
+    Node rewritten = Node(node.kind, node.value, children)
+    if (node.kind == 'MethodCall' && node.value == 'map_to'):
+        if (children.length() == 2):
+            if (children[1].kind == 'Lambda'):
+                if (!legacy_int_map_lambda(children[1])):
+                    Node lambda_node = children[1]
+                    if (lambda_node.children.length() == 1):
+                        BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+                        string parameter_type = parameter.type_name
+                        if (parameter_type.starts_with('const ')):
+                            parameter_type = parameter_type.substring(6)
+                        if (parameter_type == 'int' && int_array_scalar_expression(lambda_node.children[0], [parameter.name], functions)):
+                            SubmitLambdaScope scope = SubmitLambdaScope([parameter.name], ['int'], [], [parameter.name], parameter.name)
+                            string callback_return_type = submit_lambda_expression_type_context(lambda_node.children[0], scope, functions, true, 'map_to')
+                            if (callback_return_type == ''):
+                                throw 'int[] map_to expression has invalid scalar operand types'
+                            if (callback_return_type != 'int'):
+                                throw 'int[] map_to expression must return int; got ' + callback_return_type
+                            string helper_name = map_expression_helper_name(current_names, current_index)
+                            current_names = add_unique_name(current_names, helper_name)
+                            current_index += 1
+                            generated.push(Node('Function', callback_return_type + ' ' + helper_name, [Node('Param', 'int ' + parameter.name, []), Node('Return', '', [lambda_node.children[0]])]))
+                            children[1] = Node('MapIntExpression', lambda_node.value, [Node('Identifier', helper_name, [])])
+                            rewritten = Node(node.kind, node.value, children)
+    if (node.kind == 'MethodCall' && node.value == 'filter'):
+        if (children.length() == 2):
+            if (children[1].kind == 'Lambda'):
+                Node lambda_node = children[1]
+                if (lambda_node.children.length() == 1):
+                    BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+                    string parameter_type = parameter.type_name
+                    if (parameter_type.starts_with('const ')):
+                        parameter_type = parameter_type.substring(6)
+                    if (int_array_scalar_expression(lambda_node.children[0], [parameter.name], functions)):
+                        if (parameter_type != 'int'):
+                            throw 'int[] filter expression requires int parameter; got ' + parameter_type
+                        SubmitLambdaScope scope = SubmitLambdaScope([parameter.name], ['int'], [], [parameter.name], parameter.name)
+                        string callback_return_type = submit_lambda_expression_type_context(lambda_node.children[0], scope, functions, true, 'filter')
+                        if (callback_return_type == ''):
+                            throw 'int[] filter expression has invalid scalar operand types'
+                        if (callback_return_type != 'bool'):
+                            throw 'int[] filter expression must return bool; got ' + callback_return_type
+                        string helper_name = filter_expression_helper_name(current_names, current_index)
+                        current_names = add_unique_name(current_names, helper_name)
+                        current_index += 1
+                        generated.push(Node('Function', callback_return_type + ' ' + helper_name, [Node('Param', 'int ' + parameter.name, []), Node('Return', '', [lambda_node.children[0]])]))
+                        children[1] = Node('FilterIntExpression', lambda_node.value, [Node('Identifier', helper_name, [])])
+                        rewritten = Node(node.kind, node.value, children)
+    return SubmitLambdaRewrite(rewritten, generated, current_names, current_index)
+
+SubmitLambdaRewrite rewrite_int_array_expressions_in_program(Node program):
+    string[] used_names = collect_submit_unavailable_names(program, [])
+    Node[] children = []
+    Node[] generated = []
+    int next_index = 0
+    string current_module_id = ''
+    for (Node child : program.children):
+        if (child.kind == 'ModuleMarker'):
+            current_module_id = child.value.substring(0)
+            children.push(child)
+            continue
+        Node[] visible_functions = program_visible_function_nodes(program.children, current_module_id)
+        SubmitLambdaRewrite rewritten = rewrite_int_array_expression(child, used_names, next_index, visible_functions)
+        children.push(rewritten.node)
+        generated = append_generated_nodes_for_module(generated, rewritten.generated, current_module_id)
+        used_names = rewritten.used_names
+        next_index = rewritten.next_index
+    children = append_nodes(children, generated)
+    return SubmitLambdaRewrite(Node('Program', program.value, children), generated, used_names, next_index)
+
+Node[] append_generated_nodes_for_module(Node[] target, Node[] generated, string module_id):
+    for (Node node : generated):
+        target.push(Node('ModuleMarker', module_id.substring(0), []))
+        target.push(node)
+    return target
+
+int submit_name_occurrence_count(string[] names, string name):
+    int count = 0
+    for (string existing : names):
+        if (existing == name):
+            count += 1
+    return count
+
+BindingIR[] submit_unique_global_bindings(Node[] declarations):
+    BindingIR[] globals = []
+    string[] names = []
+    for (Node declaration : declarations):
+        if (declaration.kind == 'VarDecl'):
+            BindingIR binding = ir_parse_binding_decl(declaration.value)
+            globals.push(binding)
+            names.push(binding.name)
+    BindingIR[] unique = []
+    for (BindingIR binding : globals):
+        if (submit_name_occurrence_count(names, binding.name) == 1):
+            unique.push(binding)
+    return unique
+
+BindingIR[] submit_lambda_captures(Node lambda_node, BindingIR[] bindings):
+    BindingIR[] captured = []
+    if (!(lambda_node.kind == 'Lambda' || lambda_node.kind == 'Lambda0') || lambda_node.children.length() != 1):
+        return captured
+    string[] locals = submit_lambda_local_names(lambda_node.children[0], [])
+    if (lambda_node.kind == 'Lambda'):
+        BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+        locals = add_unique_name(locals, parameter.name)
+    string[] identifiers = submit_lambda_free_identifiers(lambda_node.children[0], locals, [])
+    bool int_array_task = false
+    if (lambda_node.kind == 'Lambda'):
+        BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+        int_array_task = parameter.type_name == 'int[]'
+    for (string name : identifiers):
+        BindingIR binding = const_lookup_binding(bindings, name)
+        if (binding.name != ''):
+            string type_name = binding.type_name
+            if (type_name.starts_with('const ')):
+                type_name = type_name.substring(6)
+            if (type_name == 'int' || type_name == 'bool'):
+                captured.push(binding)
+            else if (lambda_node.kind == 'Lambda' && int_array_task && type_name == 'int[]'):
+                captured.push(binding)
+            else if (lambda_node.kind == 'Lambda0' && submit_lambda_managed_type(type_name)):
+                captured.push(binding)
+            else:
+                if (lambda_node.kind == 'Lambda0'):
+                    throw 'thread_pool.submit zero-argument lambda can capture int or bool values, or one string, int[], or int[][] value; unsupported capture ' + name
+                throw 'thread_pool.submit lambda can capture only int or bool values; unsupported capture ' + name
+    int managed_capture_count = 0
+    int int_array_capture_count = 0
+    for (BindingIR binding : captured):
+        string capture_type = binding.type_name
+        if (capture_type.starts_with('const ')):
+            capture_type = capture_type.substring(6)
+        if (submit_lambda_managed_type(capture_type)):
+            managed_capture_count += 1
+        if (capture_type == 'int[]'):
+            int_array_capture_count += 1
+    if (managed_capture_count > 0):
+        int array_capture_index = submit_lambda_array_capture_index(captured)
+        bool supported_single_managed_capture = managed_capture_count == 1 && (captured.length() == 1 || array_capture_index >= 0)
+        bool multiple_array_captures = lambda_node.kind == 'Lambda0' && int_array_capture_count >= 2 && managed_capture_count == int_array_capture_count
+        bool explicit_array_task_captures = lambda_node.kind == 'Lambda' && int_array_task && managed_capture_count == int_array_capture_count
+        if ((lambda_node.kind != 'Lambda0' && !explicit_array_task_captures) || (lambda_node.kind == 'Lambda0' && !supported_single_managed_capture && !multiple_array_captures)):
+            throw 'thread_pool.submit lambda managed captures require a zero-argument lambda with only int[] and scalar captures, or one string or int[][] capture'
+    return captured
+
+ArrayScalarCaptureResult int_array_scalar_captures(Node lambda_node, BindingIR[] bindings):
+    if (lambda_node.kind != 'Lambda' || lambda_node.children.length() != 1):
+        return ArrayScalarCaptureResult([], false)
+    string[] locals = submit_lambda_local_names(lambda_node.children[0], [])
+    BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+    locals = add_unique_name(locals, parameter.name)
+    string[] identifiers = submit_lambda_free_identifiers(lambda_node.children[0], locals, [])
+    BindingIR[] captured = []
+    for (string name : identifiers):
+        BindingIR binding = const_lookup_binding(bindings, name)
+        if (binding.name == ''):
+            return ArrayScalarCaptureResult([], false)
+        string capture_type = binding.type_name
+        if (capture_type.starts_with('const ')):
+            capture_type = capture_type.substring(6)
+        if (!(capture_type == 'int' || capture_type == 'bool')):
+            return ArrayScalarCaptureResult([], false)
+        captured.push(binding)
+    return ArrayScalarCaptureResult(captured, true)
+
+SubmitLambdaScope int_array_scalar_capture_scope(Node lambda_node, BindingIR[] captured):
+    BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+    string parameter_type = parameter.type_name
+    if (parameter_type.starts_with('const ')):
+        parameter_type = parameter_type.substring(6)
+    string[] names = [parameter.name]
+    string[] types = [parameter_type]
+    string[] const_names = []
+    for (BindingIR binding : captured):
+        string capture_type = binding.type_name
+        if (capture_type.starts_with('const ')):
+            capture_type = capture_type.substring(6)
+        names.push(binding.name)
+        types.push(capture_type)
+        const_names.push(binding.name)
+    return SubmitLambdaScope(names, types, const_names, names, parameter.name)
+
+SubmitLambdaValidation validate_int_array_callback_block_statements(Node[] statements, SubmitLambdaScope scope, Node[] functions, string callback_name):
+    try:
+        return validate_submit_lambda_block_statements(statements, scope, functions, 0, true, callback_name)
+    catch (string error):
+        string prefix = 'thread_pool.submit lambda '
+        if (error.starts_with(prefix)):
+            throw 'int[] ' + callback_name + ' callback ' + error.substring(prefix.length())
+        throw error
+    return SubmitLambdaValidation(SubmitLambdaBlockCheck('', false), scope)
+
+string validate_int_array_scalar_block_callback(Node lambda_node, BindingIR[] captured, Node[] functions, string callback_name):
+    if (lambda_node.kind != 'Lambda' || lambda_node.children.length() != 1):
+        return ''
+    if (lambda_node.children[0].kind != 'Block'):
+        return ''
+    BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+    if (parameter.type_name != 'int'):
+        throw 'int[] ' + callback_name + ' block requires a mutable int parameter'
+    SubmitLambdaScope scope = int_array_scalar_capture_scope(lambda_node, captured)
+    SubmitLambdaValidation validation = validate_int_array_callback_block_statements(lambda_node.children[0].children, scope, functions, callback_name)
+    SubmitLambdaBlockCheck check = validation.check
+    if (!submit_lambda_result_type(check.return_type) || !check.returns_all_paths):
+        throw 'int[] ' + callback_name + ' block must return a value on every path'
+    string required_type = 'int'
+    if (callback_name == 'filter'):
+        required_type = 'bool'
+    if (check.return_type != required_type):
+        throw 'int[] ' + callback_name + ' block must return ' + required_type + '; got ' + check.return_type
+    return check.return_type
+
+ArrayScalarCallbackRewrite int_array_scalar_callback_rewrite(Node node, BindingIR[] bindings, Node[] functions):
+    if (node.kind != 'MethodCall' || !(node.value == 'map_to' || node.value == 'filter') || node.children.length() != 2):
+        return ArrayScalarCallbackRewrite([], false)
+    Node lambda_node = node.children[1]
+    if (lambda_node.kind != 'Lambda' || lambda_node.children.length() != 1):
+        return ArrayScalarCallbackRewrite([], false)
+    if (node.value == 'map_to' && legacy_int_map_lambda(lambda_node)):
+        return ArrayScalarCallbackRewrite([], false)
+    ArrayScalarCaptureResult capture_result = int_array_scalar_captures(lambda_node, bindings)
+    bool block_callback = lambda_node.children[0].kind == 'Block'
+    if (!capture_result.complete || (capture_result.captures.is_empty() && !block_callback)):
+        return ArrayScalarCallbackRewrite([], false)
+    BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+    string parameter_type = parameter.type_name
+    if (parameter_type.starts_with('const ')):
+        parameter_type = parameter_type.substring(6)
+    if (parameter_type != 'int'):
+        return ArrayScalarCallbackRewrite([], false)
+    string result_type = ''
+    if (block_callback):
+        result_type = validate_int_array_scalar_block_callback(lambda_node, capture_result.captures, functions, node.value)
+        if (result_type == ''):
+            return ArrayScalarCallbackRewrite([], false)
+    else:
+        string[] capture_names = []
+        for (BindingIR binding : capture_result.captures):
+            capture_names.push(binding.name)
+        string[] allowed_names = [parameter.name]
+        allowed_names = append_lines(allowed_names, capture_names)
+        if (!int_array_scalar_expression(lambda_node.children[0], allowed_names, functions)):
+            return ArrayScalarCallbackRewrite([], false)
+        SubmitLambdaScope scope = int_array_scalar_capture_scope(lambda_node, capture_result.captures)
+        result_type = submit_lambda_expression_type_context(lambda_node.children[0], scope, functions, true, node.value)
+    string required_result = 'int'
+    if (node.value == 'filter'):
+        required_result = 'bool'
+    if (result_type == ''):
+        if (block_callback):
+            throw 'int[] ' + node.value + ' block has invalid scalar operand types'
+        throw 'int[] ' + node.value + ' captured expression has invalid scalar operand types'
+    if (result_type != required_result):
+        if (block_callback):
+            throw 'int[] ' + node.value + ' block must return ' + required_result + '; got ' + result_type
+        throw 'int[] ' + node.value + ' captured expression must return ' + required_result + '; got ' + result_type
+    return ArrayScalarCallbackRewrite(capture_result.captures, true)
+
+string submit_worker_name(string[] used_names, int start_index):
+    int index = start_index
+    while (contains_name(used_names, '__tb_submit_lambda_' + index.to_string())):
+        index += 1
+    return '__tb_submit_lambda_' + index.to_string()
+
+string submit_capture_name(string[] used_names, string prefix, int start_index):
+    int index = start_index
+    while (contains_name(used_names, prefix + index.to_string())):
+        index += 1
+    return prefix + index.to_string()
+
+string submit_range_name(string[] used_names, string prefix, int index):
+    int candidate = index
+    while (contains_name(used_names, prefix + candidate.to_string())):
+        candidate += 1
+    return prefix + candidate.to_string()
+
+Node rewrite_submit_array_parameter_reads(Node node, string parameter_name, string environment_name):
+    if (node.kind == 'Identifier' && node.value == parameter_name):
+        return Node('Index', '', [Node('Identifier', environment_name, []), Node('Int', '0', [])])
+    Node[] children = []
+    for (Node child : node.children):
+        children.push(rewrite_submit_array_parameter_reads(child, parameter_name, environment_name))
+    return Node(node.kind, node.value, children)
+
+Node submit_packed_capture_read(BindingIR binding, string environment_name, int array_row, int scalar_row, int scalar_index):
+    string capture_type = binding.type_name
+    if (capture_type.starts_with('const ')):
+        capture_type = capture_type.substring(6)
+    if (capture_type == 'int[]'):
+        return Node('Index', '', [Node('Identifier', environment_name, []), Node('Int', array_row.to_string(), [])])
+    Node scalar_value = Node('Index', '', [Node('Index', '', [Node('Identifier', environment_name, []), Node('Int', scalar_row.to_string(), [])]), Node('Int', scalar_index.to_string(), [])])
+    if (capture_type == 'bool'):
+        return Node('Binary', '!=', [scalar_value, Node('Int', '0', [])])
+    return scalar_value
+
+Node rewrite_submit_packed_capture_reads(Node node, BindingIR[] captured, string environment_name, int scalar_row):
+    if (node.kind == 'Identifier'):
+        int array_row = 0
+        int scalar_index = 0
+        for (BindingIR binding : captured):
+            if (binding.name == node.value):
+                return submit_packed_capture_read(binding, environment_name, array_row, scalar_row, scalar_index)
+            string capture_type = binding.type_name
+            if (capture_type.starts_with('const ')):
+                capture_type = capture_type.substring(6)
+            if (capture_type == 'int[]'):
+                array_row += 1
+            else:
+                scalar_index += 1
+        return node
+    Node[] children = []
+    for (Node child : node.children):
+        children.push(rewrite_submit_packed_capture_reads(child, captured, environment_name, scalar_row))
+    return Node(node.kind, node.value, children)
+
+# Called only after a supported worker or array-callback block passed validation.
+SubmitRangeListRewrite rewrite_submit_range_foreach_list(Node[] statements, string[] used_names, int next_index):
+    Node[] rewritten = []
+    string[] current_names = used_names
+    int current_index = next_index
+    for (Node statement : statements):
+        if (statement.kind == 'ForEach'):
+            Node iterable = statement.children[0]
+            if (iterable.kind != 'Call' || iterable.value != 'range'):
+                SubmitRangeListRewrite body = rewrite_submit_range_foreach_list(tail_nodes(statement.children, 1), current_names, current_index)
+                Node[] children = [iterable]
+                children = append_nodes(children, body.nodes)
+                rewritten.push(Node(statement.kind, statement.value, children))
+                current_names = body.used_names
+                current_index = body.next_index
+                continue
+            Node range_call = iterable
+            Node start_expr = Node('Int', '0', [])
+            Node end_expr = range_call.children[0]
+            if (range_call.children.length() == 2):
+                start_expr = range_call.children[0]
+                end_expr = range_call.children[1]
+            string start_name = submit_range_name(current_names, '__tb_range_start_', current_index)
+            current_names = add_unique_name(current_names, start_name)
+            current_index += 1
+            string end_name = submit_range_name(current_names, '__tb_range_end_', current_index)
+            current_names = add_unique_name(current_names, end_name)
+            current_index += 1
+            string counter_name = submit_range_name(current_names, '__tb_range_counter_', current_index)
+            current_names = add_unique_name(current_names, counter_name)
+            current_index += 1
+            SubmitRangeListRewrite body = rewrite_submit_range_foreach_list(tail_nodes(statement.children, 1), current_names, current_index)
+            current_names = body.used_names
+            current_index = body.next_index
+            Node[] loop_body = [Node('VarDecl', statement.value, [Node('Identifier', counter_name, [])])]
+            loop_body = append_nodes(loop_body, body.nodes)
+            Node init = Node('VarDecl', 'int ' + counter_name, [Node('Identifier', start_name, [])])
+            Node condition = Node('Binary', '<', [Node('Identifier', counter_name, []), Node('Identifier', end_name, [])])
+            Node update = Node('Assign', '', [Node('Identifier', counter_name, []), Node('Binary', '+', [Node('Identifier', counter_name, []), Node('Int', '1', [])])])
+            rewritten.push(Node('VarDecl', 'const int ' + start_name, [start_expr]))
+            rewritten.push(Node('VarDecl', 'const int ' + end_name, [end_expr]))
+            Node[] loop_children = [init, condition, update]
+            loop_children = append_nodes(loop_children, loop_body)
+            rewritten.push(Node('For', '', loop_children))
+        else if (statement.kind == 'If' && statement.children.length() > 0):
+            SubmitRangeListRewrite then_part = rewrite_submit_range_foreach_list(if_then_nodes(statement), current_names, current_index)
+            Node[] children = [statement.children[0]]
+            children = append_nodes(children, then_part.nodes)
+            current_names = then_part.used_names
+            current_index = then_part.next_index
+            Node[] else_source = if_else_nodes(statement)
+            if (!else_source.is_empty()):
+                SubmitRangeListRewrite else_part = rewrite_submit_range_foreach_list(else_source, current_names, current_index)
+                children.push(Node('Else', '', else_part.nodes))
+                current_names = else_part.used_names
+                current_index = else_part.next_index
+            rewritten.push(Node(statement.kind, statement.value, children))
+        else if (statement.kind == 'While' && statement.children.length() > 0):
+            SubmitRangeListRewrite body = rewrite_submit_range_foreach_list(tail_nodes(statement.children, 1), current_names, current_index)
+            Node[] children = [statement.children[0]]
+            children = append_nodes(children, body.nodes)
+            rewritten.push(Node(statement.kind, statement.value, children))
+            current_names = body.used_names
+            current_index = body.next_index
+        else if (statement.kind == 'For' && statement.children.length() >= 3):
+            SubmitRangeListRewrite body = rewrite_submit_range_foreach_list(tail_nodes(statement.children, 3), current_names, current_index)
+            Node[] children = [statement.children[0], statement.children[1], statement.children[2]]
+            children = append_nodes(children, body.nodes)
+            rewritten.push(Node(statement.kind, statement.value, children))
+            current_names = body.used_names
+            current_index = body.next_index
+        else if (statement.kind == 'Switch' && statement.children.length() > 0):
+            Node[] children = [statement.children[0]]
+            for (Node branch : tail_nodes(statement.children, 1)):
+                int body_start = 0
+                if (branch.kind == 'Case'):
+                    body_start = 1
+                Node[] branch_head = []
+                if (body_start == 1):
+                    branch_head.push(branch.children[0])
+                SubmitRangeListRewrite body = rewrite_submit_range_foreach_list(tail_nodes(branch.children, body_start), current_names, current_index)
+                children.push(Node(branch.kind, branch.value, append_nodes(branch_head, body.nodes)))
+                current_names = body.used_names
+                current_index = body.next_index
+            rewritten.push(Node(statement.kind, statement.value, children))
+        else if (statement.kind == 'Try'):
+            Node[] try_source = try_body_nodes(statement)
+            SubmitRangeListRewrite try_part = rewrite_submit_range_foreach_list(try_source, current_names, current_index)
+            Node catch_clause = catch_node(statement)
+            SubmitRangeListRewrite catch_part = rewrite_submit_range_foreach_list(catch_clause.children, try_part.used_names, try_part.next_index)
+            Node[] children = try_part.nodes
+            children.push(Node(catch_clause.kind, catch_clause.value, catch_part.nodes))
+            rewritten.push(Node(statement.kind, statement.value, children))
+            current_names = catch_part.used_names
+            current_index = catch_part.next_index
+        else:
+            rewritten.push(statement)
+    return SubmitRangeListRewrite(rewritten, current_names, current_index)
+
+SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, int next_index, Node[] functions, BindingIR[] bindings, bool include_submit, bool top_level_global_initializer):
+    BindingIR[] captured = []
+    string worker_return_type = ''
+    bool rewrite_worker = false
+    ArrayScalarCallbackRewrite callback_rewrite = int_array_scalar_callback_rewrite(node, bindings, functions)
+    BindingIR[] array_callback_captures = callback_rewrite.captures
+    BindingIR[] submit_bindings = bindings
+    if (top_level_global_initializer):
+        # Global map/filter captures do not expand worker capture behavior.
+        submit_bindings = []
+    if (include_submit && node.kind == 'MethodCall' && node.value == 'submit' && node.children.length() > 1):
+        Node lambda_node = node.children[1]
+        if (lambda_node.kind == 'Lambda0'):
+            if (node.children.length() != 2):
+                throw 'thread_pool.submit zero-argument lambda does not accept a task argument'
+            captured = submit_lambda_captures(lambda_node, submit_bindings)
+            worker_return_type = validate_submit_lambda(lambda_node, functions, captured)
+            rewrite_worker = true
+        else if (lambda_node.kind == 'Lambda' || lambda_node.kind == 'Lambda2'):
+            if (node.children.length() != 3):
+                throw 'thread_pool.submit lambda requires exactly one task argument'
+            if (lambda_node.kind == 'Lambda'):
+                captured = submit_lambda_captures(lambda_node, submit_bindings)
+                BindingIR lambda_parameter = ir_parse_binding_decl(lambda_node.value)
+                string lambda_parameter_type = lambda_parameter.type_name
+                if (submit_lambda_managed_type(lambda_parameter_type) && !captured.is_empty() && lambda_parameter_type != 'int[]'):
+                    throw 'thread_pool.submit lambda with a managed task parameter cannot capture values'
+            worker_return_type = validate_submit_lambda(lambda_node, functions, captured)
+            rewrite_worker = lambda_node.kind == 'Lambda'
+
+    Node[] rewritten_children = []
+    Node[] generated = []
+    string[] current_names = used_names
+    int current_index = next_index
+    BindingIR[] child_bindings = bindings
+    if (node.kind == 'Lambda' || node.kind == 'Lambda0' || node.kind == 'Lambda2'):
+        child_bindings = []
+    for (Node child : node.children):
+        SubmitScopedRewrite rewritten_child = rewrite_submit_expression(child, current_names, current_index, functions, child_bindings, include_submit, top_level_global_initializer)
+        rewritten_children.push(rewritten_child.node)
+        generated = append_nodes(generated, rewritten_child.generated)
+        current_names = rewritten_child.used_names
+        current_index = rewritten_child.next_index
+
+    Node rewritten = Node(node.kind, node.value, rewritten_children)
+    if (rewrite_worker):
+        Node lambda_node = node.children[1]
+        if (lambda_node.kind == 'Lambda0' && captured.length() > 1):
+            int int_array_capture_count = 0
+            for (BindingIR binding : captured):
+                string capture_type = binding.type_name
+                if (capture_type.starts_with('const ')):
+                    capture_type = capture_type.substring(6)
+                if (capture_type == 'int[]'):
+                    int_array_capture_count += 1
+            if (int_array_capture_count >= 2):
+                string environment_name = submit_capture_name(current_names, '__tb_submit_captures_', current_index)
+                current_names = add_unique_name(current_names, environment_name)
+                current_index += 1
+                Node[] environment_rows = []
+                Node[] scalar_values = []
+                int scalar_count = 0
+                for (BindingIR binding : captured):
+                    string capture_type = binding.type_name
+                    if (capture_type.starts_with('const ')):
+                        capture_type = capture_type.substring(6)
+                    if (capture_type == 'int[]'):
+                        environment_rows.push(Node('Identifier', binding.name, []))
+                    else:
+                        Node scalar_value = Node('Identifier', binding.name, [])
+                        if (capture_type == 'bool'):
+                            scalar_value = Node('Ternary', '', [scalar_value, Node('Int', '1', []), Node('Int', '0', [])])
+                        scalar_values.push(scalar_value)
+                        scalar_count += 1
+                int scalar_row = environment_rows.length()
+                if (scalar_count > 0):
+                    environment_rows.push(Node('Array', '', scalar_values))
+                Node lambda_body = rewrite_submit_packed_capture_reads(lambda_node.children[0], captured, environment_name, scalar_row)
+                lambda_node = Node('Lambda', 'const int[][] ' + environment_name, [lambda_body])
+                rewritten_children[1] = lambda_node
+                rewritten_children.push(Node('Array', '', environment_rows))
+                captured = []
+            else:
+                int array_capture_index = submit_lambda_array_capture_index(captured)
+                if (array_capture_index >= 0):
+                    string array_capture_name = captured[array_capture_index].name
+                    BindingIR[] scalar_captures = []
+                    for (int capture_index = 0; capture_index < captured.length(); capture_index += 1):
+                        if (capture_index != array_capture_index):
+                            scalar_captures.push(captured[capture_index])
+                    captured = scalar_captures
+                    lambda_node = Node('Lambda', 'int[] ' + array_capture_name, [lambda_node.children[0]])
+                    rewritten_children[1] = lambda_node
+                    rewritten_children.push(Node('Identifier', array_capture_name, []))
+        string worker_name = submit_worker_name(current_names, current_index)
+        current_names = add_unique_name(current_names, worker_name)
+        current_index += 1
+        Node[] function_children = []
+        bool array_task_parameter = false
+        bool array_task_array_captures = false
+        if (lambda_node.kind == 'Lambda' && !captured.is_empty()):
+            BindingIR lambda_parameter = ir_parse_binding_decl(lambda_node.value)
+            array_task_parameter = lambda_parameter.type_name == 'int[]'
+            array_task_array_captures = array_task_parameter && submit_lambda_array_capture_index(captured) >= 0
+        bool packed_environment = (lambda_node.kind == 'Lambda0' && captured.length() > 1) || (lambda_node.kind == 'Lambda' && !captured.is_empty())
+        string environment_name = ''
+        string wrapper_name = ''
+        string wrapper_pool_name = ''
+        string wrapper_task_name = ''
+        if (packed_environment):
+            environment_name = submit_capture_name(current_names, '__tb_submit_environment_', current_index)
+            current_names = add_unique_name(current_names, environment_name)
+            current_index += 1
+            if (array_task_parameter):
+                function_children.push(Node('Param', 'const int[][] ' + environment_name, []))
+            else:
+                function_children.push(Node('Param', 'const int[] ' + environment_name, []))
+        else:
+            if (lambda_node.kind == 'Lambda'):
+                function_children.push(Node('Param', lambda_node.value, []))
+            for (BindingIR binding : captured):
+                string capture_type = binding.type_name
+                if (capture_type.starts_with('const ')):
+                    capture_type = capture_type.substring(6)
+                function_children.push(Node('Param', 'const ' + capture_type + ' ' + binding.name, []))
+                rewritten_children.push(Node('Identifier', binding.name, []))
+        Node lambda_body = lambda_node.children[0]
+        if (array_task_array_captures):
+            BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+            BindingIR[] projection_bindings = [parameter]
+            for (BindingIR binding : captured):
+                projection_bindings.push(binding)
+            int scalar_row = 1
+            for (BindingIR binding : captured):
+                string capture_type = binding.type_name
+                if (capture_type.starts_with('const ')):
+                    capture_type = capture_type.substring(6)
+                if (capture_type == 'int[]'):
+                    scalar_row += 1
+            lambda_body = rewrite_submit_packed_capture_reads(lambda_body, projection_bindings, environment_name, scalar_row)
+        else if (array_task_parameter):
+            BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+            # Validation reserves the parameter name and rejects nested closures.
+            lambda_body = rewrite_submit_array_parameter_reads(lambda_body, parameter.name, environment_name)
+        if (packed_environment):
+            int environment_offset = 0
+            if (lambda_node.kind == 'Lambda'):
+                BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+                if (!array_task_parameter):
+                    Node parameter_value = Node('Index', '', [Node('Identifier', environment_name, []), Node('Int', '0', [])])
+                    if (parameter.type_name == 'bool'):
+                        parameter_value = Node('Binary', '!=', [parameter_value, Node('Int', '0', [])])
+                    function_children.push(Node('VarDecl', parameter.type_name + ' ' + parameter.name, [parameter_value]))
+                    environment_offset = 1
+            for (int capture_index = 0; capture_index < captured.length(); capture_index += 1):
+                BindingIR binding = captured[capture_index]
+                string capture_type = binding.type_name
+                if (capture_type.starts_with('const ')):
+                    capture_type = capture_type.substring(6)
+                if (array_task_array_captures):
+                    continue
+                Node captured_value = Node('Index', '', [Node('Identifier', environment_name, []), Node('Int', (capture_index + environment_offset).to_string(), [])])
+                if (array_task_parameter):
+                    captured_value = Node('Index', '', [Node('Index', '', [Node('Identifier', environment_name, []), Node('Int', '1', [])]), Node('Int', capture_index.to_string(), [])])
+                if (capture_type == 'bool'):
+                    captured_value = Node('Binary', '!=', [captured_value, Node('Int', '0', [])])
+                function_children.push(Node('VarDecl', 'const ' + capture_type + ' ' + binding.name, [captured_value]))
+            wrapper_name = submit_capture_name(current_names, '__tb_submit_wrapper_', current_index)
+            current_names = add_unique_name(current_names, wrapper_name)
+            current_index += 1
+            wrapper_pool_name = submit_capture_name(current_names, '__tb_submit_pool_', current_index)
+            current_names = add_unique_name(current_names, wrapper_pool_name)
+            current_index += 1
+        if (lambda_body.kind == 'Block'):
+            SubmitRangeListRewrite normalized = rewrite_submit_range_foreach_list(lambda_body.children, current_names, current_index)
+            function_children = append_nodes(function_children, normalized.nodes)
+            current_names = normalized.used_names
+            current_index = normalized.next_index
+        else:
+            function_children.push(Node('Return', '', [lambda_body]))
+        generated.push(Node('Function', worker_return_type + ' ' + worker_name, function_children))
+        if (packed_environment):
+            Node[] wrapper_children = [Node('Param', 'thread_pool ' + wrapper_pool_name, [])]
+            Node[] capture_values = []
+            Node[] packed_values = []
+            if (lambda_node.kind == 'Lambda'):
+                BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+                wrapper_task_name = submit_capture_name(current_names, '__tb_submit_task_', current_index)
+                current_names = add_unique_name(current_names, wrapper_task_name)
+                current_index += 1
+                wrapper_children.push(Node('Param', parameter.type_name + ' ' + wrapper_task_name, []))
+                if (parameter.type_name == 'bool'):
+                    packed_values.push(Node('Ternary', '', [Node('Identifier', wrapper_task_name, []), Node('Int', '1', []), Node('Int', '0', [])]))
+                else:
+                    packed_values.push(Node('Identifier', wrapper_task_name, []))
+            for (int capture_index = 0; capture_index < captured.length(); capture_index += 1):
+                BindingIR binding = captured[capture_index]
+                string capture_type = binding.type_name
+                if (capture_type.starts_with('const ')):
+                    capture_type = capture_type.substring(6)
+                wrapper_children.push(Node('Param', capture_type + ' ' + binding.name, []))
+                capture_values.push(Node('Identifier', binding.name, []))
+                if (capture_type == 'bool'):
+                    packed_values.push(Node('Ternary', '', [Node('Identifier', binding.name, []), Node('Int', '1', []), Node('Int', '0', [])]))
+                else:
+                    packed_values.push(Node('Identifier', binding.name, []))
+            string wrapper_environment_name = submit_capture_name(current_names, '__tb_submit_environment_', current_index)
+            current_names = add_unique_name(current_names, wrapper_environment_name)
+            current_index += 1
+            if (array_task_parameter):
+                if (array_task_array_captures):
+                    Node[] environment_rows = [Node('Identifier', wrapper_task_name, [])]
+                    Node[] scalar_values = []
+                    for (BindingIR binding : captured):
+                        string capture_type = binding.type_name
+                        if (capture_type.starts_with('const ')):
+                            capture_type = capture_type.substring(6)
+                        Node capture_value = Node('Identifier', binding.name, [])
+                        if (capture_type == 'int[]'):
+                            environment_rows.push(capture_value)
+                        else:
+                            if (capture_type == 'bool'):
+                                capture_value = Node('Ternary', '', [capture_value, Node('Int', '1', []), Node('Int', '0', [])])
+                            scalar_values.push(capture_value)
+                    if (!scalar_values.is_empty()):
+                        environment_rows.push(Node('Array', '', scalar_values))
+                    wrapper_children.push(Node('VarDecl', 'int[][] ' + wrapper_environment_name, [Node('Array', '', environment_rows)]))
+                else:
+                    string wrapper_capture_row_name = submit_capture_name(current_names, '__tb_submit_captures_', current_index)
+                    current_names = add_unique_name(current_names, wrapper_capture_row_name)
+                    current_index += 1
+                    wrapper_children.push(Node('VarDecl', 'int[] ' + wrapper_capture_row_name, [Node('Array', '', tail_nodes(packed_values, 1))]))
+                    Node task_row = Node('Identifier', wrapper_task_name, [])
+                    Node capture_row = Node('Identifier', wrapper_capture_row_name, [])
+                    wrapper_children.push(Node('VarDecl', 'int[][] ' + wrapper_environment_name, [Node('Array', '', [task_row, capture_row])]))
+            else:
+                wrapper_children.push(Node('VarDecl', 'int[] ' + wrapper_environment_name, [Node('Array', '', packed_values)]))
+            Node submit_call = Node('MethodCall', 'submit', [Node('Identifier', wrapper_pool_name, []), Node('Identifier', worker_name, []), Node('Identifier', wrapper_environment_name, [])])
+            wrapper_children.push(Node('Return', '', [submit_call]))
+            generated.push(Node('Function', 'future<' + worker_return_type + '> ' + wrapper_name, wrapper_children))
+            Node[] call_arguments = [rewritten_children[0]]
+            if (lambda_node.kind == 'Lambda'):
+                call_arguments.push(rewritten_children[2])
+            call_arguments = append_nodes(call_arguments, capture_values)
+            rewritten = Node('Call', wrapper_name, call_arguments)
+        else:
+            rewritten_children[1] = Node('Identifier', worker_name, [])
+            rewritten = Node(node.kind, node.value, rewritten_children)
+    if (callback_rewrite.recognized):
+        Node lambda_node = node.children[1]
+        bool block_callback = lambda_node.children[0].kind == 'Block'
+        string receiver_name = submit_capture_name(current_names, '__tb_array_callback_receiver_', current_index)
+        current_names = add_unique_name(current_names, receiver_name)
+        current_index += 1
+        string output_name = submit_capture_name(current_names, '__tb_array_callback_output_', current_index)
+        current_names = add_unique_name(current_names, output_name)
+        current_index += 1
+        string helper_name = submit_capture_name(current_names, '__tb_array_callback_', current_index)
+        current_names = add_unique_name(current_names, helper_name)
+        current_index += 1
+        Node[] helper_children = [Node('Param', 'const int[] ' + receiver_name, [])]
+        Node[] call_arguments = [rewritten_children[0]]
+        for (BindingIR binding : array_callback_captures):
+            string capture_type = binding.type_name
+            if (capture_type.starts_with('const ')):
+                capture_type = capture_type.substring(6)
+            helper_children.push(Node('Param', 'const ' + capture_type + ' ' + binding.name, []))
+            call_arguments.push(Node('Identifier', binding.name, []))
+        Node callback_value = lambda_node.children[0]
+        if (block_callback):
+            BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+            string callback_helper_name = submit_capture_name(current_names, '__tb_array_scalar_callback_', current_index)
+            current_names = add_unique_name(current_names, callback_helper_name)
+            current_index += 1
+            Node[] callback_children = [Node('Param', 'int ' + parameter.name, [])]
+            Node[] callback_arguments = [Node('Identifier', parameter.name, [])]
+            for (BindingIR binding : array_callback_captures):
+                string capture_type = binding.type_name
+                if (capture_type.starts_with('const ')):
+                    capture_type = capture_type.substring(6)
+                callback_children.push(Node('Param', 'const ' + capture_type + ' ' + binding.name, []))
+                callback_arguments.push(Node('Identifier', binding.name, []))
+            SubmitRangeListRewrite normalized_callback = rewrite_submit_range_foreach_list(lambda_node.children[0].children, current_names, current_index)
+            callback_children = append_nodes(callback_children, normalized_callback.nodes)
+            current_names = normalized_callback.used_names
+            current_index = normalized_callback.next_index
+            string callback_return_type = 'int'
+            if (node.value == 'filter'):
+                callback_return_type = 'bool'
+            generated.push(Node('Function', callback_return_type + ' ' + callback_helper_name, callback_children))
+            callback_value = Node('Call', callback_helper_name, callback_arguments)
+        helper_children.push(Node('VarDecl', 'int[] ' + output_name, [Node('Array', '', [])]))
+        Node output_ref = Node('Identifier', output_name, [])
+        Node append_item = callback_value
+        if (node.value == 'filter'):
+            BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+            append_item = Node('Identifier', parameter.name, [])
+        Node append_value = Node('ExprStmt', '', [Node('MethodCall', 'push', [output_ref, append_item])])
+        Node[] loop_body = []
+        if (node.value == 'filter'):
+            loop_body.push(Node('If', '', [callback_value, append_value]))
+        else:
+            loop_body.push(append_value)
+        helper_children.push(Node('ForEach', lambda_node.value, append_nodes([Node('Identifier', receiver_name, [])], loop_body)))
+        helper_children.push(Node('Return', '', [Node('Identifier', output_name, [])]))
+        generated.push(Node('Function', 'int[] ' + helper_name, helper_children))
+        rewritten = Node('Call', helper_name, call_arguments)
+    return SubmitScopedRewrite(rewritten, generated, current_names, current_index, bindings)
+
+SubmitScopedListRewrite rewrite_submit_statement_list(Node[] statements, string[] used_names, int next_index, Node[] functions, BindingIR[] bindings, bool include_submit):
+    Node[] rewritten_nodes = []
+    Node[] generated = []
+    string[] current_names = used_names
+    int current_index = next_index
+    BindingIR[] current_bindings = bindings
+    for (Node statement : statements):
+        SubmitScopedRewrite rewritten = rewrite_submit_statement(statement, current_names, current_index, functions, current_bindings, include_submit)
+        rewritten_nodes.push(rewritten.node)
+        generated = append_nodes(generated, rewritten.generated)
+        current_names = rewritten.used_names
+        current_index = rewritten.next_index
+        current_bindings = rewritten.bindings
+    return SubmitScopedListRewrite(rewritten_nodes, generated, current_names, current_index, current_bindings)
+
+SubmitScopedRewrite rewrite_submit_statement(Node node, string[] used_names, int next_index, Node[] functions, BindingIR[] bindings, bool include_submit):
+    if (node.kind == 'If' && node.children.length() > 0):
+        SubmitScopedRewrite condition = rewrite_submit_expression(node.children[0], used_names, next_index, functions, bindings, include_submit, false)
+        SubmitScopedListRewrite then_part = rewrite_submit_statement_list(if_then_nodes(node), condition.used_names, condition.next_index, functions, const_copy_bindings(bindings), include_submit)
+        Node[] children = [condition.node]
+        children = append_nodes(children, then_part.nodes)
+        Node[] generated = append_nodes(condition.generated, then_part.generated)
+        string[] current_names = then_part.used_names
+        int current_index = then_part.next_index
+        if (!if_else_nodes(node).is_empty()):
+            Node[] else_source = if_else_nodes(node)
+            SubmitScopedListRewrite else_part = rewrite_submit_statement_list(else_source, current_names, current_index, functions, const_copy_bindings(bindings), include_submit)
+            children.push(Node('Else', '', else_part.nodes))
+            generated = append_nodes(generated, else_part.generated)
+            current_names = else_part.used_names
+            current_index = else_part.next_index
+        return SubmitScopedRewrite(Node(node.kind, node.value, children), generated, current_names, current_index, bindings)
+    if (node.kind == 'While' && node.children.length() > 0):
+        SubmitScopedRewrite condition = rewrite_submit_expression(node.children[0], used_names, next_index, functions, bindings, include_submit, false)
+        SubmitScopedListRewrite body = rewrite_submit_statement_list(tail_nodes(node.children, 1), condition.used_names, condition.next_index, functions, const_copy_bindings(bindings), include_submit)
+        Node[] children = [condition.node]
+        children = append_nodes(children, body.nodes)
+        return SubmitScopedRewrite(Node(node.kind, node.value, children), append_nodes(condition.generated, body.generated), body.used_names, body.next_index, bindings)
+    if (node.kind == 'For' && node.children.length() >= 3):
+        SubmitScopedRewrite init = rewrite_submit_statement(node.children[0], used_names, next_index, functions, const_copy_bindings(bindings), include_submit)
+        BindingIR[] loop_bindings = init.bindings
+        SubmitScopedRewrite condition = rewrite_submit_expression(node.children[1], init.used_names, init.next_index, functions, loop_bindings, include_submit, false)
+        SubmitScopedRewrite update = rewrite_submit_statement(node.children[2], condition.used_names, condition.next_index, functions, loop_bindings, include_submit)
+        SubmitScopedListRewrite body = rewrite_submit_statement_list(lowerer_for_body_nodes(node), update.used_names, update.next_index, functions, const_copy_bindings(loop_bindings), include_submit)
+        Node[] children = [init.node, condition.node, update.node]
+        children = append_nodes(children, body.nodes)
+        Node[] generated = append_nodes(append_nodes(init.generated, condition.generated), append_nodes(update.generated, body.generated))
+        return SubmitScopedRewrite(Node(node.kind, node.value, children), generated, body.used_names, body.next_index, bindings)
+    if (node.kind == 'ForEach' && node.children.length() > 0):
+        SubmitScopedRewrite iterable = rewrite_submit_expression(node.children[0], used_names, next_index, functions, bindings, include_submit, false)
+        BindingIR[] body_bindings = const_copy_bindings(bindings)
+        body_bindings.push(ir_parse_binding_decl(node.value))
+        SubmitScopedListRewrite body = rewrite_submit_statement_list(tail_nodes(node.children, 1), iterable.used_names, iterable.next_index, functions, body_bindings, include_submit)
+        Node[] children = [iterable.node]
+        children = append_nodes(children, body.nodes)
+        return SubmitScopedRewrite(Node(node.kind, node.value, children), append_nodes(iterable.generated, body.generated), body.used_names, body.next_index, bindings)
+    if (node.kind == 'Switch' && node.children.length() > 0):
+        SubmitScopedRewrite subject = rewrite_submit_expression(node.children[0], used_names, next_index, functions, bindings, include_submit, false)
+        Node[] children = [subject.node]
+        Node[] generated = subject.generated
+        string[] current_names = subject.used_names
+        int current_index = subject.next_index
+        for (Node branch : tail_nodes(node.children, 1)):
+            Node[] branch_children = []
+            int body_start = 0
+            if (branch.kind == 'Case' && branch.children.length() > 0):
+                SubmitScopedRewrite case_value = rewrite_submit_expression(branch.children[0], current_names, current_index, functions, bindings, include_submit, false)
+                branch_children.push(case_value.node)
+                generated = append_nodes(generated, case_value.generated)
+                current_names = case_value.used_names
+                current_index = case_value.next_index
+                body_start = 1
+            SubmitScopedListRewrite body = rewrite_submit_statement_list(tail_nodes(branch.children, body_start), current_names, current_index, functions, const_copy_bindings(bindings), include_submit)
+            branch_children = append_nodes(branch_children, body.nodes)
+            children.push(Node(branch.kind, branch.value, branch_children))
+            generated = append_nodes(generated, body.generated)
+            current_names = body.used_names
+            current_index = body.next_index
+        return SubmitScopedRewrite(Node(node.kind, node.value, children), generated, current_names, current_index, bindings)
+    if (node.kind == 'Try'):
+        Node[] try_source = try_body_nodes(node)
+        SubmitScopedListRewrite try_part = rewrite_submit_statement_list(try_source, used_names, next_index, functions, const_copy_bindings(bindings), include_submit)
+        Node catch_part = catch_node(node)
+        BindingIR[] catch_bindings = const_copy_bindings(bindings)
+        catch_bindings.push(ir_parse_binding_decl(catch_part.value))
+        SubmitScopedListRewrite catch_rewrite = rewrite_submit_statement_list(catch_part.children, try_part.used_names, try_part.next_index, functions, catch_bindings, include_submit)
+        Node[] children = append_nodes(try_part.nodes, [Node('Catch', catch_part.value, catch_rewrite.nodes)])
+        return SubmitScopedRewrite(Node(node.kind, node.value, children), append_nodes(try_part.generated, catch_rewrite.generated), catch_rewrite.used_names, catch_rewrite.next_index, bindings)
+    if (node.kind == 'VarDecl'):
+        Node[] children = []
+        Node[] generated = []
+        string[] current_names = used_names
+        int current_index = next_index
+        for (Node child : node.children):
+            SubmitScopedRewrite rewritten = rewrite_submit_expression(child, current_names, current_index, functions, bindings, include_submit, false)
+            children.push(rewritten.node)
+            generated = append_nodes(generated, rewritten.generated)
+            current_names = rewritten.used_names
+            current_index = rewritten.next_index
+        BindingIR[] next_bindings = const_copy_bindings(bindings)
+        next_bindings.push(ir_parse_binding_decl(node.value))
+        return SubmitScopedRewrite(Node(node.kind, node.value, children), generated, current_names, current_index, next_bindings)
+    SubmitScopedRewrite rewritten = rewrite_submit_expression(node, used_names, next_index, functions, bindings, include_submit, false)
+    return SubmitScopedRewrite(rewritten.node, rewritten.generated, rewritten.used_names, rewritten.next_index, bindings)
+
+bool global_array_callback_has_unsupported_capture(Node node, BindingIR[] globals):
+    if (node.kind == 'MethodCall' && (node.value == 'map_to' || node.value == 'filter') && node.children.length() == 2):
+        Node lambda_node = node.children[1]
+        if (lambda_node.kind == 'Lambda' && lambda_node.children.length() == 1):
+            bool legacy_map = false
+            if (node.value == 'map_to'):
+                legacy_map = legacy_int_map_lambda(lambda_node)
+            if (!legacy_map):
+                string[] locals = submit_lambda_local_names(lambda_node.children[0], [])
+                BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+                locals = add_unique_name(locals, parameter.name)
+                string[] identifiers = submit_lambda_free_identifiers(lambda_node.children[0], locals, [])
+                for (string name : identifiers):
+                    BindingIR binding = const_lookup_binding(globals, name)
+                    if (binding.name != ''):
+                        string capture_type = binding.type_name
+                        if (capture_type.starts_with('const ')):
+                            capture_type = capture_type.substring(6)
+                        if (!(capture_type == 'int' || capture_type == 'bool')):
+                            return true
+    for (Node child : node.children):
+        if (global_array_callback_has_unsupported_capture(child, globals)):
+            return true
+    return false
+
+SubmitLambdaRewrite rewrite_submit_lambdas_in_program(Node program, bool include_submit):
+    string[] unavailable_names = collect_submit_unavailable_names(program, [])
+    BindingIR[] global_bindings = submit_unique_global_bindings(program.children)
+    Node[] rewritten_children = []
+    Node[] generated = []
+    string[] used_names = unavailable_names
+    int next_index = 0
+    string current_module_id = ''
+    for (Node child : program.children):
+        if (child.kind == 'ModuleMarker'):
+            current_module_id = child.value.substring(0)
+            rewritten_children.push(child)
+            continue
+        Node[] visible_functions = program_visible_function_nodes(program.children, current_module_id)
+        if (child.kind == 'Function' || child.kind == 'CachedFunction' || child.kind == 'PrivateFunction'):
+            BindingIR[] bindings = []
+            for (BindingIR global_binding : global_bindings):
+                bindings.push(global_binding)
+            for (Node fn_child : child.children):
+                if (fn_child.kind == 'Param'):
+                    bindings.push(ir_parse_binding_decl(fn_child.value))
+            Node[] body_nodes = []
+            for (Node fn_child : child.children):
+                if (fn_child.kind != 'Param'):
+                    body_nodes.push(fn_child)
+            SubmitScopedListRewrite rewritten_body = rewrite_submit_statement_list(body_nodes, used_names, next_index, visible_functions, bindings, include_submit)
+            Node[] function_children = []
+            for (Node fn_child : child.children):
+                if (fn_child.kind == 'Param'):
+                    function_children.push(fn_child)
+            function_children = append_nodes(function_children, rewritten_body.nodes)
+            rewritten_children.push(Node(child.kind, child.value, function_children))
+            generated = append_generated_nodes_for_module(generated, rewritten_body.generated, current_module_id)
+            used_names = rewritten_body.used_names
+            next_index = rewritten_body.next_index
+        else:
+            BindingIR[] bindings = []
+            for (BindingIR global_binding : global_bindings):
+                bindings.push(global_binding)
+            if (child.kind == 'VarDecl' && global_array_callback_has_unsupported_capture(child, global_bindings)):
+                throw 'captured int[] map_to/filter callbacks in global initializers may capture only int or bool values'
+            SubmitScopedRewrite rewritten = rewrite_submit_expression(child, used_names, next_index, visible_functions, bindings, include_submit, child.kind == 'VarDecl')
+            rewritten_children.push(rewritten.node)
+            generated = append_generated_nodes_for_module(generated, rewritten.generated, current_module_id)
+            used_names = rewritten.used_names
+            next_index = rewritten.next_index
+    for (Node generated_node : generated):
+        rewritten_children.push(generated_node)
+    return SubmitLambdaRewrite(Node('Program', program.value, rewritten_children), generated, used_names, next_index)
+
 bool int_node_is(Node node, string value):
     return node.kind == 'Int' && node.value == value
 
 bool identifier_node_is(Node node, string value):
     return node.kind == 'Identifier' && node.value == value
+
+# Supported filter lambda shapes name captures by their source spelling.
+# Recognition does not change the resolved reference used by subsequent lowering.
+bool source_identifier_node_is(Node node, string value):
+    return node.kind == 'Identifier' && ir_source_binding_name(node.value) == value
 
 bool is_local_self_add_assignment(Node target, Node value):
     if (target.kind != 'Identifier'):
@@ -110,7 +1695,7 @@ bool binding_index_node_is(Node node, string binding_name, string index_value):
 bool add_capture_and_binding_index(Node node, string capture_name, string binding_name, string index_value):
     if (node.kind != 'Binary' || node.value != '+'):
         return false
-    if (!identifier_node_is(node.children[0], capture_name)):
+    if (!source_identifier_node_is(node.children[0], capture_name)):
         return false
     return binding_index_node_is(node.children[1], binding_name, index_value)
 
@@ -139,11 +1724,11 @@ bool is_filter_bounds_lambda(Node lambda_node):
         return false
     if (!add_capture_and_binding_index(parts[0].children[0], 'r', binding.name, '0') || !int_node_is(parts[0].children[1], '0')):
         return false
-    if (!add_capture_and_binding_index(parts[1].children[0], 'r', binding.name, '0') || !identifier_node_is(parts[1].children[1], 'WIDTH')):
+    if (!add_capture_and_binding_index(parts[1].children[0], 'r', binding.name, '0') || !source_identifier_node_is(parts[1].children[1], 'WIDTH')):
         return false
     if (!add_capture_and_binding_index(parts[2].children[0], 'c', binding.name, '1') || !int_node_is(parts[2].children[1], '0')):
         return false
-    if (!add_capture_and_binding_index(parts[3].children[0], 'c', binding.name, '1') || !identifier_node_is(parts[3].children[1], 'HEIGHT')):
+    if (!add_capture_and_binding_index(parts[3].children[0], 'c', binding.name, '1') || !source_identifier_node_is(parts[3].children[1], 'HEIGHT')):
         return false
     return true
 
@@ -160,7 +1745,7 @@ bool is_grid_eq_lambda(Node lambda_node):
     Node row_index = outer_index.children[0]
     if (row_index.kind != 'Index'):
         return false
-    if (!identifier_node_is(row_index.children[0], 'GRID')):
+    if (!source_identifier_node_is(row_index.children[0], 'GRID')):
         return false
     if (!add_capture_and_binding_index(row_index.children[1], 'r', binding.name, '0')):
         return false
@@ -294,6 +1879,20 @@ TempIRListResult lower_linear_values_ir(Node[] nodes, int next_temp):
         current_temp = lowered.next_temp
     return TempIRListResult(names, instructions, current_temp)
 
+bool is_logical_operator(string op):
+    return op == '&&' || op == 'and' || op == '||' || op == 'or'
+
+bool contains_logical_expression(Node node):
+    if (node.kind == 'Ternary'):
+        return true
+    if (node.kind == 'Binary'):
+        if (is_logical_operator(node.value)):
+            return true
+    for (Node child : node.children):
+        if (contains_logical_expression(child)):
+            return true
+    return false
+
 TempResult lower_linear_value(Node node, int next_temp):
     if (node.kind == 'Int'):
         string name = temp_name(next_temp)
@@ -345,9 +1944,28 @@ TempResult lower_linear_value(Node node, int next_temp):
         lines.push(line)
         return TempResult(name, lines, current_temp + 1)
     if (node.kind == 'Binary'):
-        TempResult left = lower_linear_value(node.children[0], next_temp)
+        int operand_temp = next_temp
+        if (is_logical_operator(node.value)):
+            operand_temp += 1
+        TempResult left = lower_linear_value(node.children[0], operand_temp)
         TempResult right = lower_linear_value(node.children[1], left.next_temp)
         string name = temp_name(right.next_temp)
+        if (is_logical_operator(node.value)):
+            string carrier = 'logic.' + next_temp.to_string()
+            string rhs_label = carrier + '.rhs'
+            string end_label = carrier + '.end'
+            string[] lines = append_lines(left.lines, ['set bool ' + carrier + ' ' + left.name])
+            if (node.value == '&&' || node.value == 'and'):
+                lines.push('branch_if ' + left.name + ' ' + rhs_label + ' ' + end_label)
+            else:
+                lines.push('branch_if ' + left.name + ' ' + end_label + ' ' + rhs_label)
+            lines.push('label ' + rhs_label)
+            lines = append_lines(lines, right.lines)
+            lines.push('set bool ' + carrier + ' ' + right.name)
+            lines.push('jump ' + end_label)
+            lines.push('label ' + end_label)
+            lines.push(name + ' = identifier ' + carrier)
+            return TempResult(name, lines, right.next_temp + 1)
         string[] lines = append_lines(left.lines, right.lines)
         lines.push(name + ' = binary ' + node.value + ' ' + left.name + ' ' + right.name)
         return TempResult(name, lines, right.next_temp + 1)
@@ -356,8 +1974,16 @@ TempResult lower_linear_value(Node node, int next_temp):
         TempResult when_true = lower_linear_value(node.children[1], condition.next_temp)
         TempResult when_false = lower_linear_value(node.children[2], when_true.next_temp)
         string name = temp_name(when_false.next_temp)
-        string[] lines = append_lines(condition.lines, when_true.lines)
+        string carrier = 'choice.' + name
+        string[] lines = append_lines(condition.lines, ['branch_if ' + condition.name + ' ' + carrier + '.true ' + carrier + '.false', 'label ' + carrier + '.true'])
+        lines = append_lines(lines, when_true.lines)
+        lines.push('choice_set ' + carrier + ' ' + when_true.name)
+        lines.push('jump ' + carrier + '.end')
+        lines.push('label ' + carrier + '.false')
         lines = append_lines(lines, when_false.lines)
+        lines.push('choice_set ' + carrier + ' ' + when_false.name)
+        lines.push('jump ' + carrier + '.end')
+        lines.push('label ' + carrier + '.end')
         lines.push(name + ' = ternary ' + condition.name + ' ' + when_true.name + ' ' + when_false.name)
         return TempResult(name, lines, when_false.next_temp + 1)
     if (node.kind == 'Unary'):
@@ -400,40 +2026,53 @@ TempResult lower_linear_value(Node node, int next_temp):
         lines.push(name + ' = slice ' + base.name + ' ' + start.name + ' ' + stop.name)
         return TempResult(name, lines, stop.next_temp + 1)
     if (node.kind == 'MethodCall'):
-        if (node.value == 'sum' && node.children.length() == 1 && node.children[0].kind == 'MethodCall'):
-            Node mapped = node.children[0]
-            if (mapped.value == 'map_to' && mapped.children.length() == 2 && mapped.children[1].kind == 'Lambda' && is_grid_eq_lambda(mapped.children[1])):
-                Node body = mapped.children[1].children[0]
-                Node outer_index = body.children[0]
-                Node row_index = outer_index.children[0]
-                TempResult base = lower_linear_value(mapped.children[0], next_temp)
-                TempResult grid = lower_linear_value(row_index.children[0], base.next_temp)
-                TempResult row = lower_linear_value(row_index.children[1].children[0], grid.next_temp)
-                TempResult col = lower_linear_value(outer_index.children[1].children[0], row.next_temp)
-                TempResult needle = lower_linear_value(body.children[1], col.next_temp)
-                string name = temp_name(needle.next_temp)
-                string[] lines = append_lines(base.lines, grid.lines)
-                lines = append_lines(lines, row.lines)
-                lines = append_lines(lines, col.lines)
-                lines = append_lines(lines, needle.lines)
-                lines.push(name + ' = method-call-lambda sum_grid_eq ' + base.name + ' ' + mapped.children[1].value + ' ' + grid.name + ' ' + row.name + ' ' + col.name + ' ' + needle.name)
-                return TempResult(name, lines, needle.next_temp + 1)
+        if (node.value == 'sum'):
+            if (node.children.length() == 1):
+                if (node.children[0].kind == 'MethodCall'):
+                    Node mapped = node.children[0]
+                    if (mapped.value == 'map_to'):
+                        if (mapped.children.length() == 2):
+                            if (mapped.children[1].kind == 'Lambda'):
+                                if (is_grid_eq_lambda(mapped.children[1])):
+                                    Node body = mapped.children[1].children[0]
+                                    Node outer_index = body.children[0]
+                                    Node row_index = outer_index.children[0]
+                                    TempResult base = lower_linear_value(mapped.children[0], next_temp)
+                                    TempResult grid = lower_linear_value(row_index.children[0], base.next_temp)
+                                    TempResult row = lower_linear_value(row_index.children[1].children[0], grid.next_temp)
+                                    TempResult col = lower_linear_value(outer_index.children[1].children[0], row.next_temp)
+                                    TempResult needle = lower_linear_value(body.children[1], col.next_temp)
+                                    string name = temp_name(needle.next_temp)
+                                    string[] lines = append_lines(base.lines, grid.lines)
+                                    lines = append_lines(lines, row.lines)
+                                    lines = append_lines(lines, col.lines)
+                                    lines = append_lines(lines, needle.lines)
+                                    lines.push(name + ' = method-call-lambda sum_grid_eq ' + base.name + ' ' + mapped.children[1].value + ' ' + grid.name + ' ' + row.name + ' ' + col.name + ' ' + needle.name)
+                                    return TempResult(name, lines, needle.next_temp + 1)
         TempResult base = lower_linear_value(node.children[0], next_temp)
         if (node.value == 'create_prio_q'):
-            if (node.children.length() == 2 && node.children[1].kind == 'Lambda2'):
-                if (is_identifier_subtraction_lambda(node.children[1])):
-                    string name = temp_name(base.next_temp)
-                    string[] lines = base.lines
-                    lines.push(name + ' = method-call-lambda create_prio_q_int_desc ' + base.name + ' ' + lambda2_left_binding(node.children[1].value) + ' ' + lambda2_right_binding(node.children[1].value))
-                    return TempResult(name, lines, base.next_temp + 1)
-                if (is_record_field_desc_subtraction_lambda(node.children[1])):
-                    string name = temp_name(base.next_temp)
-                    string field_name = node.children[1].children[0].children[0].value
-                    string[] lines = base.lines
-                    lines.push(name + ' = method-call-lambda create_prio_q_record_field_desc ' + base.name + ' ' + lambda2_left_binding(node.children[1].value) + ' ' + lambda2_right_binding(node.children[1].value) + ' ' + field_name)
-                    return TempResult(name, lines, base.next_temp + 1)
+            if (node.children.length() == 2):
+                if (node.children[1].kind == 'Lambda2'):
+                    if (is_identifier_subtraction_lambda(node.children[1])):
+                        string name = temp_name(base.next_temp)
+                        string[] lines = base.lines
+                        lines.push(name + ' = method-call-lambda create_prio_q_int_desc ' + base.name + ' ' + lambda2_left_binding(node.children[1].value) + ' ' + lambda2_right_binding(node.children[1].value))
+                        return TempResult(name, lines, base.next_temp + 1)
+                    if (is_record_field_desc_subtraction_lambda(node.children[1])):
+                        string name = temp_name(base.next_temp)
+                        string field_name = node.children[1].children[0].children[0].value
+                        string[] lines = base.lines
+                        lines.push(name + ' = method-call-lambda create_prio_q_record_field_desc ' + base.name + ' ' + lambda2_left_binding(node.children[1].value) + ' ' + lambda2_right_binding(node.children[1].value) + ' ' + field_name)
+                        return TempResult(name, lines, base.next_temp + 1)
         if (node.value == 'filter'):
             if (node.children.length() == 2):
+                if (node.children[1].kind == 'FilterIntExpression'):
+                    if (node.children[1].children.length() == 1):
+                        if (node.children[1].children[0].kind == 'Identifier'):
+                            string name = temp_name(base.next_temp)
+                            string[] lines = base.lines
+                            lines.push(name + ' = method-call-lambda filter_int_expr ' + base.name + ' ' + node.children[1].value + ' ' + node.children[1].children[0].value)
+                            return TempResult(name, lines, base.next_temp + 1)
                 if (node.children[1].kind == 'Lambda' && is_filter_bounds_lambda(node.children[1])):
                     Node[] parts = flatten_logical_and_nodes(node.children[1].children[0])
                     TempResult row = lower_linear_value(parts[0].children[0].children[0], base.next_temp)
@@ -449,6 +2088,13 @@ TempResult lower_linear_value(Node node, int next_temp):
                     return TempResult(name, lines, height.next_temp + 1)
         if (node.value == 'map_to'):
             if (node.children.length() == 2):
+                if (node.children[1].kind == 'MapIntExpression'):
+                    if (node.children[1].children.length() == 1):
+                        if (node.children[1].children[0].kind == 'Identifier'):
+                            string name = temp_name(base.next_temp)
+                            string[] lines = base.lines
+                            lines.push(name + ' = method-call-lambda map_to_expr ' + base.name + ' ' + node.children[1].value + ' ' + node.children[1].children[0].value)
+                            return TempResult(name, lines, base.next_temp + 1)
                 if (node.children[1].kind == 'Lambda'):
                     if (is_parse_binding_call_lambda(node.children[1])):
                         string name = temp_name(base.next_temp)
@@ -478,6 +2124,13 @@ TempResult lower_linear_value(Node node, int next_temp):
                     if (lambda_body.kind == 'Binary'):
                         if (lambda_body.children.length() == 2):
                             if (lambda_body.children[0].kind == 'Identifier' && lambda_body.children[0].value == binding.name):
+                                if (map_to_arithmetic_uses_same_item(node.children[1])):
+                                    string name = temp_name(base.next_temp)
+                                    string[] lines = base.lines
+                                    lines.push(name + ' = method-call-lambda map_to_self ' + base.name + ' ' + node.children[1].value + ' ' + lambda_body.value)
+                                    return TempResult(name, lines, base.next_temp + 1)
+                                if (map_to_arithmetic_rhs_uses_item(node.children[1])):
+                                    throw 'map_to arithmetic right operand cannot reference its lambda parameter'
                                 TempResult right = lower_linear_value(lambda_body.children[1], base.next_temp)
                                 string name = temp_name(right.next_temp)
                                 string[] lines = append_lines(base.lines, right.lines)
@@ -493,21 +2146,22 @@ TempResult lower_linear_value(Node node, int next_temp):
                     lines.push(name + ' = method-call-lambda flat_map_edges_for_point ' + base.name + ' ' + node.children[1].value + ' ' + capture_points.name)
                     return TempResult(name, lines, capture_points.next_temp + 1)
         if (node.value == 'sort'):
-            if (node.children.length() == 2 && node.children[1].kind == 'Lambda2'):
-                BindingIR left_binding = ir_parse_binding_decl(lambda2_left_binding(node.children[1].value))
-                BindingIR right_binding = ir_parse_binding_decl(lambda2_right_binding(node.children[1].value))
-                string name = temp_name(base.next_temp)
-                string[] lines = base.lines
-                if (is_identifier_subtraction_lambda(node.children[1])):
-                    lines.push(name + ' = method-call-lambda sort_int_desc ' + base.name + ' ' + lambda2_left_binding(node.children[1].value) + ' ' + lambda2_right_binding(node.children[1].value))
-                    return TempResult(name, lines, base.next_temp + 1)
-                if (is_identifier_subtraction_lambda_asc(node.children[1])):
-                    lines.push(name + ' = method-call-lambda sort_int_asc ' + base.name + ' ' + lambda2_left_binding(node.children[1].value) + ' ' + lambda2_right_binding(node.children[1].value))
-                    return TempResult(name, lines, base.next_temp + 1)
-                if (is_record_field_subtraction_lambda(node.children[1])):
-                    string field_name = node.children[1].children[0].children[0].value
-                    lines.push(name + ' = method-call-lambda sort_record_field_asc ' + base.name + ' ' + lambda2_left_binding(node.children[1].value) + ' ' + lambda2_right_binding(node.children[1].value) + ' ' + field_name)
-                    return TempResult(name, lines, base.next_temp + 1)
+            if (node.children.length() == 2):
+                if (node.children[1].kind == 'Lambda2'):
+                    BindingIR left_binding = ir_parse_binding_decl(lambda2_left_binding(node.children[1].value))
+                    BindingIR right_binding = ir_parse_binding_decl(lambda2_right_binding(node.children[1].value))
+                    string name = temp_name(base.next_temp)
+                    string[] lines = base.lines
+                    if (is_identifier_subtraction_lambda(node.children[1])):
+                        lines.push(name + ' = method-call-lambda sort_int_desc ' + base.name + ' ' + lambda2_left_binding(node.children[1].value) + ' ' + lambda2_right_binding(node.children[1].value))
+                        return TempResult(name, lines, base.next_temp + 1)
+                    if (is_identifier_subtraction_lambda_asc(node.children[1])):
+                        lines.push(name + ' = method-call-lambda sort_int_asc ' + base.name + ' ' + lambda2_left_binding(node.children[1].value) + ' ' + lambda2_right_binding(node.children[1].value))
+                        return TempResult(name, lines, base.next_temp + 1)
+                    if (is_record_field_subtraction_lambda(node.children[1])):
+                        string field_name = node.children[1].children[0].children[0].value
+                        lines.push(name + ' = method-call-lambda sort_record_field_asc ' + base.name + ' ' + lambda2_left_binding(node.children[1].value) + ' ' + lambda2_right_binding(node.children[1].value) + ' ' + field_name)
+                        return TempResult(name, lines, base.next_temp + 1)
         TempListResult args = lower_linear_values(tail_nodes(node.children, 1), base.next_temp)
         string name = temp_name(args.next_temp)
         string line = name + ' = method-call ' + node.value + ' ' + base.name
@@ -569,9 +2223,28 @@ TempIRResult lower_linear_value_ir(Node node, int next_temp):
         instructions.push(LinearInstruction('value', name, 'map', 'owned', 'map', names))
         return TempIRResult(name, instructions, current_temp + 1)
     if (node.kind == 'Binary'):
-        TempIRResult left = lower_linear_value_ir(node.children[0], next_temp)
+        int operand_temp = next_temp
+        if (is_logical_operator(node.value)):
+            operand_temp += 1
+        TempIRResult left = lower_linear_value_ir(node.children[0], operand_temp)
         TempIRResult right = lower_linear_value_ir(node.children[1], left.next_temp)
         string name = temp_name(right.next_temp)
+        if (is_logical_operator(node.value)):
+            string carrier = 'logic.' + next_temp.to_string()
+            string rhs_label = carrier + '.rhs'
+            string end_label = carrier + '.end'
+            LinearInstruction[] instructions = append_instructions(left.instructions, [LinearInstruction('set', '', '', '', 'bool ' + carrier, [left.name])])
+            if (node.value == '&&' || node.value == 'and'):
+                instructions.push(LinearInstruction('branch_if', '', '', '', '', [left.name, rhs_label, end_label]))
+            else:
+                instructions.push(LinearInstruction('branch_if', '', '', '', '', [left.name, end_label, rhs_label]))
+            instructions.push(LinearInstruction('label', '', '', '', rhs_label, []))
+            instructions = append_instructions(instructions, right.instructions)
+            instructions.push(LinearInstruction('set', '', '', '', 'bool ' + carrier, [right.name]))
+            instructions.push(LinearInstruction('jump', '', '', '', end_label, []))
+            instructions.push(LinearInstruction('label', '', '', '', end_label, []))
+            instructions.push(LinearInstruction('value', name, 'bool', 'plain', 'identifier', [carrier]))
+            return TempIRResult(name, instructions, right.next_temp + 1)
         LinearInstruction[] instructions = append_instructions(left.instructions, right.instructions)
         instructions.push(LinearInstruction('value', name, 'unknown', 'unknown', 'binary', [node.value, left.name, right.name]))
         return TempIRResult(name, instructions, right.next_temp + 1)
@@ -580,8 +2253,18 @@ TempIRResult lower_linear_value_ir(Node node, int next_temp):
         TempIRResult when_true = lower_linear_value_ir(node.children[1], condition.next_temp)
         TempIRResult when_false = lower_linear_value_ir(node.children[2], when_true.next_temp)
         string name = temp_name(when_false.next_temp)
-        LinearInstruction[] instructions = append_instructions(condition.instructions, when_true.instructions)
+        string carrier = 'choice.' + name
+        LinearInstruction[] instructions = append_instructions(condition.instructions, [LinearInstruction('branch_if', '', '', '', '', [condition.name, carrier + '.true', carrier + '.false']), LinearInstruction('label', '', '', '', carrier + '.true', [])])
+        instructions = append_instructions(instructions, when_true.instructions)
+        instructions.push(LinearInstruction('choice_set', '', '', '', carrier, [when_true.name]))
+        instructions.push(LinearInstruction('jump', '', '', '', carrier + '.end', []))
+        instructions.push(LinearInstruction('label', '', '', '', carrier + '.false', []))
         instructions = append_instructions(instructions, when_false.instructions)
+        instructions.push(LinearInstruction('choice_set', '', '', '', carrier, [when_false.name]))
+        instructions.push(LinearInstruction('jump', '', '', '', carrier + '.end', []))
+        instructions.push(LinearInstruction('label', '', '', '', carrier + '.end', []))
+        # Retain both arm types for refinement; the typed pass replaces this
+        # metadata with a load from the selected arm's hidden binding.
         instructions.push(LinearInstruction('value', name, 'unknown', 'unknown', 'ternary', [condition.name, when_true.name, when_false.name]))
         return TempIRResult(name, instructions, when_false.next_temp + 1)
     if (node.kind == 'Unary'):
@@ -621,24 +2304,29 @@ TempIRResult lower_linear_value_ir(Node node, int next_temp):
         instructions.push(LinearInstruction('value', name, 'unknown', 'unknown', 'slice', [base.name, start.name, stop.name]))
         return TempIRResult(name, instructions, stop.next_temp + 1)
     if (node.kind == 'MethodCall'):
-        if (node.value == 'sum' && node.children.length() == 1 && node.children[0].kind == 'MethodCall'):
-            Node mapped = node.children[0]
-            if (mapped.value == 'map_to' && mapped.children.length() == 2 && mapped.children[1].kind == 'Lambda' && is_grid_eq_lambda(mapped.children[1])):
-                Node body = mapped.children[1].children[0]
-                Node outer_index = body.children[0]
-                Node row_index = outer_index.children[0]
-                TempIRResult base = lower_linear_value_ir(mapped.children[0], next_temp)
-                TempIRResult grid = lower_linear_value_ir(row_index.children[0], base.next_temp)
-                TempIRResult row = lower_linear_value_ir(row_index.children[1].children[0], grid.next_temp)
-                TempIRResult col = lower_linear_value_ir(outer_index.children[1].children[0], row.next_temp)
-                TempIRResult needle = lower_linear_value_ir(body.children[1], col.next_temp)
-                string name = temp_name(needle.next_temp)
-                LinearInstruction[] instructions = append_instructions(base.instructions, grid.instructions)
-                instructions = append_instructions(instructions, row.instructions)
-                instructions = append_instructions(instructions, col.instructions)
-                instructions = append_instructions(instructions, needle.instructions)
-                instructions.push(LinearInstruction('value', name, 'unknown', 'unknown', 'method-call-lambda', ['sum_grid_eq', base.name, mapped.children[1].value, grid.name, row.name, col.name, needle.name]))
-                return TempIRResult(name, instructions, needle.next_temp + 1)
+        if (node.value == 'sum'):
+            if (node.children.length() == 1):
+                if (node.children[0].kind == 'MethodCall'):
+                    Node mapped = node.children[0]
+                    if (mapped.value == 'map_to'):
+                        if (mapped.children.length() == 2):
+                            if (mapped.children[1].kind == 'Lambda'):
+                                if (is_grid_eq_lambda(mapped.children[1])):
+                                    Node body = mapped.children[1].children[0]
+                                    Node outer_index = body.children[0]
+                                    Node row_index = outer_index.children[0]
+                                    TempIRResult base = lower_linear_value_ir(mapped.children[0], next_temp)
+                                    TempIRResult grid = lower_linear_value_ir(row_index.children[0], base.next_temp)
+                                    TempIRResult row = lower_linear_value_ir(row_index.children[1].children[0], grid.next_temp)
+                                    TempIRResult col = lower_linear_value_ir(outer_index.children[1].children[0], row.next_temp)
+                                    TempIRResult needle = lower_linear_value_ir(body.children[1], col.next_temp)
+                                    string name = temp_name(needle.next_temp)
+                                    LinearInstruction[] instructions = append_instructions(base.instructions, grid.instructions)
+                                    instructions = append_instructions(instructions, row.instructions)
+                                    instructions = append_instructions(instructions, col.instructions)
+                                    instructions = append_instructions(instructions, needle.instructions)
+                                    instructions.push(LinearInstruction('value', name, 'unknown', 'unknown', 'method-call-lambda', ['sum_grid_eq', base.name, mapped.children[1].value, grid.name, row.name, col.name, needle.name]))
+                                    return TempIRResult(name, instructions, needle.next_temp + 1)
         TempIRResult base = lower_linear_value_ir(node.children[0], next_temp)
         if (node.value == 'submit'):
             if (node.children.length() != 2 && node.children.length() != 3):
@@ -655,18 +2343,25 @@ TempIRResult lower_linear_value_ir(Node node, int next_temp):
             instructions.push(LinearInstruction('value', name, 'unknown', 'owned', 'method-call', ['submit', base.name, node.children[1].value, arg.name]))
             return TempIRResult(name, instructions, arg.next_temp + 1)
         if (node.value == 'create_prio_q'):
-            if (node.children.length() == 2 && node.children[1].kind == 'Lambda2'):
-                if (is_identifier_subtraction_lambda(node.children[1])):
-                    string name = temp_name(base.next_temp)
-                    LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', name, 'unknown', 'owned', 'method-call-lambda', ['create_prio_q_int_desc', base.name, lambda2_left_binding(node.children[1].value), lambda2_right_binding(node.children[1].value)])])
-                    return TempIRResult(name, instructions, base.next_temp + 1)
-                if (is_record_field_desc_subtraction_lambda(node.children[1])):
-                    string name = temp_name(base.next_temp)
-                    string field_name = node.children[1].children[0].children[0].value
-                    LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', name, 'unknown', 'owned', 'method-call-lambda', ['create_prio_q_record_field_desc', base.name, lambda2_left_binding(node.children[1].value), lambda2_right_binding(node.children[1].value), field_name])])
-                    return TempIRResult(name, instructions, base.next_temp + 1)
+            if (node.children.length() == 2):
+                if (node.children[1].kind == 'Lambda2'):
+                    if (is_identifier_subtraction_lambda(node.children[1])):
+                        string name = temp_name(base.next_temp)
+                        LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', name, 'unknown', 'owned', 'method-call-lambda', ['create_prio_q_int_desc', base.name, lambda2_left_binding(node.children[1].value), lambda2_right_binding(node.children[1].value)])])
+                        return TempIRResult(name, instructions, base.next_temp + 1)
+                    if (is_record_field_desc_subtraction_lambda(node.children[1])):
+                        string name = temp_name(base.next_temp)
+                        string field_name = node.children[1].children[0].children[0].value
+                        LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', name, 'unknown', 'owned', 'method-call-lambda', ['create_prio_q_record_field_desc', base.name, lambda2_left_binding(node.children[1].value), lambda2_right_binding(node.children[1].value), field_name])])
+                        return TempIRResult(name, instructions, base.next_temp + 1)
         if (node.value == 'filter'):
             if (node.children.length() == 2):
+                if (node.children[1].kind == 'FilterIntExpression'):
+                    if (node.children[1].children.length() == 1):
+                        if (node.children[1].children[0].kind == 'Identifier'):
+                            string name = temp_name(base.next_temp)
+                            LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', name, 'unknown', 'unknown', 'method-call-lambda', ['filter_int_expr', base.name, node.children[1].value, node.children[1].children[0].value])])
+                            return TempIRResult(name, instructions, base.next_temp + 1)
                 if (node.children[1].kind == 'Lambda' && is_filter_bounds_lambda(node.children[1])):
                     Node[] parts = flatten_logical_and_nodes(node.children[1].children[0])
                     TempIRResult row = lower_linear_value_ir(parts[0].children[0].children[0], base.next_temp)
@@ -682,6 +2377,12 @@ TempIRResult lower_linear_value_ir(Node node, int next_temp):
                     return TempIRResult(name, instructions, height.next_temp + 1)
         if (node.value == 'map_to'):
             if (node.children.length() == 2):
+                if (node.children[1].kind == 'MapIntExpression'):
+                    if (node.children[1].children.length() == 1):
+                        if (node.children[1].children[0].kind == 'Identifier'):
+                            string name = temp_name(base.next_temp)
+                            LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', name, 'unknown', 'unknown', 'method-call-lambda', ['map_to_expr', base.name, node.children[1].value, node.children[1].children[0].value])])
+                            return TempIRResult(name, instructions, base.next_temp + 1)
                 if (node.children[1].kind == 'Lambda'):
                     if (is_parse_binding_call_lambda(node.children[1])):
                         LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', temp_name(base.next_temp), 'unknown', 'unknown', 'method-call-lambda', ['map_to_parse_point', base.name, node.children[1].value])])
@@ -707,6 +2408,12 @@ TempIRResult lower_linear_value_ir(Node node, int next_temp):
                     if (lambda_body.kind == 'Binary'):
                         if (lambda_body.children.length() == 2):
                             if (lambda_body.children[0].kind == 'Identifier' && lambda_body.children[0].value == binding.name):
+                                if (map_to_arithmetic_uses_same_item(node.children[1])):
+                                    string name = temp_name(base.next_temp)
+                                    LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', name, 'unknown', 'unknown', 'method-call-lambda', ['map_to_self', base.name, node.children[1].value, lambda_body.value])])
+                                    return TempIRResult(name, instructions, base.next_temp + 1)
+                                if (map_to_arithmetic_rhs_uses_item(node.children[1])):
+                                    throw 'map_to arithmetic right operand cannot reference its lambda parameter'
                                 TempIRResult right = lower_linear_value_ir(lambda_body.children[1], base.next_temp)
                                 string name = temp_name(right.next_temp)
                                 LinearInstruction[] instructions = append_instructions(base.instructions, right.instructions)
@@ -722,20 +2429,21 @@ TempIRResult lower_linear_value_ir(Node node, int next_temp):
                     instructions.push(LinearInstruction('value', name, 'unknown', 'unknown', 'method-call-lambda', ['flat_map_edges_for_point', base.name, node.children[1].value, capture_points.name]))
                     return TempIRResult(name, instructions, capture_points.next_temp + 1)
         if (node.value == 'sort'):
-            if (node.children.length() == 2 && node.children[1].kind == 'Lambda2'):
-                BindingIR left_binding = ir_parse_binding_decl(lambda2_left_binding(node.children[1].value))
-                BindingIR right_binding = ir_parse_binding_decl(lambda2_right_binding(node.children[1].value))
-                string name = temp_name(base.next_temp)
-                if (is_identifier_subtraction_lambda(node.children[1])):
-                    LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', name, 'unknown', 'borrowed', 'method-call-lambda', ['sort_int_desc', base.name, lambda2_left_binding(node.children[1].value), lambda2_right_binding(node.children[1].value)])])
-                    return TempIRResult(name, instructions, base.next_temp + 1)
-                if (is_identifier_subtraction_lambda_asc(node.children[1])):
-                    LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', name, 'unknown', 'borrowed', 'method-call-lambda', ['sort_int_asc', base.name, lambda2_left_binding(node.children[1].value), lambda2_right_binding(node.children[1].value)])])
-                    return TempIRResult(name, instructions, base.next_temp + 1)
-                if (is_record_field_subtraction_lambda(node.children[1])):
-                    string field_name = node.children[1].children[0].children[0].value
-                    LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', name, 'unknown', 'borrowed', 'method-call-lambda', ['sort_record_field_asc', base.name, lambda2_left_binding(node.children[1].value), lambda2_right_binding(node.children[1].value), field_name])])
-                    return TempIRResult(name, instructions, base.next_temp + 1)
+            if (node.children.length() == 2):
+                if (node.children[1].kind == 'Lambda2'):
+                    BindingIR left_binding = ir_parse_binding_decl(lambda2_left_binding(node.children[1].value))
+                    BindingIR right_binding = ir_parse_binding_decl(lambda2_right_binding(node.children[1].value))
+                    string name = temp_name(base.next_temp)
+                    if (is_identifier_subtraction_lambda(node.children[1])):
+                        LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', name, 'unknown', 'borrowed', 'method-call-lambda', ['sort_int_desc', base.name, lambda2_left_binding(node.children[1].value), lambda2_right_binding(node.children[1].value)])])
+                        return TempIRResult(name, instructions, base.next_temp + 1)
+                    if (is_identifier_subtraction_lambda_asc(node.children[1])):
+                        LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', name, 'unknown', 'borrowed', 'method-call-lambda', ['sort_int_asc', base.name, lambda2_left_binding(node.children[1].value), lambda2_right_binding(node.children[1].value)])])
+                        return TempIRResult(name, instructions, base.next_temp + 1)
+                    if (is_record_field_subtraction_lambda(node.children[1])):
+                        string field_name = node.children[1].children[0].children[0].value
+                        LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', name, 'unknown', 'borrowed', 'method-call-lambda', ['sort_record_field_asc', base.name, lambda2_left_binding(node.children[1].value), lambda2_right_binding(node.children[1].value), field_name])])
+                        return TempIRResult(name, instructions, base.next_temp + 1)
         TempIRListResult args = lower_linear_values_ir(tail_nodes(node.children, 1), base.next_temp)
         string name = temp_name(args.next_temp)
         string[] call_args = [node.value, base.name]
@@ -879,6 +2587,11 @@ LinearBlockResult lower_linear_statement(Node node, int next_temp, string indent
                     lines.push(old_name + ' = index ' + base.name + ' ' + item_name)
                 current_temp += 1
                 rhs = node.children[1].children[1]
+            else if (target_node.kind == 'Index'):
+                string selected_name = temp_name(current_temp)
+                lines.push(selected_name + ' = assign-index-key ' + base.name + ' ' + item_name)
+                item_name = selected_name
+                current_temp += 1
             TempResult value = lower_linear_value(rhs, current_temp)
             lines = append_lines(lines, value.lines)
             string value_name = value.name
@@ -973,6 +2686,11 @@ LinearIRBlockResult lower_linear_statement_ir(Node node, int next_temp):
                     instructions.push(LinearInstruction('value', old_name, 'unknown', 'borrowed', 'index', [base.name, item_name]))
                 current_temp += 1
                 rhs = node.children[1].children[1]
+            else if (target.kind == 'Index'):
+                string selected_name = temp_name(current_temp)
+                instructions.push(LinearInstruction('value', selected_name, 'unknown', 'unknown', 'assign-index-key', [base.name, item_name]))
+                item_name = selected_name
+                current_temp += 1
             TempIRResult value = lower_linear_value_ir(rhs, current_temp)
             instructions = append_instructions(instructions, value.instructions)
             string value_name = value.name
@@ -1328,6 +3046,52 @@ LinearIRListResult lower_linear_statement_list_ir_from(Node[] nodes, int start, 
         instructions = append_instructions(instructions, rest.instructions)
         return LinearIRListResult(instructions, rest.next_temp, rest.next_label)
 
+    if (node.kind == 'ForEach' && LOWER_DIRECT_RANGE_FOREACH):
+        Node range_call_node = node.children[0]
+        BindingIR iterator = ir_parse_binding_decl(node.value)
+        if ((iterator.type_name == 'int' || iterator.type_name == 'const int') && range_call_node.kind == 'Call' && range_call_node.value == 'range' && (range_call_node.children.length() == 1 || range_call_node.children.length() == 2)):
+            Node lower_bound = Node('Int', '0', [])
+            Node upper_bound = range_call_node.children[0]
+            if (range_call_node.children.length() == 2):
+                lower_bound = range_call_node.children[0]
+                upper_bound = range_call_node.children[1]
+            TempIRResult first = lower_linear_value_ir(lower_bound, next_temp)
+            TempIRResult last = lower_linear_value_ir(upper_bound, first.next_temp)
+            string cond_label = label_name(next_label)
+            string body_label = label_name(next_label + 1)
+            string end_label = label_name(next_label + 2)
+            string update_label = label_name(next_label + 3)
+            string counter_name = 'range.counter.' + next_label.to_string()
+            string counter_value = temp_name(last.next_temp)
+            string condition_value = temp_name(last.next_temp + 1)
+            string item_value = temp_name(last.next_temp + 2)
+            LinearIRListResult body = lower_linear_statement_list_ir_from(node.children, 1, last.next_temp + 3, next_label + 4, end_label, update_label)
+            string update_value = temp_name(body.next_temp)
+            string one_value = temp_name(body.next_temp + 1)
+            string incremented = temp_name(body.next_temp + 2)
+            LinearIRListResult rest = lower_linear_statement_list_ir_from(nodes, start + 1, body.next_temp + 3, body.next_label, break_label, continue_label)
+            LinearInstruction[] instructions = append_instructions(first.instructions, last.instructions)
+            instructions.push(LinearInstruction('range_guard', '', '', '', '', [first.name, last.name]))
+            instructions.push(LinearInstruction('set', '', '', '', 'int ' + counter_name, [first.name]))
+            instructions.push(LinearInstruction('jump', '', '', '', cond_label, []))
+            instructions.push(LinearInstruction('label', '', '', '', cond_label, []))
+            instructions.push(LinearInstruction('value', counter_value, 'int', 'plain', 'identifier', [counter_name]))
+            instructions.push(LinearInstruction('value', condition_value, 'bool', 'plain', 'binary', ['<', counter_value, last.name]))
+            instructions.push(LinearInstruction('branch_if', '', '', '', '', [condition_value, body_label, end_label]))
+            instructions.push(LinearInstruction('label', '', '', '', body_label, []))
+            instructions.push(LinearInstruction('value', item_value, 'int', 'plain', 'identifier', [counter_name]))
+            instructions.push(LinearInstruction('set', '', '', '', node.value, [item_value]))
+            instructions = append_instructions(instructions, body.instructions)
+            instructions.push(LinearInstruction('label', '', '', '', update_label, []))
+            instructions.push(LinearInstruction('value', update_value, 'int', 'plain', 'identifier', [counter_name]))
+            instructions.push(LinearInstruction('value', one_value, 'int', 'plain', 'int', ['1']))
+            instructions.push(LinearInstruction('value', incremented, 'int', 'plain', 'binary', ['+', update_value, one_value]))
+            instructions.push(LinearInstruction('assign_local', '', '', '', counter_name, [incremented]))
+            instructions.push(LinearInstruction('jump', '', '', '', cond_label, []))
+            instructions.push(LinearInstruction('label', '', '', '', end_label, []))
+            instructions = append_instructions(instructions, rest.instructions)
+            return LinearIRListResult(instructions, rest.next_temp, rest.next_label)
+
     if (node.kind == 'ForEach'):
         string cond_label = label_name(next_label)
         string body_label = label_name(next_label + 1)
@@ -1335,29 +3099,31 @@ LinearIRListResult lower_linear_statement_list_ir_from(Node[] nodes, int start, 
         string continue_loop_label = label_name(next_label + 3)
         string index_name = loop_index_name(next_label)
         TempIRResult iterable = lower_linear_value_ir(node.children[0], next_temp)
-        string index_init = temp_name(iterable.next_temp)
-        string index_check = temp_name(iterable.next_temp + 1)
-        string iterable_len = temp_name(iterable.next_temp + 2)
-        string cond_value = temp_name(iterable.next_temp + 3)
-        string index_item = temp_name(iterable.next_temp + 4)
-        string item_value = temp_name(iterable.next_temp + 5)
-        LinearIRListResult body = lower_linear_statement_list_ir_from(node.children, 1, iterable.next_temp + 6, next_label + 4, end_label, continue_loop_label)
+        string iterable_value = temp_name(iterable.next_temp)
+        string index_init = temp_name(iterable.next_temp + 1)
+        string index_check = temp_name(iterable.next_temp + 2)
+        string iterable_len = temp_name(iterable.next_temp + 3)
+        string cond_value = temp_name(iterable.next_temp + 4)
+        string index_item = temp_name(iterable.next_temp + 5)
+        string item_value = temp_name(iterable.next_temp + 6)
+        LinearIRListResult body = lower_linear_statement_list_ir_from(node.children, 1, iterable.next_temp + 7, next_label + 4, end_label, continue_loop_label)
         int post_body_temp = body.next_temp + 4
         LinearIRListResult rest = lower_linear_statement_list_ir_from(nodes, start + 1, post_body_temp, body.next_label, break_label, continue_label)
 
         LinearInstruction[] instructions = []
         instructions = append_instructions(instructions, iterable.instructions)
+        instructions.push(LinearInstruction('value', iterable_value, 'unknown', 'borrowed', 'foreach-value', [iterable.name]))
         instructions.push(LinearInstruction('value', index_init, 'int', 'plain', 'int', ['0']))
         instructions.push(LinearInstruction('set', '', '', '', 'int ' + index_name, [index_init]))
         instructions.push(LinearInstruction('jump', '', '', '', cond_label, []))
         instructions.push(LinearInstruction('label', '', '', '', cond_label, []))
         instructions.push(LinearInstruction('value', index_check, 'unknown', 'borrowed', 'identifier', [index_name]))
-        instructions.push(LinearInstruction('value', iterable_len, 'int', 'plain', 'method-call', ['length', iterable.name]))
+        instructions.push(LinearInstruction('value', iterable_len, 'int', 'plain', 'method-call', ['length', iterable_value]))
         instructions.push(LinearInstruction('value', cond_value, 'unknown', 'unknown', 'binary', ['<', index_check, iterable_len]))
         instructions.push(LinearInstruction('branch_if', '', '', '', '', [cond_value, body_label, end_label]))
         instructions.push(LinearInstruction('label', '', '', '', body_label, []))
         instructions.push(LinearInstruction('value', index_item, 'unknown', 'borrowed', 'identifier', [index_name]))
-        instructions.push(LinearInstruction('value', item_value, 'unknown', 'borrowed', 'index', [iterable.name, index_item]))
+        instructions.push(LinearInstruction('value', item_value, 'unknown', 'borrowed', 'index', [iterable_value, index_item]))
         instructions.push(LinearInstruction('set', '', '', '', node.value, [item_value]))
         instructions = append_instructions(instructions, body.instructions)
         instructions.push(LinearInstruction('label', '', '', '', continue_loop_label, []))
@@ -1370,6 +3136,7 @@ LinearIRListResult lower_linear_statement_list_ir_from(Node[] nodes, int start, 
         instructions.push(LinearInstruction('assign_local', '', '', '', index_name, [bumped_index]))
         instructions.push(LinearInstruction('jump', '', '', '', cond_label, []))
         instructions.push(LinearInstruction('label', '', '', '', end_label, []))
+        instructions.push(LinearInstruction('foreach_end', '', '', '', iterable_value, []))
         instructions = append_instructions(instructions, rest.instructions)
         return LinearIRListResult(instructions, rest.next_temp, rest.next_label)
 
@@ -1631,10 +3398,12 @@ string[] lower_statement_lines(Node node, string indent):
         for (Node child in node.children):
             lines.push(lower_statement_lines(child, indent + '  ')[0])
         return lines
-    if (node.kind == 'Function' || node.kind == 'CachedFunction'):
+    if (node.kind == 'Function' || node.kind == 'CachedFunction' || node.kind == 'PrivateFunction'):
         string head = 'func '
         if (node.kind == 'CachedFunction'):
             head = 'cached func '
+        else if (node.kind == 'PrivateFunction'):
+            head = 'private func '
         string[] lines = [indent + head + node.value]
         lines.push(indent + '  params')
         Node[] body_nodes = []
@@ -1854,9 +3623,10 @@ void const_reject_mutation(BindingIR[] bindings, string root, bool assignment):
         return
     BindingIR binding = const_lookup_binding(bindings, root)
     if (binding.name != '' && binding.type_name.starts_with('const ')):
+        string source_name = ir_source_binding_name(root)
         if (assignment):
-            throw 'Cannot assign to const variable: ' + root
-        throw 'Cannot mutate const variable: ' + root
+            throw 'Cannot assign to const variable: ' + source_name
+        throw 'Cannot mutate const variable: ' + source_name
 
 void validate_const_expression(Node node, BindingIR[] bindings, string[] function_names, Node[] record_nodes):
     if (node.kind == 'Lambda'):
@@ -1880,6 +3650,18 @@ void validate_const_expression(Node node, BindingIR[] bindings, string[] functio
                 string root = const_target_root(node.children[0])
                 if (const_method_mutates_receiver(node.value, node.children[0], bindings, record_nodes)):
                     const_reject_mutation(bindings, root, false)
+        else if (node.value == 'clear'):
+            if (node.children.length() > 0):
+                string receiver_type = const_type_of_expression(node.children[0], bindings, record_nodes)
+                if (receiver_type.starts_with('const ')):
+                    receiver_type = receiver_type.substring(6)
+                if (receiver_type == 'int[][]' || receiver_type == 'string[][]'):
+                    if (!(node.value in function_names) && !const_record_name_exists(record_nodes, node.value) && const_method_mutates_receiver(node.value, node.children[0], bindings, record_nodes)):
+                        string root = const_target_root(node.children[0])
+                        const_reject_mutation(bindings, root, false)
+                else if (!(node.value in function_names) && const_function_mutates_first_arg(node.value) && const_method_mutates_receiver(node.value, node.children[0], bindings, record_nodes)):
+                    string root = const_target_root(node.children[0])
+                    const_reject_mutation(bindings, root, false)
         else if (node.value == 'pop'):
             if (!(node.value in function_names)):
                 if (node.children.length() > 0):
@@ -1887,6 +3669,11 @@ void validate_const_expression(Node node, BindingIR[] bindings, string[] functio
                         string root = const_target_root(node.children[0])
                         if (const_method_mutates_receiver(node.value, node.children[0], bindings, record_nodes)):
                             const_reject_mutation(bindings, root, false)
+        else if (node.value == 'remove_at' || node.value == 'insert' || node.value == 'push'):
+            if (!(node.value in function_names) && !const_record_name_exists(record_nodes, node.value) && node.children.length() > 0):
+                string root = const_target_root(node.children[0])
+                if (const_method_mutates_receiver(node.value, node.children[0], bindings, record_nodes)):
+                    const_reject_mutation(bindings, root, false)
         else if (!(node.value in function_names) && const_function_mutates_first_arg(node.value) && node.children.length() > 0):
             string root = const_target_root(node.children[0])
             if (const_method_mutates_receiver(node.value, node.children[0], bindings, record_nodes)):
@@ -1904,7 +3691,7 @@ void validate_const_expression(Node node, BindingIR[] bindings, string[] functio
                 string receiver_type = const_type_of_expression(node.children[0], bindings, record_nodes)
                 if (receiver_type.starts_with('const ')):
                     receiver_type = receiver_type.substring(6)
-                if (receiver_type == 'bool[]'):
+                if (receiver_type == 'bool[]' || receiver_type == 'string[]' || receiver_type == 'int[][]' || receiver_type == 'string[][]'):
                     if (!(node.value in function_names)):
                         string root = const_target_root(node.children[0])
                         const_reject_mutation(bindings, root, false)
@@ -1912,8 +3699,14 @@ void validate_const_expression(Node node, BindingIR[] bindings, string[] functio
                     string root = const_target_root(node.children[0])
                     const_reject_mutation(bindings, root, false)
             else:
+                string receiver_type = const_type_of_expression(node.children[0], bindings, record_nodes)
+                if (receiver_type.starts_with('const ')):
+                    receiver_type = receiver_type.substring(6)
+                bool user_string_remove_at = node.value == 'remove_at' && receiver_type == 'string[]' && node.value in function_names
+                bool user_string_insert = node.value == 'insert' && receiver_type == 'string[]' && node.value in function_names
+                bool user_nested_clear = node.value == 'clear' && (receiver_type == 'int[][]' || receiver_type == 'string[][]') && node.value in function_names
                 string root = const_target_root(node.children[0])
-                if (const_method_mutates_receiver(node.value, node.children[0], bindings, record_nodes)):
+                if (!user_string_remove_at && !user_string_insert && !user_nested_clear && const_method_mutates_receiver(node.value, node.children[0], bindings, record_nodes)):
                     const_reject_mutation(bindings, root, false)
         for (Node child : node.children):
             validate_const_expression(child, bindings, function_names, record_nodes)
@@ -2009,7 +3802,7 @@ void validate_const_bindings(Node program):
     for (Node child : program.children):
         if (child.kind == 'VarDecl'):
             globals.push(ir_parse_binding_decl(child.value))
-        if (child.kind == 'Function' || child.kind == 'CachedFunction'):
+        if (child.kind == 'Function' || child.kind == 'CachedFunction' || child.kind == 'PrivateFunction'):
             BindingIR signature = ir_parse_binding_decl(child.value)
             function_names.push(signature.name)
         if (child.kind == 'RecordDecl'):
@@ -2017,7 +3810,7 @@ void validate_const_bindings(Node program):
     for (Node child : program.children):
         if (child.kind == 'VarDecl' && child.children.length() > 0):
             validate_const_expression(child.children[0], globals, function_names, record_nodes)
-        if (child.kind == 'Function' || child.kind == 'CachedFunction'):
+        if (child.kind == 'Function' || child.kind == 'CachedFunction' || child.kind == 'PrivateFunction'):
             BindingIR[] function_bindings = const_copy_bindings(globals)
             for (Node fn_child : child.children):
                 if (fn_child.kind == 'Param'):
@@ -2026,10 +3819,33 @@ void validate_const_bindings(Node program):
                 if (fn_child.kind != 'Param'):
                     validate_const_statement(fn_child, function_bindings, function_names, record_nodes)
 
+bool lower_program_has_module_markers(Node program):
+    for (Node child : program.children):
+        if (child.kind == 'ModuleMarker'):
+            return true
+    return false
+
+Node lower_program_with_default_module(Node program):
+    if (lower_program_has_module_markers(program)):
+        return program
+    Node[] children = [Node('ModuleMarker', '__tb.lower_source.module__', [])]
+    for (Node child : program.children):
+        children.push(child)
+    return Node(program.kind, program.value, children)
+
 string[] lower_program(Node program):
+    program = lower_program_with_default_module(program)
+    program = bind_private_module_globals(program)
+    SubmitLambdaRewrite scoped_rewritten = rewrite_submit_lambdas_in_program(program, false)
+    program = scoped_rewritten.node
+    SubmitLambdaRewrite map_rewritten = rewrite_int_array_expressions_in_program(program)
+    program = map_rewritten.node
     validate_const_bindings(program)
+    program = normalize_program_local_bindings(program)
     string[] lines = ['program']
     for (Node child in program.children):
+        if (child.kind == 'ModuleMarker'):
+            continue
         string[] child_lines = lower_statement_lines(child, '  ')
         for (string line in child_lines):
             lines.push(line)
@@ -2044,9 +3860,15 @@ BindingIR[] collect_function_locals(LinearInstruction[] instructions):
     for (LinearInstruction op : instructions):
         if (op.kind == 'set' || op.kind == 'catch'):
             BindingIR local_decl = ir_parse_binding_decl(op.detail)
+            string local_type_name = local_decl.type_name
+            if (local_type_name.starts_with('const ')):
+                local_type_name = local_type_name.substring(6)
             bool seen = false
             for (BindingIR existing : locals):
-                if (existing.type_name == local_decl.type_name && existing.name == local_decl.name):
+                string existing_type_name = existing.type_name
+                if (existing_type_name.starts_with('const ')):
+                    existing_type_name = existing_type_name.substring(6)
+                if (existing_type_name == local_type_name && existing.name == local_decl.name):
                     seen = true
             if (!seen):
                 locals.push(local_decl)
@@ -2080,19 +3902,20 @@ bool top_level_function_starts(Token[] tokens, int index):
         return false
     return token_is(token_at(tokens, current), 'SYMBOL', ':') || token_is(token_at(tokens, current), 'SYMBOL', '{')
 
-LoweredFunctionDeclIR lower_function_declaration_from_parts(FunctionDeclParseResult function_decl):
+LoweredFunctionDeclIR lower_function_declaration_from_parts(FunctionDeclParseResult function_decl, string module_id):
     BindingIR[] params = []
     for (string param_binding in function_decl.params):
         params.push(ir_parse_binding_decl(param_binding))
-    if (!is_linear_body(function_decl.body_nodes)):
+    Node[] body_nodes = normalize_function_local_bindings(function_decl.body_nodes)
+    if (!is_linear_body(body_nodes)):
         throw 'shared bootstrap IR currently requires linear entry lowering'
-    LinearIRListResult linear = lower_linear_statement_list_ir(function_decl.body_nodes, 0, 1, '', '')
+    LinearIRListResult linear = lower_linear_statement_list_ir(body_nodes, 0, 1, '', '')
     BindingIR[] locals = collect_function_locals(linear.instructions)
     BlockIR[] blocks = linear_instructions_to_blocks(linear.instructions)
     string header = 'func ' + function_decl.return_type + ' ' + function_decl.name
     if (function_decl.is_cached):
         header = 'cached func ' + function_decl.return_type + ' ' + function_decl.name
-    return LoweredFunctionDeclIR(ParsedFunction(header, function_decl.name.substring(0), function_decl.return_type.substring(0), params, locals, blocks), function_decl.next_index)
+    return LoweredFunctionDeclIR(ParsedFunction(header, function_decl.name.substring(0), function_decl.name.substring(0), module_id.substring(0), function_decl.is_private, function_decl.return_type.substring(0), params, locals, blocks), function_decl.next_index)
 
 TerminatorIR empty_terminator():
     string[] empty_args = []
@@ -2142,19 +3965,44 @@ BlockIR[] linear_instructions_to_blocks(LinearInstruction[] instructions):
         blocks.push(make_block('entry', current_instructions, empty_terminator()))
     return blocks
 
+# Global initialization emits straight-line IR. Keep a branching initializer at its
+# original initialization point by calling an ordinary CFG function. Dots cannot
+# occur in source identifiers, so generated functions and bool slots are hygienic.
+ParsedFunction lower_logical_global_initializer(Node declaration, int index, string module_id):
+    BindingIR binding = ir_parse_binding_decl(declaration.value)
+    string result_type = binding.type_name
+    if (result_type.starts_with('const ')):
+        result_type = result_type.substring(6)
+    string name = 'global.logic.' + index.to_string()
+    LinearIRBlockResult value = lower_linear_statement_ir(Node('Return', '', declaration.children), 0)
+    return ParsedFunction('func ' + result_type + ' ' + name, name, name, module_id.substring(0), false, result_type, [], collect_function_locals(value.instructions), linear_instructions_to_blocks(value.instructions))
+
 ProgramIR lower_program_ir(Node program):
+    program = bind_private_module_globals(program)
+    SubmitLambdaRewrite rewritten = rewrite_submit_lambdas_in_program(program, true)
+    SubmitLambdaRewrite map_rewritten = rewrite_int_array_expressions_in_program(rewritten.node)
+    program = map_rewritten.node
     validate_const_bindings(program)
+    program = normalize_program_local_bindings(program)
     ImportDeclIR[] imports = []
     GlobalDeclIR[] globals = []
     RecordDeclIR[] records = []
     EnumDeclIR[] enums = []
     ParsedFunction[] functions = []
+    string module_id = ''
     for (Node child : program.children):
-        if (child.kind == 'ImportDecl'):
+        if (child.kind == 'ModuleMarker'):
+            module_id = child.value.substring(0)
+        else if (child.kind == 'ImportDecl'):
             imports.push(ImportDeclIR('import ' + child.value))
         else if (child.kind == 'VarDecl'):
-            TempIRResult value = lower_linear_value_ir(child.children[0], 0)
-            globals.push(GlobalDeclIR('global ' + child.value, value.instructions, value.name))
+            if (contains_logical_expression(child.children[0])):
+                ParsedFunction initializer = lower_logical_global_initializer(child, globals.length(), module_id)
+                functions.push(initializer)
+                globals.push(GlobalDeclIR('global ' + child.value, [LinearInstruction('value', 't0', 'unknown', 'unknown', 'call', [initializer.name])], 't0', module_id.substring(0)))
+            else:
+                TempIRResult value = lower_linear_value_ir(child.children[0], 0)
+                globals.push(GlobalDeclIR('global ' + child.value, value.instructions, value.name, module_id.substring(0)))
         else if (child.kind == 'RecordDecl'):
             string[] fields = []
             for (Node field_decl : child.children):
@@ -2165,7 +4013,7 @@ ProgramIR lower_program_ir(Node program):
             for (Node value_decl : child.children):
                 values.push('value ' + value_decl.value)
             enums.push(EnumDeclIR('enum ' + child.value, values))
-        else if (child.kind == 'Function' || child.kind == 'CachedFunction'):
+        else if (child.kind == 'Function' || child.kind == 'CachedFunction' || child.kind == 'PrivateFunction'):
             BindingIR[] params = []
             Node[] body_nodes = []
             for (Node fn_child : child.children):
@@ -2182,36 +4030,105 @@ ProgramIR lower_program_ir(Node program):
             if (child.kind == 'CachedFunction'):
                 header = 'cached func ' + child.value
             BindingIR signature_binding = ir_parse_binding_decl(child.value)
-            functions.push(ParsedFunction(header, signature_binding.name.substring(0), signature_binding.type_name.substring(0), params, locals, blocks))
+            functions.push(ParsedFunction(header, signature_binding.name.substring(0), signature_binding.name.substring(0), module_id.substring(0), child.kind == 'PrivateFunction', signature_binding.type_name.substring(0), params, locals, blocks))
         else:
             throw 'unsupported top-level node in shared bootstrap IR: ' + child.kind
     return ProgramIR(imports, globals, records, enums, functions)
 
+# Check only the direct source spelling of a range foreach; other forms keep
+# the ordinary array path unless a direct loop already required the prepass.
+bool tokens_have_direct_range_foreach(Token[] tokens):
+    for (int index = 1; index + 1 < tokens.length(); index += 1):
+        if (token_is(tokens[index], 'IDENTIFIER', 'range') && token_is(tokens[index + 1], 'SYMBOL', '(')):
+            if (token_is(tokens[index - 1], 'SYMBOL', ':') || token_is(tokens[index - 1], 'KEYWORD', 'in')):
+                return true
+    return false
+
+bool program_declares_range(Node program):
+    for (Node child : program.children):
+        if (child.kind == 'RecordDecl' && child.value == 'range'):
+            return true
+        if (child.kind == 'Function' || child.kind == 'CachedFunction' || child.kind == 'PrivateFunction'):
+            if (ir_parse_binding_decl(child.value).name == 'range'):
+                return true
+    return false
+
 ProgramIR lower_tokens_ir(Token[] tokens):
+    LOWER_DIRECT_RANGE_FOREACH = false
+    bool has_submit_identifier = false
+    bool has_map_to_identifier = false
+    bool has_filter_identifier = false
+    bool has_arrow_symbol = false
+    for (Token token : tokens):
+        if (token_is(token, 'IDENTIFIER', 'submit')):
+            has_submit_identifier = true
+        if (token_is(token, 'SYMBOL', '->')):
+            has_arrow_symbol = true
+        if (token_is(token, 'IDENTIFIER', 'map_to')):
+            has_map_to_identifier = true
+        if (token_is(token, 'IDENTIFIER', 'filter')):
+            has_filter_identifier = true
     bool has_const = false
     for (Token token : tokens):
         if (token_is(token, 'KEYWORD', 'const')):
             has_const = true
-    if (has_const):
-        validate_const_bindings(parse_program(tokens))
+    bool needs_program = (has_submit_identifier || has_map_to_identifier || has_filter_identifier) && has_arrow_symbol
+    bool has_range_foreach = tokens_have_direct_range_foreach(tokens)
+    bool has_private_global = false
+    int private_token_index = 0
+    while (private_token_index < tokens.length()):
+        if (token_is(tokens[private_token_index], 'KEYWORD', 'private')):
+            int private_type_index = private_token_index + 1
+            if (token_is(token_at(tokens, private_type_index), 'KEYWORD', 'const')):
+                private_type_index += 1
+            if (could_start_type(tokens, private_type_index)):
+                int private_name_index = type_end(tokens, private_type_index)
+                if (token_at(tokens, private_name_index).kind == 'IDENTIFIER' && token_is(token_at(tokens, private_name_index + 1), 'SYMBOL', '=')):
+                    has_private_global = true
+        private_token_index += 1
+    if (needs_program || has_const || has_range_foreach || has_private_global):
+        Node parsed = parse_program(tokens)
+        if (has_range_foreach && !program_declares_range(parsed)):
+            LOWER_DIRECT_RANGE_FOREACH = true
+        if (needs_program || has_private_global):
+            return lower_program_ir(parsed)
+        if (has_const):
+            validate_const_bindings(parsed)
     ImportDeclIR[] imports = []
     GlobalDeclIR[] globals = []
     RecordDeclIR[] records = []
     EnumDeclIR[] enums = []
     ParsedFunction[] functions = []
+    string current_module_id = ''
 
     int current = skip_statement_separators(tokens, 0)
     while (!token_is(token_at(tokens, current), 'EOF', '')):
         Token token = token_at(tokens, current)
+        if (token.kind == 'MODULE'):
+            current_module_id = token.value.substring(0)
+            current += 1
+            continue
+        if (token_is(token, 'KEYWORD', 'private')):
+            if (token_is(token_at(tokens, current + 1), 'KEYWORD', 'cached')):
+                throw parser_error(token_at(tokens, current + 1), 'private cached functions are not supported')
+            if (token_is(token_at(tokens, current + 1), 'KEYWORD', 'record') || token_is(token_at(tokens, current + 1), 'KEYWORD', 'enum') || token_is(token_at(tokens, current + 1), 'KEYWORD', 'const')):
+                throw parser_error(token, 'private is only valid on top-level ordinary functions')
+            if (!top_level_function_starts(tokens, current + 1)):
+                throw parser_error(token, 'private is only valid on top-level ordinary functions')
+            FunctionDeclParseResult function_decl = parse_function_declaration_parts(tokens, current + 1, false, true)
+            LoweredFunctionDeclIR lowered_function = lower_function_declaration_from_parts(function_decl, current_module_id)
+            functions.push(lowered_function.function_ir)
+            current = skip_statement_separators(tokens, lowered_function.next_index)
+            continue
         if (token_is(token, 'KEYWORD', 'cached')):
-            FunctionDeclParseResult function_decl = parse_function_declaration_parts(tokens, current + 1, true)
-            LoweredFunctionDeclIR lowered_function = lower_function_declaration_from_parts(function_decl)
+            FunctionDeclParseResult function_decl = parse_function_declaration_parts(tokens, current + 1, true, false)
+            LoweredFunctionDeclIR lowered_function = lower_function_declaration_from_parts(function_decl, current_module_id)
             functions.push(lowered_function.function_ir)
             current = skip_statement_separators(tokens, lowered_function.next_index)
             continue
         if (top_level_function_starts(tokens, current)):
-            FunctionDeclParseResult function_decl = parse_function_declaration_parts(tokens, current, false)
-            LoweredFunctionDeclIR lowered_function = lower_function_declaration_from_parts(function_decl)
+            FunctionDeclParseResult function_decl = parse_function_declaration_parts(tokens, current, false, false)
+            LoweredFunctionDeclIR lowered_function = lower_function_declaration_from_parts(function_decl, current_module_id)
             functions.push(lowered_function.function_ir)
             current = skip_statement_separators(tokens, lowered_function.next_index)
             continue
@@ -2220,8 +4137,13 @@ ProgramIR lower_tokens_ir(Token[] tokens):
         if (child.kind == 'ImportDecl'):
             imports.push(ImportDeclIR('import ' + child.value))
         else if (child.kind == 'VarDecl'):
-            TempIRResult value = lower_linear_value_ir(child.children[0], 0)
-            globals.push(GlobalDeclIR('global ' + child.value, value.instructions, value.name))
+            if (contains_logical_expression(child.children[0])):
+                ParsedFunction initializer = lower_logical_global_initializer(child, globals.length(), current_module_id)
+                functions.push(initializer)
+                globals.push(GlobalDeclIR('global ' + child.value, [LinearInstruction('value', 't0', 'unknown', 'unknown', 'call', [initializer.name])], 't0', current_module_id.substring(0)))
+            else:
+                TempIRResult value = lower_linear_value_ir(child.children[0], 0)
+                globals.push(GlobalDeclIR('global ' + child.value, value.instructions, value.name, current_module_id.substring(0)))
         else if (child.kind == 'RecordDecl'):
             string[] fields = []
             for (Node field_decl : child.children):
@@ -2232,7 +4154,8 @@ ProgramIR lower_tokens_ir(Token[] tokens):
             for (Node value_decl : child.children):
                 values.push('value ' + value_decl.value)
             enums.push(EnumDeclIR('enum ' + child.value, values))
-        else if (child.kind == 'Function' || child.kind == 'CachedFunction'):
+        else if (child.kind == 'Function' || child.kind == 'CachedFunction' || child.kind == 'PrivateFunction'):
+            child = Node(child.kind, child.value, normalize_function_local_bindings(child.children))
             BindingIR[] params = []
             Node[] body_nodes = []
             for (Node fn_child : child.children):
@@ -2249,7 +4172,7 @@ ProgramIR lower_tokens_ir(Token[] tokens):
             if (child.kind == 'CachedFunction'):
                 header = 'cached func ' + child.value
             BindingIR signature_binding = ir_parse_binding_decl(child.value)
-            functions.push(ParsedFunction(header, signature_binding.name.substring(0), signature_binding.type_name.substring(0), params, locals, blocks))
+            functions.push(ParsedFunction(header, signature_binding.name.substring(0), signature_binding.name.substring(0), current_module_id.substring(0), child.kind == 'PrivateFunction', signature_binding.type_name.substring(0), params, locals, blocks))
         else:
             throw 'unsupported top-level node in shared bootstrap IR: ' + child.kind
         current = skip_statement_separators(tokens, statement.next_index)
@@ -2257,4 +4180,8 @@ ProgramIR lower_tokens_ir(Token[] tokens):
 
 ProgramIR lower_source_ir(string source):
     Token[] tokens = lex_source(source)
+    return lower_tokens_ir(tokens)
+
+ProgramIR lower_source_ir_with_module_ids(string source, string[] module_ids):
+    Token[] tokens = lex_source_with_module_ids(source, module_ids)
     return lower_tokens_ir(tokens)

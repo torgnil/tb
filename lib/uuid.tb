@@ -1,0 +1,90 @@
+import random;
+
+record Uuid(int high, int low);
+
+# Generate a UUID v4 from two independent random 64-bit values.
+string uuid():
+    int first = random()
+    int second = random()
+    string digits = '0123456789abcdef'
+    string[] parts = []
+    const int[] hyphen_positions = [8, 12, 16, 20]
+    for (int index = 0; index < 32; index++):
+        if (index in hyphen_positions):
+            parts.push('-')
+        int value = first
+        int digit_index = index
+        if (index >= 16):
+            value = second
+            digit_index = index - 16
+        int nibble = (value >> ((15 - digit_index) * 4)) & 15
+        if (index == 12):
+            nibble = 4
+        else if (index == 16):
+            nibble = (nibble & 3) | 8
+        parts.push(digits[nibble])
+    return parts.join('')
+
+# Validate the canonical 8-4-4-4-12 hexadecimal UUID text representation.
+# Version and variant bits are intentionally unrestricted.
+bool uuid_is_valid(string text):
+    if (text.length() != 36):
+        return false
+    string scan_text = text + ''
+    const int[] hyphen_positions = [8, 13, 18, 23]
+    for (int index = 0; index < 36; index++):
+        string character = scan_text[index]
+        if (index in hyphen_positions):
+            if (character != '-'):
+                return false
+        else if (!(character.is_digit() || (character >= 'a' && character <= 'f') || (character >= 'A' && character <= 'F'))):
+            return false
+    return true
+
+# Parse the canonical text representation into two network-order 64-bit words.
+Uuid uuid_parse(string text):
+    if (!uuid_is_valid(text)):
+        throw 'uuid: invalid format'
+    string scan_text = text + ''
+    int high = 0
+    int low = 0
+    int digit_count = 0
+    string lower_hex = 'abcdef'
+    string upper_hex = 'ABCDEF'
+    for (int index = 0; index < 36; index++):
+        string character = scan_text[index]
+        if (character != '-'):
+            int nibble = -1
+            if (character.is_digit()):
+                nibble = character.to_int()
+            else:
+                int letter_index = lower_hex.index_of(character)
+                if (letter_index >= 0):
+                    nibble = letter_index + 10
+                else:
+                    letter_index = upper_hex.index_of(character)
+                    if (letter_index >= 0):
+                        nibble = letter_index + 10
+            if (digit_count < 16):
+                high = (high << 4) | nibble
+            else:
+                low = (low << 4) | nibble
+            digit_count += 1
+    return Uuid(high, low)
+
+# Format both words as lowercase hexadecimal in network/text byte order.
+string uuid_format(Uuid value):
+    string digits = '0123456789abcdef'
+    string[] parts = []
+    const int[] hyphen_positions = [8, 12, 16, 20]
+    for (int index = 0; index < 32; index++):
+        if (index in hyphen_positions):
+            parts.push('-')
+        int word = value.high
+        int word_index = index
+        if (index >= 16):
+            word = value.low
+            word_index = index - 16
+        int nibble = (word >> ((15 - word_index) * 4)) & 15
+        parts.push(digits[nibble])
+    return parts.join('')

@@ -1,0 +1,371 @@
+
+
+# Case 1
+record Item(int value, string label, int[] samples);
+record Empty();
+record Holder(Item[] rows);
+
+Item[] stored = [];
+Empty[] empty_stored = [];
+Empty[] zero_stored = [];
+Item[] initializer_source = [Item(4, 'initial', [40])];
+Item[] initializer_copy = initializer_source;
+
+Item[] make_rows(int value):
+    return [Item(value, 'row-' + value.to_string(), [value, value + 1])]
+
+void save_local(int value):
+    Item[] source = make_rows(value)
+    stored = source
+    source[0].value = 700
+    source[0].label = 'changed-local'
+    source[0].samples[0] = 701
+
+void save_parameter(const Item[] source):
+    stored = source
+
+void save_holder(int value):
+    Holder holder = Holder(make_rows(value))
+    stored = holder.rows
+    holder.rows[0].value = 800
+    holder.rows[0].samples[0] = 801
+
+void save_const(int value):
+    const Item[] source = make_rows(value)
+    stored = source
+
+void save_empty():
+    Empty[] source = []
+    empty_stored = source
+
+void save_zero_field():
+    Empty[] source = [Empty()]
+    zero_stored = source
+
+int combined_case_1_main(string[] args):
+    int seed = args.length() + 10
+
+    print(initializer_copy[0].value)
+    print(initializer_copy[0].label)
+    print(initializer_copy[0].samples[0])
+    initializer_source[0].value = 41
+    initializer_source[0].label = 'changed-global'
+    initializer_source[0].samples[0] = 42
+    print(initializer_copy[0].value)
+    print(initializer_copy[0].label)
+    print(initializer_copy[0].samples[0])
+
+    stored = initializer_source
+    initializer_source[0].value = 43
+    initializer_source[0].samples[0] = 44
+    print(stored[0].value)
+    print(stored[0].label)
+    print(stored[0].samples[0])
+    stored = stored
+    print(stored[0].value)
+
+    save_local(seed)
+    print(stored[0].value)
+    print(stored[0].label)
+    print(stored[0].samples[0])
+
+    Item[] parameter_source = make_rows(seed + 1)
+    save_parameter(parameter_source)
+    parameter_source[0].value = 900
+    parameter_source[0].samples[0] = 901
+    print(stored[0].value)
+    print(stored[0].samples[0])
+
+    save_holder(seed + 2)
+    print(stored[0].value)
+    print(stored[0].samples[0])
+
+    save_const(seed + 3)
+    print(stored[0].value)
+    print(stored[0].samples[1])
+
+    stored = [Item(seed + 4, 'literal', [seed + 40])]
+    print(stored[0].value)
+    stored = make_rows(seed + 5)
+    print(stored[0].value)
+
+    save_empty()
+    save_zero_field()
+    print(empty_stored.length())
+    print(zero_stored.length())
+    return 0
+
+# Case 2
+record Packet(string name, int[] values, map<int, string> labels);
+
+string make_text(int seed):
+    return 'text-' + seed.to_string()
+
+map<int, string> make_labels(int seed):
+    map<int, string> labels = {}
+    labels[1] = 'label-' + seed.to_string()
+    return labels
+
+map<string, int> make_counts(int seed):
+    map<string, int> counts = {}
+    counts['first'] = seed
+    return counts
+
+Packet make_packet(int seed):
+    int[] values = [seed + 2]
+    map<int, string> labels = make_labels(seed + 1)
+    string name = make_text(seed)
+    return Packet(name, values, labels)
+
+string source_text = make_text(3)
+string initialized_text = source_text
+const string initialized_const_text = source_text
+map<int, string> source_labels = make_labels(4)
+map<int, string> initialized_labels = source_labels
+map<string, int> source_counts = make_counts(7)
+map<string, int> initialized_counts = source_counts
+Packet source_packet = make_packet(5)
+Packet initialized_packet = source_packet
+
+string saved_text = ''
+map<int, string> saved_labels = {}
+map<string, int> saved_counts = {}
+Packet saved_packet = Packet('', [], {})
+
+void print_saved():
+    print(saved_text)
+    print(saved_labels[1])
+    print(saved_counts['first'])
+    print(saved_packet.name)
+    print(saved_packet.values[0])
+    print(saved_packet.labels[1])
+
+void save_locals(int seed):
+    string text = make_text(seed)
+    map<string, int> counts = make_counts(seed + 1)
+    Packet packet = make_packet(seed + 2)
+    saved_text = text
+    saved_labels = packet.labels
+    saved_counts = counts
+    saved_packet = packet
+    text = 'changed-local'
+    counts['first'] = 90
+    packet.name = 'changed-packet'
+    packet.values[0] = 91
+    packet.labels[1] = 'changed-packet-label'
+
+void save_parameters(const string text, const map<int, string> labels, const map<string, int> counts, const Packet packet):
+    saved_text = text
+    saved_labels = labels
+    saved_counts = counts
+    saved_packet = packet
+
+void replace_text(const string old_text):
+    saved_text = make_text(99)
+    print(old_text)
+
+int combined_case_2_main(string[] args):
+    int seed = args.length() + 10
+
+    print(initialized_text)
+    print(initialized_labels[1])
+    print(initialized_counts['first'])
+    print(initialized_packet.name)
+    print(initialized_packet.values[0])
+    print(initialized_packet.labels[1])
+    source_text = 'changed-global'
+    source_labels[1] = 'changed-global-label'
+    source_counts['first'] = 99
+    source_packet.name = 'changed-global-packet'
+    source_packet.values[0] = 98
+    source_packet.labels[1] = 'changed-global-tag'
+    print(initialized_const_text)
+    print(initialized_text)
+    print(initialized_labels[1])
+    print(initialized_counts['first'])
+    print(initialized_packet.name)
+    print(initialized_packet.values[0])
+    print(initialized_packet.labels[1])
+
+    save_locals(seed)
+    print_saved()
+
+    string input_text = make_text(seed + 10)
+    map<int, string> input_labels = make_labels(seed + 11)
+    map<string, int> input_counts = make_counts(seed + 12)
+    Packet input_packet = make_packet(seed + 13)
+    save_parameters(input_text, input_labels, input_counts, input_packet)
+    input_text = 'changed-parameter'
+    input_labels[1] = 'changed-parameter-label'
+    input_counts['first'] = 92
+    input_packet.name = 'changed-parameter-packet'
+    input_packet.values[0] = 93
+    input_packet.labels[1] = 'changed-parameter-tag'
+    print_saved()
+
+    saved_text = saved_text
+    saved_labels = saved_labels
+    saved_counts = saved_counts
+    saved_packet = saved_packet
+    print_saved()
+    replace_text(saved_text)
+
+    saved_text = make_text(seed + 20)
+    saved_labels = make_labels(seed + 21)
+    saved_counts = make_counts(seed + 22)
+    saved_packet = make_packet(seed + 23)
+    print_saved()
+
+    map<int, string> empty_labels = {}
+    map<string, int> empty_counts = {}
+    saved_labels = empty_labels
+    saved_counts = empty_counts
+    print(saved_labels.length())
+    print(saved_counts.length())
+    return 0
+
+# Case 3
+enum Mode {
+    READY,
+    DONE
+}
+
+int make_count():
+    return 5
+
+bool make_enabled():
+    return false
+
+num make_rate():
+    return 1.25
+
+string make_label():
+    return 'runtime'
+
+Mode make_mode():
+    return Mode.DONE
+
+int static_count = 3
+bool static_enabled = true
+num static_rate = 2.50
+string static_label = 'static'
+Mode static_mode = Mode.READY
+
+int runtime_count = make_count()
+bool runtime_enabled = make_enabled()
+num runtime_rate = make_rate()
+string runtime_label = make_label()
+Mode runtime_mode = make_mode()
+
+int copied_count = runtime_count
+bool copied_enabled = runtime_enabled
+num copied_rate = runtime_rate
+string copied_label = runtime_label
+Mode copied_mode = runtime_mode
+
+string last_error = ''
+
+void update_globals(const int value, const bool enabled, const string label):
+    if (enabled):
+        runtime_count = value
+    else:
+        runtime_count = 0
+    runtime_enabled = enabled
+    runtime_rate = value
+    runtime_label = label
+    runtime_mode = Mode.READY
+
+void capture_error():
+    try:
+        throw 'caught'
+    catch (exception problem):
+        last_error = problem
+
+void print_scalar_globals():
+    print(runtime_count)
+    print(runtime_enabled)
+    print(runtime_rate)
+    print(runtime_label)
+    print(runtime_mode)
+
+int combined_case_3_main(string[] args):
+    int seed = args.length()
+    print(static_count)
+    print(static_enabled)
+    print(static_rate)
+    print(static_label)
+    print(static_mode)
+
+    print(runtime_count)
+    print(runtime_enabled)
+    print(runtime_rate)
+    print(runtime_label)
+    print(runtime_mode)
+
+    update_globals(seed + 10, seed > 1, 'updated-' + seed)
+    print_scalar_globals()
+    capture_error()
+    print(last_error)
+
+    string runtime_count = 'local-shadow'
+    print(runtime_count)
+    print(copied_count)
+    print(copied_enabled)
+    print(copied_rate)
+    print(copied_label)
+    print(copied_mode)
+    return 0
+
+# Case 4
+string token(int seed, int runtime):
+    return 'A7 x' + (runtime + seed - seed).to_string()
+
+string empty_token(int runtime):
+    return 'A'.substring(runtime)
+
+string GLOBAL_TOKEN = 'Q4'
+const string FIXED_TOKEN = 'Z5'
+
+record TextBox(string value);
+
+int combined_case_4_main(string[] args):
+    print(token(1, args.length())[0].is_alpha())
+    print(token(2, args.length())[1].is_digit())
+    print(token(3, args.length())[1].is_alnum())
+    print(token(4, args.length())[2].is_whitespace())
+    print(token(5, args.length())[2].is_space())
+    print(token(7, args.length())[-1].is_alpha())
+    print(token(8, args.length())[99].is_digit())
+    print(empty_token(args.length())[0].is_alpha())
+
+    string retained = token(9, args.length())
+    print(retained[0].is_alpha())
+    print(retained.starts_with('A7'))
+    print(GLOBAL_TOKEN[0].is_alpha())
+    print(FIXED_TOKEN[0].is_alpha())
+    TextBox box = TextBox(token(10, args.length()))
+    print(box.value[0].is_alpha())
+    print(box.value.starts_with('A7'))
+
+    for (int index : range(2)):
+        print(token(11, args.length() + index)[0].is_alpha())
+    if (args.length() == 1):
+        print(token(12, args.length())[1].is_digit())
+    else:
+        print(token(13, args.length())[1].is_digit())
+    return 0
+
+int main(string[] args):
+    print('=== case 1 ===')
+    if (combined_case_1_main(args) != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main(args) != 0):
+        return 1
+    print('=== case 3 ===')
+    if (combined_case_3_main(args) != 0):
+        return 1
+    print('=== case 4 ===')
+    if (combined_case_4_main(args) != 0):
+        return 1
+    return 0

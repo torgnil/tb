@@ -158,6 +158,11 @@ entry:
   %data = call ptr @tb_string_clone(ptr %src)
   ret ptr %data
 }
+define private ptr @tb_bootstrap_string_empty() {
+entry:
+  %data = call ptr @tb_string_new(i64 0)
+  ret ptr %data
+}
 define private i1 @tb_bootstrap_managed_string_equals(ptr %left, ptr %right) {
 entry:
   %same.ptr = icmp eq ptr %left, %right

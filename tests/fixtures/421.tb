@@ -1,0 +1,77 @@
+int evaluation_order = 0
+
+int[] next_key():
+    evaluation_order = evaluation_order * 10 + 1
+    return [3]
+
+int next_value():
+    evaluation_order = evaluation_order * 10 + 2
+    return 6
+
+int mutate_key_and_return(int[] key):
+    key.push(9)
+    return 44
+
+map<int[], int> make_empty_key_map():
+    return {[]: 21, [3]: 22}
+
+int main():
+    map<int[], int> counts = {}
+    counts[[0]] = 31
+    counts[[8]] = 81
+    counts[[1, 2]] = 7
+    counts[[]] = 0
+    counts[[2, 1]] = 5
+    counts[[-1, 4]] = 8
+    counts[[1, 2]] = 9
+
+    print(counts[[1, 2]])
+    print(counts[[]])
+    print(counts[[2, 1]])
+    print(counts[[8]])
+    print(counts.contains([1, 2]))
+    print([1, 2] in counts)
+    print([8] not in counts)
+    print(counts.contains([]))
+    print(contains(counts, []))
+    print([] in counts)
+    print([] not in counts)
+    print(counts[[0]])
+    print(counts[[8]])
+    print(counts.contains([0]))
+    print(contains(counts, [1, 2]))
+
+    map<int[], int> literal = {[6]: 1, [7]: 2, [6]: 3}
+    print(literal[[6]])
+    print(literal.length())
+    int[][] literal_keys = literal.keys()
+    print(literal_keys[0][0])
+    print(literal_keys[1][0])
+    map<int[], int> empty_literal = {[]: 13}
+    print(empty_literal[[]])
+    empty_literal[[]] += 2
+    print(empty_literal[[]])
+
+    map<int[], int> returned_keys = make_empty_key_map()
+    print(returned_keys[[]])
+    print(returned_keys[[3]])
+
+    int[] mutable_literal_key = [4]
+    map<int[], int> literal_snapshot = {mutable_literal_key: mutate_key_and_return(mutable_literal_key)}
+    print(literal_snapshot[[4]])
+    print(literal_snapshot[[4, 9]])
+    print(mutable_literal_key.length())
+
+    print(counts.length())
+
+    int[][] keys = counts.keys()
+    int[] values = counts.values()
+    for (int[] key : keys):
+        print(key.length())
+    for (int value : values):
+        print(value)
+
+    counts[next_key()] = next_value()
+    print(evaluation_order)
+    print(counts[[3]])
+    return 0

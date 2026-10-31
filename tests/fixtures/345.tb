@@ -1,0 +1,38 @@
+import regex;
+
+void check(string pattern, string text):
+    Regex compiled = regex_compile(pattern)
+    print(regex_contains(compiled, text))
+    return
+
+int main():
+    check('[0-9]+', 'order 123 shipped')
+    check('[0-9]+', 'no digits here')
+    check('bc', 'abcz')
+    check('abc', 'zabcx')
+    check('abc', 'abx')
+    check('', '')
+    check('', 'anything')
+    check('a*', 'bbb')
+    check('(a?)*b', 'xxbzz')
+    check('(a?)*b', 'xxxx')
+    check('(ab|c){2,3}', 'xabcabz')
+    check('(ab|c){2,3}', 'xabz')
+    check('([a-c]|\\d)+', 'x9cabz')
+    print(regex_contains(regex_compile('('), 'anything'))
+    Regex damaged = regex_compile('a')
+    damaged.out1.clear()
+    print(regex_contains(damaged, 'a'))
+    Regex bad_state = regex_compile('a')
+    bad_state.start = 1000
+    print(regex_contains(bad_state, 'a'))
+    Regex changed = regex_compile('[a]')
+    changed.characters[0] = 'z'
+    print(regex_contains(changed, 'z'))
+    print(regex_contains(changed, 'a'))
+    Regex malformed = regex_compile('[a]')
+    malformed.characters[0] = 'z-a'
+    print(regex_contains(malformed, 'z'))
+    print(regex_match(regex_compile('abc'), 'zabcx'))
+    print(regex_match(regex_compile('abc'), 'abc'))
+    return 0

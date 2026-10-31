@@ -12,13 +12,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Internal ordinary-local identities use a delimiter unavailable to source names.
+string ir_source_binding_name(string identity):
+    int separator = identity.index_of('$')
+    if (separator >= 0):
+        return identity.substring(0, separator)
+    return identity.substring(0)
+
+# Conditional carriers are compiler-only bindings, unavailable to source names.
+bool ir_is_conditional_binding(string name):
+    return name.starts_with('choice.')
+
+bool ir_is_expression_block(string label):
+    return label.starts_with('logic.') || label.starts_with('choice.')
+
 record LinearInstruction(string kind, string lhs, string result_type, string ownership_mode, string detail, string[] args);
 record TerminatorIR(string kind, string[] args);
 record BindingIR(string type_name, string name);
 record ImportDeclIR(string header);
-record GlobalDeclIR(string header, LinearInstruction[] instructions, string value_name);
+record GlobalDeclIR(string header, LinearInstruction[] instructions, string value_name, string module_id);
 record BlockIR(string label, LinearInstruction[] instructions, TerminatorIR terminator);
-record ParsedFunction(string header, string name, string return_type, BindingIR[] params, BindingIR[] locals, BlockIR[] blocks);
+record ParsedFunction(string header, string name, string source_name, string module_id, bool is_private, string return_type, BindingIR[] params, BindingIR[] locals, BlockIR[] blocks);
 record RecordDeclIR(string header, string[] fields);
 record EnumDeclIR(string header, string[] values);
 record ProgramIR(ImportDeclIR[] imports, GlobalDeclIR[] globals, RecordDeclIR[] records, EnumDeclIR[] enums, ParsedFunction[] functions);

@@ -1,0 +1,204 @@
+
+
+# Case 1
+enum Mode {
+    READY,
+    DONE
+}
+
+record Box(int value);
+
+int echo_int(const int value):
+    return value
+
+bool choose(bool value):
+    if (value):
+        return true
+    return false
+
+string decorate(string value):
+    return value + '!'
+
+int[] empty_ints():
+    return []
+
+num keep_num(num value):
+    return value
+
+Mode keep_mode(Mode value):
+    return value
+
+cached int cached_value(int value):
+    return value * 2
+
+string try_return(bool should_throw):
+    try:
+        if (should_throw):
+            throw 'caught'
+        return 'try'
+    catch (exception error):
+        return error
+
+map<int, string[]> rows():
+    return {1: [], 2: ['row']}
+
+Box echo_box(Box value):
+    return value
+
+int combined_case_1_main(string[] args):
+    print(echo_int(7))
+    print(choose(true))
+    print(decorate('return'))
+    print(keep_num(1.25))
+    print(cached_value(3))
+    print(try_return(false))
+    print(try_return(true))
+    int[] values = empty_ints()
+    print(values.length())
+    map<int, string[]> result = rows()
+    print(result[1].length())
+    print(result[2][0])
+    Box box = echo_box(Box(9))
+    print(box.value)
+    return 0
+
+# Case 2
+num initial_num():
+    return 2.75
+
+num DECIMAL_GLOBAL = 1.25
+num INTEGER_GLOBAL = 5
+const num CONST_GLOBAL = 0.40
+num ZERO_GLOBAL = 0.0
+num DYNAMIC_GLOBAL = initial_num()
+
+num read_globals():
+    return DECIMAL_GLOBAL + INTEGER_GLOBAL + CONST_GLOBAL + ZERO_GLOBAL + DYNAMIC_GLOBAL
+
+int combined_case_2_main(string[] args):
+    print(DECIMAL_GLOBAL)
+    print(INTEGER_GLOBAL)
+    print(CONST_GLOBAL)
+    print(ZERO_GLOBAL)
+    print(read_globals())
+    INTEGER_GLOBAL += 2
+    print(INTEGER_GLOBAL)
+    num local_decimal = 3.50
+    print(local_decimal)
+    print(DYNAMIC_GLOBAL)
+    return 0
+
+# Case 3
+int[] global_empty_range = range(-1)
+int bound_order = 0
+
+int range_start():
+    bound_order = bound_order * 10 + 1
+    return -2
+
+int range_end():
+    bound_order = bound_order * 10 + 2
+    return 2
+
+int combined_case_3_main(string[] args):
+    print(global_empty_range.length())
+
+    int[] ordinary = range(5)
+    print(ordinary.length())
+    print(ordinary[0])
+    print(ordinary[-1])
+
+    int dynamic_end = args.length() + 4
+    int[] dynamic_bounds = range(args.length(), dynamic_end)
+    print(dynamic_bounds.length() == 4)
+
+    int[] negative = range(-2, 3)
+    print(negative.length())
+    print(negative[0])
+    print(negative[-1])
+
+    const int low = -2
+    const int high = 2
+    int[] const_bounds = range(low, high)
+    print(const_bounds.length())
+    int[] ordered = range(range_start(), range_end())
+    print(bound_order)
+    print(ordered.length())
+
+    int[] at_min = range(-9223372036854775807 - 1, -9223372036854775805)
+    print(at_min.length())
+    print(at_min[0])
+    print(at_min[-1])
+
+    int[] at_max = range(9223372036854775804, 9223372036854775807)
+    print(at_max.length())
+    print(at_max[0])
+    print(at_max[-1])
+
+    int[] equal = range(4, 4)
+    int[] reversed = range(9, 3)
+    int[] extreme_reversed = range(9223372036854775807, -9223372036854775807 - 1)
+    print(equal.length())
+    print(reversed.length())
+    print(extreme_reversed.length())
+
+    int total = 0
+    for (int value : range(-2, 3)):
+        total += value
+    print(total)
+    return 0
+
+# Case 4
+int compare_growth_values(int left, int right):
+    return right - left
+
+int combined_case_4_main(string[] args):
+    int seed = args.length()
+
+    int[] values = []
+    for (int i : range(18)):
+        values.push(seed + i)
+    print(values.length())
+    print(values)
+    int alias_value = values[0]
+    print(push(values, alias_value))
+    print(values[18])
+
+    int[] direct_growth = [seed, seed + 1, seed + 2, seed + 3]
+    print(push(direct_growth, direct_growth[0]))
+    print(direct_growth)
+
+    int[] inserted = [seed, seed + 1, seed + 2, seed + 3]
+    int inserted_length = insert(inserted, 2, inserted[0])
+    print(inserted_length)
+    print(inserted)
+
+    int[] method_inserted = [seed + 10, seed + 11, seed + 12, seed + 13]
+    method_inserted.insert(0, method_inserted[3])
+    print(method_inserted)
+
+    int[] queue_values = [seed + 20, seed + 22, seed + 21, seed + 23]
+    prio_q<int> queue = queue_values.create_prio_q(compare_growth_values)
+    print(queue.push(seed + 24))
+    print(queue.pop())
+    print(queue.pop())
+    print(queue.pop())
+    print(queue.pop())
+    print(queue.pop())
+    print(values)
+    return 0
+
+int main(string[] args):
+    print('=== case 1 ===')
+    if (combined_case_1_main(args) != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main(args) != 0):
+        return 1
+    print('=== case 3 ===')
+    if (combined_case_3_main(args) != 0):
+        return 1
+    print('=== case 4 ===')
+    if (combined_case_4_main(args) != 0):
+        return 1
+    return 0

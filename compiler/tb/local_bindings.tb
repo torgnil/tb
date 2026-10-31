@@ -1,0 +1,317 @@
+# Copyright 2026 Torbjörn Nilsson
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import parser;
+import ir_lib;
+
+record LocalBindingName(string source_name, string identity);
+record LocalBindingRewrite(Node node, int next_index);
+record LocalBindingListRewrite(Node[] nodes, LocalBindingName[] bindings, int next_index);
+record ModuleGlobalBinding(string source_name, string module_id, string identity, bool is_private);
+
+Node[] local_binding_tail_nodes(Node[] nodes, int start):
+    Node[] result = []
+    int index = start
+    while (index < nodes.length()):
+        result.push(nodes[index])
+        index += 1
+    return result
+
+LocalBindingName[] copy_local_binding_names(LocalBindingName[] bindings):
+    LocalBindingName[] result = []
+    for (LocalBindingName binding : bindings):
+        result.push(binding)
+    return result
+
+string resolve_local_binding_name(string name, LocalBindingName[] bindings):
+    int index = bindings.length() - 1
+    while (index >= 0):
+        if (bindings[index].source_name == name):
+            return bindings[index].identity.substring(0)
+        index -= 1
+    return name.substring(0)
+
+# Declarations enter their scope after the initializer. Each list owns its
+# environment; nested lists copy it, while the identity counter spans a function.
+LocalBindingListRewrite normalize_local_binding_list(Node[] nodes, LocalBindingName[] initial_bindings, int next_index):
+    LocalBindingName[] bindings = copy_local_binding_names(initial_bindings)
+    Node[] result = []
+    int current_index = next_index
+    for (Node node : nodes):
+        LocalBindingRewrite rewritten = normalize_local_binding_node(node, bindings, current_index)
+        result.push(rewritten.node)
+        current_index = rewritten.next_index
+        if (node.kind == 'VarDecl'):
+            BindingIR source = ir_parse_binding_decl(node.value)
+            BindingIR target = ir_parse_binding_decl(rewritten.node.value)
+            bindings.push(LocalBindingName(source.name, target.name))
+    return LocalBindingListRewrite(result, bindings, current_index)
+
+LocalBindingRewrite normalize_local_binding_node(Node node, LocalBindingName[] bindings, int next_index):
+    if (node.kind == 'Identifier'):
+        return LocalBindingRewrite(Node(node.kind, resolve_local_binding_name(node.value, bindings), []), next_index)
+    if (node.kind == 'VarDecl'):
+        LocalBindingListRewrite initializer = normalize_local_binding_list(node.children, bindings, next_index)
+        BindingIR binding = ir_parse_binding_decl(node.value)
+        string identity = binding.name + '$' + initializer.next_index.to_string()
+        return LocalBindingRewrite(Node(node.kind, binding.type_name + ' ' + identity, initializer.nodes), initializer.next_index + 1)
+    if (node.kind == 'ForEach' || node.kind == 'Catch'):
+        Node[] children = []
+        int current_index = next_index
+        if (node.kind == 'ForEach'):
+            LocalBindingRewrite iterable = normalize_local_binding_node(node.children[0], bindings, current_index)
+            children.push(iterable.node)
+            current_index = iterable.next_index
+        BindingIR binding = ir_parse_binding_decl(node.value)
+        string identity = binding.name + '$' + current_index.to_string()
+        LocalBindingName[] inner = copy_local_binding_names(bindings)
+        inner.push(LocalBindingName(binding.name, identity))
+        int start = 0
+        if (node.kind == 'ForEach'):
+            start = 1
+        LocalBindingListRewrite body = normalize_local_binding_list(local_binding_tail_nodes(node.children, start), inner, current_index + 1)
+        for (Node child : body.nodes):
+            children.push(child)
+        return LocalBindingRewrite(Node(node.kind, binding.type_name + ' ' + identity, children), body.next_index)
+    if (node.kind == 'For'):
+        LocalBindingListRewrite initializer = normalize_local_binding_list([node.children[0]], bindings, next_index)
+        LocalBindingRewrite condition = normalize_local_binding_node(node.children[1], initializer.bindings, initializer.next_index)
+        LocalBindingRewrite update = normalize_local_binding_node(node.children[2], initializer.bindings, condition.next_index)
+        LocalBindingListRewrite body = normalize_local_binding_list(local_binding_tail_nodes(node.children, 3), initializer.bindings, update.next_index)
+        Node[] children = [initializer.nodes[0], condition.node, update.node]
+        for (Node child : body.nodes):
+            children.push(child)
+        return LocalBindingRewrite(Node(node.kind, node.value, children), body.next_index)
+    if (node.kind == 'If' || node.kind == 'Try'):
+        Node[] children = []
+        Node[] body_nodes = []
+        Node[] branch_nodes = []
+        int current_index = next_index
+        int start = 0
+        if (node.kind == 'If'):
+            LocalBindingRewrite condition = normalize_local_binding_node(node.children[0], bindings, current_index)
+            children.push(condition.node)
+            current_index = condition.next_index
+            start = 1
+        for (Node child : local_binding_tail_nodes(node.children, start)):
+            if (child.kind == 'Else' || child.kind == 'Catch'):
+                branch_nodes.push(child)
+            else:
+                body_nodes.push(child)
+        LocalBindingListRewrite body = normalize_local_binding_list(body_nodes, bindings, current_index)
+        for (Node child : body.nodes):
+            children.push(child)
+        LocalBindingListRewrite branches = normalize_local_binding_list(branch_nodes, bindings, body.next_index)
+        for (Node child : branches.nodes):
+            children.push(child)
+        return LocalBindingRewrite(Node(node.kind, node.value, children), branches.next_index)
+    if (node.kind == 'Lambda' || node.kind == 'Lambda0' || node.kind == 'Lambda2'):
+        LocalBindingName[] inner = copy_local_binding_names(bindings)
+        if (node.kind == 'Lambda'):
+            BindingIR parameter = ir_parse_binding_decl(node.value)
+            inner.push(LocalBindingName(parameter.name, parameter.name))
+        if (node.kind == 'Lambda2'):
+            int separator = node.value.index_of(' | ')
+            BindingIR left = ir_parse_binding_decl(node.value.substring(0, separator))
+            BindingIR right = ir_parse_binding_decl(node.value.substring(separator + 3))
+            inner.push(LocalBindingName(left.name, left.name))
+            inner.push(LocalBindingName(right.name, right.name))
+        LocalBindingListRewrite body = normalize_local_binding_list(node.children, inner, next_index)
+        return LocalBindingRewrite(Node(node.kind, node.value, body.nodes), body.next_index)
+    if (node.kind == 'While' || node.kind == 'Switch' || node.kind == 'Case' || node.kind == 'Default' || node.kind == 'Else' || node.kind == 'Block'):
+        LocalBindingListRewrite scoped_children = normalize_local_binding_list(node.children, bindings, next_index)
+        return LocalBindingRewrite(Node(node.kind, node.value, scoped_children.nodes), scoped_children.next_index)
+    # Other expression values are semantic names (calls, methods, fields,
+    # operators and literals). Only their child expressions contain references;
+    # no environment copy is needed for each expression in a large function.
+    Node[] children = []
+    int current_index = next_index
+    for (Node child : node.children):
+        LocalBindingRewrite rewritten = normalize_local_binding_node(child, bindings, current_index)
+        children.push(rewritten.node)
+        current_index = rewritten.next_index
+    return LocalBindingRewrite(Node(node.kind, node.value, children), current_index)
+
+Node[] normalize_function_local_bindings(Node[] body):
+    LocalBindingName[] bindings = []
+    LocalBindingListRewrite rewritten = normalize_local_binding_list(body, bindings, 0)
+    Node[] result = []
+    for (Node node : rewritten.nodes):
+        result.push(node)
+    return result
+
+bool local_binding_has_name(string[] names, string name):
+    for (string existing : names):
+        if (existing == name):
+            return true
+    return false
+
+bool private_global_declaration(Node node):
+    return node.kind == 'VarDecl' && node.value.starts_with('private ')
+
+BindingIR private_global_source_binding(Node node):
+    string declaration = node.value.substring(8)
+    if (declaration.starts_with('const ')):
+        declaration = declaration.substring(6)
+    return ir_parse_binding_decl(declaration)
+
+string private_global_module_identity(string source_name, int index):
+    return source_name + '$private_global.' + index.to_string()
+
+string private_global_hidden_identity(int index):
+    return '__tb.hidden.private.global.' + index.to_string()
+
+LocalBindingName[] module_global_bindings(ModuleGlobalBinding[] globals, string module_id, string[] public_names):
+    LocalBindingName[] result = []
+    for (ModuleGlobalBinding binding : globals):
+        if (!binding.is_private):
+            result.push(LocalBindingName(binding.source_name, binding.identity))
+    int index = 0
+    for (ModuleGlobalBinding binding : globals):
+        if (binding.is_private && binding.module_id != module_id && !local_binding_has_name(public_names, binding.source_name)):
+            result.push(LocalBindingName(binding.source_name, private_global_hidden_identity(index)))
+        index += 1
+    for (ModuleGlobalBinding binding : globals):
+        if (binding.is_private && binding.module_id == module_id):
+            result.push(LocalBindingName(binding.source_name, binding.identity))
+    return result
+
+void reject_hidden_private_global_nodes(Node node, ModuleGlobalBinding[] globals):
+    if (node.kind == 'Identifier' && node.value.starts_with('__tb.hidden.private.global.')):
+        int index = 0
+        for (ModuleGlobalBinding binding : globals):
+            if (binding.is_private && !local_binding_has_name(collect_public_global_names(globals), binding.source_name)):
+                if (node.value == private_global_hidden_identity(index)):
+                    throw 'private global is not visible in this module: ' + binding.source_name
+            index += 1
+    for (Node child : node.children):
+        reject_hidden_private_global_nodes(child, globals)
+
+string[] collect_public_global_names(ModuleGlobalBinding[] globals):
+    string[] result = []
+    for (ModuleGlobalBinding binding : globals):
+        if (!binding.is_private):
+            result.push(binding.source_name)
+    return result
+
+Node bind_private_module_globals(Node program):
+    ModuleGlobalBinding[] globals = []
+    string[] public_names = []
+    string module_id = ''
+    int private_index = 0
+    int child_index = 0
+    bool has_private_globals = false
+    for (Node child : program.children):
+        if (child.kind == 'ModuleMarker'):
+            module_id = child.value
+        else if (child.kind == 'VarDecl'):
+            if (private_global_declaration(child)):
+                has_private_globals = true
+                BindingIR binding = private_global_source_binding(child)
+                int duplicate_private = 0
+                bool public_conflict = false
+                for (ModuleGlobalBinding existing : globals):
+                    if (existing.module_id == module_id && existing.source_name == binding.name):
+                        if (existing.is_private):
+                            duplicate_private += 1
+                        else:
+                            public_conflict = true
+                string target_module = module_id
+                string candidate_module = ''
+                int candidate_index = 0
+                for (Node candidate : program.children):
+                    if (candidate.kind == 'ModuleMarker'):
+                        candidate_module = candidate.value
+                    else if (candidate_index != child_index && candidate.kind == 'VarDecl' && !private_global_declaration(candidate) && candidate_module == target_module):
+                        BindingIR public_binding = ir_parse_binding_decl(candidate.value)
+                        if (public_binding.name == binding.name):
+                            public_conflict = true
+                    candidate_index += 1
+                string identity = private_global_module_identity(binding.name, private_index)
+                private_index += 1
+                globals.push(ModuleGlobalBinding(binding.name, target_module, identity, true))
+                if (duplicate_private > 0):
+                    throw 'duplicate private global in module: ' + binding.name
+                if (public_conflict):
+                    throw 'private global conflicts with public global in module: ' + binding.name
+            else:
+                BindingIR binding = ir_parse_binding_decl(child.value)
+                globals.push(ModuleGlobalBinding(binding.name, module_id, binding.name, false))
+                public_names.push(binding.name)
+        child_index += 1
+    if (!has_private_globals):
+        return program
+    Node[] children = []
+    module_id = ''
+    for (Node child : program.children):
+        if (child.kind == 'ModuleMarker'):
+            module_id = child.value
+            children.push(child)
+        else if (child.kind == 'VarDecl' && private_global_declaration(child)):
+            BindingIR binding = private_global_source_binding(child)
+            string identity = ''
+            for (ModuleGlobalBinding global : globals):
+                if (global.is_private && global.module_id == module_id && global.source_name == binding.name):
+                    identity = global.identity
+            string declaration = child.value.substring(8)
+            if (declaration.starts_with('const ')):
+                children.push(Node('VarDecl', 'const ' + ir_parse_binding_decl(declaration.substring(6)).type_name + ' ' + identity, child.children))
+            else:
+                children.push(Node('VarDecl', binding.type_name + ' ' + identity, child.children))
+        else:
+            children.push(child)
+    Node[] bound_children = []
+    module_id = ''
+    for (Node child : children):
+        if (child.kind == 'ModuleMarker'):
+            module_id = child.value
+            bound_children.push(child)
+        else if (child.kind == 'Function' || child.kind == 'CachedFunction' || child.kind == 'PrivateFunction'):
+            LocalBindingName[] bindings = module_global_bindings(globals, module_id, public_names)
+            Node[] params = []
+            Node[] body = []
+            for (Node fn_child : child.children):
+                if (fn_child.kind == 'Param'):
+                    params.push(fn_child)
+                    BindingIR param = ir_parse_binding_decl(fn_child.value)
+                    bindings.push(LocalBindingName(param.name, param.name))
+                else:
+                    body.push(fn_child)
+            LocalBindingListRewrite normalized = normalize_local_binding_list(body, bindings, 0)
+            Node[] function_children = params
+            for (Node body_node : normalized.nodes):
+                function_children.push(body_node)
+            Node rewritten_function = Node(child.kind, child.value, function_children)
+            reject_hidden_private_global_nodes(rewritten_function, globals)
+            bound_children.push(rewritten_function)
+        else if (child.kind == 'VarDecl'):
+            LocalBindingName[] bindings = module_global_bindings(globals, module_id, public_names)
+            LocalBindingRewrite initializer = normalize_local_binding_node(child.children[0], bindings, 0)
+            Node rewritten_global = Node(child.kind, child.value, [initializer.node])
+            reject_hidden_private_global_nodes(rewritten_global, globals)
+            bound_children.push(rewritten_global)
+        else:
+            bound_children.push(child)
+    return Node('Program', '__tb.private.globals.bound', bound_children)
+
+Node normalize_program_local_bindings(Node program):
+    if (program.value == '__tb.private.globals.bound'):
+        return program
+    Node[] children = []
+    for (Node child : program.children):
+        if (child.kind == 'Function' || child.kind == 'CachedFunction' || child.kind == 'PrivateFunction'):
+            children.push(Node(child.kind, child.value, normalize_function_local_bindings(child.children)))
+        else:
+            children.push(child)
+    return Node(program.kind, program.value, children)

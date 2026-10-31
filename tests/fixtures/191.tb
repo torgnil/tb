@@ -1,0 +1,310 @@
+
+
+# Case 1
+record IntRows(int[][] values);
+record StringRows(string[][] values);
+
+int next_row_index(int[] calls):
+    calls[0] += 1
+    return 2
+
+int[][] reset_parameter_row(int[][] rows):
+    rows[0] = []
+    rows[0].push(777)
+    return rows
+
+int combined_case_1_main(string[] args):
+    int n = args.length() + 10
+    int[][] rows = [[n], [n + 1], [n + 2]]
+
+    rows[0] = []
+    print(rows[0].length())
+    rows[0] = []
+    print(rows[0].length())
+    rows[0].push(n + 10)
+    print(rows[0][0])
+    rows[0] = []
+    rows[0].push(n + 20)
+    print(rows[0][0])
+
+    int[][] typed_rows = [[n + 4]]
+    int[] typed_empty = []
+    typed_rows[0] = typed_empty
+    print(typed_rows[0].length())
+    typed_rows[0].push(n + 5)
+    print(typed_rows[0][0])
+
+    rows[-1] = []
+    rows[-1].push(n + 30)
+    print(rows[2][0])
+    int[] calls = [0]
+    rows[next_row_index(calls)] = []
+    rows[2].push(n + 40)
+    print(calls[0])
+    print(rows[2][0])
+
+    if (n > 0):
+        rows[1] = []
+        rows[1].push(n + 50)
+    for (int i = 0; i < 1; i++):
+        rows[1] = []
+        rows[1].push(n + 60)
+    switch (n):
+        case 10:
+            rows[1] = []
+            rows[1].push(n + 70)
+        default:
+            rows[1] = []
+            rows[1].push(n + 71)
+    try:
+        rows[1] = []
+        rows[1].push(n + 80)
+        throw 'replace-row'
+    catch (exception err):
+        rows[1] = []
+        rows[1].push(n + 90)
+    print(rows[1][0])
+
+    IntRows int_box = IntRows([[n + 3]])
+    int_box.values[0] = []
+    int_box.values[0].push(n + 100)
+    print(int_box.values[0][0])
+
+    string text = 'runtime-' + n.to_string()
+    string[][] labels = [['old-' + text], ['keep-' + text]]
+    labels[0] = []
+    print(labels[0].length())
+    labels[0] = []
+    print(labels[0].length())
+    labels[0].push('new-' + text)
+    print(labels[0][0])
+    string[] typed_empty_labels = []
+    labels[0] = typed_empty_labels
+    print(labels[0].length())
+    labels[0].push('typed-' + text)
+    print(labels[0][0])
+    labels[-1] = []
+    labels[1].push('again-' + text)
+    print(labels[1][0])
+
+    StringRows string_box = StringRows([['field-' + text]])
+    string_box.values[0] = []
+    string_box.values[0].push('field-new-' + text)
+    print(string_box.values[0][0])
+
+    int[][] borrowed_rows = [[n + 200]]
+    int[][] returned_rows = reset_parameter_row(borrowed_rows)
+    returned_rows[0][0] += 1
+    print(borrowed_rows[0][0])
+    print(returned_rows[0][0])
+    return 0
+
+# Case 2
+record SortItem(int key, int tie);
+
+int combined_case_2_main(string[] args):
+    int n = args.length()
+    print(n.sort())
+
+    int[] ascending = [3, 1, 2]
+    ascending.sort(compare_ascending)
+    print(ascending)
+
+    int[] descending = [3, 1, 2]
+    descending.sort(compare_descending)
+    print(descending)
+
+    int[] generic = [3, -1, 2, -4]
+    generic.sort(compare_by_absolute_value)
+    print(generic)
+
+    int[] inline = [3, 1, 2]
+    inline.sort((int left, int right) -> right - left)
+    print(inline)
+
+    SortItem[] items = [SortItem(2, 1), SortItem(1, 3), SortItem(1, 2)]
+    items.sort(compare_items)
+    for (SortItem item : items):
+        print(item.key * 10 + item.tie)
+
+    int[] empty = []
+    empty.sort(compare_ascending)
+    print(empty.length())
+
+    int[] singleton = [n]
+    singleton.sort(compare_descending)
+    print(singleton)
+
+    return 0
+
+int sort(int value):
+    return value + 40
+
+int compare_ascending(int left, int right):
+    return left - right
+
+int compare_descending(int left, int right):
+    return right - left
+
+int compare_by_absolute_value(int left, int right):
+    int left_abs = left
+    int right_abs = right
+    if (left_abs < 0):
+        left_abs = 0 - left_abs
+    if (right_abs < 0):
+        right_abs = 0 - right_abs
+    return left_abs - right_abs
+
+int compare_items(SortItem left, SortItem right):
+    if (left.key < right.key):
+        return -1
+    if (left.key > right.key):
+        return 1
+    return left.tie - right.tie
+
+# Case 3
+record StringBox(string[] words);
+
+string parameter_last(string[] words):
+    return words.last()
+
+string local_last(int count):
+    string[] words = ['local-left-' + count, 'local-tail-' + count]
+    return last(words)
+
+int combined_case_3_main(string[] args):
+    int count = args.length()
+
+    string[] words = ['left-' + count, 'tail-' + count]
+    string first = last(words)
+    string second = words.last()
+    print(first)
+    print(second)
+    print(words.length())
+    print(words[1])
+    words.clear()
+    words.push('reused-' + count)
+    print(first)
+    print(second)
+    print(words[0])
+    print(words.length())
+    words[0] = 'replaced-' + count
+    print(first)
+    print(words[0])
+    string before_pop = words.last()
+    string popped = words.pop()
+    print(before_pop)
+    print(popped)
+    print(words.length())
+    words.push('reused-after-pop-' + count)
+
+    const string[] fixed = ['const-left-' + count, 'const-tail-' + count]
+    print(last(fixed))
+    print(fixed.last())
+    print(fixed.length())
+    string parameter_value = parameter_last(fixed)
+    print(parameter_value)
+
+    StringBox box = StringBox(['field-left-' + count, 'field-tail-' + count])
+    string field_value = box.words.last()
+    box.words.clear()
+    print(field_value)
+    print(box.words.length())
+
+    print(local_last(count))
+
+    string[] raw = ['raw-left', 'raw-tail']
+    print(raw.last())
+    string[] empty_item = ['']
+    print(last(empty_item))
+    string[] singleton = ['single-' + count]
+    print(singleton.last())
+
+    words.last()
+    string reassigned = words.last()
+    reassigned = 'new-' + count
+    print(reassigned)
+    return 0
+
+# Case 4
+record Inner(int value, string text, int[] values);
+record Row(int value, string text, int[] values, Inner child);
+
+Row GLOBAL_ROW = Row(70, 'global-row', [700], Inner(71, 'global-child', [710]));
+
+Row make_row(int value):
+    return Row(value, 'row-' + value.to_string(), [value, value + 1], Inner(value + 2, 'child-' + value.to_string(), [value + 2, value + 3]))
+
+Row clone_row(Row item):
+    return item
+
+Inner child_of(Row item):
+    return item.child
+
+int inspect_row(Row item):
+    return item.value + item.values.sum() + item.child.value + item.child.values.sum() + item.text.length() + item.child.text.length()
+
+string row_text(Row item):
+    return item.text
+
+int read_global(int value):
+    return GLOBAL_ROW.value + value
+
+Row borrowed_parameter(int value, Row item):
+    return item
+
+Row borrowed_global(int value):
+    return GLOBAL_ROW
+
+int combined_case_4_main(string[] args):
+    int count = args.length()
+
+    args.length().make_row()
+
+    Row current = count.make_row()
+    print(inspect_row(current))
+    current = (count + 1).make_row()
+    print(inspect_row(current))
+
+    print(inspect_row(count.make_row()))
+    print(count.make_row().inspect_row())
+    print(row_text(count.make_row()))
+    print(count.make_row().row_text())
+
+    Row returned = count.borrowed_parameter(current)
+    print(inspect_row(returned))
+    print(inspect_row(count.borrowed_global()))
+    print(read_global(count))
+    print(GLOBAL_ROW.text)
+
+    Row holder = Row(count, 'holder', [count], Inner(count + 1, 'holder-child', [count + 1]))
+    holder.child = (count + 2).make_row().child_of()
+    print(holder.child.text)
+    holder = (count + 3).make_row()
+    print(inspect_row(holder))
+
+    const Row fixed = (count + 4).make_row()
+    print(inspect_row(fixed))
+    print(fixed.values.sum())
+
+    Row copied = count.make_row().clone_row()
+    print(inspect_row(copied))
+    copied = count.make_row().clone_row()
+    print(inspect_row(copied))
+
+    return 0
+
+int main(string[] args):
+    print('=== case 1 ===')
+    if (combined_case_1_main(args) != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main(args) != 0):
+        return 1
+    print('=== case 3 ===')
+    if (combined_case_3_main(args) != 0):
+        return 1
+    print('=== case 4 ===')
+    if (combined_case_4_main(args) != 0):
+        return 1
+    return 0

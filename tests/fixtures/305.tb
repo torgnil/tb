@@ -1,0 +1,351 @@
+
+
+# Case 1
+enum Tag { FIRST, LAST }
+record Label(string text);
+
+string decorate(const Tag value):
+    return value + '!'
+
+string make_tag(int seed):
+    const Tag value = 'fixed-' + seed
+    return value
+
+string[] make_tags(int seed):
+    const Tag value = 'row-' + seed
+    return [value, value + '!']
+
+Label make_label(int seed):
+    const Tag value = 'label-' + seed
+    return Label(value)
+
+string branch_text(int seed):
+    Tag value = 'branch-' + seed
+    if (seed > 0):
+        value = value + '!'
+        return value
+    return 'zero'
+
+string loop_text(int count):
+    int total = 0
+    for (int i : range(count)):
+        const Tag item = 'loop-' + i
+        total += item.length()
+    return 'loop-total-' + total
+
+int combined_case_1_main(string[] args):
+    int seed = args.length()
+    const Tag local = 'main-' + seed
+    print(local)
+    print(decorate(local))
+    print(make_tag(seed))
+    string[] labels = make_tags(seed)
+    print(labels[0])
+    print(labels[1])
+    Label label = make_label(seed)
+    print(label.text)
+    print(branch_text(seed))
+    print(loop_text(seed + 2))
+    Tag changing = 'old-' + seed
+    changing = 'new-' + seed
+    print(changing)
+    print(make_tag(seed) + '?')
+    return 0
+
+# Case 2
+enum Mode { READY, DONE }
+record Box(string text);
+
+string make_text(int seed):
+    return 'made-' + seed
+
+Mode saved = Mode.READY
+Mode initialized = make_text(5)
+const Mode initialized_copy = initialized
+Mode initialized_alias = initialized
+
+void save_local(int seed):
+    string local = 'local-' + seed
+    saved = local
+    local = 'changed-local'
+
+void save_const_local(int seed):
+    const Mode local = 'const-' + seed
+    saved = local
+
+void save_field(int seed):
+    Box box = Box('field-' + seed)
+    saved = box.text
+    box.text = 'changed-field'
+
+void save_owned(int seed):
+    saved = make_text(seed)
+
+void store_parameter(const Mode value):
+    saved = value
+
+void replace_and_read(const Mode old):
+    saved = 'replacement'
+    print(old)
+
+void save_empty():
+    const Mode local = ''
+    saved = local
+
+int combined_case_2_main(string[] args):
+    int seed = args.length()
+    print(initialized)
+    initialized = make_text(9)
+    print(initialized_copy)
+    print(initialized_alias)
+    save_local(seed)
+    print(saved)
+    save_const_local(seed + 1)
+    print(saved)
+    save_field(seed + 2)
+    print(saved)
+    save_owned(seed + 3)
+    print(saved)
+    store_parameter('parameter-' + seed)
+    print(saved)
+    replace_and_read(saved)
+    print(saved)
+    saved = saved
+    saved = 'concat-' + seed
+    print(saved)
+    save_empty()
+    print('[' + saved + ']')
+    return 0
+
+# Case 3
+record SetBox(set<int> ids);
+
+set<int> global_ids = {6, 7}
+
+set<int> make_set(int seed):
+    return {seed, seed + 1}
+
+set<int> from_local_field(int seed):
+    SetBox box = SetBox({seed, seed + 1})
+    return box.ids
+
+set<int> from_local_alias(int seed):
+    SetBox box = SetBox({seed, seed + 1})
+    set<int> alias = box.ids
+    return alias
+
+set<int> from_owned_local(int seed):
+    set<int> values = {seed, seed + 1}
+    return values
+
+set<int> from_const_parameter(const set<int> values):
+    return values
+
+set<int> from_global():
+    return global_ids
+
+set<int> forward_set(int seed):
+    return make_set(seed)
+
+set<int> borrowed_echo(set<int> values):
+    return values
+
+set<int> forward_ufcs(set<int> values):
+    return values.borrowed_echo()
+
+set<int> try_return(bool fail, int seed):
+    set<int> local = {seed, seed + 1}
+    try:
+        if (fail):
+            throw 'take fallback'
+        return local
+    catch (string error):
+        return global_ids
+
+set<int> branch_set(bool choose_local, int seed):
+    set<int> local = {seed, seed + 1}
+    if (choose_local):
+        return local
+    else:
+        return global_ids
+
+set<int> empty_set():
+    set<int> empty = {}
+    return empty
+
+set<int> echo_replacement(set<int> values):
+    print(values.contains(9))
+    return values
+
+int[] return_int_array(int[] values):
+    return values
+
+int combined_case_3_main(string[] args):
+    int seed = args.length()
+    set<int> field_result = from_local_field(seed)
+    print(field_result.contains(seed))
+
+    set<int> alias_result = from_local_alias(seed + 2)
+    print(alias_result.contains(seed + 3))
+
+    set<int> owned_result = from_owned_local(seed + 4)
+    print(owned_result.length())
+
+    const set<int> fixed = {4, 5}
+    set<int> const_result = from_const_parameter(fixed)
+    print(const_result.contains(5))
+    set<int> changed_result = from_const_parameter(fixed)
+    changed_result.add(99)
+    print(fixed.contains(99))
+    set<int> ufcs_result = fixed.forward_ufcs()
+    print(ufcs_result.contains(4))
+
+    set<int> global_result = from_global()
+    print(global_result.contains(6))
+
+    set<int> forwarded = forward_set(seed + 6)
+    print(forwarded.contains(seed + 7))
+
+    set<int> branch_owned = branch_set(true, seed + 8)
+    set<int> branch_borrowed = branch_set(false, seed + 10)
+    print(branch_owned.contains(seed + 8))
+    print(branch_borrowed.contains(7))
+
+    set<int> try_owned = try_return(false, seed + 12)
+    set<int> try_borrowed = try_return(true, seed + 14)
+    print(try_owned.contains(seed + 12))
+    print(try_borrowed.contains(6))
+
+    set<int> empty = empty_set()
+    print(empty.length())
+
+    SetBox box = SetBox({9, 10})
+    box.ids = echo_replacement(box.ids)
+    print(box.ids.contains(9))
+    print(box.ids.contains(2))
+
+    for (int index : range(2)):
+        set<int> loop_result = from_local_field(index + 20)
+        print(loop_result.length())
+
+    int[] array_source = [1, 2]
+    int[] array_result = return_int_array(array_source)
+    print(array_result[0])
+    return 0
+
+# Case 4
+record LocalSetBox(set<int> values);
+
+set<int> local_global = {40, 41}
+
+set<int> make_local_set(int seed):
+    return {seed, seed + 1}
+
+set<int> copy_parameter(const set<int> values):
+    set<int> local = values
+    local.add(90)
+    print(values.contains(90))
+    local = make_local_set(90)
+    print(values.contains(21))
+    return local
+
+void replace_local_from_global():
+    set<int> local = local_global
+    local = make_local_set(94)
+    print(local_global.contains(40))
+
+set<int> choose_local_or_parameter(bool choose_local, const set<int> source, int seed):
+    if (choose_local):
+        set<int> local = {seed, seed + 1}
+        return local
+    else:
+        return source
+
+int combined_case_4_main(string[] args):
+    int seed = args.length() + 10
+    set<int> source = {seed, seed + 1}
+    set<int> copy = source
+    print(source.contains(seed))
+    print(copy.contains(seed + 1))
+    source.add(99)
+    print(copy.contains(99))
+    copy.add(100)
+    print(source.contains(100))
+
+    const set<int> fixed = {20, 21}
+    set<int> const_copy = fixed
+    print(const_copy.contains(20))
+    set<int> param_copy = copy_parameter(fixed)
+    print(param_copy.contains(90))
+    print(fixed.contains(90))
+
+    set<int> target = {1}
+    set<int> replacement = {seed, seed + 1}
+    target = replacement
+    replacement.add(77)
+    print(target.contains(seed))
+    print(target.contains(77))
+    target.add(78)
+    print(replacement.contains(78))
+    target = target
+    print(target.contains(seed))
+    target = make_local_set(seed + 2)
+    print(target.contains(seed + 2))
+    print(target.contains(seed))
+
+    LocalSetBox box = LocalSetBox({seed + 4, seed + 5})
+    set<int> field_copy = box.values
+    print(field_copy.contains(seed + 4))
+    box.values.add(91)
+    print(field_copy.contains(91))
+
+    set<int> global_copy = local_global
+    print(global_copy.contains(40))
+    global_copy.add(42)
+    print(local_global.contains(42))
+    replace_local_from_global()
+
+    set<int> shadowed = {50, 51}
+    if (args.length() >= 1):
+        set<int> shadowed = {60, 61}
+        set<int> branch_copy = shadowed
+        shadowed.add(92)
+        print(branch_copy.contains(92))
+    print(shadowed.contains(50))
+
+    set<int> branch_source = {30, 31}
+    set<int> borrowed_branch = choose_local_or_parameter(false, branch_source, seed)
+    print(borrowed_branch.contains(31))
+    borrowed_branch.add(93)
+    print(branch_source.contains(93))
+    set<int> owned_branch = choose_local_or_parameter(true, branch_source, seed + 4)
+    print(owned_branch.contains(seed + 4))
+
+    set<int> empty = {}
+    set<int> empty_copy = empty
+    print(empty_copy.length())
+    set<int> duplicates = {seed, seed, seed + 1}
+    set<int> duplicate_copy = duplicates
+    print(duplicate_copy.length())
+
+    for (int index : range(2)):
+        set<int> loop_source = {index, index + 1}
+        set<int> loop_copy = loop_source
+        loop_source.add(99)
+        print(loop_copy.contains(index))
+    return 0
+
+int main(string[] args):
+    print('=== case 1 ===')
+    if (combined_case_1_main(args) != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main(args) != 0):
+        return 1
+    print('=== case 3 ===')
+    if (combined_case_3_main(args) != 0):
+        return 1
+    print('=== case 4 ===')
+    if (combined_case_4_main(args) != 0):
+        return 1
+    return 0

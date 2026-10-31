@@ -1,0 +1,49 @@
+int map_then_throw(int item):
+    print('map callback ' + item)
+    if item == 3:
+        throw 'map callback failure'
+    return item * 10
+
+int map_throw_first(int item):
+    throw 'map first callback failure'
+
+int nested_map_callback(int item):
+    if item == 2:
+        try:
+            throw 'inner map failure'
+        catch (exception err):
+            print('caught ' + err)
+    if item == 3:
+        throw 'outer map failure'
+    return item
+
+int main(string[] args):
+    int[] values = [1, 2, 3, 4]
+    try:
+        int[] first_failure = values.map_to(int item -> map_throw_first(item))
+        print(first_failure)
+    catch (exception err):
+        print('caught ' + err)
+    try:
+        int[] mapped = values.map_to(int item -> map_then_throw(item))
+        print(mapped)
+    catch (exception err):
+        print('caught ' + err)
+    print('continued after map')
+
+    int[] normal = values.map_to(int item -> item + 1)
+    print(normal)
+    int[] empty = []
+    int[] empty_map = empty.map_to(int item -> item + 1)
+    print(empty_map.length())
+
+    try:
+        int[] nested = values.map_to(int item -> nested_map_callback(item))
+        print(nested)
+    catch (exception err):
+        print('caught ' + err)
+    try:
+        throw 'later map throw'
+    catch (exception err):
+        print('caught ' + err)
+    return 0

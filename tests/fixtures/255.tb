@@ -1,0 +1,363 @@
+
+
+# Case 1
+map<int, bool[]> GLOBAL_INT_FLAGS = {1: [true, false, true]}
+map<string, bool[]> GLOBAL_STRING_FLAGS = {'global': [false, true]}
+
+record FlagBook(map<string, bool[]> flags);
+
+int duplicate_evaluations = 0
+
+bool[] make_flags(int value):
+    return [(value % 2) == 0, value > 0]
+
+map<int, bool[]> borrowed_flag_map(int value):
+    bool[] borrowed = [value > 0, false]
+    return {value: borrowed}
+
+map<string, bool[]> owned_flag_map(int value):
+    return {'owned': make_flags(value)}
+
+bool[] counted_flags(int value):
+    duplicate_evaluations += 1
+    return [value > 0, true]
+
+int combined_case_1_main(string[] args):
+    int seed = args.length() + 4
+    print(GLOBAL_INT_FLAGS.length())
+    print(GLOBAL_INT_FLAGS[1].sum())
+    print(GLOBAL_STRING_FLAGS.length())
+    print(GLOBAL_STRING_FLAGS['global'].sum())
+
+    map<int, bool[]> empty_map = {}
+    bool[] empty_row = []
+    map<int, bool[]> empty_rows = {1: []}
+    empty_rows[2] = empty_row
+    map<string, bool[]> empty_named = {}
+    empty_named['empty'] = []
+    print(empty_map.length())
+    print(empty_rows.length())
+    print(empty_rows[1].length())
+    print(empty_rows[2].length())
+    print(empty_named.length())
+    print(empty_named['empty'].length())
+
+    bool[] source = [true, false, true]
+    map<int, bool[]> numbers = {4: source}
+    source[0] = false
+    print(numbers[4].sum())
+    print(source.sum())
+    map<int, bool[]> copied_numbers = numbers
+    copied_numbers[4][1] = true
+    print(numbers[4].sum())
+    print(copied_numbers[4].sum())
+    numbers[4] = numbers[4]
+    print(numbers[4].sum())
+
+    bool[] replacement = [false, true, true]
+    numbers[4] = replacement
+    replacement[1] = false
+    print(numbers[4].sum())
+    numbers[4] = make_flags(seed)
+    print(numbers[4].sum())
+
+    map<int, bool[]> duplicate_numbers = {9: counted_flags(seed), 10: counted_flags(seed), 9: counted_flags(-seed)}
+    string[] number_keys = duplicate_numbers.keys()
+    print(duplicate_numbers.length())
+    print(number_keys[0])
+    print(number_keys[1])
+    print(duplicate_numbers[9].sum())
+    map<string, bool[]> duplicate_named = {'first': counted_flags(seed), 'second': counted_flags(seed), 'first': counted_flags(-seed)}
+    string[] named_keys = duplicate_named.keys()
+    print(duplicate_named.length())
+    print(named_keys[0])
+    print(named_keys[1])
+    print(duplicate_named['first'].sum())
+    print(duplicate_evaluations)
+    map<string, bool[]> copied_named = duplicate_named
+    copied_named['first'][0] = true
+    print(duplicate_named['first'].sum())
+    print(copied_named['first'].sum())
+
+    map<int, bool[]> returned_borrowed = borrowed_flag_map(seed)
+    map<string, bool[]> returned_owned = owned_flag_map(seed)
+    print(returned_borrowed[seed].sum())
+    print(returned_owned['owned'].sum())
+
+    bool[] record_source = [true, false]
+    FlagBook book = FlagBook({'record': record_source})
+    record_source[0] = false
+    print(book.flags['record'].sum())
+    book.flags['record'] = [false, true, true]
+    print(book.flags['record'].sum())
+    book.flags['empty'] = []
+    print(book.flags['empty'].length())
+
+    map<string, bool[]> grown = {}
+    for (int index : range(12)):
+        grown['key-' + index] = [(index % 2) == 0]
+    print(grown.length())
+    print(grown['key-0'].sum())
+    print(grown['key-11'].sum())
+    grown['key-0'] = grown['key-0']
+    print(grown['key-0'].sum())
+    if (seed > 5):
+        grown['branch'] = [true]
+    else:
+        grown['branch'] = [false]
+    print(grown['branch'].sum())
+
+    const map<int, bool[]> fixed = {2: [true, false, true]}
+    print(fixed[2].sum())
+    return 0
+
+# Case 2
+record Cell(int value, string label);
+record Shelf(map<string, int[]> rows);
+
+int evaluated = 0
+
+map<string, int[]> GLOBAL_NUMBERS = {'g': [1], 'g': [2]}
+map<string, bool[]> GLOBAL_FLAGS = {'g': [true, false], 'g': [false, true]}
+const map<string, Cell> GLOBAL_CELLS = {'cell': Cell(1, 'old'), 'cell': Cell(2, 'last')}
+
+int[] counted_values(int value):
+    evaluated += 1
+    return [value]
+
+map<string, int[]> returned_rows(int value):
+    int[] borrowed = [value, value + 1]
+    return {'row': borrowed, 'row': [value + 2]}
+
+int combined_case_2_main(string[] args):
+    int seed = args.length() + 4
+    print(GLOBAL_NUMBERS.length())
+    print(GLOBAL_NUMBERS['g'][0])
+    print(GLOBAL_FLAGS['g'].sum())
+    print(GLOBAL_CELLS['cell'].value)
+    print(seed)
+
+    map<string, int[]> numbers = {'same': [seed], 'keep': [seed + 1], 'same': [seed + 2]}
+    string[] number_keys = numbers.keys()
+    print(numbers.length())
+    print(numbers['same'][0])
+    print(numbers['keep'][0])
+    print(number_keys[0])
+    print(number_keys[1])
+
+    int[] source = [seed + 10]
+    map<string, int[]> borrowed = {'row': source, 'row': [seed + 11]}
+    source[0] = 99
+    print(borrowed['row'][0])
+    print(source[0])
+
+    map<string, bool[]> flags = {'flags': [true, false], 'flags': [false, true, true]}
+    print(flags.length())
+    print(flags['flags'].sum())
+
+    map<string, string[]> labels = {'labels': ['old-' + seed], 'labels': ['new-' + seed]}
+    print(labels.length())
+    print(labels['labels'][0])
+
+    map<string, int[][]> grids = {'grid': [[seed]], 'grid': [[seed + 3]]}
+    print(grids['grid'][0][0])
+    map<string, string[][]> word_grids = {'words': [['old']], 'words': [['last-' + seed]]}
+    print(word_grids['words'][0][0])
+
+    map<string, string> texts = {'same': 'old', 'same': 'text-' + seed}
+    print(texts['same'])
+    map<string, map<string, int>> nested = {'outer': {'leaf': 1}, 'outer': {'leaf': seed}}
+    print(nested.length())
+    print(nested['outer']['leaf'])
+
+    map<string, Cell> cells = {'cell': Cell(1, 'old'), 'cell': Cell(seed, 'last')}
+    print(cells['cell'].value)
+    print(cells['cell'].label)
+    map<string, Cell[]> cell_rows = {'rows': [Cell(1, 'old')], 'rows': [Cell(seed + 1, 'last-row')]}
+    print(cell_rows['rows'][0].value)
+
+    map<string, int[]> empty_last = {'empty': [1], 'empty': []}
+    print(empty_last.length())
+    print(empty_last['empty'].length())
+
+    evaluated = 0
+    map<string, int[]> effects = {'first': counted_values(seed), 'second': counted_values(seed + 1), 'first': counted_values(seed + 2)}
+    string[] effect_order = effects.keys()
+    print(evaluated)
+    print(effects.length())
+    print(effects['first'][0])
+    print(effect_order[0])
+    print(effect_order[1])
+
+    map<string, int[]> returned = returned_rows(seed)
+    print(returned['row'][0])
+
+    Shelf shelf = Shelf({'slot': [seed], 'slot': [seed + 4]})
+    print(shelf.rows['slot'][0])
+    shelf.rows = {'slot': [seed + 5], 'slot': [seed + 6]}
+    print(shelf.rows['slot'][0])
+
+    map<string, int[]> copied = numbers
+    copied['same'][0] = 77
+    print(numbers['same'][0])
+    print(copied['same'][0])
+
+    const map<string, int[]> fixed = {'fixed': [seed], 'fixed': [seed + 1]}
+    print(fixed['fixed'][0])
+
+    evaluated = 0
+    int total = 0
+    for (int index : range(args.length() + 3)):
+        map<string, int[]> repeated = {'same': counted_values(index), 'other': [index + 1], 'same': counted_values(index + 2)}
+        total += repeated['same'][0]
+    print(evaluated)
+    print(total)
+    return 0
+
+# Case 3
+int GLOBAL_OFFSET = 1
+bool GLOBAL_ENABLED = true
+const int GLOBAL_LIMIT = 2
+
+int filter(int value):
+    return value + 100
+
+int map_to(int value):
+    return value + 200
+
+int __tb_array_callback_2(int value):
+    return value + 300
+
+int[] change_global_receiver():
+    GLOBAL_OFFSET = 10
+    return [1, 2]
+
+int[] make_values(int first):
+    return [first, first + 1]
+
+int[] transform_values(int[] values, int factor, int offset, bool enabled):
+    return values.map_to(int item -> enabled ? item * factor + offset : item)
+
+int branch_total(int[] values, int minimum):
+    int total = 0
+    if (minimum > 0):
+        int cutoff = minimum
+        int[] selected = values.filter(int item -> item > cutoff)
+        total = selected.sum()
+    return total
+
+int loop_total(int[] values):
+    int total = 0
+    for (int index : range(2)):
+        int delta = index + 1
+        int[] shifted = values.map_to(int item -> delta + item)
+        total += shifted.sum()
+    return total
+
+int foreach_total(int[] values):
+    int total = 0
+    int[] thresholds = [1, 2]
+    for (int threshold : thresholds):
+        int[] selected = values.filter(int item -> item > threshold)
+        total += selected.sum()
+    return total
+
+int catch_total(int[] values):
+    int total = 0
+    try:
+        throw 'x'
+    catch (string caught):
+        int threshold = caught.length()
+        int[] selected = values.filter(int item -> item > threshold)
+        total = selected.sum()
+    return total
+
+int combined_case_3_main(string[] args):
+    int[] values = [1, 2, 3, 4]
+    int factor = args.length() + 1
+    int offset = 3
+    bool enabled = true
+    int[] transformed = transform_values(values, factor, offset, enabled)
+    print(transformed[1])
+
+    int item = 100
+    const int shift = 5
+    int[] shadowed = values.map_to(int item -> shift + item)
+    print(shadowed[0])
+
+    const int cutoff = 2
+    int[] selected = values.filter(int value -> enabled && value > cutoff)
+    print(selected.length())
+    print(selected.sum())
+    int[] pipeline = values.filter(int value -> value > GLOBAL_LIMIT).map_to(int value -> enabled ? value + offset : value)
+    print(pipeline.sum())
+
+    int[] source = [3, 4]
+    int[] copied = source.map_to(int value -> offset + value)
+    source[0] = 99
+    offset = 20
+    print(source[0])
+    print(copied[0])
+
+    const int[] fixed = [2, 4]
+    int[] fixed_result = fixed.filter(int value -> value > GLOBAL_LIMIT)
+    print(fixed_result.length())
+    print(fixed_result[0])
+    print(branch_total(values, 2))
+    print(loop_total(values))
+    print(foreach_total(values))
+    print(catch_total(values))
+
+    int outer_limit = 2
+    if (GLOBAL_ENABLED):
+        int[] outer_limit = values.map_to(int value -> outer_limit + value)
+        print(outer_limit[0])
+
+    int[] owned = make_values(2).map_to(int value -> offset + value)
+    print(owned[1])
+
+    GLOBAL_OFFSET = 1
+    int[] ordered = change_global_receiver().map_to(int value -> GLOBAL_ENABLED ? value + GLOBAL_OFFSET : value)
+    print(ordered[0])
+    print(GLOBAL_OFFSET)
+
+    int divisor = 0
+    int[] empty = []
+    int[] empty_map = empty.map_to(int value -> (value + 1) / divisor)
+    int[] empty_filter = empty.filter(int value -> value / divisor > 0)
+    print(empty_map.length())
+    print(empty_filter.length())
+
+    int dispatch_cutoff = 2
+    int[] dispatch_filtered = values.filter(int value -> value > dispatch_cutoff)
+    print(dispatch_filtered.sum())
+    int dispatch_delta = 3
+    int[] dispatch_mapped = values.map_to(int value -> dispatch_delta + value)
+    print(dispatch_mapped.sum())
+    print(filter(1))
+    print(map_to(1))
+    print(__tb_array_callback_2(1))
+    return 0
+
+# Case 4
+int threshold = 1
+int[] values = [1, 2]
+int[] selected = values.filter(int item -> item > threshold)
+int combined_case_4_main(string[] args):
+    print(selected.length())
+    return 0
+
+int main(string[] args):
+    print('=== case 1 ===')
+    if (combined_case_1_main(args) != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main(args) != 0):
+        return 1
+    print('=== case 3 ===')
+    if (combined_case_3_main(args) != 0):
+        return 1
+    print('=== case 4 ===')
+    if (combined_case_4_main(args) != 0):
+        return 1
+    return 0

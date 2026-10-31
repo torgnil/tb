@@ -17,7 +17,19 @@
 @.fmt.rt.ah = private unnamed_addr constant [9 x i8] c"ah=%lld\0A\00"
 define private ptr @tb_bootstrap_string_array_new(i32 %len) {
 entry:
+  %len.negative = icmp slt i32 %len, 0
+  br i1 %len.negative, label %invalid.length, label %allocate.object
+invalid.length:
+  call void @abort()
+  unreachable
+allocate.object:
   %array = call ptr @malloc(i64 24)
+  %array.null = icmp eq ptr %array, null
+  br i1 %array.null, label %object.failed, label %allocate.data
+object.failed:
+  call void @abort()
+  unreachable
+allocate.data:
   %len64 = sext i32 %len to i64
   %has.items = icmp sgt i32 %len, 0
   %alloc.len64 = select i1 %has.items, i64 %len64, i64 1
@@ -25,7 +37,22 @@ entry:
   %as.old = atomicrmw add ptr @tb_rt_as, i64 %alloc.len64 seq_cst, align 8
   %bytes = mul i64 %alloc.len64, 8
   %data = call ptr @malloc(i64 %bytes)
+  %data.null = icmp eq ptr %data, null
+  br i1 %data.null, label %data.failed, label %allocate.owned
+data.failed:
+  call void @free(ptr %array)
+  call void @abort()
+  unreachable
+allocate.owned:
   %owned = call ptr @malloc(i64 %alloc.len64)
+  %owned.null = icmp eq ptr %owned, null
+  br i1 %owned.null, label %owned.failed, label %initialize
+owned.failed:
+  call void @free(ptr %data)
+  call void @free(ptr %array)
+  call void @abort()
+  unreachable
+initialize:
   call void @llvm.memset.p0.i64(ptr %data, i8 0, i64 %bytes, i1 false)
   call void @llvm.memset.p0.i64(ptr %owned, i8 0, i64 %alloc.len64, i1 false)
   %len.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 0
@@ -142,6 +169,20 @@ entry:
   %value = load ptr, ptr %slot
   ret ptr %value
 }
+define private ptr @tb_bootstrap_string_array_last(ptr %array) {
+entry:
+  %len = call i32 @tb_bootstrap_string_array_length(ptr %array)
+  %is.empty = icmp sle i32 %len, 0
+  br i1 %is.empty, label %empty, label %read
+empty:
+  call void @abort()
+  unreachable
+read:
+  %last.index = sub i32 %len, 1
+  %value = call ptr @tb_bootstrap_string_array_get(ptr %array, i32 %last.index)
+  %result = call ptr @tb_bootstrap_string_copy(ptr %value)
+  ret ptr %result
+}
 define private ptr @tb_bootstrap_string_array_slice(ptr %array, i64 %start, i64 %end) {
 entry:
   %len32 = call i32 @tb_bootstrap_string_array_length(ptr %array)
@@ -199,6 +240,12 @@ entry:
   %ap.old = atomicrmw add ptr @tb_rt_ap, i64 1 seq_cst, align 8
   %len.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 0
   %len = load i32, ptr %len.ptr
+  %at.limit = icmp eq i32 %len, 2147483647
+  br i1 %at.limit, label %length.failed, label %check.capacity
+length.failed:
+  call void @abort()
+  unreachable
+check.capacity:
   %cap.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 1
   %cap = load i32, ptr %cap.ptr
   %next.len = add i32 %len, 1
@@ -217,18 +264,35 @@ store.existing:
   store i32 %next.len, ptr %len.ptr
   ret i32 %next.len
 grow:
+  %cap64 = sext i32 %cap to i64
+  %cap.twice64 = mul i64 %cap64, 2
+  %cap.too.large = icmp sgt i64 %cap.twice64, 2147483647
+  %cap.doubled64 = select i1 %cap.too.large, i64 2147483647, i64 %cap.twice64
   %cap.is.zero = icmp eq i32 %cap, 0
-  %cap.twice = mul i32 %cap, 2
-  %cap.base = select i1 %cap.is.zero, i32 1, i32 %cap.twice
-  %cap.big.enough = icmp sge i32 %cap.base, %next.len
-  %new.cap = select i1 %cap.big.enough, i32 %cap.base, i32 %next.len
-  %new.cap64 = sext i32 %new.cap to i64
+  %cap.base64 = select i1 %cap.is.zero, i64 1, i64 %cap.doubled64
+  %next.len64 = sext i32 %next.len to i64
+  %cap.big.enough = icmp sge i64 %cap.base64, %next.len64
+  %new.cap64 = select i1 %cap.big.enough, i64 %cap.base64, i64 %next.len64
+  %new.cap = trunc i64 %new.cap64 to i32
   %ag.old = atomicrmw add ptr @tb_rt_ag, i64 1 seq_cst, align 8
   %ah.old = atomicrmw add ptr @tb_rt_ah, i64 %new.cap64 seq_cst, align 8
   %data.bytes = mul i64 %new.cap64, 8
   %owned.bytes = mul i64 %new.cap64, 1
   %data.new = call ptr @malloc(i64 %data.bytes)
+  %data.new.null = icmp eq ptr %data.new, null
+  br i1 %data.new.null, label %data.growth.failed, label %allocate.owned.growth
+data.growth.failed:
+  call void @abort()
+  unreachable
+allocate.owned.growth:
   %owned.new = call ptr @malloc(i64 %owned.bytes)
+  %owned.new.null = icmp eq ptr %owned.new, null
+  br i1 %owned.new.null, label %owned.growth.failed, label %initialize.growth
+owned.growth.failed:
+  call void @free(ptr %data.new)
+  call void @abort()
+  unreachable
+initialize.growth:
   call void @llvm.memset.p0.i64(ptr %data.new, i8 0, i64 %data.bytes, i1 false)
   call void @llvm.memset.p0.i64(ptr %owned.new, i8 0, i64 %owned.bytes, i1 false)
   %has.items = icmp sgt i32 %len, 0
@@ -254,6 +318,49 @@ store.new:
   store i32 %next.len, ptr %len.ptr
   ret i32 %next.len
 }
+define private void @tb_bootstrap_string_array_insert(ptr %array, i64 %index, ptr %value, i1 %is_owned) {
+entry:
+  %len.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 0
+  %len = load i32, ptr %len.ptr
+  %len64 = sext i32 %len to i64
+  %index.negative = icmp slt i64 %index, 0
+  %index.nonnegative = select i1 %index.negative, i64 0, i64 %index
+  %index.past.end = icmp sgt i64 %index.nonnegative, %len64
+  %index.clamped = select i1 %index.past.end, i64 %len64, i64 %index.nonnegative
+  %index32 = trunc i64 %index.clamped to i32
+  %pushed = call i32 @tb_bootstrap_string_array_push(ptr %array, ptr %value, i1 %is_owned)
+  %data.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 2
+  %data = load ptr, ptr %data.ptr
+  %owned.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 3
+  %owned = load ptr, ptr %owned.ptr
+  %last.index = sub i32 %len, 1
+  br label %shift.cond
+shift.cond:
+  %src.index = phi i32 [%last.index, %entry], [%next.src.index, %shift.step]
+  %shift.continues = icmp sge i32 %src.index, %index32
+  br i1 %shift.continues, label %shift.body, label %insert.value
+shift.body:
+  %src.slot = getelementptr inbounds ptr, ptr %data, i32 %src.index
+  %src.value = load ptr, ptr %src.slot
+  %dest.index = add i32 %src.index, 1
+  %dest.slot = getelementptr inbounds ptr, ptr %data, i32 %dest.index
+  store ptr %src.value, ptr %dest.slot
+  %src.owned.slot = getelementptr inbounds i8, ptr %owned, i32 %src.index
+  %src.owned.byte = load i8, ptr %src.owned.slot
+  %dest.owned.slot = getelementptr inbounds i8, ptr %owned, i32 %dest.index
+  store i8 %src.owned.byte, ptr %dest.owned.slot
+  br label %shift.step
+shift.step:
+  %next.src.index = sub i32 %src.index, 1
+  br label %shift.cond
+insert.value:
+  %insert.slot = getelementptr inbounds ptr, ptr %data, i32 %index32
+  store ptr %value, ptr %insert.slot
+  %insert.owned.byte = zext i1 %is_owned to i8
+  %insert.owned.slot = getelementptr inbounds i8, ptr %owned, i32 %index32
+  store i8 %insert.owned.byte, ptr %insert.owned.slot
+  ret void
+}
 define private i1 @tb_bootstrap_string_array_contains(ptr %array, ptr %needle) {
 entry:
   %len = call i32 @tb_bootstrap_string_array_length(ptr %array)
@@ -274,6 +381,28 @@ found:
   ret i1 true
 notfound:
   ret i1 false
+}
+define private i64 @tb_bootstrap_string_array_index_of(ptr %array, ptr %needle) {
+entry:
+  %len = call i32 @tb_bootstrap_string_array_length(ptr %array)
+  br label %loop.cond
+loop.cond:
+  %index = phi i32 [0, %entry], [%next.index, %loop.step]
+  %keep.loop = icmp slt i32 %index, %len
+  br i1 %keep.loop, label %loop.body, label %notfound
+loop.body:
+  %item = call ptr @tb_bootstrap_string_array_get(ptr %array, i32 %index)
+  %cmp = call i32 @strcmp(ptr %item, ptr %needle)
+  %matches = icmp eq i32 %cmp, 0
+  br i1 %matches, label %found, label %loop.step
+loop.step:
+  %next.index = add i32 %index, 1
+  br label %loop.cond
+found:
+  %found.index = sext i32 %index to i64
+  ret i64 %found.index
+notfound:
+  ret i64 -1
 }
 define private i32 @tb_bootstrap_print_string_array(ptr %array) {
 entry:
@@ -450,18 +579,120 @@ loop.done:
 done:
   ret void
 }
+define private ptr @tb_bootstrap_string_array_pop(ptr %array) {
+entry:
+  %len = call i32 @tb_bootstrap_string_array_length(ptr %array)
+  %is.empty = icmp sle i32 %len, 0
+  br i1 %is.empty, label %empty, label %pop
+empty:
+  %empty.value = call ptr @tb_string_new(i64 0)
+  ret ptr %empty.value
+pop:
+  %last.index = sub i32 %len, 1
+  %data.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 2
+  %data = load ptr, ptr %data.ptr
+  %slot = getelementptr inbounds ptr, ptr %data, i32 %last.index
+  %value = load ptr, ptr %slot
+  %owned.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 3
+  %owned = load ptr, ptr %owned.ptr
+  %owned.slot = getelementptr inbounds i8, ptr %owned, i32 %last.index
+  %owned.byte = load i8, ptr %owned.slot
+  %is.owned = icmp ne i8 %owned.byte, 0
+  br i1 %is.owned, label %transfer, label %copy
+transfer:
+  br label %finish
+copy:
+  %copy.value = call ptr @tb_bootstrap_string_copy(ptr %value)
+  br label %finish
+finish:
+  %result = phi ptr [ %value, %transfer ], [ %copy.value, %copy ]
+  store ptr null, ptr %slot
+  store i8 0, ptr %owned.slot
+  %len.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 0
+  store i32 %last.index, ptr %len.ptr
+  ret ptr %result
+}
+define private ptr @tb_bootstrap_string_array_remove_at(ptr %array, i64 %index) {
+entry:
+  %len.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 0
+  %len = load i32, ptr %len.ptr
+  %len64 = sext i32 %len to i64
+  %index.nonnegative = icmp sge i64 %index, 0
+  %index.in.range = icmp slt i64 %index, %len64
+  %index.valid = and i1 %index.nonnegative, %index.in.range
+  br i1 %index.valid, label %remove, label %invalid
+invalid:
+  %empty.value = call ptr @tb_string_new(i64 0)
+  ret ptr %empty.value
+remove:
+  %index32 = trunc i64 %index to i32
+  %data.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 2
+  %data = load ptr, ptr %data.ptr
+  %owned.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 3
+  %owned = load ptr, ptr %owned.ptr
+  %removed.slot = getelementptr inbounds ptr, ptr %data, i32 %index32
+  %removed.value = load ptr, ptr %removed.slot
+  %removed.owned.slot = getelementptr inbounds i8, ptr %owned, i32 %index32
+  %removed.owned.byte = load i8, ptr %removed.owned.slot
+  %removed.is.owned = icmp ne i8 %removed.owned.byte, 0
+  br i1 %removed.is.owned, label %transfer, label %copy
+transfer:
+  br label %selected
+copy:
+  %copy.value = call ptr @tb_bootstrap_string_copy(ptr %removed.value)
+  br label %selected
+selected:
+  %result = phi ptr [ %removed.value, %transfer ], [ %copy.value, %copy ]
+  %last.index = sub i32 %len, 1
+  br label %shift.cond
+shift.cond:
+  %dest.index = phi i32 [ %index32, %selected ], [ %next.dest.index, %shift.step ]
+  %shift.continues = icmp slt i32 %dest.index, %last.index
+  br i1 %shift.continues, label %shift.body, label %shift.done
+shift.body:
+  %src.index = add i32 %dest.index, 1
+  %src.slot = getelementptr inbounds ptr, ptr %data, i32 %src.index
+  %src.value = load ptr, ptr %src.slot
+  %dst.slot = getelementptr inbounds ptr, ptr %data, i32 %dest.index
+  store ptr %src.value, ptr %dst.slot
+  %src.owned.slot = getelementptr inbounds i8, ptr %owned, i32 %src.index
+  %src.owned.byte = load i8, ptr %src.owned.slot
+  %dst.owned.slot = getelementptr inbounds i8, ptr %owned, i32 %dest.index
+  store i8 %src.owned.byte, ptr %dst.owned.slot
+  br label %shift.step
+shift.step:
+  %next.dest.index = add i32 %dest.index, 1
+  br label %shift.cond
+shift.done:
+  %last.slot = getelementptr inbounds ptr, ptr %data, i32 %last.index
+  store ptr null, ptr %last.slot
+  %last.owned.slot = getelementptr inbounds i8, ptr %owned, i32 %last.index
+  store i8 0, ptr %last.owned.slot
+  store i32 %last.index, ptr %len.ptr
+  ret ptr %result
+}
 define private ptr @tb_bootstrap_split_chars(ptr %src) {
 entry:
   %len64 = call i64 @strlen(ptr %src)
+  %len.too.large = icmp ugt i64 %len64, 2147483647
+  br i1 %len.too.large, label %too.large, label %length.valid
+too.large:
+  call void @abort()
+  unreachable
+length.valid:
   %len32 = trunc i64 %len64 to i32
   %array = call ptr @tb_bootstrap_string_array_new(i32 %len32)
   br label %loop.cond
 loop.cond:
-  %index = phi i64 [0, %entry], [%next.index, %loop.step]
+  %index = phi i64 [0, %length.valid], [%next.index, %loop.step]
   %keep.loop = icmp slt i64 %index, %len64
   br i1 %keep.loop, label %loop.body, label %done
 loop.body:
-  %item = call ptr @tb_bootstrap_string_char_at(ptr %src, i64 %index)
+  ; Read from the cached-length loop directly; calling string_char_at here
+  ; would recompute strlen for every character of a borrowed string.
+  %char.ptr = getelementptr inbounds i8, ptr %src, i64 %index
+  %char = load i8, ptr %char.ptr
+  %item = call ptr @tb_bootstrap_cached_char(i8 %char)
   %index32 = trunc i64 %index to i32
   call void @tb_bootstrap_string_array_set_owned(ptr %array, i32 %index32, ptr %item, i1 true)
   br label %loop.step

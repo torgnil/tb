@@ -19,7 +19,7 @@ record ParseResult(Node node, int next_index);
 record ParseNodesResult(Node[] nodes, int next_index);
 record TypeParseResult(string value, int next_index, int pending_closers);
 record BindingParseResult(string binding, int next_index);
-record FunctionDeclParseResult(string return_type, string name, string[] params, Node[] body_nodes, int next_index, bool is_cached);
+record FunctionDeclParseResult(string return_type, string name, string[] params, Node[] body_nodes, int next_index, bool is_cached, bool is_private);
 
 string parser_error(Token token, string message):
     return 'Parser error at ' + token.line.to_string() + ':' + token.column.to_string() + ': ' + message + ' [' + token.kind + ' ' + token.value + ']'
@@ -85,6 +85,12 @@ int expect_symbol(Token[] tokens, int index, string value):
         throw parser_error(token, 'expected symbol ' + value)
     return index + 1
 
+ParseResult parse_lambda_body(Token[] tokens, int index):
+    if (token_is(token_at(tokens, index), 'SYMBOL', '{')):
+        ParseNodesResult body = parse_block(tokens, index)
+        return ParseResult(Node('Block', '', body.nodes), body.next_index)
+    return parse_expression(tokens, index)
+
 ParseResult parse_primary(Token[] tokens, int index):
     Token token = token_at(tokens, index)
 
@@ -96,7 +102,7 @@ ParseResult parse_primary(Token[] tokens, int index):
             if (binding_name.kind == 'IDENTIFIER'):
                 if (token_is(arrow, 'SYMBOL', '->')):
                     BindingParseResult binding = parse_typed_binding(tokens, index)
-                    ParseResult body = parse_expression(tokens, binding.next_index + 1)
+                    ParseResult body = parse_lambda_body(tokens, binding.next_index + 1)
                     return ParseResult(Node('Lambda', binding.binding, [body.node]), body.next_index)
     if (token.kind == 'IDENTIFIER'):
         if (index + 2 < tokens.length()):
@@ -105,7 +111,7 @@ ParseResult parse_primary(Token[] tokens, int index):
             if (next.kind == 'IDENTIFIER'):
                 if (token_is(arrow, 'SYMBOL', '->')):
                     BindingParseResult binding = parse_typed_binding(tokens, index)
-                    ParseResult body = parse_expression(tokens, binding.next_index + 1)
+                    ParseResult body = parse_lambda_body(tokens, binding.next_index + 1)
                     return ParseResult(Node('Lambda', binding.binding, [body.node]), body.next_index)
         if (index + 4 < tokens.length()):
             Token left_bracket = token_at(tokens, index + 1)
@@ -117,13 +123,19 @@ ParseResult parse_primary(Token[] tokens, int index):
                     if (binding_name.kind == 'IDENTIFIER'):
                         if (token_is(arrow, 'SYMBOL', '->')):
                             BindingParseResult binding = parse_typed_binding(tokens, index)
-                            ParseResult body = parse_expression(tokens, binding.next_index + 1)
+                            ParseResult body = parse_lambda_body(tokens, binding.next_index + 1)
                             return ParseResult(Node('Lambda', binding.binding, [body.node]), body.next_index)
 
     if (token_is(token, 'SYMBOL', '(')):
         int current = index + 1
         if (current >= tokens.length()):
             throw parser_error(token, 'expected primary expression')
+        if (token_is(token_at(tokens, current), 'SYMBOL', ')')):
+            int after_close = current + 1
+            if (after_close < tokens.length()):
+                if (token_is(token_at(tokens, after_close), 'SYMBOL', '->')):
+                    ParseResult body = parse_lambda_body(tokens, after_close + 1)
+                    return ParseResult(Node('Lambda0', '', [body.node]), body.next_index)
         bool first_can_be_typed_binding = token_at(tokens, current).kind == 'KEYWORD'
         if (!first_can_be_typed_binding && token_at(tokens, current).kind == 'IDENTIFIER'):
             if (current + 1 < tokens.length()):
@@ -596,6 +608,33 @@ ParseResult parse_record_declaration(Token[] tokens, int index):
         current += 1
     return ParseResult(Node('RecordDecl', name_token.value, fields), current)
 
+# Canonicalize a decimal enum literal without converting an out-of-range value
+# through the host integer representation. The lexer supplies decimal digits.
+string enum_integer_text(Token token, bool negative):
+    string digits = token.value
+    int first = 0
+    while (first + 1 < digits.length() && digits[first] == '0'):
+        first += 1
+    digits = digits.substring(first)
+    string limit = '9223372036854775807'
+    if (negative):
+        limit = '9223372036854775808'
+    if (digits.length() > limit.length()):
+        throw parser_error(token, 'integer enum value out of range')
+    if (digits.length() == limit.length()):
+        for (int digit_index = 0; digit_index < digits.length(); digit_index++):
+            string digit_char = digits[digit_index]
+            string limit_char = limit[digit_index]
+            int digit_value = digit_char.to_int()
+            int limit_value = limit_char.to_int()
+            if (digit_value > limit_value):
+                throw parser_error(token, 'integer enum value out of range')
+            if (digit_value < limit_value):
+                break
+    if (negative && digits != '0'):
+        return '-' + digits
+    return digits
+
 ParseResult parse_enum_declaration(Token[] tokens, int index):
     int current = index + 1
     Token name_token = token_at(tokens, current)
@@ -605,12 +644,35 @@ ParseResult parse_enum_declaration(Token[] tokens, int index):
     current = expect_symbol(tokens, current, '{')
 
     Node[] values = []
+    int member_kind = 0
     while (!token_is(token_at(tokens, current), 'SYMBOL', '}')):
         Token value_token = token_at(tokens, current)
         if (value_token.kind != 'IDENTIFIER'):
             throw parser_error(value_token, 'expected enum value')
-        values.push(Node('EnumValue', value_token.value, []))
         current += 1
+        bool assigned = token_is(token_at(tokens, current), 'SYMBOL', '=')
+        int this_kind = 1
+        string encoded_value = value_token.value
+        if (assigned):
+            this_kind = 2
+            current += 1
+            bool negative = token_is(token_at(tokens, current), 'SYMBOL', '-')
+            if (negative):
+                current += 1
+            Token number_token = token_at(tokens, current)
+            if (number_token.kind != 'INT'):
+                throw parser_error(number_token, 'expected integer enum value')
+            encoded_value += '=' + enum_integer_text(number_token, negative)
+            current += 1
+        if (member_kind != 0 && member_kind != this_kind):
+            throw parser_error(value_token, 'integer enum members must all have explicit values')
+        member_kind = this_kind
+        if (member_kind == 2):
+            for (Node previous : values):
+                int separator = previous.value.index_of('=')
+                if (separator >= 0 && previous.value.substring(0, separator) == value_token.value):
+                    throw parser_error(value_token, 'duplicate integer enum member')
+        values.push(Node('EnumValue', encoded_value, []))
         if (token_is(token_at(tokens, current), 'SYMBOL', ',')):
             current += 1
             continue
@@ -760,7 +822,16 @@ ParseResult parse_for_each_statement(Token[] tokens, int index):
     current = expect_symbol(tokens, current, '(')
 
     string binding = ''
+    bool is_const = token_is(token_at(tokens, current), 'KEYWORD', 'const')
+    if (is_const):
+        current += 1
     Token first = token_at(tokens, current)
+    if (is_const):
+        int const_binding_end = type_end(tokens, current)
+        if (const_binding_end >= tokens.length()):
+            throw parser_error(first, 'expected typed const foreach binding')
+        if (token_at(tokens, const_binding_end).kind != 'IDENTIFIER'):
+            throw parser_error(first, 'expected typed const foreach binding')
     if (first.kind == 'KEYWORD' || first.kind == 'IDENTIFIER'):
         int after_type = type_end(tokens, current)
         if (after_type < tokens.length() && token_at(tokens, after_type).kind == 'IDENTIFIER'):
@@ -779,6 +850,9 @@ ParseResult parse_for_each_statement(Token[] tokens, int index):
             throw parser_error(name_token, 'expected loop binding')
         binding = name_token.value
         current += 1
+
+    if (is_const):
+        binding = 'const ' + binding
 
     Token separator = token_at(tokens, current)
     if (token_is(separator, 'SYMBOL', ':') || token_is(separator, 'KEYWORD', 'in')):
@@ -804,9 +878,15 @@ ParseResult parse_for_each_statement(Token[] tokens, int index):
 
 ParseResult parse_try_statement(Token[] tokens, int index):
     int current = index + 1
-    current = expect_symbol(tokens, current, ':')
-    current = expect_kind(tokens, current, 'NEWLINE')
-    ParseNodesResult body = parse_block(tokens, current)
+    ParseNodesResult body = ParseNodesResult([], current)
+    if (token_is(token_at(tokens, current), 'SYMBOL', ':')):
+        current += 1
+        current = expect_kind(tokens, current, 'NEWLINE')
+        body = parse_block(tokens, current)
+    else if (token_is(token_at(tokens, current), 'SYMBOL', '{')):
+        body = parse_block(tokens, current)
+    else:
+        throw parser_error(token_at(tokens, current), 'expected try body')
     current = skip_newlines(tokens, body.next_index)
 
     if (!token_is(token_at(tokens, current), 'KEYWORD', 'catch')):
@@ -821,9 +901,15 @@ ParseResult parse_try_statement(Token[] tokens, int index):
     string binding = catch_type + ' ' + name_token.value
     current += 1
     current = expect_symbol(tokens, current, ')')
-    current = expect_symbol(tokens, current, ':')
-    current = expect_kind(tokens, current, 'NEWLINE')
-    ParseNodesResult catch_body = parse_block(tokens, current)
+    ParseNodesResult catch_body = ParseNodesResult([], current)
+    if (token_is(token_at(tokens, current), 'SYMBOL', ':')):
+        current += 1
+        current = expect_kind(tokens, current, 'NEWLINE')
+        catch_body = parse_block(tokens, current)
+    else if (token_is(token_at(tokens, current), 'SYMBOL', '{')):
+        catch_body = parse_block(tokens, current)
+    else:
+        throw parser_error(token_at(tokens, current), 'expected catch body')
 
     Node[] children = body.nodes
     children.push(Node('Catch', binding, catch_body.nodes))
@@ -920,20 +1006,32 @@ ParseResult parse_switch_statement(Token[] tokens, int index):
     current += 1
     return ParseResult(Node('Switch', '', children), current)
 
-FunctionDeclParseResult parse_function_declaration_parts(Token[] tokens, int index, bool is_cached):
+FunctionDeclParseResult parse_function_declaration_parts(Token[] tokens, int index, bool is_cached, bool is_private):
+    if (is_private && token_is(token_at(tokens, index), 'KEYWORD', 'cached')):
+        throw parser_error(token_at(tokens, index), 'private cached functions are not supported')
     string return_type = parse_type(tokens, index)
     int current = type_end(tokens, index)
     Token name_token = token_at(tokens, current)
     if (name_token.kind != 'IDENTIFIER'):
         throw parser_error(name_token, 'expected function name')
+    if (is_private && is_cached):
+        throw parser_error(name_token, 'private cached functions are not supported')
+    if (is_private && name_token.value == 'main'):
+        throw parser_error(name_token, 'private main functions are not supported')
     current += 1
     current = expect_symbol(tokens, current, '(')
 
     string[] params = []
     if (!token_is(token_at(tokens, current), 'SYMBOL', ')')):
         while (true):
+            bool is_const = token_is(token_at(tokens, current), 'KEYWORD', 'const')
+            if (is_const):
+                current += 1
             BindingParseResult param_binding = parse_typed_binding(tokens, current)
-            params.push(param_binding.binding)
+            string binding = param_binding.binding
+            if (is_const):
+                binding = 'const ' + binding
+            params.push(binding)
             current = param_binding.next_index
             if (token_is(token_at(tokens, current), 'SYMBOL', ',')):
                 current += 1
@@ -950,10 +1048,10 @@ FunctionDeclParseResult parse_function_declaration_parts(Token[] tokens, int ind
     else:
         throw parser_error(token_at(tokens, current), 'expected function body')
 
-    return FunctionDeclParseResult(return_type, name_token.value, params, body.nodes, body.next_index, is_cached)
+    return FunctionDeclParseResult(return_type, name_token.value, params, body.nodes, body.next_index, is_cached, is_private)
 
-ParseResult parse_function_declaration(Token[] tokens, int index, bool is_cached):
-    FunctionDeclParseResult function_decl = parse_function_declaration_parts(tokens, index, is_cached)
+ParseResult parse_function_declaration(Token[] tokens, int index, bool is_cached, bool is_private):
+    FunctionDeclParseResult function_decl = parse_function_declaration_parts(tokens, index, is_cached, is_private)
     Node[] children = []
     for (string param_binding in function_decl.params):
         children.push(Node('Param', param_binding, []))
@@ -962,10 +1060,15 @@ ParseResult parse_function_declaration(Token[] tokens, int index, bool is_cached
     string kind = 'Function'
     if (function_decl.is_cached):
         kind = 'CachedFunction'
+    else if (function_decl.is_private):
+        kind = 'PrivateFunction'
     return ParseResult(Node(kind, function_decl.return_type + ' ' + function_decl.name, children), function_decl.next_index)
 
 ParseResult parse_statement(Token[] tokens, int index):
     Token token = token_at(tokens, index)
+
+    if (token_is(token, 'KEYWORD', 'private')):
+        throw parser_error(token, 'private is only valid on top-level ordinary functions')
 
     if (token_is(token, 'KEYWORD', 'record')):
         return parse_record_declaration(tokens, index)
@@ -1008,7 +1111,9 @@ ParseResult parse_statement(Token[] tokens, int index):
     if (token_is(token, 'KEYWORD', 'return')):
         return parse_return_statement(tokens, index)
     if (token_is(token, 'KEYWORD', 'cached')):
-        return parse_function_declaration(tokens, index + 1, true)
+        if (token_is(token_at(tokens, index + 1), 'KEYWORD', 'private')):
+            throw parser_error(token_at(tokens, index + 1), 'private cached functions are not supported')
+        return parse_function_declaration(tokens, index + 1, true, false)
     if (token_is(token, 'KEYWORD', 'const') || token.kind == 'KEYWORD' || token.kind == 'IDENTIFIER'):
         int type_index = index
         if (token_is(token, 'KEYWORD', 'const')):
@@ -1024,7 +1129,7 @@ ParseResult parse_statement(Token[] tokens, int index):
                         break
                     probe += 2
                 if (probe < tokens.length() && token_is(token_at(tokens, probe), 'SYMBOL', '(')):
-                    return parse_function_declaration(tokens, index, false)
+                    return parse_function_declaration(tokens, index, false, false)
                 if (probe < tokens.length() && token_is(token_at(tokens, probe), 'SYMBOL', '=')):
                     return parse_variable_declaration(tokens, index)
 
@@ -1048,6 +1153,41 @@ Node parse_program(Token[] tokens):
     int current = skip_statement_separators(tokens, 0)
 
     while (!token_is(token_at(tokens, current), 'EOF', '')):
+        if (token_at(tokens, current).kind == 'MODULE'):
+            statements.push(Node('ModuleMarker', token_at(tokens, current).value, []))
+            current += 1
+            continue
+        if (token_is(token_at(tokens, current), 'KEYWORD', 'private')):
+            int function_start = current + 1
+            if (token_is(token_at(tokens, function_start), 'KEYWORD', 'cached')):
+                throw parser_error(token_at(tokens, function_start), 'private cached functions are not supported')
+            if (token_is(token_at(tokens, function_start), 'KEYWORD', 'record') || token_is(token_at(tokens, function_start), 'KEYWORD', 'enum') || token_is(token_at(tokens, function_start), 'KEYWORD', 'const')):
+                if (token_is(token_at(tokens, function_start), 'KEYWORD', 'const')):
+                    int private_const_start = function_start + 1
+                    if (could_start_type(tokens, private_const_start)):
+                        int private_const_end = type_end(tokens, private_const_start)
+                        if (token_at(tokens, private_const_end).kind == 'IDENTIFIER' && token_is(token_at(tokens, private_const_end + 1), 'SYMBOL', '=')):
+                            ParseResult private_const = parse_variable_declaration(tokens, function_start)
+                            statements.push(Node('VarDecl', 'private ' + private_const.node.value, private_const.node.children))
+                            current = skip_statement_separators(tokens, private_const.next_index)
+                            continue
+                throw parser_error(token_at(tokens, current), 'private is only valid on top-level ordinary functions')
+            if (!could_start_type(tokens, function_start)):
+                throw parser_error(token_at(tokens, current), 'private is only valid on top-level ordinary functions')
+            int after_type = type_end(tokens, function_start)
+            if (after_type + 1 >= tokens.length()):
+                throw parser_error(token_at(tokens, current), 'private is only valid on top-level ordinary functions')
+            if (token_at(tokens, after_type).kind != 'IDENTIFIER' || !token_is(token_at(tokens, after_type + 1), 'SYMBOL', '(')):
+                if (token_at(tokens, after_type).kind == 'IDENTIFIER' && token_is(token_at(tokens, after_type + 1), 'SYMBOL', '=')):
+                    ParseResult private_global = parse_variable_declaration(tokens, function_start)
+                    statements.push(Node('VarDecl', 'private ' + private_global.node.value, private_global.node.children))
+                    current = skip_statement_separators(tokens, private_global.next_index)
+                    continue
+                throw parser_error(token_at(tokens, current), 'private is only valid on top-level ordinary functions')
+            ParseResult private_function = parse_function_declaration(tokens, function_start, false, true)
+            statements.push(private_function.node)
+            current = skip_statement_separators(tokens, private_function.next_index)
+            continue
         ParseResult statement = parse_statement(tokens, current)
         statements.push(statement.node)
         current = skip_statement_separators(tokens, statement.next_index)

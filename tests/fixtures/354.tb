@@ -1,0 +1,83 @@
+import random;
+
+# Case 1
+
+int combined_case_1_main(string[] args):
+    print(random_below(1))
+    print(random_between(-9, -8))
+    print(random_between(9223372036854775806, 9223372036854775807))
+    int positive = random_below(100)
+    int cross_zero = random_between(-5, 5)
+    print(positive >= 0 && positive < 100)
+    print(cross_zero >= -5 && cross_zero < 5)
+    return 0
+
+# Case 2
+
+int combined_case_2_main(string[] args):
+    try:
+        random_below(0)
+    catch (exception error):
+        print(error)
+    try:
+        random_between(4, 4)
+    catch (exception error):
+        print(error)
+    try:
+        random_below(-1)
+    catch (exception error):
+        print(error)
+    try:
+        random_between(5, -5)
+    catch (exception error):
+        print(error)
+    return 0
+
+# Case 3
+
+int evaluation_order = 0
+int lower_calls = 0
+int upper_calls = 0
+
+int lower_bound():
+    lower_calls += 1
+    evaluation_order = evaluation_order * 10 + 1
+    return -5
+
+int upper_bound():
+    upper_calls += 1
+    evaluation_order = evaluation_order * 10 + 2
+    return 5
+
+int combined_case_3_main(string[] args):
+    int value = random_between(lower_bound(), upper_bound())
+    print(evaluation_order)
+    print(lower_calls)
+    print(upper_calls)
+    print(value >= -5 && value < 5)
+    return 0
+
+# Case 4
+
+const int GLOBAL_SINGLETON = random_below(1)
+int GLOBAL_RANDOM = random_between(3, 9)
+
+int combined_case_4_main(string[] args):
+    print(GLOBAL_SINGLETON)
+    print(GLOBAL_RANDOM >= 3 && GLOBAL_RANDOM < 9)
+    return 0
+
+int main(string[] args):
+    print('=== case 1 ===')
+    if (combined_case_1_main(args) != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main(args) != 0):
+        return 1
+    print('=== case 3 ===')
+    if (combined_case_3_main(args) != 0):
+        return 1
+    print('=== case 4 ===')
+    if (combined_case_4_main(args) != 0):
+        return 1
+    return 0

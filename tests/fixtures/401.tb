@@ -1,0 +1,40 @@
+enum Op { START = 1, NEXT = 2, STOP = 3 }
+
+record Catalog(map<int, Op[]> rows);
+
+map<int, Op[]> extend_rows(map<int, Op[]> rows):
+    rows[4] = [Op.STOP]
+    return rows
+
+int main():
+    map<int, Op[]> rows = {1: [Op.START, Op.NEXT], 2: []}
+    print(rows.length())
+    print(rows[1][0])
+    print(rows[2].length())
+
+    rows[1] = [Op.STOP]
+    map<int, Op[]> copied = rows
+    copied[1][0] = Op.NEXT
+    print(rows[1][0])
+    print(copied[1][0])
+
+    int[][] snapshot = rows.values()
+    snapshot[0][0] = Op.NEXT
+    print(snapshot[0][0])
+    print(rows[1][0])
+
+    map<int, Op[]> returned = extend_rows(rows)
+    print(returned[4][0])
+
+    map<string, Op[]> inner = {'alpha': [Op.START]}
+    map<int, map<string, Op[]>> nested = {6: inner}
+    nested[6]['alpha'][0] = Op.NEXT
+    print(nested[6]['alpha'][0])
+
+    Catalog catalog = Catalog(rows)
+    catalog.rows[8] = []
+    print(catalog.rows[8].length())
+
+    map<Op, Op[]> enum_keys = {Op.START: [Op.NEXT]}
+    print(enum_keys[Op.START][0])
+    return 0

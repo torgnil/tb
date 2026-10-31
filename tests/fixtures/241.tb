@@ -1,0 +1,87 @@
+int[][] make_grid(int value):
+    return [[value, value + 1], [value + 2]]
+
+int[][] empty_grid():
+    return []
+
+int[][] fail_grid():
+    throw 'selected grid failure'
+    return []
+
+int grid_sum(int[][] values):
+    return values[0][0] + values[1][0]
+
+future<int[][]> submit_scoped_grid(thread_pool pool, int value):
+    int[][] local_grid = make_grid(value)
+    return pool.submit(() -> local_grid[0][0] > 0 ? local_grid : make_grid(0))
+
+future<int[][]> submit_after_pool_close(int value):
+    thread_pool local_pool = thread_pool(1)
+    return local_pool.submit(int input -> input > 0 ? make_grid(input) : make_grid(0 - input), value)
+
+int main(string[] args):
+    int seed = args.length() + 2
+    bool choose_first = args.length() == 1
+    bool choose_second = args.length() > 1
+    bool always_true = args.length() > 0
+    bool always_false = args.length() < 0
+    int[][] source = make_grid(30)
+    int[][] captured = make_grid(40)
+    int[] row = [50, 51]
+    int offset = 5
+    thread_pool pool = thread_pool(2)
+
+    future<int[][]> expression_choice = pool.submit(int value -> value > 0 ? make_grid(value) : make_grid(0 - value), seed)
+    future<int[][]> block_choice = pool.submit(int value -> {
+        if (value > 0) {
+            return choose_first ? make_grid(value + 1) : [[value + 2]]
+        }
+        return make_grid(0 - value)
+    }, seed)
+    future<int[][]> nested_choice = pool.submit(int value -> choose_first ? (choose_second ? make_grid(value + 3) : make_grid(8)) : (choose_second ? make_grid(9) : make_grid(10)), seed)
+    future<int[][]> empty_choice = pool.submit(int value -> choose_first ? empty_grid() : make_grid(value), seed)
+    future<int> helper_argument = pool.submit(int value -> grid_sum(choose_first ? make_grid(value) : make_grid(value + 10)), seed)
+    future<int> indexed_choice = pool.submit(int value -> (choose_first ? make_grid(value + 20) : make_grid(value + 30))[1][0], seed)
+    future<int> query_choice = pool.submit(int value -> (choose_first ? make_grid(value) : make_grid(value + 1)).length(), seed)
+    future<int[][]> borrowed_parameter = pool.submit(int[][] grid -> grid[0][0] > 0 ? grid : make_grid(0), source)
+    future<int[][]> borrowed_capture = pool.submit(() -> captured[0][0] > 0 ? captured : make_grid(0))
+    future<int[][]> packed_capture = pool.submit(int[] values -> values[0] > offset ? make_grid(values[0] + offset) : make_grid(0), row)
+    future<int[][]> scoped_result = submit_scoped_grid(pool, seed + 20)
+    future<int[][]> closed_pool_result = submit_after_pool_close(seed + 30)
+    future<int[][]> lazy_true = pool.submit(int value -> always_true ? make_grid(60) : fail_grid(), seed)
+    future<int[][]> lazy_false = pool.submit(int value -> always_false ? fail_grid() : make_grid(61), seed)
+    future<int[][]> selected_error = pool.submit(int value -> always_false ? make_grid(value) : fail_grid(), seed)
+
+    source[0][0] = 999
+    captured[0][0] = 998
+    row[0] = 997
+    offset = 100
+
+    int[][] first = expression_choice.await()
+    first[0][0] = 996
+    print(first[0][0])
+    print(expression_choice.await()[0][0])
+    int[][] block_result = block_choice.await()
+    print(block_result[0][0])
+    int[][] nested_result = nested_choice.await()
+    print(nested_result[0][0])
+    print(empty_choice.await().length())
+    print(helper_argument.await())
+    print(indexed_choice.await())
+    print(query_choice.await())
+    print(borrowed_parameter.await()[0][0])
+    print(borrowed_capture.await()[0][0])
+    print(packed_capture.await()[0][0])
+    print(scoped_result.await()[0][0])
+    print(closed_pool_result.await()[0][0])
+    print(lazy_true.await()[0][0])
+    print(lazy_false.await()[0][0])
+    try:
+        selected_error.await()
+    catch (string error):
+        print(error)
+    try:
+        selected_error.await()
+    catch (string error):
+        print(error)
+    return 0

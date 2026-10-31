@@ -1,15 +1,38 @@
 %tb_bootstrap_bool_array = type { i32, ptr }
 define private ptr @tb_bootstrap_bool_array_new(i32 %len) {
 entry:
+  %len.negative = icmp slt i32 %len, 0
+  br i1 %len.negative, label %invalid.length, label %allocate.object
+invalid.length:
+  call void @abort()
+  unreachable
+allocate.object:
   %array = call ptr @malloc(i64 16)
+  %array.null = icmp eq ptr %array, null
+  br i1 %array.null, label %allocation.failed, label %check.empty
+check.empty:
+  %is.empty = icmp eq i32 %len, 0
+  br i1 %is.empty, label %initialize.empty, label %allocate.data
+allocate.data:
   %len64 = sext i32 %len to i64
   %bytes = mul i64 %len64, 1
   %data = call ptr @malloc(i64 %bytes)
+  %data.null = icmp eq ptr %data, null
+  br i1 %data.null, label %allocation.failed, label %initialize.data
+allocation.failed:
+  call void @abort()
+  unreachable
+initialize.empty:
+  br label %initialize
+initialize.data:
   call void @llvm.memset.p0.i64(ptr %data, i8 0, i64 %bytes, i1 false)
+  br label %initialize
+initialize:
+  %initialized.data = phi ptr [ null, %initialize.empty ], [ %data, %initialize.data ]
   %len.ptr = getelementptr inbounds %tb_bootstrap_bool_array, ptr %array, i32 0, i32 0
   store i32 %len, ptr %len.ptr
   %data.ptr = getelementptr inbounds %tb_bootstrap_bool_array, ptr %array, i32 0, i32 1
-  store ptr %data, ptr %data.ptr
+  store ptr %initialized.data, ptr %data.ptr
   ret ptr %array
 }
 define private i32 @tb_bootstrap_bool_array_length(ptr %array) {
@@ -44,13 +67,30 @@ pop:
 define private i32 @tb_bootstrap_bool_array_push(ptr %array, i1 %value) {
 entry:
   %len = call i32 @tb_bootstrap_bool_array_length(ptr %array)
+  %too.large = icmp eq i32 %len, 2147483647
+  br i1 %too.large, label %invalid.length, label %allocate.data
+invalid.length:
+  call void @abort()
+  unreachable
+allocate.data:
   %new.len = add i32 %len, 1
   %new.len64 = sext i32 %new.len to i64
   %new.data = call ptr @malloc(i64 %new.len64)
+  %new.data.null = icmp eq ptr %new.data, null
+  br i1 %new.data.null, label %allocation.failed, label %copy
+allocation.failed:
+  call void @abort()
+  unreachable
+copy:
   %data.ptr = getelementptr inbounds %tb_bootstrap_bool_array, ptr %array, i32 0, i32 1
   %old.data = load ptr, ptr %data.ptr
   %len64 = sext i32 %len to i64
+  %has.old.data = icmp sgt i32 %len, 0
+  br i1 %has.old.data, label %copy.old, label %append
+copy.old:
   call void @llvm.memcpy.p0.p0.i64(ptr %new.data, ptr %old.data, i64 %len64, i1 false)
+  br label %append
+append:
   %slot = getelementptr inbounds i8, ptr %new.data, i32 %len
   %value.byte = zext i1 %value to i8
   store i8 %value.byte, ptr %slot
@@ -69,20 +109,42 @@ entry:
   %index.past.end = icmp sgt i64 %index.nonnegative, %len
   %index.clamped = select i1 %index.past.end, i64 %len, i64 %index.nonnegative
   %index32 = trunc i64 %index.clamped to i32
+  %too.large = icmp eq i32 %len32, 2147483647
+  br i1 %too.large, label %invalid.length, label %allocate.data
+invalid.length:
+  call void @abort()
+  unreachable
+allocate.data:
   %new.len = add i32 %len32, 1
   %new.len64 = sext i32 %new.len to i64
   %new.data = call ptr @malloc(i64 %new.len64)
+  %new.data.null = icmp eq ptr %new.data, null
+  br i1 %new.data.null, label %allocation.failed, label %copy.prefix
+allocation.failed:
+  call void @abort()
+  unreachable
+copy.prefix:
   %data.ptr = getelementptr inbounds %tb_bootstrap_bool_array, ptr %array, i32 0, i32 1
   %old.data = load ptr, ptr %data.ptr
+  %has.prefix = icmp sgt i64 %index.clamped, 0
+  br i1 %has.prefix, label %copy.prefix.data, label %insert.value
+copy.prefix.data:
   call void @llvm.memcpy.p0.p0.i64(ptr %new.data, ptr %old.data, i64 %index.clamped, i1 false)
+  br label %insert.value
+insert.value:
   %insert.slot = getelementptr inbounds i8, ptr %new.data, i32 %index32
   %value.byte = zext i1 %value to i8
   store i8 %value.byte, ptr %insert.slot
   %tail.count = sub i64 %len, %index.clamped
+  %has.tail = icmp sgt i64 %tail.count, 0
+  br i1 %has.tail, label %copy.tail, label %finish
+copy.tail:
   %tail.source = getelementptr inbounds i8, ptr %old.data, i32 %index32
   %tail.destination.index = add i32 %index32, 1
   %tail.destination = getelementptr inbounds i8, ptr %new.data, i32 %tail.destination.index
   call void @llvm.memcpy.p0.p0.i64(ptr %tail.destination, ptr %tail.source, i64 %tail.count, i1 false)
+  br label %finish
+finish:
   call void @free(ptr %old.data)
   store ptr %new.data, ptr %data.ptr
   %len.ptr = getelementptr inbounds %tb_bootstrap_bool_array, ptr %array, i32 0, i32 0
@@ -126,6 +188,19 @@ entry:
   %slot = getelementptr inbounds i8, ptr %data, i32 %index
   %value.byte = load i8, ptr %slot
   %value = icmp ne i8 %value.byte, 0
+  ret i1 %value
+}
+define private i1 @tb_bootstrap_bool_array_last(ptr %array) {
+entry:
+  %len = call i32 @tb_bootstrap_bool_array_length(ptr %array)
+  %empty = icmp eq i32 %len, 0
+  br i1 %empty, label %empty.abort, label %nonempty
+empty.abort:
+  call void @abort()
+  unreachable
+nonempty:
+  %last.index = sub i32 %len, 1
+  %value = call i1 @tb_bootstrap_bool_array_get(ptr %array, i32 %last.index)
   ret i1 %value
 }
 define private ptr @tb_bootstrap_bool_array_slice(ptr %array, i64 %start, i64 %end) {
@@ -217,6 +292,27 @@ found:
 notfound:
   ret i1 false
 }
+define private i64 @tb_bootstrap_bool_array_index_of(ptr %array, i1 %needle) {
+entry:
+  %len = call i32 @tb_bootstrap_bool_array_length(ptr %array)
+  br label %loop.cond
+loop.cond:
+  %index = phi i32 [0, %entry], [%next.index, %loop.step]
+  %keep.loop = icmp slt i32 %index, %len
+  br i1 %keep.loop, label %loop.body, label %notfound
+loop.body:
+  %item = call i1 @tb_bootstrap_bool_array_get(ptr %array, i32 %index)
+  %matches = icmp eq i1 %item, %needle
+  br i1 %matches, label %found, label %loop.step
+loop.step:
+  %next.index = add i32 %index, 1
+  br label %loop.cond
+found:
+  %found.index = sext i32 %index to i64
+  ret i64 %found.index
+notfound:
+  ret i64 -1
+}
 define private i64 @tb_bootstrap_bool_array_sum(ptr %array) {
 entry:
   %len = call i32 @tb_bootstrap_bool_array_length(ptr %array)
@@ -251,7 +347,12 @@ copy:
   %clone.data.ptr = getelementptr inbounds %tb_bootstrap_bool_array, ptr %clone, i32 0, i32 1
   %clone.data = load ptr, ptr %clone.data.ptr
   %len64 = sext i32 %len to i64
+  %has.items = icmp sgt i32 %len, 0
+  br i1 %has.items, label %copy.items, label %done
+copy.items:
   call void @llvm.memcpy.p0.p0.i64(ptr %clone.data, ptr %data, i64 %len64, i1 false)
+  br label %done
+done:
   ret ptr %clone
 }
 define private void @tb_bootstrap_bool_array_free(ptr %array) {

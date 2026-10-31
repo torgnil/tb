@@ -1,0 +1,456 @@
+
+
+# Case 1
+record IntCell(int value);
+record IntBox(IntCell cell);
+record BoolCell(bool value);
+record BoolBox(BoolCell cell);
+record StringCell(string value);
+record StringBox(StringCell cell);
+
+int nested_int(int value, bool increase):
+    IntBox box = IntBox(IntCell(value));
+    box = IntBox(box.cell);
+    box = IntBox(box.cell);
+    if (increase):
+        box = IntBox(IntCell(box.cell.value + 1));
+    else:
+        box = IntBox(IntCell(box.cell.value - 1));
+    int index = 0;
+    while (index < 2):
+        box = IntBox(IntCell(box.cell.value + index));
+        index++;
+    return box.cell.value;
+
+bool nested_bool(bool value):
+    BoolBox box = BoolBox(BoolCell(value));
+    box = BoolBox(box.cell);
+    box = BoolBox(box.cell);
+    box = BoolBox(BoolCell(!box.cell.value));
+    return box.cell.value;
+
+string nested_string(string value):
+    StringBox box = StringBox(StringCell(value));
+    box = StringBox(box.cell);
+    box = StringBox(box.cell);
+    box = StringBox(StringCell(box.cell.value + '-tail'));
+    return box.cell.value;
+
+int read_box(IntBox box):
+    return box.cell.value;
+
+int combined_case_1_main(string[] args):
+    int argc = args.length();
+    print(nested_int(argc, true));
+    print(nested_int(argc, false));
+    print(nested_bool(argc > 1));
+    print(nested_string('nested-' + argc.to_string()));
+    IntBox first = IntBox(IntCell(argc + 10));
+    IntBox second = IntBox(IntCell(argc + 20));
+    print(read_box(first));
+    print(read_box(second));
+    IntBox acyclic = IntBox(IntCell(6 * 7));
+    print(acyclic.cell.value);
+    print('acyclic-after-cycles');
+    return 0;
+
+# Case 2
+int EFFECT_COUNT = 0
+
+const map<int, string> GLOBAL_TEXT = {-1: 'global-old', 0: 'zero', -1: 'global-new'}
+
+record TextBox(map<int, string> values);
+
+string make_text(int value):
+    string token = value.to_string()
+    return 'call-' + token
+
+map<int, string> make_text_map(int key, int value):
+    string token = value.to_string()
+    return {key: 'returned-old-' + token, key + 1: 'returned-middle-' + token, key: 'returned-new-' + token}
+
+int next_key():
+    EFFECT_COUNT += 1
+    return 77
+
+string next_value():
+    EFFECT_COUNT += 1
+    string token = EFFECT_COUNT.to_string()
+    return 'effect-' + token
+
+int combined_case_2_main(string[] args):
+    int n = args.length()
+    int base = 100 + n * 10
+    string token = n.to_string()
+
+    print(GLOBAL_TEXT.length())
+    print(GLOBAL_TEXT[-1])
+    print(GLOBAL_TEXT[0])
+
+    map<int, string> ordered = {base: 'old-' + token, base + 1: 'middle-' + token, base + 2: 'tail-' + token, base: 'new-' + token}
+    string[] ordered_values = ordered.values()
+    string[] ordered_keys = ordered.keys()
+    print(ordered.length())
+    print(ordered[base])
+    print(ordered_values[0])
+    print(ordered_values[1])
+    print(ordered_values[2])
+    print(ordered_keys[0])
+    print(ordered_keys[1])
+    print(ordered_keys[2])
+
+    map<int, string> reverse = {base: 'before', base + 1: 'occupied', base + 1: '', base: ''}
+    string[] reverse_values = reverse.values()
+    print(reverse.length())
+    print(reverse_values[0].length())
+    print(reverse_values[1].length())
+
+    map<int, string> filled_empty = {base + 10: '', base + 11: 'other', base + 10: 'filled'}
+    print(filled_empty.length())
+    print(filled_empty[base + 10])
+    print(filled_empty[base + 11])
+
+    map<int, string> empty = {}
+    map<int, string> unique = {-1: 'negative', 0: 'zero', base: 'runtime-' + token}
+    print(empty.length())
+    print(unique.length())
+    print(unique[-1])
+    print(unique[0])
+    print(unique[base])
+
+    string shared = 'shared-' + token
+    map<int, string> borrowed = {base: shared, base + 1: shared, base: 'replace-' + token}
+    string[] borrowed_snapshot = borrowed.values()
+    shared = 'changed-' + token
+    print(borrowed.length())
+    print(borrowed[base])
+    print(borrowed[base + 1])
+    print(borrowed_snapshot[0])
+    print(borrowed_snapshot[1])
+
+    map<int, string> copied = borrowed
+    copied[base] = 'copy-' + token
+    print(borrowed[base])
+    print(copied[base])
+
+    map<int, string> call_values = {base + 3: make_text(base), base + 3: make_text(base + 1)}
+    print(call_values.length())
+    print(call_values[base + 3])
+
+    const map<int, string> fixed = {base + 4: 'const-old', base + 5: 'const-only', base + 4: 'const-new'}
+    print(fixed.length())
+    print(fixed[base + 4])
+    print(fixed[base + 5])
+
+    map<int, string> returned = make_text_map(base + 6, base)
+    print(returned.length())
+    print(returned[base + 6])
+    print(returned[base + 7])
+
+    TextBox box = TextBox({base + 8: 'box-old', base + 9: 'box-only', base + 8: 'box-new'})
+    TextBox cloned = box
+    cloned.values[base + 8] = 'clone-' + token
+    print(box.values.length())
+    print(box.values[base + 8])
+    print(cloned.values[base + 8])
+
+    string[] kept_values = returned.values()
+    returned = {}
+    print(kept_values[0])
+    print(kept_values[1])
+
+    map<int, string> effects = {next_key(): next_value(), next_key(): next_value(), next_key(): next_value()}
+    print(EFFECT_COUNT)
+    print(effects.length())
+    print(effects[77])
+
+    for (int i : range(2)):
+        map<int, string> looped = {base + 20 + i: 'loop-old', base + 21 + i: 'loop-middle', base + 20 + i: 'loop-new'}
+        print(looped.length())
+        print(looped[base + 20 + i])
+        print(looped[base + 21 + i])
+    return 0
+
+# Case 3
+const map<int, map<int, int>> GLOBAL_GROUPS = {
+    -2: {},
+    0: {0: 8}
+}
+
+record IntGroups(map<int, map<int, int>> groups);
+record Cell(int value);
+
+map<int, map<int, string>> make_returned(int seed):
+    if (seed > 0):
+        return {seed: {}, seed + 1: {seed: 'branch'}}
+    return {seed: {}, seed + 1: {seed: 'fallback'}}
+
+int combined_case_3_main(string[] args):
+    int n = args.length()
+    print(GLOBAL_GROUPS.length())
+    print(GLOBAL_GROUPS[-2].length())
+    print(GLOBAL_GROUPS[0][0])
+
+    map<int, map<int, int>> empty_rows = {1: {}, 2: {n: 20 + n}}
+    print(empty_rows.length())
+    print(empty_rows[1].length())
+    empty_rows[1][n] = 10 + n
+    print(empty_rows[1][n])
+
+    map<int, map<int, int>> empty_to_full = {3: {}, 3: {n: 30 + n}}
+    map<int, map<int, int>> full_to_empty = {4: {n: 40 + n}, 4: {}}
+    print(empty_to_full.length())
+    print(empty_to_full[3][n])
+    print(full_to_empty.length())
+    print(full_to_empty[4].length())
+
+    map<int, map<int, int>> copied = empty_rows
+    copied[1][n] = 90 + n
+    print(empty_rows[1][n])
+    print(copied[1][n])
+    empty_rows = {5: {}, 6: {n: 60 + n}}
+    print(empty_rows.length())
+    print(empty_rows[5].length())
+
+    const map<string, map<string, string>> STRING_GROUPS = {
+        '': {},
+        'main': {'name': 'value'}
+    }
+    print(STRING_GROUPS.length())
+    print(STRING_GROUPS[''].length())
+    print(STRING_GROUPS['main']['name'])
+
+    map<int, map<int, string>> string_values = {7: {}}
+    string_values[7][n] = 'inserted-' + n.to_string()
+    print(string_values[7][n])
+
+    map<int, map<string, int>> string_key_values = {14: {}}
+    string_key_values[14]['value'] = n + 140
+    print(string_key_values[14]['value'])
+
+    map<int, map<string, int[]>> array_values = {8: {}}
+    array_values[8]['row'] = [n + 80]
+    print(array_values[8]['row'][0])
+
+    map<int, map<int, map<string, int>>> nested_values = {9: {}}
+    nested_values[9][n] = {'leaf': n + 90}
+    nested_values[9][n]['leaf'] = n + 90
+    print(nested_values[9][n]['leaf'])
+
+    map<string, map<int, bool>> flags = {'a': {}, 'b': {}}
+    flags['a'][0] = true
+    flags['b'][1] = false
+    print(flags.length())
+    print(flags['a'].length())
+    print(flags['a'][0])
+    print(flags['b'][1])
+
+    map<int, map<string, Cell>> record_values = {10: {}}
+    record_values[10]['cell'] = Cell(n + 100)
+    print(record_values[10]['cell'].value)
+
+    IntGroups box = IntGroups({11: {}})
+    box.groups[11][n] = n + 110
+    IntGroups box_copy = box
+    box_copy.groups[11][n] = n + 111
+    print(box.groups[11][n])
+    print(box_copy.groups[11][n])
+    box.groups = {12: {}, 13: {n: n + 120}}
+    print(box.groups[12].length())
+    print(box.groups[13][n])
+
+    map<int, map<int, string>> returned = make_returned(n)
+    print(returned.length())
+    print(returned[n].length())
+    print(returned[n + 1][n])
+    map<int, map<int, string>> fallback_return = make_returned(-n)
+    fallback_return[-n][-n] = 'fallback-updated'
+    print(fallback_return.length())
+    print(fallback_return[-n].length())
+    print(fallback_return[-n][-n])
+
+    for (int i : range(n + 1)):
+        map<int, map<int, int>> loop_groups = {i: {}, i + 1: {0: i}, i: {i: i + 200}}
+        print(loop_groups.length())
+        print(loop_groups[i][i])
+    return 0
+
+# Case 4
+record LastHolder(int[] numbers, string[] words, int[][] number_rows, string[][] word_rows);
+
+const int[] GLOBAL_LAST_NUMBERS = [71, 72];
+const string[] GLOBAL_LAST_WORDS = ['global-left', 'global-tail'];
+
+int[] make_last_numbers(int seed):
+    return [seed, seed + 1, seed + 2]
+
+bool[] make_last_flags(int seed):
+    return [seed > 0, seed >= 0]
+
+string[] make_last_words(int seed):
+    return ['left-' + seed.to_string(), 'tail-' + seed.to_string()]
+
+int[][] make_last_number_rows(int seed):
+    return [[seed, seed + 1], [seed + 2, seed + 3]]
+
+string[][] make_last_word_rows(int seed):
+    return [['left-' + seed.to_string()], ['right-' + seed.to_string(), 'tail-' + seed.to_string()]]
+
+int borrowed_numbers_last(int[] values):
+    return values.last()
+
+bool borrowed_flags_last(bool[] values):
+    return last(values)
+
+string borrowed_words_last(string[] values):
+    return values.last()
+
+int borrowed_number_rows_last(int[][] values):
+    return values.last()[0]
+
+string borrowed_word_rows_last(string[][] values):
+    return last(values)[0]
+
+string returned_last_word(int seed):
+    return last(make_last_words(seed))
+
+int[] returned_last_number_row(int seed):
+    return make_last_number_rows(seed).last()
+
+int combined_case_4_main(string[] args):
+    int seed = args.length()
+
+    print(last(make_last_numbers(seed)))
+    print(make_last_numbers(seed).last())
+    print(last(make_last_flags(seed)))
+    print(make_last_flags(seed).last())
+    print(last(make_last_words(seed)))
+    print(make_last_words(seed).last())
+
+    int[] call_number_row = last(make_last_number_rows(seed))
+    print(call_number_row[0])
+    call_number_row[1] += 10
+    print(call_number_row[1])
+    string[] call_word_row = make_last_word_rows(seed).last()
+    print(call_word_row[0])
+    call_word_row[0] = 'changed-call-' + seed.to_string()
+    print(call_word_row[0])
+
+    print(last([seed, seed + 10]))
+    print([seed, seed + 11].last())
+    print(last([seed > 0, false]))
+    print([false, seed >= 0].last())
+    print(last(['literal-' + seed.to_string(), 'literal-tail-' + seed.to_string()]))
+    print(['method-' + seed.to_string(), 'method-tail-' + seed.to_string()].last())
+    int[] literal_number_row = last([[seed], [seed + 20, seed + 21]])
+    print(literal_number_row[0])
+    string[] literal_word_row = [['left-' + seed.to_string()], ['literal-row-' + seed.to_string()]].last()
+    print(literal_word_row[0])
+
+    print(last(make_last_numbers(seed)[1:]))
+    print(make_last_numbers(seed)[0:2].last())
+    print(last(make_last_flags(seed)[:]))
+    print(make_last_words(seed)[0:2].last())
+    int[] slice_number_row = make_last_number_rows(seed)[:].last()
+    print(slice_number_row[1])
+    string[] slice_word_row = last(make_last_word_rows(seed)[:])
+    print(slice_word_row[1])
+
+    print(last(make_last_numbers(seed).copy()))
+    print(make_last_flags(seed).copy().last())
+    print(last(make_last_words(seed).copy()))
+    int[] copy_number_row = make_last_number_rows(seed).copy().last()
+    print(copy_number_row[0])
+    string[] copy_word_row = make_last_word_rows(seed).copy().last()
+    print(copy_word_row[0])
+
+    int[] borrowed_numbers = make_last_numbers(seed)
+    bool[] borrowed_flags = make_last_flags(seed)
+    string[] borrowed_words = make_last_words(seed)
+    int[][] borrowed_number_rows = make_last_number_rows(seed)
+    string[][] borrowed_word_rows = make_last_word_rows(seed)
+    print(borrowed_numbers_last(borrowed_numbers))
+    print(borrowed_flags_last(borrowed_flags))
+    print(borrowed_words_last(borrowed_words))
+    print(borrowed_number_rows_last(borrowed_number_rows))
+    print(borrowed_word_rows_last(borrowed_word_rows))
+    print(borrowed_numbers.length())
+    print(borrowed_words.length())
+    print(borrowed_number_rows.length())
+    print(borrowed_word_rows.length())
+
+    const int[] fixed_numbers = make_last_numbers(seed)
+    const bool[] fixed_flags = make_last_flags(seed)
+    const string[] fixed_words = make_last_words(seed)
+    const int[][] fixed_number_rows = make_last_number_rows(seed)
+    const string[][] fixed_word_rows = make_last_word_rows(seed)
+    print(last(fixed_numbers))
+    print(fixed_flags.last())
+    print(last(fixed_words))
+    print(fixed_number_rows.last()[0])
+    print(last(fixed_word_rows)[0])
+    print(GLOBAL_LAST_NUMBERS.last())
+    print(last(GLOBAL_LAST_WORDS))
+
+    LastHolder holder = LastHolder(make_last_numbers(seed), make_last_words(seed), make_last_number_rows(seed), make_last_word_rows(seed))
+    print(holder.numbers.last())
+    print(last(holder.words))
+    print(holder.number_rows.last()[0])
+    print(last(holder.word_rows)[0])
+    LastHolder holder_copy = holder
+    holder_copy.numbers[0] = 900
+    holder_copy.words[0] = 'cloned-holder'
+    print(holder.numbers[0])
+    print(holder_copy.numbers[0])
+    print(holder.words[0])
+    print(holder_copy.words[0])
+
+    string[] stored_words = []
+    stored_words.push(last(make_last_words(seed)))
+    print(stored_words[0])
+    stored_words[0] = 'replaced-' + seed.to_string()
+    print(stored_words[0])
+    map<int, int[]> stored_rows = {1: make_last_number_rows(seed).last()}
+    print(stored_rows[1][0])
+    map<int, int[]> copied_rows = stored_rows
+    copied_rows[1][0] = 901
+    print(stored_rows[1][0])
+    print(copied_rows[1][0])
+    stored_rows[1] = make_last_number_rows(seed + 1).last()
+    print(stored_rows[1][0])
+
+    print(returned_last_word(seed))
+    int[] returned_row = returned_last_number_row(seed)
+    returned_row[0] += 30
+    print(returned_row[0])
+
+    int[] reused_numbers = make_last_numbers(seed)
+    print(reused_numbers.last())
+    reused_numbers[0] += 40
+    print(reused_numbers.last())
+    print(reused_numbers.length())
+    for (int offset : range(2)):
+        print(last(make_last_numbers(seed + offset)))
+        print(make_last_flags(seed + offset).last())
+        print(last(make_last_words(seed + offset)))
+        int[] loop_number_row = make_last_number_rows(seed + offset).last()
+        print(loop_number_row[0])
+        string[] loop_word_row = make_last_word_rows(seed + offset).last()
+        print(loop_word_row[0])
+
+    return 0
+
+int main(string[] args):
+    print('=== case 1 ===')
+    if (combined_case_1_main(args) != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main(args) != 0):
+        return 1
+    print('=== case 3 ===')
+    if (combined_case_3_main(args) != 0):
+        return 1
+    print('=== case 4 ===')
+    if (combined_case_4_main(args) != 0):
+        return 1
+    return 0

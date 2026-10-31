@@ -1,0 +1,191 @@
+
+
+# Case 1
+record Count(int value);
+record Snapshot(int[] values, map<int, string> labels);
+record pop(bool[] flags);
+record choose(bool[] flags);
+
+int choose(int value):
+    return value + 1
+
+int combined_case_1_main(string[] args):
+    int seed = args.length()
+    Count count = Count(seed + 4)
+    const int fixed = seed + 2
+    Count fixed_count = Count(fixed)
+    const int[] source = [seed + 5, seed + 6]
+    const map<int, string> labels = {seed: 'label'}
+    Snapshot snapshot = Snapshot(source, labels)
+    Snapshot empty = Snapshot([], {})
+    bool[] flags = [true, false]
+    pop boxed = pop(flags)
+
+    print(count.value)
+    print(fixed_count.value)
+    print(snapshot.values[1])
+    print(snapshot.labels[seed])
+    print(boxed.flags.length())
+    print(flags.pop())
+    print(flags.length())
+    print(choose(seed))
+    print(empty.values.length())
+    print(empty.labels.length())
+    return 0
+
+# Case 2
+enum Mode {
+    READY,
+    DONE
+}
+
+int combined_case_2_main(string[] args):
+    bool done = args.length() > 1
+    Mode selected = choose_mode(done)
+    print(choose_mode(done))
+    print(forward_mode(choose_mode(done)))
+    print(choose_mode(done).forward_mode())
+    print(choose_mode(done) == Mode.DONE)
+    print(is_done(choose_mode(done)))
+    print(choose_mode(done).starts_with('R'))
+    print(choose_mode(done).label())
+    print(selected.label())
+    print(selected.length())
+    print(decorate('plain'))
+    print('plain'.decorate())
+    int repeated = 0
+    for (int i : range(30)):
+        if (choose_mode(done) == Mode.READY):
+            repeated += 1
+    print(repeated)
+    int[] values = [1]
+    print(index_of(values, 1))
+    print(values.index_of(1))
+    return 0
+
+Mode choose_mode(bool done):
+    if (done):
+        return Mode.DONE
+    return Mode.READY
+
+Mode forward_mode(Mode mode):
+    return mode
+
+Mode index_of(int[] values, int needle):
+    return Mode.READY
+
+bool is_done(Mode mode):
+    return mode == Mode.DONE
+
+string label(Mode mode):
+    return mode + '!'
+
+string decorate(string value):
+    return value + '!'
+
+# Case 3
+record Counter(int value);
+
+num initial_num():
+    return 1.5
+
+int GLOBAL_INT = 5;
+num GLOBAL_NUM = initial_num();
+const int STEP = 2;
+
+void update_globals(int amount, num decimal_amount):
+    GLOBAL_INT += amount
+    GLOBAL_NUM += decimal_amount
+
+int add_parameter(int value, int amount):
+    value += amount
+    return value
+
+int add_parameter_explicit(int value, int amount):
+    value = value + amount
+    return value
+
+int combined_case_3_main(string[] args):
+    int count = args.length()
+    int total = count
+    total += STEP
+    total = total + count
+    print(total)
+    print(add_parameter(count, STEP))
+    print(add_parameter_explicit(count, STEP))
+
+    num amount = 2.5
+    num sum = amount
+    sum += count
+    sum = sum + 1.25
+    print(sum)
+
+    update_globals(count, 0.5)
+    print(GLOBAL_INT)
+    print(GLOBAL_NUM)
+
+    string text = 'count-'
+    text += count
+    text += '-ok'
+    print(text)
+
+    int[] values = [count]
+    values[0] += STEP
+    print(values[0])
+    Counter counter = Counter(count)
+    counter.value += STEP
+    print(counter.value)
+    return 0
+
+# Case 4
+int copy(const int[] ints, const bool[] flags, const string[] words, const int[][] rows, const string[][] text_rows):
+    int total = ints.length() + flags.length() + words.length() + rows.length() + text_rows.length()
+    if (ints.length() > 0):
+        total += ints[0]
+    if (words.length() > 0):
+        total += words[0].length()
+    if (rows.length() > 0):
+        total += rows[0].length()
+    if (text_rows.length() > 0):
+        total += text_rows[text_rows.length() - 1].length()
+        if (text_rows[text_rows.length() - 1].length() > 0):
+            total += text_rows[text_rows.length() - 1][0].length()
+    return total
+
+int fill(const int[] ints, const bool[] flags, const string[] words, const int[][] rows, const string[][] text_rows):
+    int total = ints.length() + flags.length() + words.length() + rows.length() + text_rows.length()
+    if (ints.length() > 0):
+        total += ints[0]
+    if (words.length() > 0):
+        total += words[0].length()
+    if (rows.length() > 0):
+        total += rows[0].length()
+    if (text_rows.length() > 0):
+        total += text_rows[text_rows.length() - 1].length()
+        if (text_rows[text_rows.length() - 1].length() > 0):
+            total += text_rows[text_rows.length() - 1][0].length()
+    return total
+
+int combined_case_4_main(string[] args):
+    print([].copy([], [], [], []))
+    print([args.length(), 2].copy([true], ['x'], [[], [3, 4]], [[], ['y']]))
+    print([].fill([], [], [], []))
+    print([args.length(), 2].fill([true], ['x'], [[], [3, 4]], [[], ['y']]))
+    for (int repeat : range(2)):
+        print([args.length()].copy([], [], [], []))
+    return 0
+
+int main(string[] args):
+    print('=== case 1 ===')
+    if (combined_case_1_main(args) != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main(args) != 0):
+        return 1
+    print('=== case 3 ===')
+    if (combined_case_3_main(args) != 0):
+        return 1
+    print('=== case 4 ===')
+    if (combined_case_4_main(args) != 0):
+        return 1
+    return 0

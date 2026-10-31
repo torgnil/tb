@@ -9,7 +9,7 @@ python_dir="$script_dir/python"
 c_dir="$script_dir/c"
 build_dir="$repo_root/.build/benchmarks"
 compiler="$repo_root/bin/tb"
-python3_bin=$(command -v python3 || true)
+python3_bin="python3"
 runs=5
 filter=""
 date_supports_nanoseconds=0
@@ -23,6 +23,7 @@ Usage: ./benchmarks/run.sh [options]
 
 Options:
   --compiler PATH  tb compiler to use (default: bin/tb)
+  --python PATH    Python 3.10+ interpreter (default: python3 from PATH)
   --filter TEXT    run only benchmarks whose file name contains TEXT
   --runs N         executable runs per benchmark (default: 5)
   --skip-python    run only tb benchmarks
@@ -35,6 +36,14 @@ while [ "$#" -gt 0 ]; do
     case "$1" in
         --compiler)
             compiler="$2"
+            shift 2
+            ;;
+        --python)
+            if [ "$#" -lt 2 ] || [ -z "$2" ]; then
+                echo "--python requires an interpreter path or command" >&2
+                exit 1
+            fi
+            python3_bin="$2"
             shift 2
             ;;
         --filter)
@@ -194,10 +203,16 @@ if [ "${#benchmarks[@]}" -eq 0 ]; then
 fi
 
 if [ "$include_python" -eq 1 ]; then
-    if [ -z "$python3_bin" ]; then
-        echo "Missing python3" >&2
+    if ! python3_bin=$(command -v "$python3_bin"); then
+        echo "Python interpreter not found; use --python PATH to select Python 3.10+" >&2
         exit 1
     fi
+    if ! "$python3_bin" -c 'import sys; sys.exit(sys.version_info < (3, 10))'; then
+        echo "Python 3.10+ is required; selected interpreter: $python3_bin" >&2
+        echo "Use --python PATH to select a newer interpreter." >&2
+        exit 1
+    fi
+    echo "Python: $python3_bin ($("$python3_bin" --version))" >&2
 fi
 
 printf "%-20s %5s %10s %10s %10s %10s %10s %10s %10s %10s %8s\n" \

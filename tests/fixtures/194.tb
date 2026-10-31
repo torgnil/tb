@@ -1,0 +1,212 @@
+
+
+# Case 1
+record insert(string[] values);
+
+void print_words(string[] words):
+    print(words.length())
+    for (int i : range(words.length())):
+        print(words[i])
+
+string make_word(int value):
+    return 'owned-' + value.to_string()
+
+int combined_case_1_main(string[] args):
+    int count = args.length()
+    const int middle_index = 1
+    const string middle_value = 'middle-' + count
+    string[] words = ['left-' + count, 'right-' + count]
+    words.insert(middle_index, middle_value)
+    print_words(words)
+    words.insert(words.length() - 1, 'before-last-' + count)
+    words.insert(-9223372036854775807 - 1, 'first-' + count)
+    words.insert(9223372036854775807, 'last-' + count)
+    print_words(words)
+
+    string[] empty = []
+    empty.insert(9223372036854775807, 'empty-end-' + count)
+    empty.insert(-9223372036854775807 - 1, make_word(count))
+    print_words(empty)
+    string removed = empty.remove_at(0)
+    empty.clear()
+    empty.insert(0, removed)
+    print_words(empty)
+
+    string[] self_alias_growth = ['growth-' + count, 'tail-' + count]
+    self_alias_growth.insert(0, self_alias_growth[self_alias_growth.length() - 1])
+    print_words(self_alias_growth)
+
+    string[] self_alias_capacity = ['capacity-' + count, 'kept-' + count]
+    self_alias_capacity.remove_at(0)
+    self_alias_capacity.insert(0, self_alias_capacity[0])
+    print_words(self_alias_capacity)
+
+    string[] owned = ['before-' + count, 'after-' + count]
+    owned.insert(1, make_word(count))
+    string owned_removed = owned.remove_at(1)
+    owned.clear()
+    print(owned_removed)
+
+    string[] constructor_values = ['constructor-' + count]
+    insert collision = insert(constructor_values)
+    print(collision.values)
+    print(constructor_values)
+    return 0
+
+# Case 2
+record IntRows(int[][] values);
+record StringRows(string[][] values);
+
+int[][] make_int_rows(int value):
+    return [[value, value + 1], []]
+
+string[][] make_string_rows(string value):
+    return [[value + '-owned'], []]
+
+int combined_case_2_main(string[] args):
+    int value = args.length()
+    int[][] numbers = [[value, value + 1], []]
+    clear(numbers)
+    print(numbers.length())
+    numbers.clear()
+    print(numbers.length())
+    numbers.push([value + 2])
+    print(numbers[0][0])
+
+    int[] source_numbers = [value + 3, value + 4]
+    int[][] number_snapshots = []
+    number_snapshots.push(source_numbers)
+    number_snapshots.clear()
+    print(source_numbers[0])
+
+    IntRows number_box = IntRows([[value + 5]])
+    number_box.values.clear()
+    print(number_box.values.length())
+    make_int_rows(value + 6).clear()
+
+    string text = value.to_string()
+    string[][] labels = [['first-' + text], [], ['last-' + text]]
+    labels.clear()
+    print(labels.length())
+    labels.clear()
+    labels.push(['reused-' + text])
+    print(labels[0][0])
+
+    string[] source_labels = ['source-' + text]
+    string[][] label_snapshots = []
+    label_snapshots.push(source_labels)
+    label_snapshots.clear()
+    print(source_labels[0])
+
+    StringRows label_box = StringRows([['field-' + text]])
+    clear(label_box.values)
+    print(label_box.values.length())
+    make_string_rows('temporary-' + text).clear()
+    return 0
+
+# Case 3
+int[] take_int_row(int value):
+    int[][] rows = [[value, value + 1], [value + 2, value + 3]]
+    return rows.pop()
+
+string[] take_string_row(int value):
+    string token = value.to_string()
+    string[][] rows = [['owned-' + token, 'tail-' + token]]
+    return pop(rows)
+
+int combined_case_3_main(string[] args):
+    int value = args.length()
+    int[] kept_numbers = take_int_row(value)
+    print(kept_numbers[0])
+    kept_numbers[1] = 90
+    print(kept_numbers[1])
+
+    int[] borrowed_source = [value + 10, value + 11]
+    int[][] borrowed_rows = []
+    borrowed_rows.push(borrowed_source)
+    int[] borrowed_pop = borrowed_rows.pop()
+    borrowed_pop[0] = 99
+    print(borrowed_source[0])
+    print(borrowed_pop[0])
+    print(borrowed_rows.length())
+
+    int[][] empty_numbers = []
+    int[] empty_number_row = pop(empty_numbers)
+    print(empty_numbers.length())
+    print(empty_number_row.length())
+    empty_number_row.push(value + 20)
+    print(empty_number_row[0])
+    int[] empty_number_again = empty_numbers.pop()
+    print(empty_number_again.length())
+
+    string[] kept_labels = take_string_row(value)
+    print(kept_labels[0])
+    string[][] labels = []
+    string[] borrowed_label = ['source-' + value.to_string()]
+    labels.push(borrowed_label)
+    string[] popped_label = pop(labels)
+    popped_label[0] = 'changed'
+    labels.clear()
+    print(borrowed_label[0])
+    print(popped_label[0])
+    print(labels.length())
+
+    string[][] empty_labels = []
+    string[] empty_label_row = empty_labels.pop()
+    print(empty_label_row.length())
+    empty_label_row.push('reused')
+    print(empty_label_row[0])
+
+    string[] temporary_row = [['temporary-' + value.to_string()]].pop()
+    print(temporary_row[0])
+    return 0
+
+# Case 4
+int combined_case_4_main(string[] args):
+    int runtime_index = args.length() - 1
+    int runtime_value = args.length() + 40
+    const int fixed_index = 1
+    const int fixed_value = 99
+    int[] values = [10, 20, 30]
+
+    int runtime_length = values.insert(runtime_index, runtime_value)
+    print(runtime_length)
+    print(values)
+
+    int fixed_length = values.insert(fixed_index, fixed_value)
+    print(fixed_length)
+    print(values)
+
+    int start_length = values.insert(-4294967296, 5)
+    print(start_length)
+    print(values)
+
+    int append_length = values.insert(4294967296, 88)
+    print(append_length)
+    print(values)
+
+    int removed = values.remove_at(runtime_index + 1)
+    print(removed)
+    print(values)
+
+    int invalid_negative = values.remove_at(-4294967296)
+    int invalid_large = values.remove_at(4294967296)
+    print(invalid_negative)
+    print(invalid_large)
+    print(values)
+    return 0
+
+int main(string[] args):
+    print('=== case 1 ===')
+    if (combined_case_1_main(args) != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main(args) != 0):
+        return 1
+    print('=== case 3 ===')
+    if (combined_case_3_main(args) != 0):
+        return 1
+    print('=== case 4 ===')
+    if (combined_case_4_main(args) != 0):
+        return 1
+    return 0

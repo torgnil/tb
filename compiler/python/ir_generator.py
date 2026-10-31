@@ -158,6 +158,10 @@ class IRGenerator:
         self.bool_variables: dict[str, bool] = {}
         self.variable_types: dict[str, str] = {}
         self.string_variables: dict[str, str] = {}
+        self._active_string_expression_ids: set[int] = set()
+        self._active_integer_expression_ids: set[int] = set()
+        self._active_boolean_expression_ids: set[int] = set()
+        self._active_record_expression_ids: set[int] = set()
         self.number_variables: dict[str, NumberValue] = {}
         self.array_variables: dict[str, ArrayValue] = {}
         self.record_types: dict[str, dict[str, str]] = {}
@@ -607,6 +611,8 @@ class IRGenerator:
         for parameter in statement.parameters:
             self.variable_types[parameter.name] = parameter.type_name
             self.const_variables.discard(parameter.name)
+            if parameter.is_const:
+                self.const_variables.add(parameter.name)
 
         self.current_function_return_type = self.function_return_types.get(statement.name, "void")
         body_instructions = []
@@ -1028,7 +1034,15 @@ class IRGenerator:
             raise TypeError(f"Expected foreach item type {statement.item_type}, got {iterable_item_type}")
 
         iterable = self._array_constant_value(statement.iterable, iterable_type) if self._is_array_type(iterable_type) else None
-        if iterable is None or self._contains_loop_control_statement(statement.body):
+        # Preflight nested leaves before lowering the body; static rows have no runtime binding.
+        if (
+            iterable is None
+            or not all(
+                self._can_unroll_foreach_item(item, statement.item_type)
+                for item in iterable.items
+            )
+            or self._contains_loop_control_statement(statement.body)
+        ):
             return self._lower_runtime_for_each(statement, iterable_type)
 
         instructions = []
@@ -1052,7 +1066,9 @@ class IRGenerator:
                 self.int_constants[statement.item_name] = constant_value
                 instructions.extend(
                     self._lower_statement(
-                        VariableDeclaration("int", statement.item_name, IntegerLiteral(constant_value))
+                        VariableDeclaration(
+                            "int", statement.item_name, IntegerLiteral(constant_value), statement.is_const
+                        )
                     )
                 )
             elif statement.item_type == "string":
@@ -1067,6 +1083,8 @@ class IRGenerator:
                 self.array_variables[statement.item_name] = constant_value
             else:
                 raise TypeError(f"Unsupported foreach item type: {statement.item_type}")
+            if statement.is_const:
+                self.const_variables.add(statement.item_name)
             for body_statement in statement.body:
                 lowered = self._lower_statement(body_statement)
                 instructions.extend(lowered)
@@ -1081,6 +1099,26 @@ class IRGenerator:
         self.enum_variables = saved_enum_variables
         self.const_variables = saved_const_variables
         return instructions
+
+    def _can_unroll_foreach_item(self, item, item_type: str) -> bool:
+        if item_type == "bool":
+            return False
+        if item_type in self.record_types:
+            return False
+        if item_type == "int":
+            return self._integer_constant_value(item) is not None
+        if item_type == "string":
+            return self._string_constant_value(item) is not None
+        if self._is_array_type(item_type):
+            value = self._array_constant_value(item, item_type)
+            if value is None:
+                return False
+            nested_item_type = self._array_item_type(item_type)
+            return all(
+                self._can_unroll_foreach_item(nested_item, nested_item_type)
+                for nested_item in value.items
+            )
+        return True
 
     def _lower_runtime_for_each(self, statement: ForEachStatement, iterable_type: str):
         if self._expression_type(statement.iterable) != iterable_type:
@@ -1134,8 +1172,11 @@ class IRGenerator:
                         statement.item_type,
                         statement.item_name,
                         ArrayAccess(iterable_expression, Identifier(index_name)),
+                        statement.is_const,
                     )
                 )
+            if statement.is_const:
+                self.const_variables.add(statement.item_name)
             for body_statement in statement.body:
                 self._invalidate_assigned_bindings(body_statement)
                 body_instructions.extend(self._lower_statement(body_statement))
@@ -3100,6 +3141,16 @@ class IRGenerator:
         raise TypeError(f"Unsupported function argument type: {arg_type}")
 
     def _evaluate_string_expression(self, expression) -> str:
+        expression_id = id(expression)
+        if expression_id in self._active_string_expression_ids:
+            raise TypeError("Cyclic string expression is not compile-time evaluable")
+        self._active_string_expression_ids.add(expression_id)
+        try:
+            return self._evaluate_string_expression_inner(expression)
+        finally:
+            self._active_string_expression_ids.remove(expression_id)
+
+    def _evaluate_string_expression_inner(self, expression) -> str:
         if isinstance(expression, StringLiteral):
             return expression.value
         if isinstance(expression, TernaryExpression):
@@ -3403,6 +3454,16 @@ class IRGenerator:
         raise TypeError(f"Unsupported file expression node: {type(expression).__name__}")
 
     def _integer_constant_value(self, expression) -> int | None:
+        expression_id = id(expression)
+        if expression_id in self._active_integer_expression_ids:
+            return None
+        self._active_integer_expression_ids.add(expression_id)
+        try:
+            return self._integer_constant_value_inner(expression)
+        finally:
+            self._active_integer_expression_ids.remove(expression_id)
+
+    def _integer_constant_value_inner(self, expression) -> int | None:
         if isinstance(expression, IntegerLiteral):
             return expression.value
         if isinstance(expression, TernaryExpression):
@@ -3556,6 +3617,16 @@ class IRGenerator:
         return None
 
     def _boolean_constant_value(self, expression) -> bool | None:
+        expression_id = id(expression)
+        if expression_id in self._active_boolean_expression_ids:
+            return None
+        self._active_boolean_expression_ids.add(expression_id)
+        try:
+            return self._boolean_constant_value_inner(expression)
+        finally:
+            self._active_boolean_expression_ids.remove(expression_id)
+
+    def _boolean_constant_value_inner(self, expression) -> bool | None:
         if isinstance(expression, BooleanLiteral):
             return expression.value
         if isinstance(expression, TernaryExpression):
@@ -4571,6 +4642,16 @@ class IRGenerator:
         return RecordInstance(type_name, values)
 
     def _coerce_record_value(self, expression) -> RecordInstance:
+        expression_id = id(expression)
+        if expression_id in self._active_record_expression_ids:
+            raise TypeError("Cyclic record expression is not compile-time evaluable")
+        self._active_record_expression_ids.add(expression_id)
+        try:
+            return self._coerce_record_value_inner(expression)
+        finally:
+            self._active_record_expression_ids.remove(expression_id)
+
+    def _coerce_record_value_inner(self, expression) -> RecordInstance:
         expression_type = self._expression_type(expression)
         if expression_type not in self.record_types:
             raise TypeError(f"Expected record expression, got {expression_type}")

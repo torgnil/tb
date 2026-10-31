@@ -1,0 +1,408 @@
+
+
+# Case 1
+record StringBox(string[] words);
+
+int[] global_ints = [70, 71];
+string[] global_words = ['global-left', 'global-tail'];
+
+int[] make_ints(int seed):
+    return [seed, seed + 10]
+
+int[] make_empty_ints():
+    return []
+
+bool[] make_bools(int seed):
+    return [seed > 0, false]
+
+bool[] make_empty_bools():
+    return []
+
+string[] make_words(int seed):
+    return ['head-' + seed.to_string(), 'tail-' + seed.to_string()]
+
+string[] make_empty_words():
+    return []
+
+int borrowed_int_remove(int[] values, int index):
+    return values.remove_at(index)
+
+bool borrowed_bool_remove(bool[] values, int index):
+    return values.remove_at(index)
+
+string borrowed_word_remove(string[] values, int index):
+    return values.remove_at(index)
+
+int combined_case_1_main(string[] args):
+    int argc = args.length()
+    int seed = argc + 4
+    print(argc)
+    print(make_ints(seed).remove_at(1))
+    print(make_ints(seed).remove_at(-1))
+    print(make_ints(seed).remove_at(9223372036854775807))
+    print(make_empty_ints().remove_at(0))
+    print([seed, seed + 1].remove_at(0))
+    print(range(seed, seed + 2).remove_at(1))
+    print(make_ints(seed)[0:].remove_at(1))
+    print(make_ints(seed).copy().remove_at(0))
+    int[] named_ints = make_ints(seed + 1)
+    print(named_ints.remove_at(0))
+    print(named_ints.length())
+    int[] borrowed_ints = make_ints(seed + 2)
+    print(borrowed_int_remove(borrowed_ints, 0))
+    print(borrowed_ints.length())
+    print(global_ints.remove_at(0) + global_ints.length())
+    print(make_bools(seed).remove_at(0))
+    print(make_bools(seed).remove_at(99))
+    print(make_empty_bools().remove_at(0))
+    bool[] named_bools = make_bools(seed)
+    print(named_bools.remove_at(0))
+    print(named_bools[0])
+    bool[] borrowed_bools = make_bools(seed)
+    print(borrowed_bool_remove(borrowed_bools, 0))
+    print(borrowed_bools[0])
+    string saved = make_words(seed).remove_at(1)
+    print(saved)
+    print(saved)
+    print(make_words(seed).remove_at(-1))
+    print(make_empty_words().remove_at(0))
+    print(['literal-left', 'literal-tail'].remove_at(1))
+    print(make_words(seed)[0:].remove_at(0))
+    print(make_words(seed).copy().remove_at(1))
+    string[] named_words = make_words(seed)
+    print(named_words.remove_at(0) + ':' + named_words[0])
+    string[] borrowed_words = make_words(seed)
+    print(borrowed_word_remove(borrowed_words, 0))
+    print(borrowed_words[0])
+    print(global_words.remove_at(0) + ':' + global_words[0])
+    StringBox box = StringBox(make_words(seed))
+    print(box.words.remove_at(0))
+    print(box.words.length().to_string() + ':' + box.words[0])
+    int loop_total = 0
+    for (int offset : range(2)):
+        loop_total += make_ints(seed + offset).remove_at(1)
+    print(loop_total)
+    return 0
+
+# Case 2
+record IntBox(int[] values);
+
+int[] global_values = [70, 71];
+
+int[] make_values(int seed):
+    return [seed, seed + 10]
+
+int[] make_empty_values():
+    return []
+
+int borrowed_pop(int[] values):
+    return pop(values)
+
+int combined_case_2_main(string[] args):
+    int argc = args.length()
+    int seed = argc + 4
+    print(argc)
+
+    int[] named = make_values(seed)
+    print(pop(named))
+    print(named.length())
+    print(pop(named))
+    print(pop(named))
+    print(named.length())
+
+    int[] empty_values = make_empty_values()
+    print(pop(empty_values))
+    print(empty_values.length())
+
+    int[] literal_values = [seed + 2, seed + 3]
+    print(pop(literal_values))
+    int[] range_values = range(seed + 4, seed + 6)
+    print(pop(range_values))
+    int[] slice_values = make_values(seed + 6)[0:]
+    print(pop(slice_values))
+    int[] copy_values = make_values(seed + 8).copy()
+    print(pop(copy_values))
+
+    print(pop(make_values(seed + 10)))
+    print(pop(make_values(seed + 12)))
+    print(pop(make_empty_values()))
+
+    int[] borrowed_values = make_values(seed + 14)
+    print(borrowed_pop(borrowed_values))
+    print(borrowed_values.length())
+
+    const int[] const_values = make_values(seed + 16)
+    int[] mutable_copy = copy(const_values)
+    print(pop(mutable_copy))
+    print(const_values.length())
+    print(const_values[1])
+
+    print(pop(global_values))
+    print(global_values.length())
+
+    IntBox box = IntBox(make_values(seed + 18))
+    print(pop(box.values))
+    print(box.values.length())
+
+    int branch_value = 0
+    if (argc > 1):
+        int[] branch_values = make_values(seed + 20)
+        branch_value = pop(branch_values)
+    else:
+        int[] branch_values = make_values(seed + 22)
+        branch_value = pop(branch_values)
+    print(branch_value)
+
+    int loop_total = 0
+    for (int offset : range(2)):
+        int[] loop_values = make_values(seed + 24 + offset)
+        loop_total += pop(loop_values)
+    print(loop_total)
+
+    int[] ufcs_values = make_values(seed + 26)
+    print(ufcs_values.pop())
+    print(ufcs_values.length())
+    return 0
+
+# Case 3
+record InsertMethodHolder(int[] values, bool[] flags, string[] words);
+
+int[] global_insert_method_numbers = [70, 71];
+string[] global_insert_method_words = ['global-left', 'global-right'];
+
+int[] make_insert_method_numbers(int seed):
+    return [seed + 60, seed + 61]
+
+bool[] make_insert_method_flags():
+    return [false]
+
+string make_insert_method_word(int seed):
+    return 'owned-' + seed.to_string()
+
+string[] make_insert_method_words():
+    return ['temporary-left', 'temporary-right']
+
+void print_insert_method_flags(bool[] flags):
+    for (int i : range(flags.length())):
+        print(flags[i])
+
+void insert_method_borrowed(int[] values, int item):
+    values.insert(1, item)
+
+int combined_case_3_main(string[] args):
+    int seed = args.length()
+
+    int[] numbers = [seed, seed + 2]
+    print(numbers.insert(1, seed + 10))
+    print(numbers)
+
+    int[] empty_numbers = []
+    print(empty_numbers.insert(-9223372036854775807 - 1, seed + 20))
+    print(empty_numbers)
+
+    int[] at_end = [seed + 3, seed + 4]
+    at_end.insert(9223372036854775807, seed + 40)
+    print(at_end)
+
+    insert_method_borrowed(numbers, seed + 50)
+    print(numbers)
+
+    global_insert_method_numbers.insert(1, seed + 70)
+    print(global_insert_method_numbers)
+
+    InsertMethodHolder holder = InsertMethodHolder([seed + 80], [false], ['field-left'])
+    holder.values.insert(1, seed + 81)
+    holder.flags.insert(0, true)
+    holder.words.insert(1, 'field-right')
+    print(holder.values)
+    print_insert_method_flags(holder.flags)
+    print(holder.words)
+
+    const int[] frozen = [seed + 90, seed + 91]
+    int[] mutable_copy = copy(frozen)
+    print(mutable_copy.insert(1, seed + 92))
+    print(mutable_copy)
+
+    int[] reused = make_insert_method_numbers(seed)
+    reused.insert(1, seed + 100)
+    print(reused)
+
+    int[] branch_values = [seed]
+    if (seed > 0):
+        branch_values.insert(-1, seed + 110)
+    else:
+        branch_values.insert(0, seed + 111)
+    print(branch_values)
+
+    int loop_total = 0
+    for (int i : range(2)):
+        loop_total += make_insert_method_numbers(seed).insert(i, seed + 120 + i)
+    print(loop_total)
+    print(make_insert_method_numbers(seed).insert(1, seed + 130))
+
+    bool[] flags = [true, false]
+    flags.insert(1, true)
+    print_insert_method_flags(flags)
+
+    bool[] empty_flags = []
+    empty_flags.insert(9223372036854775807, false)
+    print_insert_method_flags(empty_flags)
+
+    bool[] reused_flags = make_insert_method_flags()
+    reused_flags.insert(-1, true)
+    print_insert_method_flags(reused_flags)
+    make_insert_method_flags().insert(0, true)
+
+    const string borrowed_word = 'borrowed'
+    string[] words = ['left', 'right']
+    words.insert(1, borrowed_word)
+    print(words)
+
+    string[] owned_words = ['before', 'after']
+    owned_words.insert(1, make_insert_method_word(seed))
+    print(owned_words)
+
+    string[] self_alias_growth = ['grow', 'tail']
+    self_alias_growth.insert(0, self_alias_growth[1])
+    print(self_alias_growth)
+
+    string[] empty_words = []
+    empty_words.insert(-9223372036854775807 - 1, 'first')
+    empty_words.insert(9223372036854775807, 'last')
+    print(empty_words)
+
+    global_insert_method_words.insert(1, 'global-middle')
+    print(global_insert_method_words)
+
+    string[] copied_words = copy(['copy-left', 'copy-right'])
+    copied_words.insert(1, 'copy-middle')
+    print(copied_words)
+
+    make_insert_method_words().insert(1, 'temporary-owned')
+    int[] method_numbers = [seed]
+    print(method_numbers.insert(0, seed + 140))
+    print(method_numbers)
+    print('method insert complete')
+    return 0
+
+# Case 4
+record PushHolder(int[] numbers, bool[] flags, string[] words);
+
+int[] global_push_numbers = [70, 71];
+string[] global_push_words = ['global-left', 'global-right'];
+
+int[] make_push_numbers(int seed):
+    return [seed + 60]
+
+string[] make_push_words(int seed):
+    return ['owned-' + seed.to_string()]
+
+string make_push_word(int seed):
+    return 'value-' + seed.to_string()
+
+int push_borrowed(bool[] values, bool item):
+    return push(values, item)
+
+void print_push_flags(bool[] values):
+    for (int i : range(values.length())):
+        print(values[i])
+
+int combined_case_4_main(string[] args):
+    int seed = args.length()
+
+    int[] numbers = [seed]
+    print(push(numbers, seed + 1))
+    print(numbers)
+
+    int[] empty_numbers = []
+    print(push(empty_numbers, seed + 2))
+    print(empty_numbers)
+
+    int[] reused_numbers = make_push_numbers(seed)
+    print(push(reused_numbers, seed + 3))
+    int reused_length = push(reused_numbers, seed + 4)
+    if (reused_length != 3):
+        throw 'reused push length mismatch'
+    print(reused_numbers)
+
+    const int[] frozen_numbers = [seed + 5]
+    int[] mutable_copy = copy(frozen_numbers)
+    print(push(mutable_copy, seed + 6))
+    print(mutable_copy)
+    print(frozen_numbers)
+
+    PushHolder holder = PushHolder([seed + 7], [false], ['field-left'])
+    print(push(holder.numbers, seed + 8))
+    print(holder.numbers)
+    int holder_initial_flag_length = push(holder.flags, true)
+    if (holder_initial_flag_length != 2):
+        throw 'record field push length mismatch'
+    int holder_flag_length = push(holder.flags, false)
+    if (holder_flag_length != 3):
+        throw 'record field push length mismatch'
+    print_push_flags(holder.flags)
+    print(push(holder.words, 'field-right'))
+    print(holder.words)
+
+    print(push(global_push_numbers, seed + 9))
+    print(global_push_numbers)
+    int global_words_length = push(global_push_words, 'global-middle')
+    if (global_words_length != 3):
+        throw 'global push length mismatch'
+    print(global_push_words)
+
+    bool[] flags = [seed > 0]
+    print(push(flags, seed == 1))
+    print_push_flags(flags)
+    bool[] empty_flags = []
+    if (push_borrowed(empty_flags, true) != 1):
+        throw 'borrowed bool push length mismatch'
+    print_push_flags(empty_flags)
+
+    const string borrowed = 'borrowed'
+    const string constant_item = 'constant'
+    string[] words = ['left', 'right']
+    print(push(words, borrowed))
+    if (push(words, constant_item) != 4):
+        throw 'const string push length mismatch'
+    print(words)
+
+    string[] self_alias_growth = ['grow', 'tail']
+    print(push(self_alias_growth, self_alias_growth[1]))
+    print(self_alias_growth)
+
+    string[] owned_words = ['before']
+    print(push(owned_words, make_push_word(seed)))
+    print(owned_words)
+    print(push(make_push_words(seed), make_push_word(seed + 1)))
+
+    int[] branch_values = []
+    if (seed > 1):
+        print(push(branch_values, seed + 10))
+    else:
+        print(push(branch_values, seed + 11))
+    print(branch_values)
+
+    int[] loop_values = []
+    int loop_total = 0
+    for (int i : range(2)):
+        loop_total += push(loop_values, seed + 20 + i)
+    print(loop_total)
+    print(loop_values)
+    print('direct push complete')
+    return 0
+
+int main(string[] args):
+    print('=== case 1 ===')
+    if (combined_case_1_main(args) != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main(args) != 0):
+        return 1
+    print('=== case 3 ===')
+    if (combined_case_3_main(args) != 0):
+        return 1
+    print('=== case 4 ===')
+    if (combined_case_4_main(args) != 0):
+        return 1
+    return 0

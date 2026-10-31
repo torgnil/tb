@@ -1,0 +1,62 @@
+record TextBox(string value);
+
+string make_text(int seed):
+    return 'owned-' + seed
+
+string decorate(string value):
+    return value + '!'
+
+string[] make_words(int seed):
+    return ['word-' + seed.to_string()]
+
+void print_borrowed(string value):
+    print(value)
+    print(value)
+
+string GLOBAL_TEXT = 'global-value'
+
+int main(string[] args):
+    int seed = args.length() + 2
+    print(make_text(seed))
+    print(seed.to_string())
+    print('joined-' + seed)
+    print(('  trim-' + seed.to_string() + '  ').trim())
+    print(make_text(seed).substring(0, 6))
+    print(make_text(seed)[0:6])
+    print(make_text(seed)[0:0])
+    print(make_text(seed).decorate())
+    print(make_words(seed)[0])
+
+    string retained = make_text(seed + 1)
+    print(retained)
+    print(retained)
+    print_borrowed(retained)
+    print(retained + '?')
+    const string fixed = 'const-value'
+    print(fixed)
+    print(fixed)
+    TextBox box = TextBox(make_text(seed + 2))
+    print(box.value)
+    print(box.value)
+    print(GLOBAL_TEXT)
+    print(GLOBAL_TEXT)
+
+    bool choose_first = args.length() == 1
+    print(choose_first ? make_text(20) : make_text(21))
+    for (int index : range(2)):
+        print(make_text(index))
+
+    try:
+        string before_throw = make_text(seed + 3)
+        print(before_throw)
+        throw 'caught-' + seed
+    catch (exception error):
+        print(error)
+
+    thread_pool pool = thread_pool(2)
+    future<string> awaited = pool.submit(int value -> make_text(value), seed)
+    print(awaited.await())
+    print(awaited.await())
+    string awaited_value = awaited.await()
+    print(awaited_value.length())
+    return 0

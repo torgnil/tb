@@ -1,0 +1,411 @@
+
+
+# Case 1
+record Box(int[] values, bool[] flags);
+record Cell(int value);
+
+int[] make_row(int seed):
+    return [seed, seed + 1]
+
+int combined_case_1_main(string[] args):
+    int n = args.length()
+    const int fixed = n + 1
+    const bool enabled = n > 0
+    Box box = Box([], [])
+    box.values = [n, fixed]
+    box.flags = [false, enabled]
+    print(box.values[0])
+    print(box.values[1])
+    print(box.flags[1])
+
+    int[] local_values = [n, fixed]
+    print(local_values[1])
+    int[] made = make_row(n + 5)
+    box.values = made
+    made[0] = 99
+    print(box.values[0])
+    Box copied = box
+    copied.values[0] = 91
+    print(box.values[0])
+
+    const string key = 'key-' + n
+    const string text = 'text-' + n
+    map<string, int> first = {key: fixed}
+    map<string, int> second = {'other': n}
+    print(first[key])
+    print(second['other'])
+
+    const int fixed_key = n + 2
+    map<int, int> integer_keys = {fixed_key: n, n: fixed}
+    print(integer_keys[fixed_key])
+
+    const int[] row = [n + 2]
+    map<int, int[]> rows = {n: row}
+    rows[n][0] = 90
+    print(row[0])
+    print(rows[n][0])
+
+    const string[] group = [text]
+    string[][] groups = [group, [text]]
+    groups[0][0] = 'changed'
+    print(group[0])
+    print(groups[1][0])
+
+    const Cell cell = Cell(n + 3)
+    Cell[] cells = [cell, Cell(n + 4)]
+    cells[0].value = 92
+    print(cell.value)
+    print(cells[1].value)
+
+    set<int> seen = {fixed, n}
+    print(seen.contains(n))
+    return 0
+
+# Case 2
+record QueryBox(int[] ints, bool[] flags, string[] words, int[][] rows, string[][] word_rows);
+
+int PRODUCER_CALLS = 0
+const int[] GLOBAL_INTS = [71]
+const bool[] GLOBAL_FLAGS = [true]
+const string[] GLOBAL_WORDS = ['global-word']
+const int[][] GLOBAL_ROWS = [[73]]
+const string[][] GLOBAL_WORD_ROWS = [['global-row']]
+
+int[] make_ints(int value):
+    PRODUCER_CALLS += 1
+    return [value]
+
+bool[] make_flags(int value):
+    PRODUCER_CALLS += 1
+    return [value > 0]
+
+string[] make_words(int value):
+    PRODUCER_CALLS += 1
+    return ['word-' + value]
+
+int[][] make_rows(int value):
+    PRODUCER_CALLS += 1
+    return [[value]]
+
+string[][] make_word_rows(int value):
+    PRODUCER_CALLS += 1
+    return [['row-' + value]]
+
+int[] empty_ints():
+    PRODUCER_CALLS += 1
+    return []
+
+bool[] empty_flags():
+    PRODUCER_CALLS += 1
+    return []
+
+string[] empty_words():
+    PRODUCER_CALLS += 1
+    return []
+
+int[][] empty_rows():
+    PRODUCER_CALLS += 1
+    return []
+
+string[][] empty_word_rows():
+    PRODUCER_CALLS += 1
+    return []
+
+int[] loop_ints():
+    PRODUCER_CALLS += 1
+    return [1, 2, 3]
+
+bool[] loop_flags():
+    PRODUCER_CALLS += 1
+    return [false, true, false]
+
+string[] loop_words():
+    PRODUCER_CALLS += 1
+    return ['skip', 'next', 'last']
+
+int[][] loop_rows():
+    PRODUCER_CALLS += 1
+    return [[10], [20], [30]]
+
+string[][] loop_word_rows():
+    PRODUCER_CALLS += 1
+    return [['skip'], ['next'], ['last']]
+
+int borrowed_queries(int[] ints, bool[] flags, string[] words, int[][] rows, string[][] word_rows):
+    return ints.length() + flags.length() + words.length() + rows.length() + word_rows.length()
+
+int length(int value):
+    return value + 100
+
+bool is_empty(int value):
+    return value == 0
+
+int combined_case_2_main(string[] args):
+    int seed = args.length() + 4
+
+    print(make_ints(seed).length())
+    print(make_ints(seed).is_empty())
+    print(make_flags(seed).length())
+    print(make_flags(seed).is_empty())
+    print(make_words(seed).length())
+    print(make_words(seed).is_empty())
+    print(make_rows(seed).length())
+    print(make_rows(seed).is_empty())
+    print(make_word_rows(seed).length())
+    print(make_word_rows(seed).is_empty())
+
+    print(empty_ints().length())
+    print(empty_ints().is_empty())
+    print(empty_flags().length())
+    print(empty_flags().is_empty())
+    print(empty_words().length())
+    print(empty_words().is_empty())
+    print(empty_rows().length())
+    print(empty_rows().is_empty())
+    print(empty_word_rows().length())
+    print(empty_word_rows().is_empty())
+
+    for (int i in range(3)):
+        print(make_ints(seed + i).length())
+
+    int loop_seen = 0
+    for (int loop_int_item : loop_ints()):
+        loop_seen += 1
+        if (loop_int_item == 1):
+            continue
+        print(loop_int_item)
+        break
+    print('after int loop ' + loop_seen)
+
+    loop_seen = 0
+    for (bool loop_bool_item : loop_flags()):
+        loop_seen += 1
+        if (!loop_bool_item):
+            continue
+        print(loop_bool_item)
+        break
+    print('after bool loop ' + loop_seen)
+
+    loop_seen = 0
+    for (string loop_string_item : loop_words()):
+        loop_seen += 1
+        if (loop_string_item == 'skip'):
+            continue
+        print(loop_string_item)
+        break
+    print('after string loop ' + loop_seen)
+
+    loop_seen = 0
+    for (int[] loop_int_row : loop_rows()):
+        loop_seen += 1
+        if (loop_int_row[0] == 10):
+            continue
+        print(loop_int_row[0])
+        break
+    print('after int rows loop ' + loop_seen)
+
+    loop_seen = 0
+    for (string[] loop_word_row : loop_word_rows()):
+        loop_seen += 1
+        if (loop_word_row[0] == 'skip'):
+            continue
+        print(loop_word_row[0])
+        break
+    print('after string rows loop ' + loop_seen)
+
+    int[] local_ints = make_ints(seed + 10)
+    const int[] const_ints = make_ints(seed + 11)
+    bool[] local_flags = make_flags(seed + 10)
+    const bool[] const_flags = make_flags(seed + 11)
+    string[] local_words = make_words(seed + 10)
+    const string[] const_words = make_words(seed + 11)
+    int[][] local_rows = make_rows(seed + 10)
+    const int[][] const_rows = make_rows(seed + 11)
+    string[][] local_word_rows = make_word_rows(seed + 10)
+    const string[][] const_word_rows = make_word_rows(seed + 11)
+
+    print(borrowed_queries(local_ints, local_flags, local_words, local_rows, local_word_rows))
+    print(borrowed_queries(const_ints, const_flags, const_words, const_rows, const_word_rows))
+    print(local_ints[0])
+    print(const_ints[0])
+    print(local_flags[0])
+    print(const_flags[0])
+    print(local_words[0])
+    print(const_words[0])
+    print(local_rows[0][0])
+    print(const_rows[0][0])
+    print(local_word_rows[0][0])
+    print(const_word_rows[0][0])
+
+    print(borrowed_queries(GLOBAL_INTS, GLOBAL_FLAGS, GLOBAL_WORDS, GLOBAL_ROWS, GLOBAL_WORD_ROWS))
+    print(GLOBAL_INTS[0])
+    print(GLOBAL_WORDS[0])
+    print(GLOBAL_ROWS[0][0])
+    print(GLOBAL_WORD_ROWS[0][0])
+
+    QueryBox box = QueryBox([seed + 30], [true], ['box-' + seed], [[seed + 31]], [['box-row-' + seed]])
+    print(borrowed_queries(box.ints, box.flags, box.words, box.rows, box.word_rows))
+    print(box.ints[0])
+    print(box.words[0])
+    print(box.rows[0][0])
+    print(box.word_rows[0][0])
+
+    print(length(make_ints(seed + 40)))
+    bool direct_int_empty = is_empty(make_ints(seed + 41))
+    bool direct_word_empty = is_empty(make_words(seed + 42))
+    print(direct_int_empty)
+    print(direct_word_empty)
+    print(length(seed))
+    print(seed.length())
+    print(is_empty(0))
+    print(0.is_empty())
+    print(PRODUCER_CALLS)
+    return 0
+
+# Case 3
+record Empty();
+record lowercase();
+record _Marker();
+record Holder(Empty value);
+record Item(int value);
+record pop();
+record copy();
+record last();
+record index_of();
+
+Empty make_empty():
+    return Empty()
+
+lowercase make_lowercase():
+    return lowercase()
+
+_Marker make_marker():
+    return _Marker()
+
+int combined_case_3_main(string[] args):
+    const Empty fixed = Empty()
+    Empty[] empties = []
+    empties.push(fixed)
+    empties.push(make_empty())
+    empties[0] = Empty()
+    print(empties.length())
+
+    lowercase[] lower_values = [lowercase()]
+    lower_values.push(make_lowercase())
+    print(lower_values.length())
+
+    _Marker[] markers = []
+    markers.push(make_marker())
+    print(markers.length())
+
+    Empty assigned = Empty()
+    assigned = make_empty()
+    Holder holder = Holder(assigned)
+    holder.value = Empty()
+
+    Item[] items = [Item(3)]
+    items.push(Item(8))
+    items[0] = Item(5)
+    print(items[1].value)
+
+    pop pop_value = pop()
+    copy copy_value = copy()
+    last last_value = last()
+    index_of index_value = index_of()
+    print(args.length())
+    return 0
+
+# Case 4
+record IntGrid(int[][] rows);
+record StringGrid(string[][] rows);
+record MultiGrid(int[][] int_rows, string[][] str_rows);
+
+IntGrid SINGLE_EMPTY_INT = IntGrid([[]])
+IntGrid DOUBLE_EMPTY_INT = IntGrid([[], []])
+StringGrid SINGLE_EMPTY_STR = StringGrid([[]])
+StringGrid DOUBLE_EMPTY_STR = StringGrid([[], []])
+IntGrid MIXED_INT = IntGrid([[10, 20], []])
+StringGrid MIXED_STR = StringGrid([['alpha'], []])
+IntGrid POPULATED_INT = IntGrid([[1, 2], [3, 4]])
+StringGrid POPULATED_STR = StringGrid([['hello', 'world'], ['tb']])
+MultiGrid MULTI_EMPTY = MultiGrid([[]], [[]])
+
+int combined_case_4_main(string[] args):
+    int seed = args.length()
+    print(SINGLE_EMPTY_INT.rows.length())
+    print(SINGLE_EMPTY_INT.rows[0].length())
+    SINGLE_EMPTY_INT.rows[0].push(seed + 100)
+    print(SINGLE_EMPTY_INT.rows[0][0])
+
+    print(DOUBLE_EMPTY_INT.rows.length())
+    print(DOUBLE_EMPTY_INT.rows[0].length())
+    print(DOUBLE_EMPTY_INT.rows[1].length())
+    DOUBLE_EMPTY_INT.rows[1].push(seed + 200)
+    print(DOUBLE_EMPTY_INT.rows[1][0])
+
+    print(SINGLE_EMPTY_STR.rows.length())
+    print(SINGLE_EMPTY_STR.rows[0].length())
+    SINGLE_EMPTY_STR.rows[0].push('entry-' + seed)
+    print(SINGLE_EMPTY_STR.rows[0][0])
+
+    print(DOUBLE_EMPTY_STR.rows.length())
+    print(DOUBLE_EMPTY_STR.rows[0].length())
+    print(DOUBLE_EMPTY_STR.rows[1].length())
+    DOUBLE_EMPTY_STR.rows[1].push('second-' + seed)
+    print(DOUBLE_EMPTY_STR.rows[1][0])
+
+    print(MIXED_INT.rows.length())
+    print(MIXED_INT.rows[0][0])
+    print(MIXED_INT.rows[1].length())
+    MIXED_INT.rows[1].push(seed + 300)
+    print(MIXED_INT.rows[1][0])
+
+    print(MIXED_STR.rows.length())
+    print(MIXED_STR.rows[0][0])
+    print(MIXED_STR.rows[1].length())
+    MIXED_STR.rows[1].push('mixed-' + seed)
+    print(MIXED_STR.rows[1][0])
+
+    print(POPULATED_INT.rows.length())
+    print(POPULATED_INT.rows[0][1])
+    print(POPULATED_INT.rows[1][0])
+
+    print(POPULATED_STR.rows.length())
+    print(POPULATED_STR.rows[0][0])
+    print(POPULATED_STR.rows[1][0])
+
+    print(MULTI_EMPTY.int_rows.length())
+    print(MULTI_EMPTY.str_rows.length())
+    MULTI_EMPTY.int_rows[0].push(seed + 400)
+    MULTI_EMPTY.str_rows[0].push('multi-' + seed)
+    print(MULTI_EMPTY.int_rows[0][0])
+    print(MULTI_EMPTY.str_rows[0][0])
+
+    IntGrid local_grid = IntGrid([[]])
+    print(local_grid.rows.length())
+    print(local_grid.rows[0].length())
+    local_grid.rows[0].push(seed + 500)
+    print(local_grid.rows[0][0])
+
+    StringGrid local_str = StringGrid([[]])
+    print(local_str.rows.length())
+    print(local_str.rows[0].length())
+    local_str.rows[0].push('local-' + seed)
+    print(local_str.rows[0][0])
+
+    return 0
+
+int main(string[] args):
+    print('=== case 1 ===')
+    if (combined_case_1_main(args) != 0):
+        return 1
+    print('=== case 2 ===')
+    if (combined_case_2_main(args) != 0):
+        return 1
+    print('=== case 3 ===')
+    if (combined_case_3_main(args) != 0):
+        return 1
+    print('=== case 4 ===')
+    if (combined_case_4_main(args) != 0):
+        return 1
+    return 0

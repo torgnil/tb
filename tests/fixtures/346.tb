@@ -1,0 +1,34 @@
+import regex;
+
+void check(string pattern, string text):
+    Regex compiled = regex_compile(pattern)
+    print(compiled.valid)
+    print(regex_match(compiled, text))
+    print(regex_contains(compiled, text))
+    return
+
+int main():
+    check('^hello$', 'hello')
+    check('^hello$', 'xhello')
+    check('^hello$', 'hello\n')
+    check('hello$', 'xhello\n')
+    check('^hello', 'xhello')
+    check('^$', '')
+    check('^$', '\n')
+    check('a$\n', 'a\n')
+    check('(^a|b$)', 'xb')
+    check('(^a|b$)', 'ax')
+    check('(^)*a', 'a')
+    check('($){2}', '')
+    check('\\^hello\\$', '^hello$')
+    check('[a^$]+', 'a^$')
+    check('^a*$', 'aaa')
+    check('^a*$', 'baa')
+    check('a$b', 'ab')
+    print(regex_compile('^*').valid)
+    print(regex_compile('$+').valid)
+    print(regex_compile('^{2}').valid)
+    Regex damaged = regex_compile('^a')
+    damaged.start = 999
+    print(regex_contains(damaged, 'a'))
+    return 0

@@ -19,6 +19,21 @@ loop.body:
 done:
   ret i64 %value
 }
+define private i128 @tb_bootstrap_num_pow10_i128(i128 %scale) {
+entry:
+  br label %loop.cond
+loop.cond:
+  %index = phi i128 [0, %entry], [%next.index, %loop.body]
+  %value = phi i128 [1, %entry], [%next.value, %loop.body]
+  %keep.loop = icmp slt i128 %index, %scale
+  br i1 %keep.loop, label %loop.body, label %done
+loop.body:
+  %next.value = mul i128 %value, 10
+  %next.index = add i128 %index, 1
+  br label %loop.cond
+done:
+  ret i128 %value
+}
 define private i64 @tb_bootstrap_num_rescale_value(i64 %value, i64 %from_scale, i64 %to_scale) {
 entry:
   %already.scale = icmp sle i64 %to_scale, %from_scale
@@ -31,20 +46,90 @@ scale.up:
 done:
   ret i64 %value
 }
+define private i64 @tb_bootstrap_num_digits(i128 %magnitude) {
+entry:
+  br label %loop.cond
+loop.cond:
+  %value = phi i128 [%magnitude, %entry], [%next.value, %loop.body]
+  %digits = phi i64 [0, %entry], [%next.digits, %loop.body]
+  %needs.divide = icmp ugt i128 %value, 9
+  br i1 %needs.divide, label %loop.body, label %done
+loop.body:
+  %next.value = udiv i128 %value, 10
+  %next.digits = add i64 %digits, 1
+  br label %loop.cond
+done:
+  %result = add i64 %digits, 1
+  ret i64 %result
+}
+define private i64 @tb_bootstrap_num_cmp_magnitude(i128 %left, i64 %left.scale, i128 %right, i64 %right.scale) {
+entry:
+  %left.digits = call i64 @tb_bootstrap_num_digits(i128 %left)
+  %right.digits = call i64 @tb_bootstrap_num_digits(i128 %right)
+  %left.order = sub i64 %left.digits, %left.scale
+  %right.order = sub i64 %right.digits, %right.scale
+  %orders.equal = icmp eq i64 %left.order, %right.order
+  br i1 %orders.equal, label %align, label %compare.order
+compare.order:
+  %order.less = icmp slt i64 %left.order, %right.order
+  %order.result = select i1 %order.less, i64 -1, i64 1
+  ret i64 %order.result
+align:
+  %left.scale.less = icmp slt i64 %left.scale, %right.scale
+  %left.delta = sub i64 %right.scale, %left.scale
+  %right.delta = sub i64 %left.scale, %right.scale
+  %delta = select i1 %left.scale.less, i64 %left.delta, i64 %right.delta
+  ; Equal decimal order bounds the scale difference by 18 for i64 coefficients.
+  %delta.wide = sext i64 %delta to i128
+  %factor = call i128 @tb_bootstrap_num_pow10_i128(i128 %delta.wide)
+  %left.product = mul i128 %left, %factor
+  %right.product = mul i128 %right, %factor
+  %left.aligned = select i1 %left.scale.less, i128 %left.product, i128 %left
+  %right.aligned = select i1 %left.scale.less, i128 %right, i128 %right.product
+  %magnitude.less = icmp ult i128 %left.aligned, %right.aligned
+  %magnitude.greater = icmp ugt i128 %left.aligned, %right.aligned
+  %greater.or.equal = select i1 %magnitude.greater, i64 1, i64 0
+  %result = select i1 %magnitude.less, i64 -1, i64 %greater.or.equal
+  ret i64 %result
+}
 define private i64 @tb_bootstrap_num_cmp(%tb_bootstrap_num %left, %tb_bootstrap_num %right) {
 entry:
   %left.value = extractvalue %tb_bootstrap_num %left, 0
   %left.scale = extractvalue %tb_bootstrap_num %left, 1
   %right.value = extractvalue %tb_bootstrap_num %right, 0
   %right.scale = extractvalue %tb_bootstrap_num %right, 1
-  %left.scale.gt = icmp sgt i64 %left.scale, %right.scale
-  %target.scale = select i1 %left.scale.gt, i64 %left.scale, i64 %right.scale
-  %left.scaled = call i64 @tb_bootstrap_num_rescale_value(i64 %left.value, i64 %left.scale, i64 %target.scale)
-  %right.scaled = call i64 @tb_bootstrap_num_rescale_value(i64 %right.value, i64 %right.scale, i64 %target.scale)
-  %is.lt = icmp slt i64 %left.scaled, %right.scaled
-  %is.gt = icmp sgt i64 %left.scaled, %right.scaled
-  %gt.or.eq = select i1 %is.gt, i64 1, i64 0
-  %result = select i1 %is.lt, i64 -1, i64 %gt.or.eq
+  %left.negative = icmp slt i64 %left.value, 0
+  %right.negative = icmp slt i64 %right.value, 0
+  %signs.differ = icmp ne i1 %left.negative, %right.negative
+  br i1 %signs.differ, label %different.signs, label %same.sign
+different.signs:
+  %different.sign.result = select i1 %left.negative, i64 -1, i64 1
+  ret i64 %different.sign.result
+same.sign:
+  %left.zero = icmp eq i64 %left.value, 0
+  %right.zero = icmp eq i64 %right.value, 0
+  %both.zero = and i1 %left.zero, %right.zero
+  br i1 %both.zero, label %equal, label %check.left.zero
+equal:
+  ret i64 0
+check.left.zero:
+  br i1 %left.zero, label %less, label %check.right.zero
+less:
+  ret i64 -1
+check.right.zero:
+  br i1 %right.zero, label %greater, label %compare.magnitudes
+greater:
+  ret i64 1
+compare.magnitudes:
+  %left.ext = sext i64 %left.value to i128
+  %right.ext = sext i64 %right.value to i128
+  %left.negated = sub i128 0, %left.ext
+  %right.negated = sub i128 0, %right.ext
+  %left.magnitude = select i1 %left.negative, i128 %left.negated, i128 %left.ext
+  %right.magnitude = select i1 %right.negative, i128 %right.negated, i128 %right.ext
+  %magnitude.result = call i64 @tb_bootstrap_num_cmp_magnitude(i128 %left.magnitude, i64 %left.scale, i128 %right.magnitude, i64 %right.scale)
+  %negative.result = sub i64 0, %magnitude.result
+  %result = select i1 %left.negative, i64 %negative.result, i64 %magnitude.result
   ret i64 %result
 }
 define private %tb_bootstrap_num @tb_bootstrap_num_neg(%tb_bootstrap_num %value) {
@@ -165,16 +250,29 @@ entry:
 }
 define private %tb_bootstrap_num @tb_bootstrap_num_round(%tb_bootstrap_num %num, i64 %places) {
 entry:
+  ; Valid num inputs have a nonnegative decimal scale.
   %value = extractvalue %tb_bootstrap_num %num, 0
   %scale = extractvalue %tb_bootstrap_num %num, 1
+  %places.negative = icmp slt i64 %places, 0
+  br i1 %places.negative, label %negative.places, label %nonnegative.places
+nonnegative.places:
   %needs.round = icmp sgt i64 %scale, %places
-  br i1 %needs.round, label %round, label %done
+  br i1 %needs.round, label %nonnegative.round, label %done
 done:
   ret %tb_bootstrap_num %num
-round:
-  %delta = sub i64 %scale, %places
-  %factor.i64 = call i64 @tb_bootstrap_num_pow10(i64 %delta)
-  %factor = sext i64 %factor.i64 to i128
+nonnegative.round:
+  %scale.wide = sext i64 %scale to i128
+  %places.wide = sext i64 %places to i128
+  %delta = sub i128 %scale.wide, %places.wide
+  ; 10^20 exceeds twice the maximum signed-i64 magnitude, so the rounded value is zero.
+  %delta.too.large = icmp sge i128 %delta, 20
+  br i1 %delta.too.large, label %nonnegative.zero, label %nonnegative.calculate
+nonnegative.zero:
+  %zero.0 = insertvalue %tb_bootstrap_num zeroinitializer, i64 0, 0
+  %zero.1 = insertvalue %tb_bootstrap_num %zero.0, i64 %places, 1
+  ret %tb_bootstrap_num %zero.1
+nonnegative.calculate:
+  %factor = call i128 @tb_bootstrap_num_pow10_i128(i128 %delta)
   %value.ext = sext i64 %value to i128
   %value.neg = icmp slt i128 %value.ext, 0
   %value.neg.raw = sub i128 0, %value.ext
@@ -191,6 +289,49 @@ round:
   %result.0 = insertvalue %tb_bootstrap_num zeroinitializer, i64 %rounded.value, 0
   %result.1 = insertvalue %tb_bootstrap_num %result.0, i64 %places, 1
   ret %tb_bootstrap_num %result.1
+negative.places:
+  %scale.negative.wide = sext i64 %scale to i128
+  %places.negative.wide = sext i64 %places to i128
+  %negative.scale = sub i128 0, %places.negative.wide
+  ; Avoid negating or iterating for extreme negative targets; their result is zero.
+  %scale.too.large = icmp sge i128 %negative.scale, 20
+  br i1 %scale.too.large, label %negative.zero, label %negative.exponent
+negative.exponent:
+  %delta.negative = add i128 %scale.negative.wide, %negative.scale
+  %delta.negative.too.large = icmp sge i128 %delta.negative, 20
+  br i1 %delta.negative.too.large, label %negative.zero, label %negative.calculate
+negative.zero:
+  %negative.zero.0 = insertvalue %tb_bootstrap_num zeroinitializer, i64 0, 0
+  %negative.zero.1 = insertvalue %tb_bootstrap_num %negative.zero.0, i64 0, 1
+  ret %tb_bootstrap_num %negative.zero.1
+negative.calculate:
+  %negative.factor = call i128 @tb_bootstrap_num_pow10_i128(i128 %delta.negative)
+  %negative.value.ext = sext i64 %value to i128
+  %negative.value.sign = icmp slt i128 %negative.value.ext, 0
+  %negative.value.magnitude = sub i128 0, %negative.value.ext
+  %negative.value.abs = select i1 %negative.value.sign, i128 %negative.value.magnitude, i128 %negative.value.ext
+  %negative.quot = udiv i128 %negative.value.abs, %negative.factor
+  %negative.rem = urem i128 %negative.value.abs, %negative.factor
+  %negative.twice.rem = mul i128 %negative.rem, 2
+  %negative.round.up = icmp uge i128 %negative.twice.rem, %negative.factor
+  %negative.quot.plus = add i128 %negative.quot, 1
+  %negative.quot.rounded = select i1 %negative.round.up, i128 %negative.quot.plus, i128 %negative.quot
+  %negative.step = call i128 @tb_bootstrap_num_pow10_i128(i128 %negative.scale)
+  %negative.result.magnitude = mul i128 %negative.quot.rounded, %negative.step
+  %negative.result.signed = sub i128 0, %negative.result.magnitude
+  %negative.result = select i1 %negative.value.sign, i128 %negative.result.signed, i128 %negative.result.magnitude
+  %result.too.positive = icmp sgt i128 %negative.result, 9223372036854775807
+  %result.too.negative = icmp slt i128 %negative.result, -9223372036854775808
+  %result.out.of.range = or i1 %result.too.positive, %result.too.negative
+  br i1 %result.out.of.range, label %overflow, label %negative.done
+overflow:
+  call void @abort()
+  unreachable
+negative.done:
+  %negative.result.i64 = trunc i128 %negative.result to i64
+  %negative.result.0 = insertvalue %tb_bootstrap_num zeroinitializer, i64 %negative.result.i64, 0
+  %negative.result.1 = insertvalue %tb_bootstrap_num %negative.result.0, i64 0, 1
+  ret %tb_bootstrap_num %negative.result.1
 }
 define private %tb_bootstrap_num @tb_bootstrap_num_sqrt(%tb_bootstrap_num %num) {
 entry:
@@ -214,6 +355,14 @@ define private i32 @tb_bootstrap_num_print(%tb_bootstrap_num %num) {
 entry:
   %value = extractvalue %tb_bootstrap_num %num, 0
   %scale = extractvalue %tb_bootstrap_num %num, 1
+  %scale.negative = icmp slt i64 %scale, 0
+  %scale.too.large = icmp sgt i64 %scale, 2147483647
+  %scale.invalid = or i1 %scale.negative, %scale.too.large
+  br i1 %scale.invalid, label %invalid.scale, label %valid.scale
+invalid.scale:
+  call void @abort()
+  unreachable
+valid.scale:
   %is.scale.zero = icmp eq i64 %scale, 0
   br i1 %is.scale.zero, label %whole, label %fractional
 whole:
@@ -223,9 +372,18 @@ fractional:
   %is.neg = icmp slt i64 %value, 0
   %neg.value = sub i64 0, %value
   %abs.value = select i1 %is.neg, i64 %neg.value, i64 %value
+  %large.scale = icmp sge i64 %scale, 20
+  br i1 %large.scale, label %large.fraction, label %small.fraction
+small.fraction:
   %factor = call i64 @tb_bootstrap_num_pow10(i64 %scale)
-  %whole.value = udiv i64 %abs.value, %factor
-  %fraction.value = urem i64 %abs.value, %factor
+  %small.whole.value = udiv i64 %abs.value, %factor
+  %small.fraction.value = urem i64 %abs.value, %factor
+  br label %fraction.ready
+large.fraction:
+  br label %fraction.ready
+fraction.ready:
+  %whole.value = phi i64 [%small.whole.value, %small.fraction], [0, %large.fraction]
+  %fraction.value = phi i64 [%small.fraction.value, %small.fraction], [%abs.value, %large.fraction]
   %minus.ptr = getelementptr inbounds [2 x i8], ptr @.num.minus, i32 0, i32 0
   %empty.ptr = getelementptr inbounds [1 x i8], ptr @.num.empty, i32 0, i32 0
   %sign.ptr = select i1 %is.neg, ptr %minus.ptr, ptr %empty.ptr
