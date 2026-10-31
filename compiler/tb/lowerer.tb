@@ -327,7 +327,7 @@ string submit_lambda_expression_type_context(Node node, SubmitLambdaScope scope,
             if (helper_decl_type.starts_with('const ')):
                 helper_decl_type = helper_decl_type.substring(6)
             if (array_callback_context):
-                if (!(helper_decl_type == 'int' || helper_decl_type == 'bool')):
+                if (!(helper_decl_type == 'int' || helper_decl_type == 'bool' || helper_decl_type == 'string')):
                     invalid_callback_parameter = true
             else if (!(helper_decl_type == 'int' || helper_decl_type == 'bool' || submit_lambda_managed_type(helper_decl_type))):
                 return ''
@@ -341,7 +341,7 @@ string submit_lambda_expression_type_context(Node node, SubmitLambdaScope scope,
             if (!(signature.type_name == 'int' || signature.type_name == 'bool')):
                 throw 'int[] ' + callback_name + ' callback helper ' + node.value + ' must return int or bool; got ' + signature.type_name
             if (invalid_callback_parameter):
-                throw 'int[] ' + callback_name + ' callback helper ' + node.value + ' parameters must use int or bool'
+                throw 'int[] ' + callback_name + ' callback helper ' + node.value + ' parameters must use int, bool, or string'
         index = 0
         while (index < parameter_count):
             BindingIR parameter = ir_parse_binding_decl(function_node.children[index].value)
@@ -694,7 +694,7 @@ bool map_to_arithmetic_uses_same_item(Node lambda_node):
     return body.children[1].kind == 'Identifier' && body.children[1].value == binding.name
 
 bool int_array_scalar_expression(Node node, string[] allowed_names, Node[] functions):
-    if (node.kind == 'Int' || node.kind == 'Bool'):
+    if (node.kind == 'Int' || node.kind == 'Bool' || node.kind == 'String'):
         return true
     if (node.kind == 'Identifier'):
         return contains_name(allowed_names, node.value)
@@ -705,6 +705,10 @@ bool int_array_scalar_expression(Node node, string[] allowed_names, Node[] funct
             if (!int_array_scalar_expression(argument, allowed_names, functions)):
                 return false
         return true
+    if (node.kind == 'MethodCall'):
+        if (!(node.value == 'length' || node.value == 'is_empty') || node.children.length() != 1):
+            return false
+        return int_array_scalar_expression(node.children[0], allowed_names, functions)
     if (node.kind == 'Unary'):
         if (node.children.length() != 1 || !(node.value == '-' || node.value == '!' || node.value == 'not')):
             return false
@@ -922,7 +926,7 @@ ArrayScalarCaptureResult int_array_scalar_captures(Node lambda_node, BindingIR[]
         string capture_type = binding.type_name
         if (capture_type.starts_with('const ')):
             capture_type = capture_type.substring(6)
-        if (!(capture_type == 'int' || capture_type == 'bool')):
+        if (!(capture_type == 'int' || capture_type == 'bool' || capture_type == 'string')):
             return ArrayScalarCaptureResult([], false)
         captured.push(binding)
     return ArrayScalarCaptureResult(captured, true)
