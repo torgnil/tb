@@ -1475,6 +1475,37 @@ ParsedFunction lookup_named_function_decl(ProgramIR program, string name):
             return function_ir
     return ParsedFunction('', '', '', '', false, '', [], [], [])
 
+bool direct_split_matches_named_function(ProgramIR program, ParsedFunction caller, LinearInstruction op):
+    ParsedFunction callee = lookup_named_function_decl(program, 'split')
+    if (callee.header == '' || op.args.length() != callee.params.length() + 1):
+        return false
+    EnumTypeIR[] enum_types = collect_enum_types(program.enums)
+    int index = 0
+    while (index < callee.params.length()):
+        string expected_type = normalize_enum_type_name(normalize_llvm_type_name(callee.params[index].type_name), enum_types)
+        string actual_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_llvm_type(caller, op.args[index + 1])), enum_types)
+        if (expected_type != actual_type):
+            return false
+        index += 1
+    return true
+
+bool direct_split_matches_record_constructor(ProgramIR program, ParsedFunction caller, LinearInstruction op):
+    RecordDeclIR record_decl = lookup_record_decl(program, 'split')
+    if (record_decl.header == ''):
+        return false
+    if (op.args.length() != record_decl.fields.length() + 1):
+        return false
+    EnumTypeIR[] enum_types = collect_enum_types(program.enums)
+    int index = 0
+    while (index < record_decl.fields.length()):
+        BindingIR field = ir_parse_binding_decl(strip_prefix(record_decl.fields[index], 'field '))
+        string expected_type = normalize_enum_type_name(normalize_llvm_type_name(field.type_name), enum_types)
+        string actual_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_llvm_type(caller, op.args[index + 1])), enum_types)
+        if (expected_type != actual_type):
+            return false
+        index += 1
+    return true
+
 string source_function_display_name(ParsedFunction function_ir):
     if (function_ir.source_name != ''):
         return function_ir.source_name
@@ -6002,15 +6033,18 @@ string emit_call_value_instruction_core(ProgramIR program, ParsedFunction functi
             throw 'unsupported llvm trim_right arity'
         return emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_trim_right(ptr ' + temp_ref(op.args[1]) + ')')
     if (call_name == 'split'):
-        if (op.args.length() != 3):
-            throw 'unsupported llvm split arity'
-        LinearInstruction sep_op = lookup_temp_instruction(function_ir, op.args[2])
-        if (sep_op.kind == 'value' && sep_op.detail == 'string'):
-            if (sep_op.args[0].length() == 2 && sep_op.args[0][0] == '\'' && sep_op.args[0][1] == '\''):
-                return emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_split_chars(ptr ' + temp_ref(op.args[1]) + ')')
-            if (sep_op.args[0].length() == 3):
-                return emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_split_char(ptr ' + temp_ref(op.args[1]) + ', i8 ' + single_char_string_literal_i8(sep_op.args[0]) + ')')
-        return emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_split_string(ptr ' + temp_ref(op.args[1]) + ', ptr ' + temp_ref(op.args[2]) + ')')
+        bool split_has_named_match = direct_split_matches_named_function(program, function_ir, op)
+        bool split_has_record_match = direct_split_matches_record_constructor(program, function_ir, op)
+        if (!split_has_named_match && !split_has_record_match):
+            if (op.args.length() != 3):
+                throw 'unsupported llvm split arity'
+            LinearInstruction sep_op = lookup_temp_instruction(function_ir, op.args[2])
+            if (sep_op.kind == 'value' && sep_op.detail == 'string'):
+                if (sep_op.args[0].length() == 2 && sep_op.args[0][0] == '\'' && sep_op.args[0][1] == '\''):
+                    return emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_split_chars(ptr ' + temp_ref(op.args[1]) + ')')
+                if (sep_op.args[0].length() == 3):
+                    return emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_split_char(ptr ' + temp_ref(op.args[1]) + ', i8 ' + single_char_string_literal_i8(sep_op.args[0]) + ')')
+            return emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_split_string(ptr ' + temp_ref(op.args[1]) + ', ptr ' + temp_ref(op.args[2]) + ')')
     if (call_name == 'split_lines'):
         if (op.args.length() != 2):
             throw 'unsupported llvm split_lines arity'

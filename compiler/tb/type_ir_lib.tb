@@ -1245,6 +1245,14 @@ private void validate_direct_trim_call(string name, LinearInstruction op, EnumTy
     if (argument_type != 'string'):
         throw name + ' requires a string argument, got: ' + argument_type
 
+private void validate_direct_split_call(LinearInstruction op, EnumTypeIR[] enum_types, string[] temp_types):
+    int argument_count = op.args.length() - 1
+    if (argument_count != 2):
+        throw 'split expects exactly two arguments; got: ' + argument_count.to_string()
+    string source_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
+    if (source_type != '' && source_type != 'unknown' && source_type != 'string'):
+        throw 'split argument 1 requires string; got: ' + source_type
+
 private void validate_direct_substring_call(LinearInstruction op, EnumTypeIR[] enum_types, string[] temp_types):
     int argument_count = op.args.length() - 1
     if (argument_count != 2 && argument_count != 3):
@@ -1515,6 +1523,19 @@ bool has_matching_ufcs_signature(LinearInstruction op, string method_name, Funct
     int index = 0
     while (index < method_sig.param_types.length()):
         string expected_type = normalize_enum_type_name(normalize_llvm_type_name(method_sig.param_types[index]), enum_types)
+        string actual_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[index + 1])), enum_types)
+        if (expected_type != actual_type):
+            return false
+        index += 1
+    return true
+
+bool has_matching_record_constructor_signature(LinearInstruction op, string record_name, RecordFieldIR[] record_fields, EnumTypeIR[] enum_types, string[] temp_types):
+    string[] field_types = record_constructor_arg_types(record_fields, record_name)
+    if (field_types.is_empty() || op.args.length() != field_types.length() + 1):
+        return false
+    int index = 0
+    while (index < field_types.length()):
+        string expected_type = normalize_enum_type_name(normalize_llvm_type_name(field_types[index]), enum_types)
         string actual_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[index + 1])), enum_types)
         if (expected_type != actual_type):
             return false
@@ -1799,7 +1820,18 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             return refined_value_op(op, op.args[0], refine_ownership_mode(op, op.args[0]))
         if (is_direct_trim_builtin(op.args[0]) && lookup_function_return_type(functions, op.args[0]) == 'unknown' && !record_type_exists(record_names, op.args[0])):
             validate_direct_trim_call(op.args[0], op, enum_types, temp_types)
+        bool split_calls_user_function = false
+        bool split_calls_record_constructor = false
+        if (op.args[0] == 'split'):
+            split_calls_record_constructor = has_matching_record_constructor_signature(op, 'split', record_fields, enum_types, temp_types)
+            if (lookup_function_return_type(functions, op.args[0]) == 'unknown' && split_calls_record_constructor):
+                return refined_value_op(op, op.args[0], refine_ownership_mode(op, op.args[0]))
+            split_calls_user_function = has_matching_ufcs_signature(op, 'split', functions, enum_types, temp_types)
+            if (!split_calls_user_function && !split_calls_record_constructor):
+                validate_direct_split_call(op, enum_types, temp_types)
         string result_type = infer_call_type_cached(op.args[0], functions, TYPE_IR_FUNCTION_TYPE_CACHE_NAMES, TYPE_IR_FUNCTION_TYPE_CACHE_VALUES)
+        if (split_calls_user_function):
+            result_type = lookup_function_return_type(functions, op.args[0])
         if (is_direct_string_predicate(op.args[0]) && result_type == 'unknown' && lookup_function_return_type(functions, op.args[0]) == 'unknown' && !record_type_exists(record_names, op.args[0])):
             int argument_count = op.args.length() - 1
             if (argument_count != 1):
@@ -2391,13 +2423,15 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
         if (current.kind == 'value' && (current.detail == 'call' || current.detail == 'method-call')):
             if (current.args.length() == 3):
                 if (current.args[0] == 'split'):
-                    string receiver_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[1]))
-                    if (receiver_type == 'string'):
-                        string separator_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[2]))
-                        if (separator_type == 'Regex' && regex_imported):
-                            current = LinearInstruction('value', current.lhs, 'string[]', 'owned', 'call', ['__tb_regex_split', current.args[1], current.args[2]])
-                        else if (separator_type != 'string' && separator_type != 'unknown'):
-                            throw 'split separator requires string or imported Regex; got ' + separator_type
+                    bool split_dispatches_to_builtin = current.detail != 'call' || (!has_matching_record_constructor_signature(current, 'split', record_fields, enum_types, temp_types) && !has_matching_ufcs_signature(current, 'split', functions, enum_types, temp_types))
+                    if (split_dispatches_to_builtin):
+                        string receiver_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[1]))
+                        if (receiver_type == 'string'):
+                            string separator_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[2]))
+                            if (separator_type == 'Regex' && regex_imported):
+                                current = LinearInstruction('value', current.lhs, 'string[]', 'owned', 'call', ['__tb_regex_split', current.args[1], current.args[2]])
+                            else if (separator_type != 'string' && separator_type != 'unknown'):
+                                throw 'split separator requires string or imported Regex; got ' + separator_type
         if (current.kind == 'value' && (current.detail == 'call' || current.detail == 'method-call') && enum_name_exists(enum_types, current.result_type)):
             string enum_result_type = normalize_enum_type_name(current.result_type, enum_types)
             current = refined_value_op(current, enum_result_type, refine_ownership_mode(current, enum_result_type))
