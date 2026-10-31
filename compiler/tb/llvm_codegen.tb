@@ -323,11 +323,13 @@ string[] thread_pool_submit_supported_arg_types():
     return ['int', 'bool', 'string', 'int[]', 'int[][]']
 
 string[] thread_pool_submit_supported_future_types():
-    return ['future<int>', 'future<bool>', 'future<string>', 'future<int[]>', 'future<int[][]>']
+    return ['future<int>', 'future<bool>', 'future<string>', 'future<int[]>', 'future<int[][]>', 'future<num>']
 
 bool llvm_thread_pool_submit_signature_supported(string future_type, string arg_type):
     future_type = normalize_llvm_type_name(future_type)
     arg_type = normalize_llvm_type_name(arg_type)
+    if (future_type == 'future<num>'):
+        return arg_type == 'void' || arg_type == 'num'
     if (arg_type == 'void'):
         return future_type in thread_pool_submit_supported_future_types()
     return future_type in thread_pool_submit_supported_future_types() && arg_type in thread_pool_submit_supported_arg_types()
@@ -347,6 +349,10 @@ string llvm_thread_pool_submit_name(string future_type, string arg_type):
         return '@tb_thread_pool_submit_int_array'
     if (future_type == 'future<int[][]>' && arg_type == 'void'):
         return '@tb_thread_pool_submit_int_array_array'
+    if (future_type == 'future<num>' && arg_type == 'void'):
+        return '@tb_thread_pool_submit_num'
+    if (future_type == 'future<num>' && arg_type == 'num'):
+        return '@tb_thread_pool_submit_num_num'
     if (future_type == 'future<int>' && arg_type == 'int'):
         return '@tb_thread_pool_submit_i64_i64'
     if (future_type == 'future<int>' && arg_type == 'bool'):
@@ -437,6 +443,13 @@ string[] emit_thread_pool_runtime_declarations():
         'declare i64 @tb_future_i64_await(ptr)',
         'declare i1 @tb_future_i64_is_done(ptr)',
         'declare i1 @tb_future_i64_wait_for(ptr, i64)',
+        'declare ptr @tb_thread_pool_submit_num(ptr, ptr)',
+        'declare ptr @tb_thread_pool_submit_num_num(ptr, ptr, %tb_bootstrap_num)',
+        'declare ptr @tb_future_num_retain(ptr)',
+        'declare void @tb_future_num_release(ptr)',
+        'declare %tb_bootstrap_num @tb_future_num_await(ptr)',
+        'declare i1 @tb_future_num_is_done(ptr)',
+        'declare i1 @tb_future_num_wait_for(ptr, i64)',
         'declare ptr @tb_thread_pool_submit_bool(ptr, ptr)',
         'declare ptr @tb_thread_pool_submit_bool_i64(ptr, ptr, i64)',
         'declare ptr @tb_thread_pool_submit_bool_bool(ptr, ptr, i1)',
@@ -1875,7 +1888,7 @@ bool temp_needs_backend_free(ParsedFunction function_ir, string temp_name):
         return false
     if (result_type == 'thread_pool'):
         return op.detail == 'call'
-    if (result_type == 'future<int>' || result_type == 'future<bool>' || result_type == 'future<string>' || result_type == 'future<int[]>' || result_type == 'future<int[][]>'):
+    if (result_type == 'future<int>' || result_type == 'future<num>' || result_type == 'future<bool>' || result_type == 'future<string>' || result_type == 'future<int[]>' || result_type == 'future<int[][]>'):
         return op.detail == 'method-call'
     if (result_type == 'string[]'):
         if (op.detail == 'array' || op.detail == 'call' || op.detail == 'slice'):
@@ -1971,6 +1984,8 @@ string emit_backend_release_ptr(string type_name, string ptr_name):
         return '  call void @tb_thread_pool_release(ptr ' + ptr_name + ')'
     if (type_name == 'future<int>'):
         return '  call void @tb_future_i64_release(ptr ' + ptr_name + ')'
+    if (type_name == 'future<num>'):
+        return '  call void @tb_future_num_release(ptr ' + ptr_name + ')'
     if (type_name == 'future<bool>'):
         return '  call void @tb_future_bool_release(ptr ' + ptr_name + ')'
     if (type_name == 'future<string>'):
@@ -2333,6 +2348,9 @@ bool temp_is_thread_pool(ParsedFunction function_ir, string temp_name):
 bool temp_is_future_i64(ParsedFunction function_ir, string temp_name):
     return normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, temp_name)) == 'future<int>'
 
+bool temp_is_future_num(ParsedFunction function_ir, string temp_name):
+    return normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, temp_name)) == 'future<num>'
+
 bool temp_is_future_bool(ParsedFunction function_ir, string temp_name):
     return normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, temp_name)) == 'future<bool>'
 
@@ -2369,6 +2387,18 @@ string[] emit_future_i64_materialize_if_needed(ParsedFunction function_ir, strin
     if (!temp_is_future_i64(function_ir, temp_name)):
         return []
     return ['  ' + emit_future_i64_owned_value(function_ir, temp_name, temp_suffix) + ' = call ptr @tb_future_i64_retain(ptr ' + temp_ref(temp_name) + ')']
+
+string emit_future_num_owned_value(ParsedFunction function_ir, string temp_name, string temp_suffix):
+    if (temp_needs_backend_free(function_ir, temp_name)):
+        return temp_ref(temp_name)
+    return '%future.copy.' + temp_suffix
+
+string[] emit_future_num_materialize_if_needed(ParsedFunction function_ir, string temp_name, string temp_suffix):
+    if (temp_needs_backend_free(function_ir, temp_name)):
+        return []
+    if (!temp_is_future_num(function_ir, temp_name)):
+        return []
+    return ['  ' + emit_future_num_owned_value(function_ir, temp_name, temp_suffix) + ' = call ptr @tb_future_num_retain(ptr ' + temp_ref(temp_name) + ')']
 
 string emit_future_bool_owned_value(ParsedFunction function_ir, string temp_name, string temp_suffix):
     if (temp_needs_backend_free(function_ir, temp_name)):
@@ -2420,7 +2450,7 @@ string[] emit_future_int_array_array_materialize_if_needed(ParsedFunction functi
 
 bool is_thread_pool_or_future_type(string type_name):
     type_name = normalize_llvm_type_name(type_name)
-    return is_thread_pool_type_name(type_name) || type_name == 'future<int>' || type_name == 'future<bool>' || type_name == 'future<string>' || type_name == 'future<int[]>' || type_name == 'future<int[][]>'
+    return is_thread_pool_type_name(type_name) || type_name == 'future<int>' || type_name == 'future<num>' || type_name == 'future<bool>' || type_name == 'future<string>' || type_name == 'future<int[]>' || type_name == 'future<int[][]>'
 
 string[] emit_thread_pool_or_future_materialize_if_needed(ParsedFunction function_ir, string temp_name, string type_name, string temp_suffix):
     type_name = normalize_llvm_type_name(type_name)
@@ -2428,6 +2458,8 @@ string[] emit_thread_pool_or_future_materialize_if_needed(ParsedFunction functio
         return emit_thread_pool_materialize_if_needed(function_ir, temp_name, temp_suffix)
     if (type_name == 'future<int>'):
         return emit_future_i64_materialize_if_needed(function_ir, temp_name, temp_suffix)
+    if (type_name == 'future<num>'):
+        return emit_future_num_materialize_if_needed(function_ir, temp_name, temp_suffix)
     if (type_name == 'future<bool>'):
         return emit_future_bool_materialize_if_needed(function_ir, temp_name, temp_suffix)
     if (type_name == 'future<string>'):
@@ -2444,6 +2476,8 @@ string thread_pool_or_future_owned_value(ParsedFunction function_ir, string temp
         return emit_thread_pool_owned_value(function_ir, temp_name, temp_suffix)
     if (type_name == 'future<int>'):
         return emit_future_i64_owned_value(function_ir, temp_name, temp_suffix)
+    if (type_name == 'future<num>'):
+        return emit_future_num_owned_value(function_ir, temp_name, temp_suffix)
     if (type_name == 'future<bool>'):
         return emit_future_bool_owned_value(function_ir, temp_name, temp_suffix)
     if (type_name == 'future<string>'):
@@ -6860,6 +6894,10 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
         if (op.args.length() != 2):
             throw 'unsupported llvm future<int> await arity'
         return '  ' + lhs + ' = call i64 @tb_future_i64_await(ptr ' + temp_ref(op.args[1]) + ')'
+    if (method_name == 'await' && method_base_type == 'future<num>'):
+        if (op.args.length() != 2):
+            throw 'unsupported llvm future<num> await arity'
+        return '  ' + lhs + ' = call %tb_bootstrap_num @tb_future_num_await(ptr ' + temp_ref(op.args[1]) + ')'
     if (method_name == 'await' && method_base_type == 'future<bool>'):
         if (op.args.length() != 2):
             throw 'unsupported llvm future<bool> await arity'
@@ -6880,6 +6918,10 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
         if (op.args.length() != 2):
             throw 'unsupported llvm future<int> is_done arity'
         return '  ' + lhs + ' = call i1 @tb_future_i64_is_done(ptr ' + temp_ref(op.args[1]) + ')'
+    if (method_name == 'is_done' && method_base_type == 'future<num>'):
+        if (op.args.length() != 2):
+            throw 'unsupported llvm future<num> is_done arity'
+        return '  ' + lhs + ' = call i1 @tb_future_num_is_done(ptr ' + temp_ref(op.args[1]) + ')'
     if (method_name == 'is_done' && method_base_type == 'future<bool>'):
         if (op.args.length() != 2):
             throw 'unsupported llvm future<bool> is_done arity'
@@ -6900,6 +6942,10 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
         if (op.args.length() != 3):
             throw 'unsupported llvm future<int> wait_for arity'
         return '  ' + lhs + ' = call i1 @tb_future_i64_wait_for(ptr ' + temp_ref(op.args[1]) + ', i64 ' + temp_ref(op.args[2]) + ')'
+    if (method_name == 'wait_for' && method_base_type == 'future<num>'):
+        if (op.args.length() != 3):
+            throw 'unsupported llvm future<num> wait_for arity'
+        return '  ' + lhs + ' = call i1 @tb_future_num_wait_for(ptr ' + temp_ref(op.args[1]) + ', i64 ' + temp_ref(op.args[2]) + ')'
     if (method_name == 'wait_for' && method_base_type == 'future<bool>'):
         if (op.args.length() != 3):
             throw 'unsupported llvm future<bool> wait_for arity'
@@ -8930,6 +8976,15 @@ string[] emit_terminator(ParsedFunction function_ir, BlockIR block, TerminatorIR
                 lines.push(restore_line)
             lines.push('  ret ptr ' + returned_value)
             return lines
+        if (normalize_llvm_type_name(result_type) == 'future<num>'):
+            string[] lines = emit_future_num_materialize_if_needed(function_ir, terminator.args[0], 'return.' + temp_suffix)
+            string returned_value = temp_ref(terminator.args[0])
+            if (temp_is_future_num(function_ir, terminator.args[0]) && !temp_needs_backend_free(function_ir, terminator.args[0])):
+                returned_value = emit_future_num_owned_value(function_ir, terminator.args[0], 'return.' + temp_suffix)
+            for (string restore_line in emit_try_restore_lines(try_suffix, temp_suffix)):
+                lines.push(restore_line)
+            lines.push('  ret ptr ' + returned_value)
+            return lines
         if (normalize_llvm_type_name(result_type) == 'future<bool>'):
             string[] lines = emit_future_bool_materialize_if_needed(function_ir, terminator.args[0], 'return.' + temp_suffix)
             string returned_value = temp_ref(terminator.args[0])
@@ -10827,8 +10882,7 @@ string[] llvm_codegen_ir(ProgramIR program):
     bool needs_string_helpers = needs_runtime_string_copy || needs_to_int || needs_int_to_string || needs_num_to_string || needs_hash || LLVM_SCAN_NEEDS_STRING_HELPERS_OPS != 0 || needs_read_lines || needs_read_file || needs_write_all || needs_getenv || needs_thread_pool
     bool needs_string_array_helpers = needs_string_array || needs_string_helpers
     bool needs_runtime_global_init = LLVM_SCAN_NEEDS_RUNTIME_GLOBAL_INIT != 0
-    if (needs_num || needs_num_hash):
-        lines.push('%tb_bootstrap_num = type { i64, i64 }')
+    lines.push('%tb_bootstrap_num = type { i64, i64 }')
     if (needs_num):
         lines.push('@.num.empty = private unnamed_addr constant [1 x i8] c"\\00"')
         lines.push('@.num.minus = private unnamed_addr constant [2 x i8] c"-\\00"')
@@ -11155,9 +11209,8 @@ void llvm_print_ir(ProgramIR program):
     bool needs_string_array_helpers = needs_string_array || needs_string_helpers
     bool needs_runtime_global_init = LLVM_SCAN_NEEDS_RUNTIME_GLOBAL_INIT != 0
     bool emitted_any_header = false
-    if (needs_num || needs_num_hash):
-        print('%tb_bootstrap_num = type { i64, i64 }')
-        emitted_any_header = true
+    print('%tb_bootstrap_num = type { i64, i64 }')
+    emitted_any_header = true
     if (needs_num):
         print('@.num.empty = private unnamed_addr constant [1 x i8] c"\\00"')
         print('@.num.minus = private unnamed_addr constant [2 x i8] c"-\\00"')

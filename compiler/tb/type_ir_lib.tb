@@ -438,6 +438,12 @@ string thread_pool_submit_result_type(FunctionSigIR[] functions, string function
     FunctionSigIR function_sig = lookup_function_sig(functions, function_name)
     if (function_sig.name == ''):
         throw 'thread_pool.submit currently requires a top-level named function'
+    if (function_sig.return_type == 'num'):
+        if (argument_count == 0 && function_sig.param_types.is_empty()):
+            return 'future<num>'
+        if (argument_count == 1 && function_sig.param_types.length() == 1 && function_sig.param_types[0] == 'num'):
+            return 'future<num>'
+        throw 'thread_pool.submit currently supports num functions with signature num fn() or num fn(num)'
     if (argument_count == 0):
         if (function_sig.param_types.length() != 0):
             throw 'thread_pool.submit currently requires a function with signature T fn() or T fn(U) where T is int, bool, string, or int[] and U is int, bool, string, int[], or int[][]'
