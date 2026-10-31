@@ -1231,6 +1231,9 @@ string infer_call_type_cached(string name, FunctionSigIR[] functions, string[] c
         cache_types.push(result_type)
     return result_type
 
+private bool is_direct_string_predicate(string name):
+    return name == 'is_alpha' || name == 'is_digit' || name == 'is_alnum' || name == 'is_space' || name == 'is_whitespace'
+
 bool is_native_contains_receiver_type(string base_type):
     string normalized_type = normalize_llvm_type_name(base_type)
     if (normalized_type == 'string' || normalized_type == 'int[]' || normalized_type == 'bool[]' || normalized_type == 'string[]'):
@@ -1763,6 +1766,14 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
         if (op.args[0] == 'random_bits' && lookup_function_return_type(functions, op.args[0]) == 'unknown' && record_type_exists(record_names, op.args[0])):
             return refined_value_op(op, op.args[0], refine_ownership_mode(op, op.args[0]))
         string result_type = infer_call_type_cached(op.args[0], functions, TYPE_IR_FUNCTION_TYPE_CACHE_NAMES, TYPE_IR_FUNCTION_TYPE_CACHE_VALUES)
+        if (is_direct_string_predicate(op.args[0]) && result_type == 'unknown' && lookup_function_return_type(functions, op.args[0]) == 'unknown' && !record_type_exists(record_names, op.args[0])):
+            int argument_count = op.args.length() - 1
+            if (argument_count != 1):
+                throw op.args[0] + ' expects exactly one string argument; got: ' + argument_count.to_string()
+            string argument_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
+            if (argument_type != 'string'):
+                throw op.args[0] + ' requires a string argument, got: ' + argument_type
+            result_type = 'bool'
         if (result_type == 'unknown'):
             if (op.args[0] == 'is_empty'):
                 if (op.args.length() == 2):

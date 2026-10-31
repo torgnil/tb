@@ -1767,8 +1767,19 @@ bool temp_is_string_like_value(ParsedFunction function_ir, string temp_name):
         return normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[1])) == 'string'
     return false
 
-bool is_string_char_predicate_method_name(string method_name):
-    return method_name == 'is_alpha' || method_name == 'is_digit' || method_name == 'is_alnum' || method_name == 'is_space' || method_name == 'is_whitespace'
+private bool is_string_char_predicate_name(string name):
+    return name == 'is_alpha' || name == 'is_digit' || name == 'is_alnum' || name == 'is_space' || name == 'is_whitespace'
+
+private bool is_direct_string_predicate_call(ProgramIR program, ParsedFunction function_ir, LinearInstruction op):
+    if (op.detail != 'call'):
+        return false
+    if (op.args.length() != 2):
+        return false
+    if (!is_string_char_predicate_name(op.args[0])):
+        return false
+    if (lookup_named_function_decl(program, op.args[0]).header != '' || lookup_record_decl(program, op.args[0]).header != ''):
+        return false
+    return normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[1])) == 'string'
 
 bool temp_is_string_index_value(ParsedFunction function_ir, string temp_name):
     LinearInstruction op = lookup_temp_instruction(function_ir, temp_name)
@@ -3640,6 +3651,8 @@ void analyze_program_features(ProgramIR program, string[] map_types):
                                 if (normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[1])) == 'num'):
                                     needs_num_to_string = true
                 if (op.detail == 'call' && !op.args.is_empty()):
+                    if (is_direct_string_predicate_call(program, function_ir, op)):
+                        needs_string_helpers_ops = true
                     if (op.args[0] == 'thread_pool'):
                         needs_thread_pool = true
                     if (op.args[0] == 'has_flag' || op.args[0] == 'option_value'):
@@ -3869,6 +3882,8 @@ bool program_uses_string_helpers_ops(ProgramIR program):
             for (LinearInstruction op in block.instructions):
                 if (op.kind == 'value'):
                     if (op.detail == 'call'):
+                        if (is_direct_string_predicate_call(program, function_ir, op)):
+                            return true
                         if (!op.args.is_empty() && (op.args[0] == 'has_flag' || op.args[0] == 'option_value')):
                             return true
                     if (op.detail == 'index'):
@@ -5617,6 +5632,9 @@ string emit_call_value_instruction_core(ProgramIR program, ParsedFunction functi
         if (op.args.length() != 1):
             throw 'random_bits takes no arguments'
         return emit_tracked_builtin_call_line('  ' + lhs + ' = call i64 @tb_bootstrap_random()')
+    if (is_direct_string_predicate_call(program, function_ir, op)):
+        string predicate_line = emit_string_method_call_value_instruction(program, function_ir, op, call_name, 'string')
+        return emit_tracked_builtin_call_line(emit_owned_string_receiver_release(function_ir, op.args[1], op.lhs, predicate_line))
     if (call_name == 'copy'):
         int copy_meta_index = lookup_call_meta_index(call_name)
         RecordDeclIR copy_record = lookup_record_decl(program, call_name)
@@ -6780,7 +6798,7 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
             throw 'unsupported llvm ' + method_name + ' arity'
         LinearInstruction minmax_call = LinearInstruction('value', op.lhs, op.result_type, op.ownership_mode, 'call', [method_name, op.args[1], op.args[2]])
         return emit_call_value_instruction_core(program, function_ir, minmax_call)
-    if (op.args.length() >= 2 && is_string_char_predicate_method_name(method_name) && temp_is_string_index_value(function_ir, op.args[1])):
+    if (op.args.length() >= 2 && is_string_char_predicate_name(method_name) && temp_is_string_index_value(function_ir, op.args[1])):
         LinearInstruction index_op = lookup_temp_instruction(function_ir, op.args[1])
         if (temp_needs_backend_free(function_ir, index_op.args[0])):
             # String indexing releases an owned source after materializing the character.
@@ -6791,7 +6809,7 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
     if (string_result != ''):
         if (method_base_type == 'string' && (method_name == 'length' || method_name == 'is_empty')):
             return emit_owned_string_receiver_release(function_ir, op.args[1], op.lhs, string_result)
-        if (method_base_type == 'string' && (method_name == 'hash' || method_name == 'to_int' || method_name == 'index_of' || method_name == 'contains' || method_name == 'starts_with' || method_name == 'ends_with' || method_name == 'starts_with_at' || is_string_char_predicate_method_name(method_name))):
+        if (method_base_type == 'string' && (method_name == 'hash' || method_name == 'to_int' || method_name == 'index_of' || method_name == 'contains' || method_name == 'starts_with' || method_name == 'ends_with' || method_name == 'starts_with_at' || is_string_char_predicate_name(method_name))):
             return emit_owned_string_array_index_result_release(function_ir, op.args[1], op.lhs, string_result)
         return string_result
     string map_result = emit_map_method_call_value_instruction(function_ir, op, method_name, method_base_type)
