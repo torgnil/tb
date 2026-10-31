@@ -745,7 +745,13 @@ private bool regex_queue_epsilon(Regex program, int state, int[] pending, bool a
 # Add an epsilon closure once per input position. A state is visited at most
 # once even if repetition creates epsilon cycles. Invalid mutated programs
 # fail rather than indexing outside their instruction arrays.
-private bool regex_add_state(Regex program, int state, int[] seen, int[] pending, int[] active, bool at_start, bool at_end, bool fast_saves):
+private int regex_next_seen_generation(int[] seen, int generation):
+    if (generation == 9223372036854775807):
+        seen.fill(0)
+        return 1
+    return generation + 1
+
+private bool regex_add_state(Regex program, int state, int[] seen, int generation, int[] pending, int[] active, bool at_start, bool at_end, bool fast_saves):
     pending.push(state)
     while (!pending.is_empty()):
         int current = pending.pop()
@@ -755,8 +761,8 @@ private bool regex_add_state(Regex program, int state, int[] seen, int[] pending
             return false
         if (fast_saves && program.operations[current] == REGEX_NFA_SAVE):
             current = program.out2[current] / (program.operations.length() + 1)
-        if (seen[current] == 0):
-            seen[current] = 1
+        if (seen[current] != generation):
+            seen[current] = generation
             int operation = program.operations[current]
             if (regex_queue_epsilon(program, current, pending, at_start, at_end)):
                 continue
@@ -808,6 +814,7 @@ bool regex_match(Regex program, string text):
     bool fast_saves = regex_save_cache_valid(program)
     int[] seen = range(count)
     seen.fill(0)
+    int generation = 1
     int[] pending = []
     int[] current = []
     int[] next = []
@@ -816,7 +823,7 @@ bool regex_match(Regex program, string text):
     if (text_length > 0):
         final_lf = text[text_length - 1] == '\n'
     bool initial_end = text_length == 0 || (text_length == 1 && final_lf)
-    if (!regex_add_state(program, program.start, seen, pending, current, true, initial_end, fast_saves)):
+    if (!regex_add_state(program, program.start, seen, generation, pending, current, true, initial_end, fast_saves)):
         return false
     # Copy once into a managed string so indexed byte reads use its cached
     # length instead of rescanning the borrowed input with strlen each time.
@@ -824,7 +831,7 @@ bool regex_match(Regex program, string text):
     int text_index = 0
     while (text_index < text_length):
         string character = scan_text[text_index]
-        seen.fill(0)
+        generation = regex_next_seen_generation(seen, generation)
         next.clear()
         int index = 0
         while (index < current.length()):
@@ -832,7 +839,7 @@ bool regex_match(Regex program, string text):
             if (regex_state_match(program, state, character) == REGEX_CLASS_MATCH):
                 int boundary = text_index + 1
                 bool at_end = boundary == text_length || (final_lf && boundary == text_length - 1)
-                if (!regex_add_state(program, program.out1[state], seen, pending, next, false, at_end, fast_saves)):
+                if (!regex_add_state(program, program.out1[state], seen, generation, pending, next, false, at_end, fast_saves)):
                     return false
             index += 1
         current.clear()
@@ -866,25 +873,25 @@ bool regex_contains(Regex program, string text):
         final_lf = text_bytes[text_length - 1] == '\n'
     int[] seen = range(count)
     seen.fill(0)
+    int generation = 1
     int[] pending = []
     int[] current = []
     int[] next = []
     int text_index = 0
     while (text_index <= text_length):
-        seen.fill(0)
         for (int state : current):
             if (state < 0 || state >= count):
                 return false
-            seen[state] = 1
+            seen[state] = generation
         bool at_end = text_index == text_length || (final_lf && text_index == text_length - 1)
-        if (!regex_add_state(program, program.start, seen, pending, current, text_index == 0, at_end, fast_saves)):
+        if (!regex_add_state(program, program.start, seen, generation, pending, current, text_index == 0, at_end, fast_saves)):
             return false
         for (int state : current):
             if (program.operations[state] == REGEX_NFA_MATCH):
                 return true
         if (text_index == text_length):
             return false
-        seen.fill(0)
+        generation = regex_next_seen_generation(seen, generation)
         next.clear()
         string character = text_bytes[text_index]
         int index = 0
@@ -893,7 +900,7 @@ bool regex_contains(Regex program, string text):
             if (regex_state_match(program, state, character) == REGEX_CLASS_MATCH):
                 int boundary = text_index + 1
                 bool next_end = boundary == text_length || (final_lf && boundary == text_length - 1)
-                if (!regex_add_state(program, program.out1[state], seen, pending, next, false, next_end, fast_saves)):
+                if (!regex_add_state(program, program.out1[state], seen, generation, pending, next, false, next_end, fast_saves)):
                     return false
             index += 1
         current.clear()

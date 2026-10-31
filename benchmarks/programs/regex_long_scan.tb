@@ -1,0 +1,35 @@
+import regex;
+
+int main():
+    Regex pattern = regex_compile('(ab|ac|ad|ae|af|ag|ah|a)+z')
+    string full_text = 'a'
+    int repeat_count = 1
+    while (repeat_count < 8192):
+        full_text += full_text
+        repeat_count *= 2
+
+    string search_prefix = 'b'
+    repeat_count = 1
+    while (repeat_count < 4096):
+        search_prefix += search_prefix
+        repeat_count *= 2
+    string search_body = 'ab'
+    repeat_count = 1
+    while (repeat_count < 2048):
+        search_body += search_body
+        repeat_count *= 2
+    string search_text = search_prefix + search_body + 'z'
+
+    int full_matches = 0
+    int search_matches = 0
+    int iteration = 0
+    while (iteration < 1000):
+        if (regex_match(pattern, full_text)):
+            full_matches += 1
+        if (regex_contains(pattern, search_text)):
+            search_matches += 1
+        iteration += 1
+
+    print(full_matches)
+    print(search_matches)
+    return 0
