@@ -1209,7 +1209,7 @@ string lookup_cached_field_type(string[] keys, string[] types, string record_nam
     return lookup_cached_name_type(keys, types, record_name + '.' + field_name)
 
 string infer_call_type_cached(string name, FunctionSigIR[] functions, string[] cache_names, string[] cache_types):
-    if (name == 'random_bits' || name == 'to_num'):
+    if (name == 'substring' || name == 'random_bits' || name == 'to_num'):
         string user_result_type = lookup_function_return_type(functions, name)
         if (user_result_type != 'unknown'):
             return user_result_type
@@ -1233,6 +1233,21 @@ string infer_call_type_cached(string name, FunctionSigIR[] functions, string[] c
 
 private bool is_direct_string_predicate(string name):
     return name == 'is_alpha' || name == 'is_digit' || name == 'is_alnum' || name == 'is_space' || name == 'is_whitespace'
+
+private void validate_direct_substring_call(LinearInstruction op, EnumTypeIR[] enum_types, string[] temp_types):
+    int argument_count = op.args.length() - 1
+    if (argument_count != 2 && argument_count != 3):
+        throw 'substring expects 2 or 3 arguments; got: ' + argument_count.to_string()
+    int argument_index = 1
+    while (argument_index < op.args.length()):
+        string argument_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[argument_index])), enum_types)
+        if (argument_index == 1):
+            if (argument_type != 'string'):
+                throw 'substring argument 1 requires string; got: ' + argument_type
+        else:
+            if (argument_type != 'int'):
+                throw 'substring argument ' + argument_index.to_string() + ' requires int; got: ' + argument_type
+        argument_index += 1
 
 bool is_native_contains_receiver_type(string base_type):
     string normalized_type = normalize_llvm_type_name(base_type)
@@ -1765,6 +1780,10 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
                     throw 'to_int requires a string argument, got: ' + to_int_argument_type
         if (op.args[0] == 'random_bits' && lookup_function_return_type(functions, op.args[0]) == 'unknown' && record_type_exists(record_names, op.args[0])):
             return refined_value_op(op, op.args[0], refine_ownership_mode(op, op.args[0]))
+        if (op.args[0] == 'substring' && lookup_function_return_type(functions, op.args[0]) == 'unknown' && record_type_exists(record_names, op.args[0])):
+            return refined_value_op(op, op.args[0], refine_ownership_mode(op, op.args[0]))
+        if (op.args[0] == 'substring' && lookup_function_return_type(functions, op.args[0]) == 'unknown' && !record_type_exists(record_names, op.args[0])):
+            validate_direct_substring_call(op, enum_types, temp_types)
         string result_type = infer_call_type_cached(op.args[0], functions, TYPE_IR_FUNCTION_TYPE_CACHE_NAMES, TYPE_IR_FUNCTION_TYPE_CACHE_VALUES)
         if (is_direct_string_predicate(op.args[0]) && result_type == 'unknown' && lookup_function_return_type(functions, op.args[0]) == 'unknown' && !record_type_exists(record_names, op.args[0])):
             int argument_count = op.args.length() - 1
