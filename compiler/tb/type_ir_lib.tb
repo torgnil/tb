@@ -443,7 +443,9 @@ string thread_pool_submit_result_type(FunctionSigIR[] functions, string function
             return 'future<num>'
         if (argument_count == 1 && function_sig.param_types.length() == 1 && function_sig.param_types[0] == 'num'):
             return 'future<num>'
-        throw 'thread_pool.submit currently supports num functions with signature num fn() or num fn(num)'
+        if (argument_count == 1 && function_sig.param_types.length() == 1 && function_sig.param_types[0] == 'int'):
+            return 'future<num>'
+        throw 'thread_pool.submit currently supports num functions with signature num fn(), num fn(num), or num fn(int)'
     if (argument_count == 0):
         if (function_sig.param_types.length() != 0):
             throw 'thread_pool.submit currently requires a function with signature T fn() or T fn(U) where T is int, bool, string, or int[] and U is int, bool, string, int[], or int[][]'
