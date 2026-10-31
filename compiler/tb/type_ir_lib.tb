@@ -492,6 +492,9 @@ bool integer_enum_exists(EnumTypeIR[] enums, string name):
             return enum_type.integer_backed
     return false
 
+bool integer_enum_array_exists(EnumTypeIR[] enums, string type_name):
+    return type_name.ends_with('[]') && integer_enum_exists(enums, array_item_type(type_name))
+
 string integer_enum_value(EnumTypeIR[] enums, string enum_name, string value_name):
     for (EnumTypeIR enum_type : enums):
         if (enum_type.name == enum_name && enum_type.integer_backed):
@@ -548,12 +551,14 @@ void validate_range_bound_type(string bound, string[] temp_types, EnumTypeIR[] e
 string normalize_integer_enum_map_key_type(string type_name, EnumTypeIR[] enums):
     if (integer_enum_exists(enums, type_name)):
         return 'int'
+    if (integer_enum_array_exists(enums, type_name)):
+        return 'int[]'
     return type_name
 
 string normalize_integer_enum_map_value_type(string type_name, EnumTypeIR[] enums):
     if (integer_enum_exists(enums, type_name)):
         return 'int'
-    if (type_name.ends_with('[]') && integer_enum_exists(enums, array_item_type(type_name))):
+    if (integer_enum_array_exists(enums, type_name)):
         return 'int[]'
     if (type_name.starts_with('map<') && type_name.ends_with('>')):
         return normalize_integer_enum_map_type_name(type_name, enums)
@@ -578,7 +583,7 @@ string normalize_integer_enum_type_name(string type_name, EnumTypeIR[] enums):
         return qualifier + normalize_integer_enum_map_type_name(base_type, enums)
     if (integer_enum_exists(enums, base_type)):
         return qualifier + 'int'
-    if (base_type.ends_with('[]') && integer_enum_exists(enums, array_item_type(base_type))):
+    if (integer_enum_array_exists(enums, base_type)):
         return qualifier + 'int[]'
     return qualifier + base_type
 
@@ -606,6 +611,8 @@ bool integer_enum_map_component_is_supported(string type_name, EnumTypeIR[] enum
         return true
     if (integer_enum_exists(enums, type_name)):
         return true
+    if (integer_enum_array_exists(enums, type_name)):
+        return true
     if (type_name.starts_with('map<') && type_name.ends_with('>')):
         return integer_enum_map_type_is_supported(type_name, enums)
     return false
@@ -615,7 +622,7 @@ bool integer_enum_map_value_is_supported(string type_name, EnumTypeIR[] enums):
         return true
     if (integer_enum_exists(enums, type_name)):
         return true
-    if (type_name.ends_with('[]') && integer_enum_exists(enums, array_item_type(type_name))):
+    if (integer_enum_array_exists(enums, type_name)):
         return true
     if (type_name.starts_with('map<') && type_name.ends_with('>')):
         return integer_enum_map_type_is_supported(type_name, enums)
@@ -634,7 +641,7 @@ void validate_integer_enum_declared_type(string type_name, EnumTypeIR[] enums):
         base_type = base_type.substring(6)
     if (integer_enum_exists(enums, base_type)):
         return
-    if (base_type.ends_with('[]') && integer_enum_exists(enums, array_item_type(base_type))):
+    if (integer_enum_array_exists(enums, base_type)):
         return
     if (type_contains_integer_enum(base_type, enums)):
         if (base_type.starts_with('map<') && base_type.ends_with('>') && integer_enum_map_type_is_supported(base_type, enums)):
@@ -688,44 +695,44 @@ bool validate_integer_enum_declared_types(ProgramIR program, EnumTypeIR[] enums)
             validate_integer_enum_declared_type(local.type_name, enums)
     return true
 
-bool type_contains_unsupported_array_map_key_inner(string type_name, bool allow_root_array_key_map):
-    string normalized_type = normalize_llvm_type_name(type_name)
+bool type_contains_unsupported_array_map_key_inner(string type_name, bool allow_root_array_key_map, EnumTypeIR[] enums):
+    string normalized_type = normalize_llvm_type_name(normalize_integer_enum_type_name(type_name, enums))
     if (normalized_type.starts_with('map<') && normalized_type.ends_with('>')):
         string key_type = normalize_llvm_type_name(map_key_type(normalized_type))
         string value_type = normalize_llvm_type_name(map_value_type(normalized_type))
         if (key_type == 'int[]' && ((normalized_type != 'map<int[], int>' && normalized_type != 'map<int[], string>' && normalized_type != 'map<int[], bool[]>') || !allow_root_array_key_map)):
             return true
-        return type_contains_unsupported_array_map_key_inner(key_type, false) || type_contains_unsupported_array_map_key_inner(value_type, false)
+        return type_contains_unsupported_array_map_key_inner(key_type, false, enums) || type_contains_unsupported_array_map_key_inner(value_type, false, enums)
     if (normalized_type.ends_with('[]')):
-        return type_contains_unsupported_array_map_key_inner(array_item_type(normalized_type), false)
+        return type_contains_unsupported_array_map_key_inner(array_item_type(normalized_type), false, enums)
     return false
 
-bool type_contains_unsupported_array_map_key(string type_name):
-    return type_contains_unsupported_array_map_key_inner(type_name, true)
+bool type_contains_unsupported_array_map_key(string type_name, EnumTypeIR[] enums):
+    return type_contains_unsupported_array_map_key_inner(type_name, true, enums)
 
-void validate_int_array_map_key_type(string type_name):
-    if (type_contains_unsupported_array_map_key(type_name)):
+void validate_int_array_map_key_type(string type_name, EnumTypeIR[] enums):
+    if (type_contains_unsupported_array_map_key(type_name, enums)):
         throw 'int[] map keys are only supported for direct map<int[], int>, map<int[], string>, or map<int[], bool[]> types: ' + type_name
 
-void validate_int_array_map_key_types(ProgramIR program):
+void validate_int_array_map_key_types(ProgramIR program, EnumTypeIR[] enums):
     for (GlobalDeclIR global_decl in program.globals):
         BindingIR binding = ir_parse_binding_decl(strip_prefix(global_decl.header, 'global '))
-        validate_int_array_map_key_type(binding.type_name)
+        validate_int_array_map_key_type(binding.type_name, enums)
         for (LinearInstruction op in global_decl.instructions):
-            validate_int_array_map_key_type(op.result_type)
+            validate_int_array_map_key_type(op.result_type, enums)
     for (RecordDeclIR record_decl in program.records):
         for (string field in record_decl.fields):
             BindingIR binding = ir_parse_binding_decl(strip_prefix(field, 'field '))
-            validate_int_array_map_key_type(binding.type_name)
+            validate_int_array_map_key_type(binding.type_name, enums)
     for (ParsedFunction function_ir in program.functions):
-        validate_int_array_map_key_type(function_ir.return_type)
+        validate_int_array_map_key_type(function_ir.return_type, enums)
         for (BindingIR param in function_ir.params):
-            validate_int_array_map_key_type(param.type_name)
+            validate_int_array_map_key_type(param.type_name, enums)
         for (BindingIR local in function_ir.locals):
-            validate_int_array_map_key_type(local.type_name)
+            validate_int_array_map_key_type(local.type_name, enums)
         for (BlockIR block in function_ir.blocks):
             for (LinearInstruction op in block.instructions):
-                validate_int_array_map_key_type(op.result_type)
+                validate_int_array_map_key_type(op.result_type, enums)
 
 BindingIR normalize_enum_binding(BindingIR binding, EnumTypeIR[] enums):
     return BindingIR(normalize_enum_type_name(binding.type_name, enums), binding.name)
@@ -3040,7 +3047,7 @@ ProgramIR refine_program_ir_with_regex(ProgramIR program, bool regex_imported):
         if (helper_count != 1):
             throw 'regex split internal helper must be declared exactly once'
     EnumTypeIR[] enum_types = collect_enum_types(program.enums)
-    validate_int_array_map_key_types(program)
+    validate_int_array_map_key_types(program, enum_types)
     bool has_integer_enum = validate_integer_enum_declared_types(program, enum_types)
     bool has_string_enum_record_field = has_string_enum_record_fields(program.records, enum_types)
     bool normalize_records = has_integer_enum || has_string_enum_record_field

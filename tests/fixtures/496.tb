@@ -1,0 +1,16 @@
+enum Opcode { READ = 1, WRITE = 2 }
+
+map<Opcode[], int> GLOBAL_COUNTS = {[Opcode.READ]: 3}
+const map<Opcode[], string> FIXED_LABELS = {[Opcode.WRITE]: 'write'}
+
+record Registry(map<Opcode[], int> counts);
+
+map<Opcode[], int> round_trip(map<Opcode[], int> counts):
+    return counts
+
+int main():
+    map<Opcode[], int> counts = round_trip(GLOBAL_COUNTS)
+    Registry registry = Registry(counts)
+    print(registry.counts[[Opcode.READ]])
+    print(FIXED_LABELS[[Opcode.WRITE]])
+    return 0
