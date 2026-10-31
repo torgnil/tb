@@ -932,7 +932,7 @@ ArrayScalarCaptureResult int_array_scalar_captures(Node lambda_node, BindingIR[]
         string capture_type = binding.type_name
         if (capture_type.starts_with('const ')):
             capture_type = capture_type.substring(6)
-        if (!(capture_type == 'int' || capture_type == 'bool' || capture_type == 'string' || capture_type == 'string[]')):
+        if (!(capture_type == 'int' || capture_type == 'bool' || capture_type == 'string' || capture_type == 'int[]' || capture_type == 'string[]')):
             return ArrayScalarCaptureResult([], false)
         captured.push(binding)
     return ArrayScalarCaptureResult(captured, true)
@@ -1449,18 +1449,18 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
         Node[] helper_children = [Node('Param', 'const int[] ' + receiver_name, [])]
         Node[] call_arguments = [rewritten_children[0]]
         Node[] capture_snapshot_nodes = []
-        bool has_string_array_capture = false
+        bool has_array_snapshot_capture = false
         for (BindingIR binding : array_callback_captures):
             string capture_type = binding.type_name
             if (capture_type.starts_with('const ')):
                 capture_type = capture_type.substring(6)
             string capture_parameter_name = binding.name
-            if (capture_type == 'string[]'):
-                has_string_array_capture = true
+            if (capture_type == 'int[]' || capture_type == 'string[]'):
+                has_array_snapshot_capture = true
                 capture_parameter_name = submit_capture_name(current_names, '__tb_array_callback_capture_', current_index)
                 current_names = add_unique_name(current_names, capture_parameter_name)
                 current_index += 1
-                capture_snapshot_nodes.push(Node('VarDecl', 'string[] ' + binding.name, [Node('Identifier', capture_parameter_name, [])]))
+                capture_snapshot_nodes.push(Node('VarDecl', capture_type + ' ' + binding.name, [Node('Identifier', capture_parameter_name, [])]))
             helper_children.push(Node('Param', 'const ' + capture_type + ' ' + capture_parameter_name, []))
             call_arguments.push(Node('Identifier', binding.name, []))
         helper_children = append_nodes(helper_children, capture_snapshot_nodes)
@@ -1500,7 +1500,7 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
         else:
             loop_body.push(append_value)
         Node callback_loop = Node('ForEach', lambda_node.value, append_nodes([Node('Identifier', receiver_name, [])], loop_body))
-        if (has_string_array_capture):
+        if (has_array_snapshot_capture):
             string catch_name = submit_capture_name(current_names, '__tb_array_callback_error_', current_index)
             current_names = add_unique_name(current_names, catch_name)
             current_index += 1
@@ -1509,7 +1509,7 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
                 string capture_type = binding.type_name
                 if (capture_type.starts_with('const ')):
                     capture_type = capture_type.substring(6)
-                if (capture_type == 'string[]'):
+                if (capture_type == 'int[]' || capture_type == 'string[]'):
                     cleanup_statements.push(Node('Assign', '', [Node('Identifier', binding.name, []), Node('Array', '', [])]))
             cleanup_statements.push(Node('Assign', '', [output_ref, Node('Array', '', [])]))
             cleanup_statements.push(Node('Throw', '', [Node('Identifier', catch_name, [])]))
