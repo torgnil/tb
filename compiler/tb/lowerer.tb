@@ -3827,6 +3827,164 @@ bool lower_program_has_module_markers(Node program):
             return true
     return false
 
+record PrivateRecordBinding(string source_name, string module_id, string identity);
+record PrivateRecordFunction(string source_name, string module_id, bool is_private);
+
+bool type_name_identifier_part(string character):
+    return character == '_' || character.is_alpha() || character.is_digit()
+
+bool type_name_has_identifier(string type_name, string name):
+    int index = 0
+    while (index < type_name.length()):
+        if (type_name_identifier_part(type_name.substring(index, index + 1))):
+            int end = index + 1
+            while (end < type_name.length() && type_name_identifier_part(type_name.substring(end, end + 1))):
+                end += 1
+            if (type_name.substring(index, end) == name):
+                return true
+            index = end
+        else:
+            index += 1
+    return false
+
+string replace_type_name_identifier(string type_name, string name, string replacement):
+    string result = ''
+    int index = 0
+    while (index < type_name.length()):
+        if (type_name_identifier_part(type_name.substring(index, index + 1))):
+            int end = index + 1
+            while (end < type_name.length() && type_name_identifier_part(type_name.substring(end, end + 1))):
+                end += 1
+            string identifier = type_name.substring(index, end)
+            if (identifier == name):
+                result += replacement
+            else:
+                result += identifier
+            index = end
+        else:
+            result += type_name.substring(index, index + 1)
+            index += 1
+    return result
+
+string private_record_type_name(string type_name, PrivateRecordBinding[] records, string module_id, bool reject_hidden):
+    string rewritten = type_name.substring(0)
+    string hidden_source_name = ''
+    for (PrivateRecordBinding record_binding : records):
+        if (record_binding.module_id == module_id):
+            if (type_name_has_identifier(type_name, record_binding.source_name)):
+                rewritten = replace_type_name_identifier(rewritten, record_binding.source_name, record_binding.identity)
+        else if (reject_hidden && type_name_has_identifier(type_name, record_binding.source_name)):
+            bool locally_visible = false
+            for (PrivateRecordBinding local_record : records):
+                if (local_record.module_id == module_id && local_record.source_name == record_binding.source_name):
+                    locally_visible = true
+            if (!locally_visible):
+                hidden_source_name = record_binding.source_name
+    if (hidden_source_name != ''):
+        throw 'private record is not visible in this module: ' + hidden_source_name
+    return rewritten
+
+string private_record_binding_value(string value, PrivateRecordBinding[] records, string module_id, bool reject_hidden):
+    string prefix = ''
+    string declaration = value.substring(0)
+    if (declaration.starts_with('private ')):
+        prefix = 'private '
+        declaration = declaration.substring(8)
+    if (declaration.starts_with('const ')):
+        prefix += 'const '
+        declaration = declaration.substring(6)
+    BindingIR binding = ir_parse_binding_decl(declaration)
+    string type_name = private_record_type_name(binding.type_name, records, module_id, reject_hidden)
+    if (binding.type_name == ''):
+        return value.substring(0)
+    return prefix + type_name + ' ' + binding.name
+
+bool private_record_function_visible(string name, string module_id, PrivateRecordFunction[] functions):
+    for (PrivateRecordFunction function_binding : functions):
+        if (function_binding.source_name == name && (!function_binding.is_private || function_binding.module_id == module_id)):
+            return true
+    return false
+
+Node rewrite_private_record_node(Node node, PrivateRecordBinding[] records, PrivateRecordFunction[] functions, string module_id, bool public_context):
+    string value = node.value.substring(0)
+    bool is_public = public_context
+    bool is_private_record = false
+    if (node.kind == 'Function' || node.kind == 'CachedFunction'):
+        is_public = true
+        BindingIR signature = ir_parse_binding_decl(value)
+        string rewritten_return = private_record_type_name(signature.type_name, records, module_id, true)
+        if (rewritten_return != signature.type_name):
+            throw 'private record cannot appear in a public function signature: ' + signature.name
+        value = private_record_binding_value(value, records, module_id, true)
+    else if (node.kind == 'PrivateFunction' || node.kind == 'PrivateCachedFunction'):
+        value = private_record_binding_value(value, records, module_id, true)
+    else if (node.kind == 'Param'):
+        BindingIR param = ir_parse_binding_decl(value)
+        string rewritten_param_type = private_record_type_name(param.type_name, records, module_id, true)
+        if (public_context && rewritten_param_type != param.type_name):
+            throw 'private record cannot appear in a public function signature: ' + param.name
+        value = private_record_binding_value(value, records, module_id, true)
+    else if (node.kind == 'VarDecl' || node.kind == 'ForEach' || node.kind == 'Catch' || node.kind == 'Lambda' || node.kind == 'FieldDecl'):
+        value = private_record_binding_value(value, records, module_id, true)
+    else if (node.kind == 'Call'):
+        if (!private_record_function_visible(value, module_id, functions)):
+            value = private_record_type_name(value, records, module_id, true)
+    else if (node.kind == 'PrivateRecordDecl'):
+        value = private_record_type_name(value, records, module_id, false)
+        is_public = false
+        is_private_record = true
+        node = Node('RecordDecl', value, node.children)
+    else if (node.kind == 'RecordDecl'):
+        for (Node field_decl : node.children):
+            BindingIR field = ir_parse_binding_decl(field_decl.value)
+            string rewritten_field_type = private_record_type_name(field.type_name, records, module_id, true)
+            if (rewritten_field_type != field.type_name):
+                throw 'private record cannot appear in a public record field: ' + field.name
+    Node[] children = []
+    for (Node child : node.children):
+        bool child_public_context = false
+        if (node.kind == 'Function' || node.kind == 'CachedFunction'):
+            child_public_context = is_public && child.kind == 'Param'
+        else if (node.kind == 'RecordDecl'):
+            child_public_context = !is_private_record
+        children.push(rewrite_private_record_node(child, records, functions, module_id, child_public_context))
+    return Node(node.kind, value, children)
+
+Node bind_private_module_records(Node program):
+    PrivateRecordBinding[] records = []
+    PrivateRecordFunction[] functions = []
+    string module_id = ''
+    int private_index = 0
+    for (Node child : program.children):
+        if (child.kind == 'ModuleMarker'):
+            module_id = child.value
+        else if (child.kind == 'Function' || child.kind == 'CachedFunction' || child.kind == 'PrivateFunction' || child.kind == 'PrivateCachedFunction'):
+            BindingIR signature = ir_parse_binding_decl(child.value)
+            bool is_private = child.kind == 'PrivateFunction' || child.kind == 'PrivateCachedFunction'
+            functions.push(PrivateRecordFunction(signature.name, module_id, is_private))
+        else if (child.kind == 'PrivateRecordDecl'):
+            for (PrivateRecordBinding existing : records):
+                if (existing.module_id == module_id && existing.source_name == child.value):
+                    throw 'duplicate private record in module: ' + child.value
+            records.push(PrivateRecordBinding(child.value, module_id, '__tb.private.record.' + private_index.to_string()))
+            private_index += 1
+    if (records.is_empty()):
+        return program
+    Node[] children = []
+    module_id = ''
+    for (Node child : program.children):
+        if (child.kind == 'ModuleMarker'):
+            module_id = child.value
+            children.push(child)
+        else:
+            if (child.kind == 'VarDecl' && !child.value.starts_with('private ')):
+                BindingIR global_binding = ir_parse_binding_decl(child.value)
+                string rewritten_global_type = private_record_type_name(global_binding.type_name, records, module_id, true)
+                if (rewritten_global_type != global_binding.type_name):
+                    throw 'private record cannot appear in a public global: ' + global_binding.name
+            children.push(rewrite_private_record_node(child, records, functions, module_id, false))
+    return Node(program.kind, program.value, children)
+
 Node lower_program_with_default_module(Node program):
     if (lower_program_has_module_markers(program)):
         return program
@@ -3837,6 +3995,7 @@ Node lower_program_with_default_module(Node program):
 
 string[] lower_program(Node program):
     program = lower_program_with_default_module(program)
+    program = bind_private_module_records(program)
     program = bind_private_module_globals(program)
     SubmitLambdaRewrite scoped_rewritten = rewrite_submit_lambdas_in_program(program, false)
     program = scoped_rewritten.node
@@ -3980,6 +4139,7 @@ ParsedFunction lower_logical_global_initializer(Node declaration, int index, str
     return ParsedFunction('func ' + result_type + ' ' + name, name, name, module_id.substring(0), false, result_type, [], collect_function_locals(value.instructions), linear_instructions_to_blocks(value.instructions))
 
 ProgramIR lower_program_ir(Node program):
+    program = bind_private_module_records(program)
     program = bind_private_module_globals(program)
     SubmitLambdaRewrite rewritten = rewrite_submit_lambdas_in_program(program, true)
     SubmitLambdaRewrite map_rewritten = rewrite_int_array_expressions_in_program(rewritten.node)
@@ -4078,10 +4238,13 @@ ProgramIR lower_tokens_ir(Token[] tokens):
     bool needs_program = (has_submit_identifier || has_map_to_identifier || has_filter_identifier) && has_arrow_symbol
     bool has_range_foreach = tokens_have_direct_range_foreach(tokens)
     bool has_private_global = false
+    bool has_private_record = false
     int private_token_index = 0
     while (private_token_index < tokens.length()):
         if (token_is(tokens[private_token_index], 'KEYWORD', 'private')):
             int private_type_index = private_token_index + 1
+            if (token_is(token_at(tokens, private_type_index), 'KEYWORD', 'record')):
+                has_private_record = true
             if (token_is(token_at(tokens, private_type_index), 'KEYWORD', 'const')):
                 private_type_index += 1
             if (could_start_type(tokens, private_type_index)):
@@ -4089,11 +4252,11 @@ ProgramIR lower_tokens_ir(Token[] tokens):
                 if (token_at(tokens, private_name_index).kind == 'IDENTIFIER' && token_is(token_at(tokens, private_name_index + 1), 'SYMBOL', '=')):
                     has_private_global = true
         private_token_index += 1
-    if (needs_program || has_const || has_range_foreach || has_private_global):
+    if (needs_program || has_const || has_range_foreach || has_private_global || has_private_record):
         Node parsed = parse_program(tokens)
         if (has_range_foreach && !program_declares_range(parsed)):
             LOWER_DIRECT_RANGE_FOREACH = true
-        if (needs_program || has_private_global):
+        if (needs_program || has_private_global || has_private_record):
             return lower_program_ir(parsed)
         if (has_const):
             validate_const_bindings(parsed)
@@ -4113,7 +4276,9 @@ ProgramIR lower_tokens_ir(Token[] tokens):
             continue
         if (token_is(token, 'KEYWORD', 'private')):
             bool is_cached = token_is(token_at(tokens, current + 1), 'KEYWORD', 'cached')
-            if (token_is(token_at(tokens, current + 1), 'KEYWORD', 'record') || token_is(token_at(tokens, current + 1), 'KEYWORD', 'enum') || token_is(token_at(tokens, current + 1), 'KEYWORD', 'const')):
+            if (token_is(token_at(tokens, current + 1), 'KEYWORD', 'record')):
+                throw parser_error(token, 'private record is only valid on top-level declarations')
+            if (token_is(token_at(tokens, current + 1), 'KEYWORD', 'enum') || token_is(token_at(tokens, current + 1), 'KEYWORD', 'const')):
                 throw parser_error(token, 'private is only valid on top-level ordinary functions')
             int private_function_index = current + 1
             if (is_cached):

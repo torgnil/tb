@@ -1162,7 +1162,12 @@ Node parse_program(Token[] tokens):
                 statements.push(private_cached_function.node)
                 current = skip_statement_separators(tokens, private_cached_function.next_index)
                 continue
-            if (token_is(token_at(tokens, function_start), 'KEYWORD', 'record') || token_is(token_at(tokens, function_start), 'KEYWORD', 'enum') || token_is(token_at(tokens, function_start), 'KEYWORD', 'const')):
+            if (token_is(token_at(tokens, function_start), 'KEYWORD', 'record')):
+                ParseResult private_record = parse_record_declaration(tokens, function_start)
+                statements.push(Node('PrivateRecordDecl', private_record.node.value, private_record.node.children))
+                current = skip_statement_separators(tokens, private_record.next_index)
+                continue
+            if (token_is(token_at(tokens, function_start), 'KEYWORD', 'enum') || token_is(token_at(tokens, function_start), 'KEYWORD', 'const')):
                 if (token_is(token_at(tokens, function_start), 'KEYWORD', 'const')):
                     int private_const_start = function_start + 1
                     if (could_start_type(tokens, private_const_start)):
