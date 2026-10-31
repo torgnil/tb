@@ -1,0 +1,49 @@
+int[][] global_scores = [[3, 4], [7, 8]]
+
+int update_global_score(int row):
+    int original = global_scores[row][1]
+    global_scores[row][1] = original + 100
+    return original
+
+int fail_on_two(int row):
+    if (row == 2):
+        throw 'matrix callback failed'
+    return row
+
+int main():
+    const int[][] scores = [[3, 4], [7, 8], [2, 9]]
+    int[][] bonuses = [[1, 10], [2, 20], [3, 30]]
+    int[] rows = [1, 0, 2]
+
+    int[] mapped = rows.map_to(int row -> scores[row][1] + bonuses[row][0])
+    print(mapped)
+    int[] filtered = rows.filter(int row -> scores[row][0] > 2 && bonuses[row][1] >= 10)
+    print(filtered)
+
+    int[] block_mapped = rows.map_to(int row -> {
+        int score = scores[row][0]
+        return score + bonuses[row][1]
+    })
+    print(block_mapped)
+
+    int[] block_filtered = rows.filter(int row -> {
+        int checked = row
+        return scores[checked][1] >= 8
+    })
+    print(block_filtered)
+
+    int[] snapshot_rows = [0, 1]
+    int[] snapshot = snapshot_rows.map_to(int row -> global_scores[row][1] + update_global_score(row))
+    print(snapshot)
+    print(global_scores[0][1])
+    print(global_scores[1][1])
+
+    int[] empty = []
+    print(empty.map_to(int row -> scores[row][0]))
+
+    try:
+        rows.map_to(int row -> scores[fail_on_two(row)][0])
+    catch (exception error):
+        print(error)
+    print(rows.map_to(int row -> scores[row][0]))
+    return 0
