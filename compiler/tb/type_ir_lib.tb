@@ -503,6 +503,14 @@ bool integer_enum_exists(EnumTypeIR[] enums, string name):
 bool integer_enum_array_exists(EnumTypeIR[] enums, string type_name):
     return type_name.ends_with('[]') && integer_enum_exists(enums, array_item_type(type_name))
 
+bool integer_enum_nested_array_exists(EnumTypeIR[] enums, string type_name):
+    return type_name.ends_with('[][]') && integer_enum_array_exists(enums, array_item_type(type_name))
+
+string normalize_integer_enum_nested_array_type_name(string type_name, EnumTypeIR[] enums):
+    if (integer_enum_nested_array_exists(enums, type_name)):
+        return 'int[][]'
+    return type_name
+
 string integer_enum_value(EnumTypeIR[] enums, string enum_name, string value_name):
     for (EnumTypeIR enum_type : enums):
         if (enum_type.name == enum_name && enum_type.integer_backed):
@@ -593,6 +601,8 @@ string normalize_integer_enum_type_name(string type_name, EnumTypeIR[] enums):
         return qualifier + 'int'
     if (integer_enum_array_exists(enums, base_type)):
         return qualifier + 'int[]'
+    if (integer_enum_nested_array_exists(enums, base_type)):
+        return qualifier + normalize_integer_enum_nested_array_type_name(base_type, enums)
     return qualifier + base_type
 
 # Composite enum declarations need separate array, map and record layout work.
@@ -650,6 +660,8 @@ void validate_integer_enum_declared_type(string type_name, EnumTypeIR[] enums):
     if (integer_enum_exists(enums, base_type)):
         return
     if (integer_enum_array_exists(enums, base_type)):
+        return
+    if (integer_enum_nested_array_exists(enums, base_type)):
         return
     if (type_contains_integer_enum(base_type, enums)):
         if (base_type.starts_with('map<') && base_type.ends_with('>') && integer_enum_map_type_is_supported(base_type, enums)):

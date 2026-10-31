@@ -1,5 +1,38 @@
-enum Op { LOAD = 1 }
+enum Op { LOAD = 1, STORE = 2, HALT = 7 }
+
+record OpcodeProgram(Op[][] instructions);
+
+Op[][] GLOBAL_PROGRAM = [[Op.LOAD, Op.STORE], [Op.HALT]]
+const Op[][] CONSTANT_PROGRAM = [[Op.STORE], []]
+
+Op[][] identity(Op[][] program):
+    return program
+
+int sum_program(Op[][] program):
+    int total = 0
+    for (Op[] row : program):
+        for (Op opcode : row):
+            total += opcode
+    return total
 
 int main():
-    Op[][] nested = [[Op.LOAD]]
+    print('nested enum arrays' == 'nested enum arrays')
+    print(GLOBAL_PROGRAM[0][1])
+    print(CONSTANT_PROGRAM[0][0])
+
+    Op[][] program = identity(GLOBAL_PROGRAM)
+    program[0][1] = Op.LOAD
+    program[1] = [Op.HALT, 4]
+    print(sum_program(program))
+    program[0][0] = Op.STORE
+    print(sum_program(identity(program)))
+
+    OpcodeProgram boxed = OpcodeProgram(program)
+    boxed.instructions[1][1] = Op.STORE
+    print(boxed.instructions[1][1])
+
+    const Op[][] readonly_program = [[Op.HALT], []]
+    print(readonly_program[0][0])
+    Op[][] empty_program = []
+    print(empty_program.length())
     return 0

@@ -118,16 +118,17 @@ enum fields in records use the same `int` representation and assignment rules,
 including in nested records and records with managed fields. A one-dimensional
 `Code[]` uses the same representation and behavior as `int[]`: it supports
 locals, globals, const bindings, function parameters and results, direct record
-fields, indexing, iteration, and mutation. Integer enum values and ordinary
-integers can be mixed in these arrays because enum names are not nominally
-checked. Scalar integer-backed enum map keys and values use the same `int` map
-representation and can interoperate with equivalent integer maps. A
+fields, indexing, iteration, and mutation. A two-dimensional `Code[][]` uses
+the same representation and behavior as `int[][]` in these contexts. Integer
+enum values and ordinary integers can be mixed in these arrays because enum
+names are not nominally checked. Scalar integer-backed enum map keys and values
+use the same `int` map representation and can interoperate with equivalent
+integer maps. A
 one-dimensional integer-backed enum array may be stored as a map value and
 uses the existing `int[]` representation, including recursively inside nested
 map values. It may also be used as a key for the direct array-key map value
-families described above. Nested enum arrays such as `Code[][]`, enum-array
-keys inside nested maps, and enum arrays in other composites remain
-unsupported. Bare
+families described above. Enum arrays inside maps, including `map<int,
+Code[][]>` and enum-array keys inside nested maps, remain unsupported. Bare
 enums continue to use their existing string representation.
 
 String-backed enum values use their string representation in named function parameters and
