@@ -75,13 +75,15 @@ same-spelled public global remains visible, and locals and parameters shadow
 globals as usual. Private global names may repeat in different files, but not
 within one file, and a private global cannot share a name with a public global
 in its file. A module may declare a private record with `private record Name(...)`.
-Its type and constructor are available only in that source file; another file
-may use the module's public functions without naming the private record. Private
-records cannot appear in public function signatures, globals, or record fields.
+It may also declare a private enum with `private enum Name { ... }`. Their types,
+constructors, and enum members are available only in the declaring source file;
+another file may use the module's public functions without naming private types.
+Private records and enums cannot appear in public function signatures, globals,
+or record fields.
 Private cached functions keep the existing parameter and return restrictions
-of cached functions. Private `main`, enums, and nested functions are not
-supported. Repeated and diamond imports load a lexically normalized path once;
-an active import cycle is a compiler error.
+of cached functions. Private `main` and nested functions are not supported.
+Repeated and diamond imports load a lexically normalized path once; an active
+import cycle is a compiler error.
 
 4. Types
 
