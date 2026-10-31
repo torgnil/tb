@@ -160,7 +160,7 @@ SubmitLambdaScope copy_submit_lambda_scope(SubmitLambdaScope scope):
 
 string[] collect_submit_unavailable_names(Node node, string[] names):
     names = add_unique_name(names, node.value)
-    if (node.kind == 'Param' || node.kind == 'VarDecl' || node.kind == 'ForEach' || node.kind == 'Catch' || node.kind == 'Function' || node.kind == 'CachedFunction' || node.kind == 'PrivateFunction'):
+    if (node.kind == 'Param' || node.kind == 'VarDecl' || node.kind == 'ForEach' || node.kind == 'Catch' || node.kind == 'Function' || node.kind == 'CachedFunction' || node.kind == 'PrivateFunction' || node.kind == 'PrivateCachedFunction'):
         names = add_unique_name(names, binding_name(node.value))
     for (Node child : node.children):
         names = collect_submit_unavailable_names(child, names)
@@ -170,7 +170,7 @@ Node submit_lambda_helper(Node[] functions, string name):
     int index = functions.length() - 1
     while (index >= 0):
         Node function_node = functions[index]
-        if (function_node.kind == 'Function' || function_node.kind == 'CachedFunction' || function_node.kind == 'PrivateFunction'):
+        if (function_node.kind == 'Function' || function_node.kind == 'CachedFunction' || function_node.kind == 'PrivateFunction' || function_node.kind == 'PrivateCachedFunction'):
             BindingIR signature = ir_parse_binding_decl(function_node.value)
             if (signature.name == name):
                 return function_node
@@ -189,7 +189,7 @@ Node[] program_visible_function_nodes(Node[] declarations, string module_id):
     for (Node child : declarations):
         if (child.kind == 'ModuleMarker'):
             active_module = child.value
-        else if (child.kind == 'PrivateFunction' && active_module == module_id):
+        else if ((child.kind == 'PrivateFunction' || child.kind == 'PrivateCachedFunction') && active_module == module_id):
             visible.push(child)
     return visible
 
@@ -1629,7 +1629,7 @@ SubmitLambdaRewrite rewrite_submit_lambdas_in_program(Node program, bool include
             rewritten_children.push(child)
             continue
         Node[] visible_functions = program_visible_function_nodes(program.children, current_module_id)
-        if (child.kind == 'Function' || child.kind == 'CachedFunction' || child.kind == 'PrivateFunction'):
+        if (child.kind == 'Function' || child.kind == 'CachedFunction' || child.kind == 'PrivateFunction' || child.kind == 'PrivateCachedFunction'):
             BindingIR[] bindings = []
             for (BindingIR global_binding : global_bindings):
                 bindings.push(global_binding)
@@ -3398,12 +3398,14 @@ string[] lower_statement_lines(Node node, string indent):
         for (Node child in node.children):
             lines.push(lower_statement_lines(child, indent + '  ')[0])
         return lines
-    if (node.kind == 'Function' || node.kind == 'CachedFunction' || node.kind == 'PrivateFunction'):
+    if (node.kind == 'Function' || node.kind == 'CachedFunction' || node.kind == 'PrivateFunction' || node.kind == 'PrivateCachedFunction'):
         string head = 'func '
         if (node.kind == 'CachedFunction'):
             head = 'cached func '
         else if (node.kind == 'PrivateFunction'):
             head = 'private func '
+        else if (node.kind == 'PrivateCachedFunction'):
+            head = 'private cached func '
         string[] lines = [indent + head + node.value]
         lines.push(indent + '  params')
         Node[] body_nodes = []
@@ -3802,7 +3804,7 @@ void validate_const_bindings(Node program):
     for (Node child : program.children):
         if (child.kind == 'VarDecl'):
             globals.push(ir_parse_binding_decl(child.value))
-        if (child.kind == 'Function' || child.kind == 'CachedFunction' || child.kind == 'PrivateFunction'):
+        if (child.kind == 'Function' || child.kind == 'CachedFunction' || child.kind == 'PrivateFunction' || child.kind == 'PrivateCachedFunction'):
             BindingIR signature = ir_parse_binding_decl(child.value)
             function_names.push(signature.name)
         if (child.kind == 'RecordDecl'):
@@ -3810,7 +3812,7 @@ void validate_const_bindings(Node program):
     for (Node child : program.children):
         if (child.kind == 'VarDecl' && child.children.length() > 0):
             validate_const_expression(child.children[0], globals, function_names, record_nodes)
-        if (child.kind == 'Function' || child.kind == 'CachedFunction' || child.kind == 'PrivateFunction'):
+        if (child.kind == 'Function' || child.kind == 'CachedFunction' || child.kind == 'PrivateFunction' || child.kind == 'PrivateCachedFunction'):
             BindingIR[] function_bindings = const_copy_bindings(globals)
             for (Node fn_child : child.children):
                 if (fn_child.kind == 'Param'):
@@ -4013,7 +4015,7 @@ ProgramIR lower_program_ir(Node program):
             for (Node value_decl : child.children):
                 values.push('value ' + value_decl.value)
             enums.push(EnumDeclIR('enum ' + child.value, values))
-        else if (child.kind == 'Function' || child.kind == 'CachedFunction' || child.kind == 'PrivateFunction'):
+        else if (child.kind == 'Function' || child.kind == 'CachedFunction' || child.kind == 'PrivateFunction' || child.kind == 'PrivateCachedFunction'):
             BindingIR[] params = []
             Node[] body_nodes = []
             for (Node fn_child : child.children):
@@ -4027,10 +4029,11 @@ ProgramIR lower_program_ir(Node program):
             BindingIR[] locals = collect_function_locals(linear.instructions)
             BlockIR[] blocks = linear_instructions_to_blocks(linear.instructions)
             string header = 'func ' + child.value
-            if (child.kind == 'CachedFunction'):
+            if (child.kind == 'CachedFunction' || child.kind == 'PrivateCachedFunction'):
                 header = 'cached func ' + child.value
             BindingIR signature_binding = ir_parse_binding_decl(child.value)
-            functions.push(ParsedFunction(header, signature_binding.name.substring(0), signature_binding.name.substring(0), module_id.substring(0), child.kind == 'PrivateFunction', signature_binding.type_name.substring(0), params, locals, blocks))
+            bool is_private = child.kind == 'PrivateFunction' || child.kind == 'PrivateCachedFunction'
+            functions.push(ParsedFunction(header, signature_binding.name.substring(0), signature_binding.name.substring(0), module_id.substring(0), is_private, signature_binding.type_name.substring(0), params, locals, blocks))
         else:
             throw 'unsupported top-level node in shared bootstrap IR: ' + child.kind
     return ProgramIR(imports, globals, records, enums, functions)
@@ -4048,7 +4051,7 @@ bool program_declares_range(Node program):
     for (Node child : program.children):
         if (child.kind == 'RecordDecl' && child.value == 'range'):
             return true
-        if (child.kind == 'Function' || child.kind == 'CachedFunction' || child.kind == 'PrivateFunction'):
+        if (child.kind == 'Function' || child.kind == 'CachedFunction' || child.kind == 'PrivateFunction' || child.kind == 'PrivateCachedFunction'):
             if (ir_parse_binding_decl(child.value).name == 'range'):
                 return true
     return false
@@ -4109,13 +4112,15 @@ ProgramIR lower_tokens_ir(Token[] tokens):
             current += 1
             continue
         if (token_is(token, 'KEYWORD', 'private')):
-            if (token_is(token_at(tokens, current + 1), 'KEYWORD', 'cached')):
-                throw parser_error(token_at(tokens, current + 1), 'private cached functions are not supported')
+            bool is_cached = token_is(token_at(tokens, current + 1), 'KEYWORD', 'cached')
             if (token_is(token_at(tokens, current + 1), 'KEYWORD', 'record') || token_is(token_at(tokens, current + 1), 'KEYWORD', 'enum') || token_is(token_at(tokens, current + 1), 'KEYWORD', 'const')):
                 throw parser_error(token, 'private is only valid on top-level ordinary functions')
-            if (!top_level_function_starts(tokens, current + 1)):
+            int private_function_index = current + 1
+            if (is_cached):
+                private_function_index += 1
+            if (!top_level_function_starts(tokens, private_function_index)):
                 throw parser_error(token, 'private is only valid on top-level ordinary functions')
-            FunctionDeclParseResult function_decl = parse_function_declaration_parts(tokens, current + 1, false, true)
+            FunctionDeclParseResult function_decl = parse_function_declaration_parts(tokens, private_function_index, is_cached, true)
             LoweredFunctionDeclIR lowered_function = lower_function_declaration_from_parts(function_decl, current_module_id)
             functions.push(lowered_function.function_ir)
             current = skip_statement_separators(tokens, lowered_function.next_index)
@@ -4154,7 +4159,7 @@ ProgramIR lower_tokens_ir(Token[] tokens):
             for (Node value_decl : child.children):
                 values.push('value ' + value_decl.value)
             enums.push(EnumDeclIR('enum ' + child.value, values))
-        else if (child.kind == 'Function' || child.kind == 'CachedFunction' || child.kind == 'PrivateFunction'):
+        else if (child.kind == 'Function' || child.kind == 'CachedFunction' || child.kind == 'PrivateFunction' || child.kind == 'PrivateCachedFunction'):
             child = Node(child.kind, child.value, normalize_function_local_bindings(child.children))
             BindingIR[] params = []
             Node[] body_nodes = []
@@ -4169,10 +4174,11 @@ ProgramIR lower_tokens_ir(Token[] tokens):
             BindingIR[] locals = collect_function_locals(linear.instructions)
             BlockIR[] blocks = linear_instructions_to_blocks(linear.instructions)
             string header = 'func ' + child.value
-            if (child.kind == 'CachedFunction'):
+            if (child.kind == 'CachedFunction' || child.kind == 'PrivateCachedFunction'):
                 header = 'cached func ' + child.value
             BindingIR signature_binding = ir_parse_binding_decl(child.value)
-            functions.push(ParsedFunction(header, signature_binding.name.substring(0), signature_binding.name.substring(0), current_module_id.substring(0), child.kind == 'PrivateFunction', signature_binding.type_name.substring(0), params, locals, blocks))
+            bool is_private = child.kind == 'PrivateFunction' || child.kind == 'PrivateCachedFunction'
+            functions.push(ParsedFunction(header, signature_binding.name.substring(0), signature_binding.name.substring(0), current_module_id.substring(0), is_private, signature_binding.type_name.substring(0), params, locals, blocks))
         else:
             throw 'unsupported top-level node in shared bootstrap IR: ' + child.kind
         current = skip_statement_separators(tokens, statement.next_index)

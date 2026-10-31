@@ -61,8 +61,9 @@ Build and invocation details are documented in the repository or release `README
 Imports are expanded relative to the importing source file. Unmarked top-level
 functions remain public and are visible through transitive imports. Prefix an
 ordinary top-level function with `private` to restrict it to its declaring
-source file; that file can use it before or after its declaration, including
-from global initializers. A local private function takes precedence over a
+source file; use `private cached` for a cached function. The declaring file can
+use either form before or after its declaration, including from global
+initializers. A local private function takes precedence over a
 visible public function or builtin with the same name. Other files cannot call
 or use it as a callback, even if they import the declaring file indirectly.
 Prefix an initialized top-level global with `private` to keep module state
@@ -73,7 +74,8 @@ cannot read or update them, including through a transitive import; a
 same-spelled public global remains visible, and locals and parameters shadow
 globals as usual. Private global names may repeat in different files, but not
 within one file, and a private global cannot share a name with a public global
-in its file. Private cached functions, `main`, records, enums, and nested
+in its file. Private cached functions keep the existing parameter and return
+restrictions of cached functions. Private `main`, records, enums, and nested
 functions are not supported. Repeated and diamond imports load a lexically
 normalized path once; an active import cycle is a compiler error.
 
