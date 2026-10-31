@@ -237,6 +237,8 @@ string submit_lambda_expression_type_context(Node node, SubmitLambdaScope scope,
             return 'int[]'
         if (base_type == 'string'):
             return 'string'
+        if (array_callback_context && base_type == 'string[]'):
+            return 'string'
         if (base_type == 'string[]' || base_type == 'string[][]'):
             throw 'thread_pool.submit lambda string indexing is not supported'
         throw 'thread_pool.submit lambda indexing requires string, int[], or int[][]'
@@ -248,7 +250,7 @@ string submit_lambda_expression_type_context(Node node, SubmitLambdaScope scope,
         if (node.children.length() != 1):
             throw 'thread_pool.submit lambda ' + node.value + ' query takes no arguments'
         string receiver_type = submit_lambda_expression_type_context(node.children[0], scope, functions, array_callback_context, callback_name)
-        if (!(receiver_type == 'string' || receiver_type == 'int[]' || receiver_type == 'int[][]')):
+        if (!(receiver_type == 'string' || receiver_type == 'int[]' || receiver_type == 'int[][]' || (array_callback_context && receiver_type == 'string[]'))):
             throw 'thread_pool.submit lambda ' + node.value + ' query requires string, int[], or int[][]'
         if (node.value == 'length'):
             return 'int'
@@ -698,6 +700,10 @@ bool int_array_scalar_expression(Node node, string[] allowed_names, Node[] funct
         return true
     if (node.kind == 'Identifier'):
         return contains_name(allowed_names, node.value)
+    if (node.kind == 'Index'):
+        if (node.children.length() != 2):
+            return false
+        return int_array_scalar_expression(node.children[0], allowed_names, functions) && int_array_scalar_expression(node.children[1], allowed_names, functions)
     if (node.kind == 'Call'):
         if (submit_lambda_helper(functions, node.value).kind == ''):
             return false
@@ -926,7 +932,7 @@ ArrayScalarCaptureResult int_array_scalar_captures(Node lambda_node, BindingIR[]
         string capture_type = binding.type_name
         if (capture_type.starts_with('const ')):
             capture_type = capture_type.substring(6)
-        if (!(capture_type == 'int' || capture_type == 'bool' || capture_type == 'string')):
+        if (!(capture_type == 'int' || capture_type == 'bool' || capture_type == 'string' || capture_type == 'string[]')):
             return ArrayScalarCaptureResult([], false)
         captured.push(binding)
     return ArrayScalarCaptureResult(captured, true)
@@ -1442,12 +1448,22 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
         current_index += 1
         Node[] helper_children = [Node('Param', 'const int[] ' + receiver_name, [])]
         Node[] call_arguments = [rewritten_children[0]]
+        Node[] capture_snapshot_nodes = []
+        bool has_string_array_capture = false
         for (BindingIR binding : array_callback_captures):
             string capture_type = binding.type_name
             if (capture_type.starts_with('const ')):
                 capture_type = capture_type.substring(6)
-            helper_children.push(Node('Param', 'const ' + capture_type + ' ' + binding.name, []))
+            string capture_parameter_name = binding.name
+            if (capture_type == 'string[]'):
+                has_string_array_capture = true
+                capture_parameter_name = submit_capture_name(current_names, '__tb_array_callback_capture_', current_index)
+                current_names = add_unique_name(current_names, capture_parameter_name)
+                current_index += 1
+                capture_snapshot_nodes.push(Node('VarDecl', 'string[] ' + binding.name, [Node('Identifier', capture_parameter_name, [])]))
+            helper_children.push(Node('Param', 'const ' + capture_type + ' ' + capture_parameter_name, []))
             call_arguments.push(Node('Identifier', binding.name, []))
+        helper_children = append_nodes(helper_children, capture_snapshot_nodes)
         Node callback_value = lambda_node.children[0]
         if (block_callback):
             BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
@@ -1483,7 +1499,24 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
             loop_body.push(Node('If', '', [callback_value, append_value]))
         else:
             loop_body.push(append_value)
-        helper_children.push(Node('ForEach', lambda_node.value, append_nodes([Node('Identifier', receiver_name, [])], loop_body)))
+        Node callback_loop = Node('ForEach', lambda_node.value, append_nodes([Node('Identifier', receiver_name, [])], loop_body))
+        if (has_string_array_capture):
+            string catch_name = submit_capture_name(current_names, '__tb_array_callback_error_', current_index)
+            current_names = add_unique_name(current_names, catch_name)
+            current_index += 1
+            Node[] cleanup_statements = []
+            for (BindingIR binding : array_callback_captures):
+                string capture_type = binding.type_name
+                if (capture_type.starts_with('const ')):
+                    capture_type = capture_type.substring(6)
+                if (capture_type == 'string[]'):
+                    cleanup_statements.push(Node('Assign', '', [Node('Identifier', binding.name, []), Node('Array', '', [])]))
+            cleanup_statements.push(Node('Assign', '', [output_ref, Node('Array', '', [])]))
+            cleanup_statements.push(Node('Throw', '', [Node('Identifier', catch_name, [])]))
+            Node catch_clause = Node('Catch', 'exception ' + catch_name, cleanup_statements)
+            helper_children.push(Node('Try', '', [callback_loop, catch_clause]))
+        else:
+            helper_children.push(callback_loop)
         helper_children.push(Node('Return', '', [Node('Identifier', output_name, [])]))
         generated.push(Node('Function', 'int[] ' + helper_name, helper_children))
         rewritten = Node('Call', helper_name, call_arguments)
