@@ -3623,9 +3623,10 @@ void const_reject_mutation(BindingIR[] bindings, string root, bool assignment):
         return
     BindingIR binding = const_lookup_binding(bindings, root)
     if (binding.name != '' && binding.type_name.starts_with('const ')):
+        string source_name = ir_source_binding_name(root)
         if (assignment):
-            throw 'Cannot assign to const variable: ' + root
-        throw 'Cannot mutate const variable: ' + root
+            throw 'Cannot assign to const variable: ' + source_name
+        throw 'Cannot mutate const variable: ' + source_name
 
 void validate_const_expression(Node node, BindingIR[] bindings, string[] function_names, Node[] record_nodes):
     if (node.kind == 'Lambda'):
@@ -3818,7 +3819,23 @@ void validate_const_bindings(Node program):
                 if (fn_child.kind != 'Param'):
                     validate_const_statement(fn_child, function_bindings, function_names, record_nodes)
 
+bool lower_program_has_module_markers(Node program):
+    for (Node child : program.children):
+        if (child.kind == 'ModuleMarker'):
+            return true
+    return false
+
+Node lower_program_with_default_module(Node program):
+    if (lower_program_has_module_markers(program)):
+        return program
+    Node[] children = [Node('ModuleMarker', '__tb.lower_source.module__', [])]
+    for (Node child : program.children):
+        children.push(child)
+    return Node(program.kind, program.value, children)
+
 string[] lower_program(Node program):
+    program = lower_program_with_default_module(program)
+    program = bind_private_module_globals(program)
     SubmitLambdaRewrite scoped_rewritten = rewrite_submit_lambdas_in_program(program, false)
     program = scoped_rewritten.node
     SubmitLambdaRewrite map_rewritten = rewrite_int_array_expressions_in_program(program)
@@ -3827,6 +3844,8 @@ string[] lower_program(Node program):
     program = normalize_program_local_bindings(program)
     string[] lines = ['program']
     for (Node child in program.children):
+        if (child.kind == 'ModuleMarker'):
+            continue
         string[] child_lines = lower_statement_lines(child, '  ')
         for (string line in child_lines):
             lines.push(line)
@@ -3959,6 +3978,7 @@ ParsedFunction lower_logical_global_initializer(Node declaration, int index, str
     return ParsedFunction('func ' + result_type + ' ' + name, name, name, module_id.substring(0), false, result_type, [], collect_function_locals(value.instructions), linear_instructions_to_blocks(value.instructions))
 
 ProgramIR lower_program_ir(Node program):
+    program = bind_private_module_globals(program)
     SubmitLambdaRewrite rewritten = rewrite_submit_lambdas_in_program(program, true)
     SubmitLambdaRewrite map_rewritten = rewrite_int_array_expressions_in_program(rewritten.node)
     program = map_rewritten.node
@@ -4054,11 +4074,23 @@ ProgramIR lower_tokens_ir(Token[] tokens):
             has_const = true
     bool needs_program = (has_submit_identifier || has_map_to_identifier || has_filter_identifier) && has_arrow_symbol
     bool has_range_foreach = tokens_have_direct_range_foreach(tokens)
-    if (needs_program || has_const || has_range_foreach):
+    bool has_private_global = false
+    int private_token_index = 0
+    while (private_token_index < tokens.length()):
+        if (token_is(tokens[private_token_index], 'KEYWORD', 'private')):
+            int private_type_index = private_token_index + 1
+            if (token_is(token_at(tokens, private_type_index), 'KEYWORD', 'const')):
+                private_type_index += 1
+            if (could_start_type(tokens, private_type_index)):
+                int private_name_index = type_end(tokens, private_type_index)
+                if (token_at(tokens, private_name_index).kind == 'IDENTIFIER' && token_is(token_at(tokens, private_name_index + 1), 'SYMBOL', '=')):
+                    has_private_global = true
+        private_token_index += 1
+    if (needs_program || has_const || has_range_foreach || has_private_global):
         Node parsed = parse_program(tokens)
         if (has_range_foreach && !program_declares_range(parsed)):
             LOWER_DIRECT_RANGE_FOREACH = true
-        if (needs_program):
+        if (needs_program || has_private_global):
             return lower_program_ir(parsed)
         if (has_const):
             validate_const_bindings(parsed)

@@ -1162,6 +1162,15 @@ Node parse_program(Token[] tokens):
             if (token_is(token_at(tokens, function_start), 'KEYWORD', 'cached')):
                 throw parser_error(token_at(tokens, function_start), 'private cached functions are not supported')
             if (token_is(token_at(tokens, function_start), 'KEYWORD', 'record') || token_is(token_at(tokens, function_start), 'KEYWORD', 'enum') || token_is(token_at(tokens, function_start), 'KEYWORD', 'const')):
+                if (token_is(token_at(tokens, function_start), 'KEYWORD', 'const')):
+                    int private_const_start = function_start + 1
+                    if (could_start_type(tokens, private_const_start)):
+                        int private_const_end = type_end(tokens, private_const_start)
+                        if (token_at(tokens, private_const_end).kind == 'IDENTIFIER' && token_is(token_at(tokens, private_const_end + 1), 'SYMBOL', '=')):
+                            ParseResult private_const = parse_variable_declaration(tokens, function_start)
+                            statements.push(Node('VarDecl', 'private ' + private_const.node.value, private_const.node.children))
+                            current = skip_statement_separators(tokens, private_const.next_index)
+                            continue
                 throw parser_error(token_at(tokens, current), 'private is only valid on top-level ordinary functions')
             if (!could_start_type(tokens, function_start)):
                 throw parser_error(token_at(tokens, current), 'private is only valid on top-level ordinary functions')
@@ -1169,6 +1178,11 @@ Node parse_program(Token[] tokens):
             if (after_type + 1 >= tokens.length()):
                 throw parser_error(token_at(tokens, current), 'private is only valid on top-level ordinary functions')
             if (token_at(tokens, after_type).kind != 'IDENTIFIER' || !token_is(token_at(tokens, after_type + 1), 'SYMBOL', '(')):
+                if (token_at(tokens, after_type).kind == 'IDENTIFIER' && token_is(token_at(tokens, after_type + 1), 'SYMBOL', '=')):
+                    ParseResult private_global = parse_variable_declaration(tokens, function_start)
+                    statements.push(Node('VarDecl', 'private ' + private_global.node.value, private_global.node.children))
+                    current = skip_statement_separators(tokens, private_global.next_index)
+                    continue
                 throw parser_error(token_at(tokens, current), 'private is only valid on top-level ordinary functions')
             ParseResult private_function = parse_function_declaration(tokens, function_start, false, true)
             statements.push(private_function.node)

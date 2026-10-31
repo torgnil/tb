@@ -18,6 +18,7 @@ import ir_lib;
 record LocalBindingName(string source_name, string identity);
 record LocalBindingRewrite(Node node, int next_index);
 record LocalBindingListRewrite(Node[] nodes, LocalBindingName[] bindings, int next_index);
+record ModuleGlobalBinding(string source_name, string module_id, string identity, bool is_private);
 
 Node[] local_binding_tail_nodes(Node[] nodes, int start):
     Node[] result = []
@@ -150,7 +151,163 @@ Node[] normalize_function_local_bindings(Node[] body):
         result.push(node)
     return result
 
+bool local_binding_has_name(string[] names, string name):
+    for (string existing : names):
+        if (existing == name):
+            return true
+    return false
+
+bool private_global_declaration(Node node):
+    return node.kind == 'VarDecl' && node.value.starts_with('private ')
+
+BindingIR private_global_source_binding(Node node):
+    string declaration = node.value.substring(8)
+    if (declaration.starts_with('const ')):
+        declaration = declaration.substring(6)
+    return ir_parse_binding_decl(declaration)
+
+string private_global_module_identity(string source_name, int index):
+    return source_name + '$private_global.' + index.to_string()
+
+string private_global_hidden_identity(int index):
+    return '__tb.hidden.private.global.' + index.to_string()
+
+LocalBindingName[] module_global_bindings(ModuleGlobalBinding[] globals, string module_id, string[] public_names):
+    LocalBindingName[] result = []
+    for (ModuleGlobalBinding binding : globals):
+        if (!binding.is_private):
+            result.push(LocalBindingName(binding.source_name, binding.identity))
+    int index = 0
+    for (ModuleGlobalBinding binding : globals):
+        if (binding.is_private && binding.module_id != module_id && !local_binding_has_name(public_names, binding.source_name)):
+            result.push(LocalBindingName(binding.source_name, private_global_hidden_identity(index)))
+        index += 1
+    for (ModuleGlobalBinding binding : globals):
+        if (binding.is_private && binding.module_id == module_id):
+            result.push(LocalBindingName(binding.source_name, binding.identity))
+    return result
+
+void reject_hidden_private_global_nodes(Node node, ModuleGlobalBinding[] globals):
+    if (node.kind == 'Identifier' && node.value.starts_with('__tb.hidden.private.global.')):
+        int index = 0
+        for (ModuleGlobalBinding binding : globals):
+            if (binding.is_private && !local_binding_has_name(collect_public_global_names(globals), binding.source_name)):
+                if (node.value == private_global_hidden_identity(index)):
+                    throw 'private global is not visible in this module: ' + binding.source_name
+            index += 1
+    for (Node child : node.children):
+        reject_hidden_private_global_nodes(child, globals)
+
+string[] collect_public_global_names(ModuleGlobalBinding[] globals):
+    string[] result = []
+    for (ModuleGlobalBinding binding : globals):
+        if (!binding.is_private):
+            result.push(binding.source_name)
+    return result
+
+Node bind_private_module_globals(Node program):
+    ModuleGlobalBinding[] globals = []
+    string[] public_names = []
+    string module_id = ''
+    int private_index = 0
+    int child_index = 0
+    bool has_private_globals = false
+    for (Node child : program.children):
+        if (child.kind == 'ModuleMarker'):
+            module_id = child.value
+        else if (child.kind == 'VarDecl'):
+            if (private_global_declaration(child)):
+                has_private_globals = true
+                BindingIR binding = private_global_source_binding(child)
+                int duplicate_private = 0
+                bool public_conflict = false
+                for (ModuleGlobalBinding existing : globals):
+                    if (existing.module_id == module_id && existing.source_name == binding.name):
+                        if (existing.is_private):
+                            duplicate_private += 1
+                        else:
+                            public_conflict = true
+                string target_module = module_id
+                string candidate_module = ''
+                int candidate_index = 0
+                for (Node candidate : program.children):
+                    if (candidate.kind == 'ModuleMarker'):
+                        candidate_module = candidate.value
+                    else if (candidate_index != child_index && candidate.kind == 'VarDecl' && !private_global_declaration(candidate) && candidate_module == target_module):
+                        BindingIR public_binding = ir_parse_binding_decl(candidate.value)
+                        if (public_binding.name == binding.name):
+                            public_conflict = true
+                    candidate_index += 1
+                string identity = private_global_module_identity(binding.name, private_index)
+                private_index += 1
+                globals.push(ModuleGlobalBinding(binding.name, target_module, identity, true))
+                if (duplicate_private > 0):
+                    throw 'duplicate private global in module: ' + binding.name
+                if (public_conflict):
+                    throw 'private global conflicts with public global in module: ' + binding.name
+            else:
+                BindingIR binding = ir_parse_binding_decl(child.value)
+                globals.push(ModuleGlobalBinding(binding.name, module_id, binding.name, false))
+                public_names.push(binding.name)
+        child_index += 1
+    if (!has_private_globals):
+        return program
+    Node[] children = []
+    module_id = ''
+    for (Node child : program.children):
+        if (child.kind == 'ModuleMarker'):
+            module_id = child.value
+            children.push(child)
+        else if (child.kind == 'VarDecl' && private_global_declaration(child)):
+            BindingIR binding = private_global_source_binding(child)
+            string identity = ''
+            for (ModuleGlobalBinding global : globals):
+                if (global.is_private && global.module_id == module_id && global.source_name == binding.name):
+                    identity = global.identity
+            string declaration = child.value.substring(8)
+            if (declaration.starts_with('const ')):
+                children.push(Node('VarDecl', 'const ' + ir_parse_binding_decl(declaration.substring(6)).type_name + ' ' + identity, child.children))
+            else:
+                children.push(Node('VarDecl', binding.type_name + ' ' + identity, child.children))
+        else:
+            children.push(child)
+    Node[] bound_children = []
+    module_id = ''
+    for (Node child : children):
+        if (child.kind == 'ModuleMarker'):
+            module_id = child.value
+            bound_children.push(child)
+        else if (child.kind == 'Function' || child.kind == 'CachedFunction' || child.kind == 'PrivateFunction'):
+            LocalBindingName[] bindings = module_global_bindings(globals, module_id, public_names)
+            Node[] params = []
+            Node[] body = []
+            for (Node fn_child : child.children):
+                if (fn_child.kind == 'Param'):
+                    params.push(fn_child)
+                    BindingIR param = ir_parse_binding_decl(fn_child.value)
+                    bindings.push(LocalBindingName(param.name, param.name))
+                else:
+                    body.push(fn_child)
+            LocalBindingListRewrite normalized = normalize_local_binding_list(body, bindings, 0)
+            Node[] function_children = params
+            for (Node body_node : normalized.nodes):
+                function_children.push(body_node)
+            Node rewritten_function = Node(child.kind, child.value, function_children)
+            reject_hidden_private_global_nodes(rewritten_function, globals)
+            bound_children.push(rewritten_function)
+        else if (child.kind == 'VarDecl'):
+            LocalBindingName[] bindings = module_global_bindings(globals, module_id, public_names)
+            LocalBindingRewrite initializer = normalize_local_binding_node(child.children[0], bindings, 0)
+            Node rewritten_global = Node(child.kind, child.value, [initializer.node])
+            reject_hidden_private_global_nodes(rewritten_global, globals)
+            bound_children.push(rewritten_global)
+        else:
+            bound_children.push(child)
+    return Node('Program', '__tb.private.globals.bound', bound_children)
+
 Node normalize_program_local_bindings(Node program):
+    if (program.value == '__tb.private.globals.bound'):
+        return program
     Node[] children = []
     for (Node child : program.children):
         if (child.kind == 'Function' || child.kind == 'CachedFunction' || child.kind == 'PrivateFunction'):

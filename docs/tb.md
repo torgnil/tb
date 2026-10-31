@@ -65,10 +65,17 @@ source file; that file can use it before or after its declaration, including
 from global initializers. A local private function takes precedence over a
 visible public function or builtin with the same name. Other files cannot call
 or use it as a callback, even if they import the declaring file indirectly.
-Private names may repeat in different files, but not within one file. Private
-cached functions, `main`, globals, records, enums, and nested functions are not
-supported. Repeated and diamond imports load a lexically normalized path once;
-an active import cycle is a compiler error.
+Prefix an initialized top-level global with `private` to keep module state
+local: `private int count = 0` or `private const int LIMIT = 32`. Functions and
+other global initializers in that source file can read or update it. Private
+globals are initialized once in expanded source order. An imported module
+cannot read or update them, including through a transitive import; a
+same-spelled public global remains visible, and locals and parameters shadow
+globals as usual. Private global names may repeat in different files, but not
+within one file, and a private global cannot share a name with a public global
+in its file. Private cached functions, `main`, records, enums, and nested
+functions are not supported. Repeated and diamond imports load a lexically
+normalized path once; an active import cycle is a compiler error.
 
 4. Types
 
