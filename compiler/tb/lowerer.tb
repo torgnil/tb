@@ -329,7 +329,7 @@ string submit_lambda_expression_type_context(Node node, SubmitLambdaScope scope,
             if (helper_decl_type.starts_with('const ')):
                 helper_decl_type = helper_decl_type.substring(6)
             if (array_callback_context):
-                if (!(helper_decl_type == 'int' || helper_decl_type == 'bool' || helper_decl_type == 'string')):
+                if (!int_array_callback_helper_parameter(parameter)):
                     invalid_callback_parameter = true
             else if (!(helper_decl_type == 'int' || helper_decl_type == 'bool' || submit_lambda_managed_type(helper_decl_type))):
                 return ''
@@ -343,7 +343,7 @@ string submit_lambda_expression_type_context(Node node, SubmitLambdaScope scope,
             if (!(signature.type_name == 'int' || signature.type_name == 'bool')):
                 throw 'int[] ' + callback_name + ' callback helper ' + node.value + ' must return int or bool; got ' + signature.type_name
             if (invalid_callback_parameter):
-                throw 'int[] ' + callback_name + ' callback helper ' + node.value + ' parameters must use int, bool, or string'
+                throw 'int[] ' + callback_name + ' callback helper ' + node.value + ' parameters must use int, bool, string, or const int[], const string[], or const int[][]'
         index = 0
         while (index < parameter_count):
             BindingIR parameter = ir_parse_binding_decl(function_node.children[index].value)
@@ -363,6 +363,17 @@ string submit_lambda_expression_type_context(Node node, SubmitLambdaScope scope,
 
 string submit_lambda_expression_type(Node node, SubmitLambdaScope scope, Node[] functions):
     return submit_lambda_expression_type_context(node, scope, functions, false, '')
+
+bool int_array_callback_helper_parameter(BindingIR parameter):
+    string parameter_type = parameter.type_name
+    bool is_const = parameter_type.starts_with('const ')
+    if (is_const):
+        parameter_type = parameter_type.substring(6)
+    if (parameter_type == 'int' || parameter_type == 'bool' || parameter_type == 'string'):
+        return true
+    if (!is_const):
+        return false
+    return parameter_type == 'int[]' || parameter_type == 'string[]' || parameter_type == 'int[][]'
 
 string merge_submit_return_types(string left, string right):
     if (left == ''):
