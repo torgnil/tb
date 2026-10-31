@@ -1607,6 +1607,12 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
                     throw method_name + ' requires string receiver; got ' + method_receiver_type
             if ((method_name == 'contains' || method_name == 'index_of') && normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types) == 'string'):
                 return refine_string_method_signature(op, method_name, enum_types, temp_types)
+            if (method_name == 'to_string'):
+                string to_string_receiver_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
+                if (to_string_receiver_type == 'int' || to_string_receiver_type == 'num'):
+                    if (op.args.length() != 2):
+                        throw 'to_string expects 0 arguments; got ' + (op.args.length() - 2).to_string()
+                    return refined_value_op(op, 'string', 'managed')
             if (op.args[0] == 'last'):
                 string last_receiver_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
                 if (last_receiver_type == 'string'):
