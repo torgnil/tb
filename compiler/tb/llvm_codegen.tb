@@ -179,6 +179,7 @@ int LLVM_SCAN_NEEDS_STRING_ARRAY = 0;
 int LLVM_SCAN_NEEDS_STRING_ARRAY_ARRAY = 0;
 int LLVM_SCAN_NEEDS_INT_SET = 0;
 int LLVM_SCAN_NEEDS_BOOL_ARRAY = 0;
+int LLVM_SCAN_NEEDS_BOOL_ARRAY_ARRAY = 0;
 int LLVM_SCAN_NEEDS_PRIO_Q_INT = 0;
 int LLVM_SCAN_NEEDS_INT_ARRAY = 0;
 int LLVM_SCAN_NEEDS_INT_ARRAY_ARRAY = 0;
@@ -635,6 +636,7 @@ void reset_llvm_backend_helper_stats():
     LLVM_SCAN_NEEDS_STRING_ARRAY_ARRAY = 0
     LLVM_SCAN_NEEDS_INT_SET = 0
     LLVM_SCAN_NEEDS_BOOL_ARRAY = 0
+    LLVM_SCAN_NEEDS_BOOL_ARRAY_ARRAY = 0
     LLVM_SCAN_NEEDS_PRIO_Q_INT = 0
     LLVM_SCAN_NEEDS_INT_ARRAY = 0
     LLVM_SCAN_NEEDS_INT_ARRAY_ARRAY = 0
@@ -1081,6 +1083,8 @@ string llvm_type(string type_name):
         return 'ptr'
     if (type_name == 'int[][]'):
         return 'ptr'
+    if (type_name == 'bool[][]'):
+        return 'ptr'
     if (type_name == 'string[][]'):
         return 'ptr'
     if (type_name == 'string[]'):
@@ -1107,7 +1111,7 @@ bool is_scalar_type(string type_name):
 
 bool is_backend_value_type(string type_name):
     type_name = normalize_llvm_type_name(type_name)
-    return type_name == 'void' || type_name == 'int' || type_name == 'bool' || type_name == 'num' || type_name == 'string' || type_name == 'file' || is_thread_pool_type_name(type_name) || is_future_type_name(type_name) || type_name == 'string[]' || type_name == 'string[][]' || type_name == 'bool[]' || type_name == 'int[]' || type_name == 'int[][]' || type_name.starts_with('set<') || type_name.starts_with('prio_q<') || (type_name.ends_with('[]') && record_name_from_type(array_item_type(type_name)) != '') || type_name.starts_with('map<') || record_name_from_type(type_name) != ''
+    return type_name == 'void' || type_name == 'int' || type_name == 'bool' || type_name == 'num' || type_name == 'string' || type_name == 'file' || is_thread_pool_type_name(type_name) || is_future_type_name(type_name) || type_name == 'string[]' || type_name == 'string[][]' || type_name == 'bool[]' || type_name == 'bool[][]' || type_name == 'int[]' || type_name == 'int[][]' || type_name.starts_with('set<') || type_name.starts_with('prio_q<') || (type_name.ends_with('[]') && record_name_from_type(array_item_type(type_name)) != '') || type_name.starts_with('map<') || record_name_from_type(type_name) != ''
 
 string function_name_from_header_local(string header):
     string signature = strip_prefix(strip_cached_prefix_local(header), 'func ')
@@ -1790,7 +1794,7 @@ void require_backend_value_type(string type_name, string context):
 
 bool is_backend_managed_type(string type_name):
     type_name = normalize_llvm_type_name(type_name)
-    return type_name == 'string' || is_thread_pool_type_name(type_name) || is_future_type_name(type_name) || type_name == 'string[]' || type_name == 'string[][]' || type_name == 'bool[]' || type_name == 'int[]' || type_name == 'int[][]' || type_name.starts_with('set<') || (type_name.ends_with('[]') && record_name_from_type(array_item_type(type_name)) != '') || type_name.starts_with('map<') || record_name_from_type(type_name) != ''
+    return type_name == 'string' || is_thread_pool_type_name(type_name) || is_future_type_name(type_name) || type_name == 'string[]' || type_name == 'string[][]' || type_name == 'bool[]' || type_name == 'bool[][]' || type_name == 'int[]' || type_name == 'int[][]' || type_name.starts_with('set<') || (type_name.ends_with('[]') && record_name_from_type(array_item_type(type_name)) != '') || type_name.starts_with('map<') || record_name_from_type(type_name) != ''
 
 bool temp_has_owned_semantics(ParsedFunction function_ir, string temp_name):
     LinearInstruction op = lookup_temp_instruction(function_ir, temp_name)
@@ -1908,6 +1912,8 @@ bool temp_is_owned_managed_method_result(ParsedFunction function_ir, LinearInstr
     if (method_name == 'values' && result_type == 'int[]' && receiver_type == 'map<int[], int>'):
         return true
     if (method_name == 'values' && result_type == 'int[][]' && receiver_type == 'map<int[], int[]>'):
+        return true
+    if (method_name == 'values' && result_type == 'bool[][]' && receiver_type == 'map<int[], bool[]>'):
         return true
     if (method_name == 'values' && result_type == 'string[]' && receiver_type == 'map<int[], string>'):
         return true
@@ -2088,6 +2094,8 @@ string emit_backend_release_ptr(string type_name, string ptr_name):
         return emit_string_array_release_ptr(ptr_name)
     if (type_name == 'string[][]'):
         return '  call void @tb_bootstrap_string_array_array_free(ptr ' + ptr_name + ')'
+    if (type_name == 'bool[][]'):
+        return '  call void @tb_bootstrap_bool_array_array_free(ptr ' + ptr_name + ')'
     if (type_name == 'bool[]'):
         return '  call void @tb_bootstrap_bool_array_free(ptr ' + ptr_name + ')'
     if (type_name == 'int[]'):
@@ -3064,6 +3072,8 @@ string emit_array_index_materialize_with_guard(string base_type, string array_te
         length_call = 'call i32 @tb_bootstrap_string_array_length(ptr ' + temp_ref(array_temp) + ')'
     else if (normalized_type == 'string[][]'):
         length_call = 'call i32 @tb_bootstrap_string_array_array_length(ptr ' + temp_ref(array_temp) + ')'
+    else if (normalized_type == 'bool[][]'):
+        length_call = 'call i32 @tb_bootstrap_bool_array_array_length(ptr ' + temp_ref(array_temp) + ')'
     else if (normalized_type == 'bool[]'):
         length_call = 'call i32 @tb_bootstrap_bool_array_length(ptr ' + temp_ref(array_temp) + ')'
     else if (normalized_type == 'int[]'):
@@ -3370,6 +3380,7 @@ void analyze_program_features(ProgramIR program, string[] map_types):
     LLVM_SCAN_NEEDS_STRING_ARRAY_ARRAY = 0
     LLVM_SCAN_NEEDS_INT_SET = 0
     LLVM_SCAN_NEEDS_BOOL_ARRAY = 0
+    LLVM_SCAN_NEEDS_BOOL_ARRAY_ARRAY = 0
     LLVM_SCAN_NEEDS_PRIO_Q_INT = 0
     LLVM_SCAN_NEEDS_INT_ARRAY = 0
     LLVM_SCAN_NEEDS_INT_ARRAY_ARRAY = 0
@@ -3419,6 +3430,7 @@ void analyze_program_features(ProgramIR program, string[] map_types):
     bool needs_string_array_array = false
     bool needs_int_set = false
     bool needs_bool_array = false
+    bool needs_bool_array_array = false
     bool needs_prio_q_int = false
     bool needs_int_array = false
     bool needs_int_array_array = false
@@ -3482,6 +3494,8 @@ void analyze_program_features(ProgramIR program, string[] map_types):
             needs_int_array_array = true
         if (map_value == 'bool' || map_value == 'bool[]'):
             needs_bool_array = true
+        if (map_type == 'map<int[], bool[]>'):
+            needs_bool_array_array = true
         if (map_value.ends_with('[]') && record_name_from_type(array_item_type(map_value)) != ''):
             needs_record_array = true
     for (GlobalDeclIR global_decl in program.globals):
@@ -3862,6 +3876,8 @@ void analyze_program_features(ProgramIR program, string[] map_types):
         LLVM_SCAN_NEEDS_INT_SET = 1
     if (needs_bool_array):
         LLVM_SCAN_NEEDS_BOOL_ARRAY = 1
+    if (needs_bool_array_array):
+        LLVM_SCAN_NEEDS_BOOL_ARRAY_ARRAY = 1
     if (needs_prio_q_int):
         LLVM_SCAN_NEEDS_PRIO_Q_INT = 1
     if (needs_int_array):
@@ -6684,7 +6700,7 @@ string emit_map_method_call_value_instruction(ParsedFunction function_ir, Linear
         return result
     if (method_name == 'values'):
         string value_type = normalize_llvm_type_name(map_value_type(method_base_type))
-        if (value_type == 'int[]' || value_type == 'string[]' || value_type == 'bool'):
+        if (value_type == 'int[]' || value_type == 'string[]' || value_type == 'bool' || (value_type == 'bool[]' && method_base_type == 'map<int[], bool[]>')):
             if (op.args.length() != 2):
                 throw 'map.values requires no arguments'
             string result = '  ' + lhs + ' = call ptr ' + llvm_map_values_name(method_base_type) + '(ptr ' + temp_ref(op.args[1]) + ')'
@@ -7128,8 +7144,12 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
         return '  ' + lhs + ' = call ptr ' + submit_name + '(ptr ' + temp_ref(op.args[1]) + ', ptr @' + op.args[2] + ', ' + llvm_type(arg_type) + ' ' + temp_ref(op.args[3]) + ')'
     if (method_name == 'length' && method_base_type == 'int[][]'):
         return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, '  ' + lhs + '.len32 = call i32 @tb_bootstrap_int_array_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64')
+    if (method_name == 'length' && method_base_type == 'bool[][]'):
+        return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, '  ' + lhs + '.len32 = call i32 @tb_bootstrap_bool_array_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64')
     if (method_name == 'is_empty' && method_base_type == 'int[][]'):
         return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, '  ' + lhs + '.len32 = call i32 @tb_bootstrap_int_array_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = icmp eq i32 ' + temp_ref(op.lhs + '.len32') + ', 0')
+    if (method_name == 'is_empty' && method_base_type == 'bool[][]'):
+        return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, '  ' + lhs + '.len32 = call i32 @tb_bootstrap_bool_array_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = icmp eq i32 ' + temp_ref(op.lhs + '.len32') + ', 0')
     if (method_name == 'push' && method_base_type == 'int[][]'):
         if (op.args.length() != 3):
             throw 'unsupported llvm int[][] push arity'
@@ -7218,6 +7238,8 @@ string emit_index_value_instruction(ParsedFunction function_ir, LinearInstructio
         return index_materialize + '\n  ' + lhs + ' = call ptr @tb_bootstrap_string_array_get(ptr ' + temp_ref(op.args[0]) + ', i32 ' + llvm_i32_index_temp(op.lhs) + ')'
     if (base_type == 'string[][]'):
         return emit_array_index_materialize(base_type, op.args[0], op.args[1], op.lhs) + '\n  ' + lhs + ' = call ptr @tb_bootstrap_string_array_array_get(ptr ' + temp_ref(op.args[0]) + ', i32 ' + llvm_i32_index_temp(op.lhs) + ')'
+    if (base_type == 'bool[][]'):
+        return emit_array_index_materialize(base_type, op.args[0], op.args[1], op.lhs) + '\n  ' + lhs + ' = call ptr @tb_bootstrap_bool_array_array_get(ptr ' + temp_ref(op.args[0]) + ', i32 ' + llvm_i32_index_temp(op.lhs) + ')'
     if (base_type == 'bool[]'):
         string index_line = emit_array_index_materialize(base_type, op.args[0], op.args[1], op.lhs) + '\n  ' + lhs + ' = call i1 @tb_bootstrap_bool_array_get(ptr ' + temp_ref(op.args[0]) + ', i32 ' + llvm_i32_index_temp(op.lhs) + ')'
         return emit_array_scalar_query_with_release(function_ir, op.args[0], op.lhs, index_line)
@@ -10212,6 +10234,9 @@ string[] emit_record_set_helpers(ProgramIR program, string record_name):
 string[] emit_bool_array_helpers():
     return llvm_embedded_helper_text('bool_array.ll').split_lines()
 
+string[] emit_bool_array_array_helpers():
+    return llvm_embedded_helper_text('bool_array_array.ll').split_lines()
+
 
 string[] emit_int_array_array_helpers():
     return llvm_embedded_helper_text('int_array_array.ll').split_lines()
@@ -10541,7 +10566,37 @@ string[] emit_map_helpers(string type_name):
         '  ret ptr null',
         '}'
     ]
-    if (key_type == 'string' && value_type == 'int'):
+    if (key_type == 'int[]' && value_type == 'bool[]'):
+        values_block_lines = [
+            'define private ptr ' + llvm_map_values_name(type_name) + '(ptr %map) {',
+            'entry:',
+            '  %len = call i32 ' + llvm_map_length_name(type_name) + '(ptr %map)',
+            '  %result = call ptr @tb_bootstrap_bool_array_array_new(i32 %len)',
+            '  %order.ptr = getelementptr inbounds ' + map_struct + ', ptr %map, i32 0, i32 6',
+            '  %order = load ptr, ptr %order.ptr',
+            '  %values.ptr = getelementptr inbounds ' + map_struct + ', ptr %map, i32 0, i32 3',
+            '  %values = load ptr, ptr %values.ptr',
+            '  br label %loop.cond',
+            'loop.cond:',
+            '  %index = phi i32 [0, %entry], [%next.index, %loop.step]',
+            '  %keep.loop = icmp slt i32 %index, %len',
+            '  br i1 %keep.loop, label %loop.body, label %done',
+            'loop.body:',
+            '  %order.slot = getelementptr inbounds i32, ptr %order, i32 %index',
+            '  %slot = load i32, ptr %order.slot',
+            '  %value.slot = getelementptr inbounds ptr, ptr %values, i32 %slot',
+            '  %value.raw = load ptr, ptr %value.slot',
+            '  %value.copy = call ptr @tb_bootstrap_bool_array_clone(ptr %value.raw)',
+            '  call void @tb_bootstrap_bool_array_array_set_owned(ptr %result, i32 %index, ptr %value.copy, i1 true)',
+            '  br label %loop.step',
+            'loop.step:',
+            '  %next.index = add i32 %index, 1',
+            '  br label %loop.cond',
+            'done:',
+            '  ret ptr %result',
+            '}'
+        ]
+    else if (key_type == 'string' && value_type == 'int'):
         values_block_lines = [
             'define private ptr ' + llvm_map_values_name(type_name) + '(ptr %map) {',
             'entry:',
@@ -11000,6 +11055,7 @@ string[] llvm_codegen_ir(ProgramIR program):
     bool needs_int_set = LLVM_SCAN_NEEDS_INT_SET != 0
     string[] record_set_types = program_record_set_types(program)
     bool needs_bool_array = LLVM_SCAN_NEEDS_BOOL_ARRAY != 0
+    bool needs_bool_array_array = LLVM_SCAN_NEEDS_BOOL_ARRAY_ARRAY != 0
     bool needs_prio_q_int = LLVM_SCAN_NEEDS_PRIO_Q_INT != 0
     bool needs_int_array = LLVM_SCAN_NEEDS_INT_ARRAY != 0
     bool needs_int_array_array = LLVM_SCAN_NEEDS_INT_ARRAY_ARRAY != 0
@@ -11009,7 +11065,7 @@ string[] llvm_codegen_ir(ProgramIR program):
     bool needs_string_array_map_expression = LLVM_SCAN_NEEDS_STRING_ARRAY_MAP_EXPR != 0
     bool needs_string_array_filter_expression = LLVM_SCAN_NEEDS_STRING_ARRAY_FILTER_EXPR != 0
     bool needs_map_to_edge_distance = LLVM_SCAN_NEEDS_MAP_TO_EDGE_DISTANCE != 0
-    bool needs_checked_array_index = needs_int_array || needs_bool_array || needs_string_array || needs_string_array_array || needs_int_array_array || needs_record_array || needs_map_to_edge_distance
+    bool needs_checked_array_index = needs_int_array || needs_bool_array || needs_string_array || needs_string_array_array || needs_int_array_array || needs_bool_array_array || needs_record_array || needs_map_to_edge_distance
     bool needs_flat_map_edges_for_point = LLVM_SCAN_NEEDS_FLAT_MAP_EDGES_FOR_POINT != 0
     bool needs_runtime_string_copy = LLVM_SCAN_NEEDS_RUNTIME_STRING_COPY != 0
     bool needs_backend_free = LLVM_SCAN_NEEDS_BACKEND_FREE != 0
@@ -11092,6 +11148,8 @@ string[] llvm_codegen_ir(ProgramIR program):
         lines.push('declare ptr @malloc(i64)')
         lines.push('declare ptr @realloc(ptr, i64)')
         lines.push('declare void @qsort(ptr, i64, i64, ptr)')
+    if (needs_bool_array_array):
+        lines.push('declare ptr @calloc(i64, i64)')
     if (needs_thread_pool):
         for (string declaration in emit_thread_pool_runtime_declarations()):
             lines.push(declaration)
@@ -11191,6 +11249,9 @@ string[] llvm_codegen_ir(ProgramIR program):
             lines.push(helper)
     if (needs_int_array_array):
         for (string helper in emit_int_array_array_helpers()):
+            lines.push(helper)
+    if (needs_bool_array_array):
+        for (string helper in emit_bool_array_array_helpers()):
             lines.push(helper)
     if (needs_record_array):
         for (RecordDeclIR record_decl in record_decls):
@@ -11342,6 +11403,7 @@ void llvm_print_ir(ProgramIR program):
     bool needs_int_set = LLVM_SCAN_NEEDS_INT_SET != 0
     string[] record_set_types = program_record_set_types(program)
     bool needs_bool_array = LLVM_SCAN_NEEDS_BOOL_ARRAY != 0
+    bool needs_bool_array_array = LLVM_SCAN_NEEDS_BOOL_ARRAY_ARRAY != 0
     bool needs_prio_q_int = LLVM_SCAN_NEEDS_PRIO_Q_INT != 0
     bool needs_int_array = LLVM_SCAN_NEEDS_INT_ARRAY != 0
     bool needs_int_array_array = LLVM_SCAN_NEEDS_INT_ARRAY_ARRAY != 0
@@ -11351,7 +11413,7 @@ void llvm_print_ir(ProgramIR program):
     bool needs_string_array_map_expression = LLVM_SCAN_NEEDS_STRING_ARRAY_MAP_EXPR != 0
     bool needs_string_array_filter_expression = LLVM_SCAN_NEEDS_STRING_ARRAY_FILTER_EXPR != 0
     bool needs_map_to_edge_distance = LLVM_SCAN_NEEDS_MAP_TO_EDGE_DISTANCE != 0
-    bool needs_checked_array_index = needs_int_array || needs_bool_array || needs_string_array || needs_string_array_array || needs_int_array_array || needs_record_array || needs_map_to_edge_distance
+    bool needs_checked_array_index = needs_int_array || needs_bool_array || needs_string_array || needs_string_array_array || needs_int_array_array || needs_bool_array_array || needs_record_array || needs_map_to_edge_distance
     bool needs_flat_map_edges_for_point = LLVM_SCAN_NEEDS_FLAT_MAP_EDGES_FOR_POINT != 0
     RecordDeclIR[] record_decls = effective_record_decls_for_scan(program, needs_map_to_parse_point, needs_map_to_edge_distance, needs_flat_map_edges_for_point)
     bool needs_records = !record_decls.is_empty()
@@ -11451,6 +11513,9 @@ void llvm_print_ir(ProgramIR program):
         emitted_any_header = true
     if (needs_string_array_helpers || needs_string_array_array || needs_bool_array || needs_int_array || needs_int_array_array || needs_record_array || needs_backend_free || needs_records || needs_maps || needs_read_lines || needs_read_file):
         print('declare void @free(ptr)')
+        emitted_any_header = true
+    if (needs_bool_array_array):
+        print('declare ptr @calloc(i64, i64)')
         emitted_any_header = true
     if (needs_print_int || needs_print_string_array || needs_print_int_array || needs_print_num || needs_num || needs_int_array || needs_int_set || needs_string_array_helpers || needs_read_lines || needs_read_file || needs_file_output || needs_write_all):
         print('declare i32 @printf(ptr, ...)')
@@ -11568,6 +11633,9 @@ void llvm_print_ir(ProgramIR program):
     if (needs_int_array_array):
         string[] int_array_array_helper_lines = emit_int_array_array_helpers()
         for (string line in int_array_array_helper_lines):
+            print(line)
+    if (needs_bool_array_array):
+        for (string line in emit_bool_array_array_helpers()):
             print(line)
     if (needs_record_array):
         for (RecordDeclIR record_decl in record_decls):

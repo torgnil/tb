@@ -780,6 +780,21 @@ void validate_int_array_map_key_types(ProgramIR program, EnumTypeIR[] enums):
             for (LinearInstruction op in block.instructions):
                 validate_int_array_map_key_type(op.result_type, enums)
 
+void validate_bool_grid_storage_types(ProgramIR program):
+    for (GlobalDeclIR global_decl in program.globals):
+        BindingIR binding = ir_parse_binding_decl(strip_prefix(global_decl.header, 'global '))
+        if (normalize_llvm_type_name(binding.type_name) == 'bool[][]'):
+            throw 'bool[][] globals are unsupported'
+    for (RecordDeclIR record_decl in program.records):
+        for (string field in record_decl.fields):
+            BindingIR binding = ir_parse_binding_decl(strip_prefix(field, 'field '))
+            if (normalize_llvm_type_name(binding.type_name) == 'bool[][]'):
+                throw 'bool[][] record fields are unsupported'
+    for (ParsedFunction function_ir in program.functions):
+        for (BindingIR param in function_ir.params):
+            if (normalize_llvm_type_name(param.type_name) == 'bool[][]'):
+                throw 'bool[][] function parameters are unsupported'
+
 BindingIR normalize_enum_binding(BindingIR binding, EnumTypeIR[] enums):
     return BindingIR(normalize_enum_type_name(binding.type_name, enums), binding.name)
 
@@ -1338,13 +1353,13 @@ bool is_native_prio_q_query_type(string base_type):
 bool is_native_query_receiver_type(string method_name, string base_type):
     string normalized_type = normalize_llvm_type_name(base_type)
     if (method_name == 'length'):
-        if (normalized_type == 'string' || normalized_type == 'int[]' || normalized_type == 'bool[]' || normalized_type == 'string[]' || normalized_type == 'int[][]' || normalized_type == 'string[][]'):
+        if (normalized_type == 'string' || normalized_type == 'int[]' || normalized_type == 'bool[]' || normalized_type == 'string[]' || normalized_type == 'int[][]' || normalized_type == 'string[][]' || normalized_type == 'bool[][]'):
             return true
         if (normalized_type.starts_with('map<') || is_native_set_query_type(normalized_type) || is_native_record_array_query_type(normalized_type)):
             return true
         return false
     if (method_name == 'is_empty'):
-        if (normalized_type == 'string' || normalized_type == 'int[]' || normalized_type == 'bool[]' || normalized_type == 'string[]' || normalized_type == 'int[][]' || normalized_type == 'string[][]'):
+        if (normalized_type == 'string' || normalized_type == 'int[]' || normalized_type == 'bool[]' || normalized_type == 'string[]' || normalized_type == 'int[][]' || normalized_type == 'string[][]' || normalized_type == 'bool[][]'):
             return true
         if (normalized_type.starts_with('map<') || is_native_set_query_type(normalized_type) || is_native_record_array_query_type(normalized_type) || is_native_prio_q_query_type(normalized_type)):
             return true
@@ -1382,6 +1397,8 @@ string infer_method_call_type(string method_name, string base_type, FunctionSigI
             return 'string[]'
         if (value_type == 'int[]'):
             return 'int[][]'
+        if (normalize_llvm_type_name(map_key_type(base_type)) == 'int[]' && normalize_llvm_type_name(value_type) == 'bool[]'):
+            return 'bool[][]'
         if (value_type == 'string[]'):
             return 'string[][]'
         if (value_type == 'bool'):
@@ -2129,7 +2146,7 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             return op
         string method_name = op.args[0]
         if (method_name == 'values' && lookup_function_return_type(functions, method_name) == 'unknown' && !record_type_exists(record_names, method_name) && normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])) == 'map<int[], bool[]>'):
-            throw 'map.values is unsupported for map<int[], bool[]>'
+            return refined_value_op(op, 'bool[][]', 'owned')
         if ((method_name == 'copy' || method_name == 'fill') && lookup_function_return_type(functions, method_name) == 'unknown' && record_type_exists(record_names, method_name)):
             string[] constructor_arg_types = record_constructor_arg_types(record_fields, method_name)
             if (constructor_arg_types.is_empty()):
@@ -3287,6 +3304,7 @@ ProgramIR refine_program_ir_with_regex(ProgramIR program, bool regex_imported):
             throw 'regex split internal helper must be declared exactly once'
     EnumTypeIR[] enum_types = collect_enum_types(program.enums)
     validate_int_array_map_key_types(program, enum_types)
+    validate_bool_grid_storage_types(program)
     bool has_integer_enum = validate_integer_enum_declared_types(program, enum_types)
     bool has_string_enum_record_field = has_string_enum_record_fields(program.records, enum_types)
     bool normalize_records = has_integer_enum || has_string_enum_record_field
