@@ -585,6 +585,8 @@ String helpers
 
 - split(s: string, sep: string) -> string[]
   - Split string on `sep`. Also available as UFCS: `s.split(',')`.
+  - A matching declared function named `split` keeps direct-call precedence;
+    untyped array arguments receive the matching parameter types.
   - UFCS helpers can be used in assignments too, for example `parts = text.split(',');` and `text = text.trim();`.
   - With `import regex;`, `split(s, pattern)` and `s.split(pattern)` also accept a compiled `Regex`. They preserve empty fields and use the match priority described below. An invalid regex acts as no separator and returns one field containing `s`.
 
