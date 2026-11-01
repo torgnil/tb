@@ -287,7 +287,7 @@ string identifier_target_binding_cached(OwnershipIdentifierTargetCache cache, st
 
 string borrowed_primitive_array_named_sort_receiver_binding(ParsedFunction function_ir, OwnershipTempMetaCache cache, OwnershipIdentifierTargetCache identifier_target_cache, string temp_name):
     string result_type = normalize_llvm_type_name(lookup_temp_result_type_cached(cache, temp_name))
-    if (result_type != 'int[]' && result_type != 'string[]'):
+    if (result_type != 'int[]' && result_type != 'bool[]' && result_type != 'string[]'):
         return ''
     if (lookup_temp_ownership_mode_cached(cache, temp_name) != 'borrowed'):
         return ''
@@ -298,7 +298,7 @@ string borrowed_primitive_array_named_sort_receiver_binding(ParsedFunction funct
                     if (op.args[0] == 'sort'):
                         string receiver_type = normalize_llvm_type_name(lookup_temp_result_type_cached(cache, op.args[1]))
                         bool sort_arity_supported = op.args.length() == 2 || (receiver_type == 'int[]' && op.args.length() == 3)
-                        if (sort_arity_supported && (receiver_type == 'int[]' || receiver_type == 'string[]')):
+                        if (sort_arity_supported && (receiver_type == 'int[]' || receiver_type == 'bool[]' || receiver_type == 'string[]')):
                             string receiver_binding = identifier_target_binding_cached(identifier_target_cache, op.args[1])
                             if (receiver_binding != ''):
                                 return receiver_binding

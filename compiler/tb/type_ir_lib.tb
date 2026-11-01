@@ -1731,6 +1731,12 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
                     if (op.args.length() != 2):
                         throw 'string[] sort takes no arguments'
                     return refined_value_op(op, 'string[]', 'borrowed')
+                if (sort_receiver_type == 'bool[]'):
+                    bool has_user_sort = lookup_function_return_type(functions, 'sort') != 'unknown' || record_type_exists(record_names, 'sort')
+                    if (!has_user_sort):
+                        if (op.args.length() != 2):
+                            throw 'bool[] sort takes no arguments'
+                        return refined_value_op(op, 'bool[]', 'borrowed')
     if (op.detail == 'method-call' && op.args.length() >= 2):
         string query_method_name = op.args[0]
         if (query_method_name == 'length' || query_method_name == 'is_empty' || query_method_name == 'index_of' || query_method_name == 'hash'):

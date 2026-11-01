@@ -368,3 +368,38 @@ free:
 done:
   ret void
 }
+
+define private ptr @tb_bootstrap_bool_array_sort_asc(ptr %array) {
+entry:
+  %len.ptr = getelementptr inbounds %tb_bootstrap_bool_array, ptr %array, i32 0, i32 0
+  %len = load i32, ptr %len.ptr
+  %data.ptr = getelementptr inbounds %tb_bootstrap_bool_array, ptr %array, i32 0, i32 1
+  %data = load ptr, ptr %data.ptr
+  br label %count.cond
+count.cond:
+  %count.index = phi i32 [ 0, %entry ], [ %count.next, %count.body ]
+  %false.count = phi i32 [ 0, %entry ], [ %false.count.next, %count.body ]
+  %count.done = icmp sge i32 %count.index, %len
+  br i1 %count.done, label %write.cond, label %count.body
+count.body:
+  %count.slot = getelementptr inbounds i8, ptr %data, i32 %count.index
+  %count.value = load i8, ptr %count.slot
+  %is.false = icmp eq i8 %count.value, 0
+  %false.increment = zext i1 %is.false to i32
+  %false.count.next = add i32 %false.count, %false.increment
+  %count.next = add i32 %count.index, 1
+  br label %count.cond
+write.cond:
+  %write.index = phi i32 [ 0, %count.cond ], [ %write.next, %write.body ]
+  %write.done = icmp sge i32 %write.index, %len
+  br i1 %write.done, label %done, label %write.body
+write.body:
+  %write.slot = getelementptr inbounds i8, ptr %data, i32 %write.index
+  %write.true = icmp sge i32 %write.index, %false.count
+  %write.value = zext i1 %write.true to i8
+  store i8 %write.value, ptr %write.slot
+  %write.next = add i32 %write.index, 1
+  br label %write.cond
+done:
+  ret ptr %array
+}
