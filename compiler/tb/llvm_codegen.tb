@@ -320,7 +320,7 @@ string future_value_type_name(string type_name):
     return 'unknown'
 
 string[] thread_pool_submit_supported_arg_types():
-    return ['int', 'bool', 'string', 'int[]', 'bool[]', 'int[][]']
+    return ['int', 'bool', 'string', 'int[]', 'bool[]', 'int[][]', 'string[]']
 
 string[] thread_pool_submit_supported_future_types():
     return ['future<int>', 'future<bool>', 'future<string>', 'future<int[]>', 'future<int[][]>', 'future<num>']
@@ -331,6 +331,8 @@ bool llvm_thread_pool_submit_signature_supported(string future_type, string arg_
     if (future_type == 'future<num>'):
         return arg_type == 'void' || arg_type == 'num' || arg_type == 'int'
     if (arg_type == 'bool[]'):
+        return future_type == 'future<int>' || future_type == 'future<bool>'
+    if (arg_type == 'string[]'):
         return future_type == 'future<int>' || future_type == 'future<bool>'
     if (arg_type == 'void'):
         return future_type in thread_pool_submit_supported_future_types()
@@ -411,6 +413,10 @@ string llvm_thread_pool_submit_name(string future_type, string arg_type):
         return '@tb_thread_pool_submit_i64_bool_array'
     if (future_type == 'future<bool>' && arg_type == 'bool[]'):
         return '@tb_thread_pool_submit_bool_bool_array'
+    if (future_type == 'future<int>' && arg_type == 'string[]'):
+        return '@tb_thread_pool_submit_i64_string_array'
+    if (future_type == 'future<bool>' && arg_type == 'string[]'):
+        return '@tb_thread_pool_submit_bool_string_array'
     return ''
 
 string[] emit_thread_pool_runtime_declarations():
@@ -425,6 +431,7 @@ string[] emit_thread_pool_runtime_declarations():
         'declare ptr @tb_thread_pool_submit_i64_int_array(ptr, ptr, ptr)',
         'declare ptr @tb_thread_pool_submit_i64_int_array_array(ptr, ptr, ptr)',
         'declare ptr @tb_thread_pool_submit_i64_bool_array(ptr, ptr, ptr)',
+        'declare ptr @tb_thread_pool_submit_i64_string_array(ptr, ptr, ptr)',
         'declare ptr @tb_thread_pool_submit_int_array(ptr, ptr)',
         'declare ptr @tb_thread_pool_submit_int_array_i64(ptr, ptr, i64)',
         'declare ptr @tb_thread_pool_submit_int_array_bool(ptr, ptr, i1)',
@@ -467,6 +474,7 @@ string[] emit_thread_pool_runtime_declarations():
         'declare ptr @tb_thread_pool_submit_bool_int_array(ptr, ptr, ptr)',
         'declare ptr @tb_thread_pool_submit_bool_int_array_array(ptr, ptr, ptr)',
         'declare ptr @tb_thread_pool_submit_bool_bool_array(ptr, ptr, ptr)',
+        'declare ptr @tb_thread_pool_submit_bool_string_array(ptr, ptr, ptr)',
         'declare ptr @tb_future_bool_retain(ptr)',
         'declare void @tb_future_bool_release(ptr)',
         'declare i1 @tb_future_bool_await(ptr)',

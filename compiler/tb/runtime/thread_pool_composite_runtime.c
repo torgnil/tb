@@ -2,6 +2,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+extern void* tb_runtime_retain(void* value);
+extern void tb_runtime_release(void* value);
+
 void* tb_thread_pool_int_array_snapshot(void* raw_array) {
     tb_thread_pool_int_array* source = (tb_thread_pool_int_array*)raw_array;
     if (source == NULL || source->length < 0) {
@@ -60,6 +63,50 @@ void tb_thread_pool_bool_array_snapshot_free(void* raw_array) {
         return;
     }
     free(array->data);
+    free(array);
+}
+
+void* tb_thread_pool_string_array_snapshot(void* raw_array) {
+    tb_thread_pool_string_array* source = (tb_thread_pool_string_array*)raw_array;
+    if (source == NULL || source->length < 0) {
+        return NULL;
+    }
+    tb_thread_pool_string_array* snapshot = (tb_thread_pool_string_array*)malloc(sizeof(tb_thread_pool_string_array));
+    if (snapshot == NULL) {
+        return NULL;
+    }
+    snapshot->length = source->length;
+    snapshot->capacity = source->length;
+    size_t storage_length = source->length > 0 ? (size_t)source->length : 1;
+    snapshot->data = (char**)calloc(storage_length, sizeof(char*));
+    snapshot->owned = (unsigned char*)calloc(storage_length, sizeof(unsigned char));
+    if (snapshot->data == NULL || snapshot->owned == NULL) {
+        free(snapshot->data);
+        free(snapshot->owned);
+        free(snapshot);
+        return NULL;
+    }
+    for (int32_t index = 0; index < source->length; index += 1) {
+        if (source->data[index] != NULL) {
+            snapshot->data[index] = (char*)tb_runtime_retain(source->data[index]);
+            snapshot->owned[index] = 1;
+        }
+    }
+    return snapshot;
+}
+
+void tb_thread_pool_string_array_snapshot_free(void* raw_array) {
+    tb_thread_pool_string_array* array = (tb_thread_pool_string_array*)raw_array;
+    if (array == NULL) {
+        return;
+    }
+    for (int32_t index = 0; index < array->length; index += 1) {
+        if (array->owned[index] != 0) {
+            tb_runtime_release(array->data[index]);
+        }
+    }
+    free(array->data);
+    free(array->owned);
     free(array);
 }
 

@@ -1,0 +1,67 @@
+int total_text_length(string[] values):
+    return values[0].length() + values[1].length()
+
+int text_count(string[] values):
+    return values.length()
+
+bool second_text_is_expected(string[] values):
+    return values.length() > 1 && values[1] == 'second?'
+
+int fail_text_task(string[] values):
+    throw 'text task failed'
+
+bool fail_text_check(string[] values):
+    values[0] = 'discarded'
+    throw 'text check failed'
+
+future<int> submit_scoped_text(thread_pool pool):
+    string[] values = ['scoped-' + 'first', 'scoped-' + 'second']
+    return pool.submit(total_text_length, values)
+
+int main(string[] args):
+    thread_pool pool = thread_pool(1)
+    string[] values = ['first' + '!', 'second' + '?']
+    future<int> named_length = pool.submit(total_text_length, values)
+    future<bool> named_check = pool.submit(second_text_is_expected, values)
+    future<int> lambda_length = pool.submit(string[] items -> total_text_length(items), values)
+    future<bool> lambda_check = pool.submit(string[] items -> {
+        if (items.length() > 1) {
+            return second_text_is_expected(items)
+        }
+        return false
+    }, values)
+    values[0] = 'changed'
+    print(named_length.await())
+    print(named_check.await())
+    print(lambda_length.await())
+    print(lambda_check.await())
+
+    const string[] fixed = ['fixed' + '-value']
+    future<bool> fixed_check = pool.submit(string[] items -> items[0].length() == 11, fixed)
+    print(fixed_check.await())
+
+    string[] empty = []
+    future<int> empty_count = pool.submit(text_count, empty)
+    future<bool> empty_check = pool.submit(string[] items -> items.is_empty(), empty)
+    print(empty_count.await())
+    print(empty_check.await())
+
+    future<int> scoped = submit_scoped_text(pool)
+    print(scoped.await())
+    print(scoped.await())
+
+    future<int> failure = pool.submit(fail_text_task, values)
+    try:
+        print(failure.await())
+    catch (exception error):
+        print(error)
+
+    future<bool> failed_check = pool.submit(fail_text_check, values)
+    try:
+        print(failed_check.await())
+    catch (exception error):
+        print(error)
+
+    future<int> after_failure = pool.submit(text_count, ['after', 'failure'])
+    print(after_failure.await())
+    return 0

@@ -239,11 +239,11 @@ string submit_lambda_expression_type_context(Node node, SubmitLambdaScope scope,
             return 'int[]'
         if (base_type == 'string'):
             return 'string'
-        if (array_callback_context && base_type == 'string[]'):
+        if (base_type == 'string[]'):
             return 'string'
-        if (base_type == 'string[]' || base_type == 'string[][]'):
+        if (base_type == 'string[][]'):
             throw 'thread_pool.submit lambda string indexing is not supported'
-        throw 'thread_pool.submit lambda indexing requires string, int[], bool[], or int[][]'
+        throw 'thread_pool.submit lambda indexing requires string, int[], bool[], int[][], or string[]'
     if (node.kind == 'MethodCall'):
         if (node.children.length() < 1):
             return ''
@@ -252,8 +252,8 @@ string submit_lambda_expression_type_context(Node node, SubmitLambdaScope scope,
         if (node.children.length() != 1):
             throw 'thread_pool.submit lambda ' + node.value + ' query takes no arguments'
         string receiver_type = submit_lambda_expression_type_context(node.children[0], scope, functions, array_callback_context, callback_name)
-        if (!(receiver_type == 'string' || receiver_type == 'int[]' || receiver_type == 'bool[]' || receiver_type == 'int[][]' || (array_callback_context && receiver_type == 'string[]'))):
-            throw 'thread_pool.submit lambda ' + node.value + ' query requires string, int[], bool[], or int[][]'
+        if (!(receiver_type == 'string' || receiver_type == 'int[]' || receiver_type == 'bool[]' || receiver_type == 'int[][]' || receiver_type == 'string[]')):
+            throw 'thread_pool.submit lambda ' + node.value + ' query requires string, int[], bool[], int[][], or string[]'
         if (node.value == 'length'):
             return 'int'
         return 'bool'
@@ -333,7 +333,7 @@ string submit_lambda_expression_type_context(Node node, SubmitLambdaScope scope,
             if (array_callback_context):
                 if (!int_array_callback_helper_parameter(parameter)):
                     invalid_callback_parameter = true
-            else if (!(helper_decl_type == 'int' || helper_decl_type == 'bool' || helper_decl_type == 'bool[]' || submit_lambda_managed_type(helper_decl_type))):
+            else if (!(helper_decl_type == 'int' || helper_decl_type == 'bool' || helper_decl_type == 'bool[]' || helper_decl_type == 'string[]' || submit_lambda_managed_type(helper_decl_type))):
                 return ''
             parameter_count += 1
             index += 1
@@ -623,10 +623,10 @@ string validate_submit_lambda(Node lambda_node, Node[] functions, BindingIR[] ca
     if (lambda_node.kind == 'Lambda'):
         BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
         string parameter_type = parameter.type_name
-        if (!(parameter_type == 'int' || parameter_type == 'bool' || parameter_type == 'bool[]' || submit_lambda_managed_type(parameter_type))):
-            throw 'thread_pool.submit lambda parameter must have type int, bool, string, int[], bool[], or int[][]'
+        if (!(parameter_type == 'int' || parameter_type == 'bool' || parameter_type == 'bool[]' || parameter_type == 'string[]' || submit_lambda_managed_type(parameter_type))):
+            throw 'thread_pool.submit lambda parameter must have type int, bool, string, int[], bool[], int[][], or string[]'
         string[] const_names = []
-        if (parameter_type == 'bool[]' || submit_lambda_managed_type(parameter_type)):
+        if (parameter_type == 'bool[]' || parameter_type == 'string[]' || submit_lambda_managed_type(parameter_type)):
             const_names.push(parameter.name)
         initial_scope = SubmitLambdaScope([parameter.name], [parameter_type], const_names, [parameter.name], parameter.name)
     else if (lambda_node.kind != 'Lambda0' || lambda_node.value != ''):
@@ -1227,7 +1227,7 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
                 captured = submit_lambda_captures(lambda_node, submit_bindings)
                 BindingIR lambda_parameter = ir_parse_binding_decl(lambda_node.value)
                 string lambda_parameter_type = lambda_parameter.type_name
-                if ((lambda_parameter_type == 'bool[]' || submit_lambda_managed_type(lambda_parameter_type)) && !captured.is_empty() && lambda_parameter_type != 'int[]'):
+                if ((lambda_parameter_type == 'bool[]' || lambda_parameter_type == 'string[]' || submit_lambda_managed_type(lambda_parameter_type)) && !captured.is_empty() && lambda_parameter_type != 'int[]'):
                     throw 'thread_pool.submit lambda with a managed task parameter cannot capture values'
             worker_return_type = validate_submit_lambda(lambda_node, functions, captured)
             rewrite_worker = lambda_node.kind == 'Lambda'
