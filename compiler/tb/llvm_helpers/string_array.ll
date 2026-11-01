@@ -66,6 +66,77 @@ initialize:
   store ptr %owned, ptr %owned.ptr
   ret ptr %array
 }
+define private i32 @tb_bootstrap_string_array_sort_compare(ptr %left, ptr %right) {
+entry:
+  %left.value = load ptr, ptr %left, align 8
+  %right.value = load ptr, ptr %right, align 8
+  %order = call i32 @strcmp(ptr %left.value, ptr %right.value)
+  ret i32 %order
+}
+define private ptr @tb_bootstrap_string_array_sort_lexicographic(ptr %array) {
+entry:
+  %len.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 0
+  %len = load i32, ptr %len.ptr
+  %needs.sort = icmp ugt i32 %len, 1
+  br i1 %needs.sort, label %allocate.entries, label %done
+allocate.entries:
+  %len64 = zext i32 %len to i64
+  %bytes = mul i64 %len64, 16
+  %entries = call ptr @malloc(i64 %bytes)
+  %entries.null = icmp eq ptr %entries, null
+  br i1 %entries.null, label %allocation.failed, label %copy.in.start
+allocation.failed:
+  call void @abort()
+  unreachable
+copy.in.start:
+  %data.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 2
+  %data = load ptr, ptr %data.ptr
+  %owned.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 3
+  %owned = load ptr, ptr %owned.ptr
+  br label %copy.in.cond
+copy.in.cond:
+  %in.index = phi i32 [ 0, %copy.in.start ], [ %in.next, %copy.in.body ]
+  %in.done = icmp sge i32 %in.index, %len
+  br i1 %in.done, label %sort.entries, label %copy.in.body
+copy.in.body:
+  %source.slot = getelementptr inbounds ptr, ptr %data, i32 %in.index
+  %source.value = load ptr, ptr %source.slot, align 8
+  %source.flag = getelementptr inbounds i8, ptr %owned, i32 %in.index
+  %source.owned = load i8, ptr %source.flag, align 1
+  %in.index64 = zext i32 %in.index to i64
+  %entry.offset = mul i64 %in.index64, 16
+  %entry.ptr = getelementptr inbounds i8, ptr %entries, i64 %entry.offset
+  store ptr %source.value, ptr %entry.ptr, align 8
+  %entry.flag = getelementptr inbounds i8, ptr %entry.ptr, i32 8
+  store i8 %source.owned, ptr %entry.flag, align 1
+  %in.next = add i32 %in.index, 1
+  br label %copy.in.cond
+sort.entries:
+  call void @qsort(ptr %entries, i64 %len64, i64 16, ptr @tb_bootstrap_string_array_sort_compare)
+  br label %copy.out.cond
+copy.out.cond:
+  %out.index = phi i32 [ 0, %sort.entries ], [ %out.next, %copy.out.body ]
+  %out.done = icmp sge i32 %out.index, %len
+  br i1 %out.done, label %release.entries, label %copy.out.body
+copy.out.body:
+  %out.index64 = zext i32 %out.index to i64
+  %out.offset = mul i64 %out.index64, 16
+  %entry.ptr.out = getelementptr inbounds i8, ptr %entries, i64 %out.offset
+  %sorted.value = load ptr, ptr %entry.ptr.out, align 8
+  %entry.flag.out = getelementptr inbounds i8, ptr %entry.ptr.out, i32 8
+  %sorted.owned = load i8, ptr %entry.flag.out, align 1
+  %target.slot = getelementptr inbounds ptr, ptr %data, i32 %out.index
+  store ptr %sorted.value, ptr %target.slot, align 8
+  %target.flag = getelementptr inbounds i8, ptr %owned, i32 %out.index
+  store i8 %sorted.owned, ptr %target.flag, align 1
+  %out.next = add i32 %out.index, 1
+  br label %copy.out.cond
+release.entries:
+  call void @free(ptr %entries)
+  br label %done
+done:
+  ret ptr %array
+}
 define private void @tb_bootstrap_string_array_set_owned(ptr %array, i32 %index, ptr %value, i1 %is_owned) {
 entry:
   %data.ptr = getelementptr inbounds %tb_bootstrap_string_array, ptr %array, i32 0, i32 2

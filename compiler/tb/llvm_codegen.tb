@@ -1895,7 +1895,7 @@ bool temp_is_owned_managed_method_result(ParsedFunction function_ir, LinearInstr
         return true
     if (method_name == 'values' && result_type == 'bool[]' && receiver_type.starts_with('map<') && normalize_llvm_type_name(map_value_type(receiver_type)) == 'bool'):
         return true
-    if (method_name == 'sort' && (receiver_type == 'int[]' || (receiver_type.ends_with('[]') && record_name_from_type(array_item_type(receiver_type)) != ''))):
+    if (method_name == 'sort' && (receiver_type == 'int[]' || receiver_type == 'string[]' || (receiver_type.ends_with('[]') && record_name_from_type(array_item_type(receiver_type)) != ''))):
         return false
     if (method_name == 'await' && receiver_type.starts_with('future<')):
         return false
@@ -6875,6 +6875,10 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
             return '  ' + lhs + ' = call ptr @tb_bootstrap_int_array_sort_desc(ptr ' + temp_ref(op.args[1]) + ')'
         register_named_int_sort_comparator(comparator_name)
         return '  ' + lhs + ' = call ptr @tb_bootstrap_int_array_sort_by(ptr ' + temp_ref(op.args[1]) + ', ptr ' + llvm_named_int_sort_comparator_symbol(comparator_name) + ')'
+    if (method_name == 'sort' && method_base_type == 'string[]'):
+        if (op.args.length() != 2):
+            throw 'string[] sort takes no arguments'
+        return '  ' + lhs + ' = call ptr @tb_bootstrap_string_array_sort_lexicographic(ptr ' + temp_ref(op.args[1]) + ')'
     if (method_name == 'create_prio_q' && method_base_type == 'int[]'):
         if (op.args.length() != 3):
             throw 'create_prio_q requires exactly one comparator argument'
