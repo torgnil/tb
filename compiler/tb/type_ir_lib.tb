@@ -1245,6 +1245,11 @@ private void validate_direct_trim_call(string name, LinearInstruction op, EnumTy
     if (argument_type != 'string'):
         throw name + ' requires a string argument, got: ' + argument_type
 
+private void validate_direct_to_string_call(LinearInstruction op):
+    int argument_count = op.args.length() - 1
+    if (argument_count != 1):
+        throw 'to_string expects exactly one argument; got ' + argument_count.to_string()
+
 private void validate_direct_split_call(LinearInstruction op, EnumTypeIR[] enum_types, string[] temp_types):
     int argument_count = op.args.length() - 1
     if (argument_count != 2):
@@ -1816,6 +1821,8 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
                 string to_int_argument_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
                 if (to_int_argument_type != '' && to_int_argument_type != 'unknown' && to_int_argument_type != 'string'):
                     throw 'to_int requires a string argument, got: ' + to_int_argument_type
+        if (op.args[0] == 'to_string'):
+            validate_direct_to_string_call(op)
         if (op.args[0] == 'random_bits' && lookup_function_return_type(functions, op.args[0]) == 'unknown' && record_type_exists(record_names, op.args[0])):
             return refined_value_op(op, op.args[0], refine_ownership_mode(op, op.args[0]))
         if (op.args[0] == 'substring' && lookup_function_return_type(functions, op.args[0]) == 'unknown' && record_type_exists(record_names, op.args[0])):
