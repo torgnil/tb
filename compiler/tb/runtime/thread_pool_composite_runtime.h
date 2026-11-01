@@ -2,6 +2,7 @@
 #define TB_THREAD_POOL_COMPOSITE_RUNTIME_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 typedef struct tb_thread_pool_int_array {
     int32_t length;
@@ -15,9 +16,16 @@ typedef struct tb_thread_pool_int_array_array {
     unsigned char* owned;
 } tb_thread_pool_int_array_array;
 
+typedef struct tb_thread_pool_bool_array {
+    int32_t length;
+    bool* data;
+} tb_thread_pool_bool_array;
+
 void* tb_thread_pool_int_array_snapshot(void* raw_array);
 void tb_thread_pool_int_array_snapshot_free(void* raw_array);
 void* tb_thread_pool_int_array_array_snapshot(void* raw_array);
 void tb_thread_pool_int_array_array_snapshot_free(void* raw_array);
+void* tb_thread_pool_bool_array_snapshot(void* raw_array);
+void tb_thread_pool_bool_array_snapshot_free(void* raw_array);
 
 #endif
