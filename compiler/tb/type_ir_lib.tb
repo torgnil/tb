@@ -1545,6 +1545,29 @@ bool has_matching_ufcs_signature(LinearInstruction op, string method_name, Funct
         index += 1
     return true
 
+bool has_matching_direct_signature(LinearInstruction op, FunctionSigIR function_sig, EnumTypeIR[] enum_types, string[] temp_types):
+    if (function_sig.name == '' || op.args.length() != function_sig.param_types.length() + 1):
+        return false
+    int index = 0
+    while (index < function_sig.param_types.length()):
+        string expected_type = normalize_enum_type_name(normalize_llvm_type_name(function_sig.param_types[index]), enum_types)
+        string actual_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[index + 1])), enum_types)
+        if (expected_type != actual_type):
+            return false
+        index += 1
+    return true
+
+LinearInstruction refine_string_array_join(LinearInstruction op, string base_type, EnumTypeIR[] enum_types, string[] temp_types):
+    string receiver_type = normalize_llvm_type_name(base_type)
+    if (receiver_type != 'string[]'):
+        throw 'join requires string[] receiver; got ' + receiver_type
+    if (op.args.length() != 3):
+        throw 'join expects 1 separator argument; got ' + (op.args.length() - 2).to_string()
+    string separator_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2])), enum_types)
+    if (separator_type != 'string' && separator_type != 'unknown'):
+        throw 'join separator requires string; got ' + separator_type
+    return refined_value_op(op, 'string', 'managed')
+
 bool has_matching_record_constructor_signature(LinearInstruction op, string record_name, RecordFieldIR[] record_fields, EnumTypeIR[] enum_types, string[] temp_types):
     string[] field_types = record_constructor_arg_types(record_fields, record_name)
     if (field_types.is_empty() || op.args.length() != field_types.length() + 1):
@@ -2067,6 +2090,11 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
         if (method_name == 'pop' && lookup_function_return_type(functions, 'pop') == 'unknown' && op.args.length() != 2):
             throw 'pop requires exactly one array receiver'
         string base_type = lookup_temp_type_slot(temp_types, op.args[1])
+        if (method_name == 'join'):
+            if (normalize_llvm_type_name(base_type) != 'string[]' && has_matching_ufcs_signature(op, method_name, functions, enum_types, temp_types)):
+                FunctionSigIR join_method_sig = lookup_function_sig(functions, method_name)
+                return refined_value_op(op, join_method_sig.return_type, refine_ownership_mode(op, join_method_sig.return_type))
+            return refine_string_array_join(op, base_type, enum_types, temp_types)
         if (method_name == 'clear' && normalize_llvm_type_name(base_type) == 'bool[]' && lookup_function_return_type(functions, 'clear') == 'unknown'):
             if (op.args.length() != 2):
                 throw 'bool[] clear requires no arguments'
@@ -2456,7 +2484,21 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                     RefineInstructionsResult contextual_key = contextualize_array_map_key(block_refined, temp_types, op.args[1], op.args[2])
                     block_refined = contextual_key.instructions
                     temp_types = contextual_key.temp_types
-        LinearInstruction current = refine_value_instruction(op, bindings, functions, record_fields, record_names, enum_types, temp_types)
+        LinearInstruction value_op = op
+        if (op.kind == 'value' && op.detail == 'call' && !op.args.is_empty() && op.args[0] == 'join'):
+            FunctionSigIR join_sig = lookup_function_sig(functions, 'join')
+            bool join_calls_user_function = has_matching_direct_signature(op, join_sig, enum_types, temp_types)
+            bool join_calls_record_constructor = has_matching_record_constructor_signature(op, 'join', record_fields, enum_types, temp_types)
+            if (!join_calls_user_function && !join_calls_record_constructor && op.args.length() >= 2):
+                string join_receiver_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+                if (join_receiver_type.ends_with('[]')):
+                    string[] join_args = ['join']
+                    int join_arg_index = 1
+                    while (join_arg_index < op.args.length()):
+                        join_args.push(op.args[join_arg_index])
+                        join_arg_index += 1
+                    value_op = LinearInstruction('value', op.lhs, op.result_type, op.ownership_mode, 'method-call', join_args)
+        LinearInstruction current = refine_value_instruction(value_op, bindings, functions, record_fields, record_names, enum_types, temp_types)
         if (current.kind == 'value' && (current.detail == 'call' || current.detail == 'method-call')):
             if (current.args.length() == 3):
                 if (current.args[0] == 'split'):

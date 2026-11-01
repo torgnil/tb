@@ -634,7 +634,7 @@ String helpers
   - Replace occurrences of `old` with `new`.
 
 - join(arr: string[], sep: string) -> string
-  - Join array elements with `sep`.
+  - Join array elements with `sep`. Both `join(parts, sep)` and `parts.join(sep)` are supported.
 
 Array helpers
 
