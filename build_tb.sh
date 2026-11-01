@@ -7,7 +7,7 @@ case "${1:-}" in
     --bootstrap-python) bootstrap_mode=python ;;
     --help|-h)
         echo "Usage: ./build_tb.sh [--bootstrap-python]"
-        echo "Default: bootstrap with released tb 0.2.1 (TB_BOOTSTRAP_COMPILER overrides its path)."
+        echo "Default: bootstrap with released tb 0.2.2 (TB_BOOTSTRAP_COMPILER overrides its path)."
         exit 0 ;;
     '') ;;
     *) echo "Usage: ./build_tb.sh [--bootstrap-python]" >&2; exit 2 ;;
@@ -24,10 +24,10 @@ build_root="$repo_root/.build/stage2"
 seed_compiler="${TB_BOOTSTRAP_COMPILER:-}"
 if [ "$bootstrap_mode" = native ] && [ -z "$seed_compiler" ]; then
     if ! command -v brew >/dev/null 2>&1; then
-        echo "Set TB_BOOTSTRAP_COMPILER to a tb 0.2.1 LLVM compiler, or use --bootstrap-python." >&2
+        echo "Set TB_BOOTSTRAP_COMPILER to a tb 0.2.2 LLVM compiler, or use --bootstrap-python." >&2
         exit 1
     fi
-    seed_compiler="$(brew --cellar)/tb/0.2.1/libexec/libexec/tb"
+    seed_compiler="$(brew --cellar)/tb/0.2.2/libexec/libexec/tb"
 fi
 if [ "$bootstrap_mode" = python ]; then
     build_root="$repo_root/.build/python-bootstrap"
@@ -70,7 +70,7 @@ if bootstrap_mode == 'native':
     seed = Path(sys.argv[4]).resolve()
     if not seed.is_file() or not os.access(seed, os.X_OK):
         raise SystemExit(f'Missing bootstrap compiler: {seed}\n'
-                         'Set TB_BOOTSTRAP_COMPILER to the tb 0.2.1 LLVM compiler binary, '
+                         'Set TB_BOOTSTRAP_COMPILER to the tb 0.2.2 LLVM compiler binary, '
                          'or use --bootstrap-python.')
     # Invoke a private copy, never the moving Homebrew link or active bin/tb.
     frozen_seed = build_root / 'bootstrap_seed'
@@ -87,11 +87,11 @@ if bootstrap_mode == 'native':
         if seed_hash != expected_hash.lower():
             raise SystemExit('Bootstrap compiler SHA-256 does not match TB_BOOTSTRAP_SHA256')
     result = subprocess.run([str(frozen_seed), '--version'], capture_output=True, text=True)
-    if result.returncode != 0 or result.stdout.strip() != 'tb 0.2.1' or result.stderr:
-        raise SystemExit('Bootstrap compiler must be the tb 0.2.1 LLVM compiler binary')
+    if result.returncode != 0 or result.stdout.strip() != 'tb 0.2.2' or result.stderr:
+        raise SystemExit('Bootstrap compiler must be the tb 0.2.2 LLVM compiler binary')
     metadata.update(seed_source=str(seed), seed_copy=str(frozen_seed),
-                    seed_version='0.2.1', seed_sha256=seed_hash)
-    print(f'Bootstrap seed: {seed} (tb 0.2.1)\nSHA-256: {seed_hash}', flush=True)
+                    seed_version='0.2.2', seed_sha256=seed_hash)
+    print(f'Bootstrap seed: {seed} (tb 0.2.2)\nSHA-256: {seed_hash}', flush=True)
 else:
     print('Bootstrap seed: frozen Python compiler fallback', flush=True)
 (build_root / 'bootstrap.json').write_text(json.dumps(metadata, indent=2) + '\n')

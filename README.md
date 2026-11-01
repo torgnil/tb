@@ -45,13 +45,13 @@ tb-ir path/to/program.tb output.ll
 
 ## Build from source
 
-Build the self-hosted compiler using the released tb 0.2.1 seed:
+Build the self-hosted compiler using the released tb 0.2.2 seed:
 
 ```bash
 ./build_tb.sh
 ```
 
-The default seed is the LLVM compiler binary in Homebrew's versioned tb 0.2.1
+The default seed is the LLVM compiler binary in Homebrew's versioned tb 0.2.2
 Cellar directory. The build checks its version, records its SHA-256 in
 `.build/stage2/bootstrap.json`, and uses a private copy for stage 1. It then
 uses stage 1 to compile the current source again for the final `bin/tb`.
@@ -59,7 +59,7 @@ It never selects the active `bin/tb` or an arbitrary `tb` command from PATH.
 Python 3.8+ is still required for build utilities, and `clang` is required
 for linking.
 
-For another installation, set `TB_BOOTSTRAP_COMPILER` to the actual tb 0.2.1
+For another installation, set `TB_BOOTSTRAP_COMPILER` to the actual tb 0.2.2
 LLVM compiler binary, rather than the executable-building `tb` shell wrapper.
 Set `TB_BOOTSTRAP_SHA256` as well to require an exact seed artifact:
 
@@ -70,7 +70,7 @@ TB_BOOTSTRAP_SHA256='<expected-sha256>' ./build_tb.sh
 
 Check the compiler version with `bin/tb --version`. Builds embed the version
 and default to `dev`. For a release or Homebrew source build, specify the
-version once at build time, for example `TB_VERSION=0.2.1 ./build_tb.sh`.
+version once at build time, for example `TB_VERSION=0.2.2 ./build_tb.sh`.
 
 Compile a tb program with the self-hosted compiler:
 
@@ -101,7 +101,7 @@ These generated files include their required header declarations. The `.csources
 Use an explicit LLVM output path when compiling threaded programs so these files
 and the metadata are generated.
 
-An explicit Python bootstrap fallback is retained through the 0.2.2 release:
+An explicit frozen Python bootstrap fallback remains available:
 
 ```bash
 ./build_tb.sh --bootstrap-python
