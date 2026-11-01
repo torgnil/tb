@@ -185,6 +185,7 @@ int LLVM_SCAN_NEEDS_INT_ARRAY_ARRAY = 0;
 int LLVM_SCAN_NEEDS_RECORD_ARRAY = 0;
 int LLVM_SCAN_NEEDS_MAP_TO_PARSE_POINT = 0;
 int LLVM_SCAN_NEEDS_MAP_TO_STRING_LENGTH = 0;
+int LLVM_SCAN_NEEDS_STRING_ARRAY_MAP_EXPR = 0;
 int LLVM_SCAN_NEEDS_MAP_TO_EDGE_DISTANCE = 0;
 int LLVM_SCAN_NEEDS_FLAT_MAP_EDGES_FOR_POINT = 0;
 int LLVM_SCAN_NEEDS_RUNTIME_STRING_COPY = 0;
@@ -639,6 +640,7 @@ void reset_llvm_backend_helper_stats():
     LLVM_SCAN_NEEDS_RECORD_ARRAY = 0
     LLVM_SCAN_NEEDS_MAP_TO_PARSE_POINT = 0
     LLVM_SCAN_NEEDS_MAP_TO_STRING_LENGTH = 0
+    LLVM_SCAN_NEEDS_STRING_ARRAY_MAP_EXPR = 0
     LLVM_SCAN_NEEDS_MAP_TO_EDGE_DISTANCE = 0
     LLVM_SCAN_NEEDS_FLAT_MAP_EDGES_FOR_POINT = 0
     LLVM_SCAN_NEEDS_RUNTIME_STRING_COPY = 0
@@ -3372,6 +3374,7 @@ void analyze_program_features(ProgramIR program, string[] map_types):
     LLVM_SCAN_NEEDS_RECORD_ARRAY = 0
     LLVM_SCAN_NEEDS_MAP_TO_PARSE_POINT = 0
     LLVM_SCAN_NEEDS_MAP_TO_STRING_LENGTH = 0
+    LLVM_SCAN_NEEDS_STRING_ARRAY_MAP_EXPR = 0
     LLVM_SCAN_NEEDS_MAP_TO_EDGE_DISTANCE = 0
     LLVM_SCAN_NEEDS_FLAT_MAP_EDGES_FOR_POINT = 0
     LLVM_SCAN_NEEDS_RUNTIME_STRING_COPY = 0
@@ -3419,6 +3422,7 @@ void analyze_program_features(ProgramIR program, string[] map_types):
     bool needs_record_array = false
     bool needs_map_to_parse_point = false
     bool needs_map_to_string_length = false
+    bool needs_string_array_map_expression = false
     bool needs_map_to_edge_distance = false
     bool needs_flat_map_edges_for_point = false
     bool needs_runtime_string_copy = !map_types.is_empty()
@@ -3806,6 +3810,10 @@ void analyze_program_features(ProgramIR program, string[] map_types):
                         needs_map_to_parse_point = true
                     if (op.args[0] == 'map_to_string_length'):
                         needs_map_to_string_length = true
+                    if (op.args[0] == 'map_to_string_expr'):
+                        needs_string_array_map_expression = true
+                        needs_string_array = true
+                        needs_throw = true
                     if (op.args[0] == 'map_to_edge_distance'):
                         needs_map_to_edge_distance = true
                     if (op.args[0] == 'flat_map_edges_for_point'):
@@ -3857,6 +3865,8 @@ void analyze_program_features(ProgramIR program, string[] map_types):
         LLVM_SCAN_NEEDS_MAP_TO_PARSE_POINT = 1
     if (needs_map_to_string_length):
         LLVM_SCAN_NEEDS_MAP_TO_STRING_LENGTH = 1
+    if (needs_string_array_map_expression):
+        LLVM_SCAN_NEEDS_STRING_ARRAY_MAP_EXPR = 1
     if (needs_map_to_edge_distance):
         LLVM_SCAN_NEEDS_MAP_TO_EDGE_DISTANCE = 1
     if (needs_flat_map_edges_for_point):
@@ -5180,6 +5190,15 @@ string emit_int_array_filter_expression_instruction(ParsedFunction function_ir, 
 
 string emit_bootstrap_fixture_lambda_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op):
     string lhs = temp_ref(op.lhs)
+    if (op.args[0] == 'map_to_string_expr'):
+        if (op.args.length() != 4):
+            throw 'unsupported string[] map_to expression lambda arity'
+        bool release_receiver = array_scalar_query_releases_receiver(function_ir, op.args[1], op.lhs)
+        string release_flag = 'false'
+        if (release_receiver):
+            release_flag = 'true'
+        string call_line = '  ' + lhs + ' = call ptr @tb_bootstrap_string_array_map_string_expr(ptr ' + temp_ref(op.args[1]) + ', ptr @' + op.args[3] + ', i1 ' + release_flag + ')'
+        return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, call_line)
     if (op.args[0] == 'map_to_string_length'):
         return '  ' + lhs + ' = call ptr @tb_bootstrap_string_array_map_to_length(ptr ' + temp_ref(op.args[1]) + ')'
     if (op.args[0] == 'map_to_parse_point'):
@@ -6604,12 +6623,17 @@ string emit_last_value(string result_name, string receiver_type, string receiver
         throw 'unsupported llvm last receiver type: ' + receiver_type
     return '  ' + temp_ref(result_name) + ' = call ' + llvm_type(array_item_type(receiver_type)) + ' ' + helper_name + '(ptr ' + temp_ref(receiver_name) + ')'
 
-string emit_array_scalar_query_with_release(ParsedFunction function_ir, string receiver_name, string query_temp_name, string query_line):
+bool array_scalar_query_releases_receiver(ParsedFunction function_ir, string receiver_name, string query_temp_name):
     string receiver_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, receiver_name))
     if (receiver_type == 'int[]' || receiver_type == 'bool[]' || receiver_type == 'string[]' || receiver_type == 'int[][]' || receiver_type == 'string[][]'):
         if (temp_needs_backend_free(function_ir, receiver_name) && !temp_is_moved(function_ir, receiver_name)):
-            if (temp_is_query_only_use_in_producing_block(function_ir, receiver_name, query_temp_name)):
-                return query_line + '\n' + emit_backend_release_ptr(receiver_type, temp_ref(receiver_name))
+            return temp_is_query_only_use_in_producing_block(function_ir, receiver_name, query_temp_name)
+    return false
+
+string emit_array_scalar_query_with_release(ParsedFunction function_ir, string receiver_name, string query_temp_name, string query_line):
+    string receiver_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, receiver_name))
+    if (array_scalar_query_releases_receiver(function_ir, receiver_name, query_temp_name)):
+        return query_line + '\n' + emit_backend_release_ptr(receiver_type, temp_ref(receiver_name))
     return query_line
 
 string emit_map_method_call_value_instruction(ParsedFunction function_ir, LinearInstruction op, string method_name, string method_base_type):
@@ -7616,7 +7640,7 @@ string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, Lin
                 return emit_prio_q_lambda_instruction(program, function_ir, op)
             if (op.args[0] == 'sort_int_asc' || op.args[0] == 'sort_int_desc' || op.args[0] == 'sort_record_field_asc'):
                 return emit_sort_lambda_instruction(program, function_ir, op)
-            if (op.args[0] == 'map_to_parse_point' || op.args[0] == 'map_to_string_length' || op.args[0] == 'map_to_edge_distance' || op.args[0] == 'flat_map_edges_for_point'):
+            if (op.args[0] == 'map_to_string_expr' || op.args[0] == 'map_to_parse_point' || op.args[0] == 'map_to_string_length' || op.args[0] == 'map_to_edge_distance' || op.args[0] == 'flat_map_edges_for_point'):
                 return emit_bootstrap_fixture_lambda_instruction(program, function_ir, op)
         if (op.args.length() >= 5):
             if (op.args[0] == 'map_to'):
@@ -10962,6 +10986,7 @@ string[] llvm_codegen_ir(ProgramIR program):
     bool needs_record_array = LLVM_SCAN_NEEDS_RECORD_ARRAY != 0
     bool needs_map_to_parse_point = LLVM_SCAN_NEEDS_MAP_TO_PARSE_POINT != 0
     bool needs_map_to_string_length = LLVM_SCAN_NEEDS_MAP_TO_STRING_LENGTH != 0
+    bool needs_string_array_map_expression = LLVM_SCAN_NEEDS_STRING_ARRAY_MAP_EXPR != 0
     bool needs_map_to_edge_distance = LLVM_SCAN_NEEDS_MAP_TO_EDGE_DISTANCE != 0
     bool needs_checked_array_index = needs_int_array || needs_bool_array || needs_string_array || needs_string_array_array || needs_int_array_array || needs_record_array || needs_map_to_edge_distance
     bool needs_flat_map_edges_for_point = LLVM_SCAN_NEEDS_FLAT_MAP_EDGES_FOR_POINT != 0
@@ -11049,9 +11074,9 @@ string[] llvm_codegen_ir(ProgramIR program):
     if (needs_thread_pool):
         for (string declaration in emit_thread_pool_runtime_declarations()):
             lines.push(declaration)
-    if (needs_string_helpers || needs_thread_pool || needs_try_catch || needs_write_all || needs_int_array):
+    if (needs_string_helpers || needs_thread_pool || needs_try_catch || needs_write_all || needs_int_array || needs_string_array_map_expression):
         lines.push('declare i32 @setjmp(ptr) returns_twice')
-    if (needs_string_helpers || needs_thread_pool || needs_throw || needs_try_catch || needs_read_lines || needs_read_file || needs_write_all || needs_int_array):
+    if (needs_string_helpers || needs_thread_pool || needs_throw || needs_try_catch || needs_read_lines || needs_read_file || needs_write_all || needs_int_array || needs_string_array_map_expression):
         lines.push('declare void @longjmp(ptr, i32) noreturn')
     if (needs_string_array_helpers || needs_string_array_array || needs_bool_array || needs_int_array || needs_int_array_array || needs_record_array || needs_backend_free || needs_records || needs_maps || needs_read_lines || needs_read_file):
         lines.push('declare void @free(ptr)')
@@ -11156,6 +11181,9 @@ string[] llvm_codegen_ir(ProgramIR program):
                 lines.push(helper)
     if (needs_map_to_string_length):
         for (string helper in emit_string_length_map_helper()):
+            lines.push(helper)
+    if (needs_string_array_map_expression):
+        for (string helper in llvm_embedded_helper_text('string_array_map_expr.ll').split_lines()):
             lines.push(helper)
     if (needs_map_to_parse_point):
         for (string helper in emit_map_to_parse_point_helper()):
@@ -11296,6 +11324,7 @@ void llvm_print_ir(ProgramIR program):
     bool needs_record_array = LLVM_SCAN_NEEDS_RECORD_ARRAY != 0
     bool needs_map_to_parse_point = LLVM_SCAN_NEEDS_MAP_TO_PARSE_POINT != 0
     bool needs_map_to_string_length = LLVM_SCAN_NEEDS_MAP_TO_STRING_LENGTH != 0
+    bool needs_string_array_map_expression = LLVM_SCAN_NEEDS_STRING_ARRAY_MAP_EXPR != 0
     bool needs_map_to_edge_distance = LLVM_SCAN_NEEDS_MAP_TO_EDGE_DISTANCE != 0
     bool needs_checked_array_index = needs_int_array || needs_bool_array || needs_string_array || needs_string_array_array || needs_int_array_array || needs_record_array || needs_map_to_edge_distance
     bool needs_flat_map_edges_for_point = LLVM_SCAN_NEEDS_FLAT_MAP_EDGES_FOR_POINT != 0
@@ -11389,10 +11418,10 @@ void llvm_print_ir(ProgramIR program):
         for (string declaration in emit_thread_pool_runtime_declarations()):
             print(declaration)
         emitted_any_header = true
-    if (needs_string_helpers || needs_thread_pool || needs_try_catch || needs_write_all || needs_int_array):
+    if (needs_string_helpers || needs_thread_pool || needs_try_catch || needs_write_all || needs_int_array || needs_string_array_map_expression):
         print('declare i32 @setjmp(ptr) returns_twice')
         emitted_any_header = true
-    if (needs_string_helpers || needs_thread_pool || needs_throw || needs_try_catch || needs_read_lines || needs_read_file || needs_write_all || needs_int_array):
+    if (needs_string_helpers || needs_thread_pool || needs_throw || needs_try_catch || needs_read_lines || needs_read_file || needs_write_all || needs_int_array || needs_string_array_map_expression):
         print('declare void @longjmp(ptr, i32) noreturn')
         emitted_any_header = true
     if (needs_string_array_helpers || needs_string_array_array || needs_bool_array || needs_int_array || needs_int_array_array || needs_record_array || needs_backend_free || needs_records || needs_maps || needs_read_lines || needs_read_file):
@@ -11528,6 +11557,9 @@ void llvm_print_ir(ProgramIR program):
     if (needs_map_to_string_length):
         string[] string_length_map_helper_lines = emit_string_length_map_helper()
         for (string line in string_length_map_helper_lines):
+            print(line)
+    if (needs_string_array_map_expression):
+        for (string line in llvm_embedded_helper_text('string_array_map_expr.ll').split_lines()):
             print(line)
     if (needs_map_to_parse_point):
         string[] map_to_parse_point_helper_lines = emit_map_to_parse_point_helper()

@@ -2320,6 +2320,10 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
                 return refined_value_op(op, 'Point[]', 'owned')
             if (op.args[0] == 'map_to_string_length' && base_type == 'string[]'):
                 return refined_value_op(op, 'int[]', 'owned')
+            if (op.args[0] == 'map_to_string_expr'):
+                if (normalize_llvm_type_name(base_type) != 'string[]'):
+                    throw 'string[] map_to callback requires string[] receiver; got ' + base_type
+                return refined_value_op(op, 'string[]', 'owned')
             if (op.args[0] == 'map_to_edge_distance' && base_type == 'int[]'):
                 return refined_value_op(op, 'Edge[]', 'owned')
             if (op.args[0] == 'flat_map_edges_for_point' && base_type == 'int[]'):

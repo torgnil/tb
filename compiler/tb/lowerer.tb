@@ -766,13 +766,36 @@ string map_expression_helper_name(string[] used_names, int start_index):
         index += 1
     return '__tb_int_map_expression_' + index.to_string()
 
+string string_array_map_expression_helper_name(string[] used_names, int start_index):
+    int index = start_index
+    while (contains_name(used_names, '__tb_string_array_map_expression_' + index.to_string())):
+        index += 1
+    return '__tb_string_array_map_expression_' + index.to_string()
+
 string filter_expression_helper_name(string[] used_names, int start_index):
     int index = start_index
     while (contains_name(used_names, '__tb_int_filter_expression_' + index.to_string())):
         index += 1
     return '__tb_int_filter_expression_' + index.to_string()
 
-SubmitLambdaRewrite rewrite_int_array_expression(Node node, string[] used_names, int next_index, Node[] functions):
+SubmitLambdaRewrite rewrite_string_array_map_lambda(Node lambda_node, string[] used_names, int next_index):
+    if (lambda_node.kind != 'Lambda' || lambda_node.children.length() != 1 || lambda_node.children[0].kind == 'Block'):
+        return SubmitLambdaRewrite(lambda_node, [], used_names, next_index)
+    BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+    string parameter_type = parameter.type_name
+    if (parameter_type.starts_with('const ')):
+        parameter_type = parameter_type.substring(6)
+    if (parameter_type != 'string' || is_parse_binding_call_lambda(lambda_node) || is_string_length_map_lambda(lambda_node)):
+        return SubmitLambdaRewrite(lambda_node, [], used_names, next_index)
+    string[] free_names = submit_lambda_free_identifiers(lambda_node.children[0], [parameter.name], [])
+    if (!free_names.is_empty()):
+        throw 'string[] map_to callback captures are not supported'
+    string helper_name = string_array_map_expression_helper_name(used_names, next_index)
+    Node helper = Node('Function', 'string ' + helper_name, [Node('Param', 'string ' + parameter.name, []), Node('Return', '', [lambda_node.children[0]])])
+    Node rewritten = Node('MapStringExpression', lambda_node.value, [Node('Identifier', helper_name, [])])
+    return SubmitLambdaRewrite(rewritten, [helper], add_unique_name(used_names, helper_name), next_index + 1)
+
+SubmitLambdaRewrite rewrite_array_map_expression(Node node, string[] used_names, int next_index, Node[] functions):
     if (node.kind == 'Lambda' || node.kind == 'Lambda0' || node.kind == 'Lambda2'):
         return SubmitLambdaRewrite(node, [], used_names, next_index)
     Node[] children = []
@@ -780,7 +803,7 @@ SubmitLambdaRewrite rewrite_int_array_expression(Node node, string[] used_names,
     string[] current_names = used_names
     int current_index = next_index
     for (Node child : node.children):
-        SubmitLambdaRewrite rewritten_child = rewrite_int_array_expression(child, current_names, current_index, functions)
+        SubmitLambdaRewrite rewritten_child = rewrite_array_map_expression(child, current_names, current_index, functions)
         children.push(rewritten_child.node)
         generated = append_nodes(generated, rewritten_child.generated)
         current_names = rewritten_child.used_names
@@ -788,6 +811,13 @@ SubmitLambdaRewrite rewrite_int_array_expression(Node node, string[] used_names,
     Node rewritten = Node(node.kind, node.value, children)
     if (node.kind == 'MethodCall' && node.value == 'map_to'):
         if (children.length() == 2):
+            SubmitLambdaRewrite string_map = rewrite_string_array_map_lambda(children[1], current_names, current_index)
+            if (string_map.node.kind == 'MapStringExpression'):
+                generated = append_nodes(generated, string_map.generated)
+                current_names = string_map.used_names
+                current_index = string_map.next_index
+                children[1] = string_map.node
+                rewritten = Node(node.kind, node.value, children)
             if (children[1].kind == 'Lambda'):
                 if (!legacy_int_map_lambda(children[1])):
                     Node lambda_node = children[1]
@@ -835,7 +865,7 @@ SubmitLambdaRewrite rewrite_int_array_expression(Node node, string[] used_names,
                         rewritten = Node(node.kind, node.value, children)
     return SubmitLambdaRewrite(rewritten, generated, current_names, current_index)
 
-SubmitLambdaRewrite rewrite_int_array_expressions_in_program(Node program):
+SubmitLambdaRewrite rewrite_array_map_expressions_in_program(Node program):
     string[] used_names = collect_submit_unavailable_names(program, [])
     Node[] children = []
     Node[] generated = []
@@ -847,7 +877,7 @@ SubmitLambdaRewrite rewrite_int_array_expressions_in_program(Node program):
             children.push(child)
             continue
         Node[] visible_functions = program_visible_function_nodes(program.children, current_module_id)
-        SubmitLambdaRewrite rewritten = rewrite_int_array_expression(child, used_names, next_index, visible_functions)
+        SubmitLambdaRewrite rewritten = rewrite_array_map_expression(child, used_names, next_index, visible_functions)
         children.push(rewritten.node)
         generated = append_generated_nodes_for_module(generated, rewritten.generated, current_module_id)
         used_names = rewritten.used_names
@@ -2141,6 +2171,11 @@ TempResult lower_linear_value(Node node, int next_temp):
                     return TempResult(name, lines, height.next_temp + 1)
         if (node.value == 'map_to'):
             if (node.children.length() == 2):
+                if (node.children[1].kind == 'MapStringExpression' && node.children[1].children.length() == 1 && node.children[1].children[0].kind == 'Identifier'):
+                    string name = temp_name(base.next_temp)
+                    string[] lines = base.lines
+                    lines.push(name + ' = method-call-lambda map_to_string_expr ' + base.name + ' ' + node.children[1].value + ' ' + node.children[1].children[0].value)
+                    return TempResult(name, lines, base.next_temp + 1)
                 if (node.children[1].kind == 'MapIntExpression'):
                     if (node.children[1].children.length() == 1):
                         if (node.children[1].children[0].kind == 'Identifier'):
@@ -2430,6 +2465,9 @@ TempIRResult lower_linear_value_ir(Node node, int next_temp):
                     return TempIRResult(name, instructions, height.next_temp + 1)
         if (node.value == 'map_to'):
             if (node.children.length() == 2):
+                if (node.children[1].kind == 'MapStringExpression' && node.children[1].children.length() == 1 && node.children[1].children[0].kind == 'Identifier'):
+                    LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', temp_name(base.next_temp), 'unknown', 'unknown', 'method-call-lambda', ['map_to_string_expr', base.name, node.children[1].value, node.children[1].children[0].value])])
+                    return TempIRResult(temp_name(base.next_temp), instructions, base.next_temp + 1)
                 if (node.children[1].kind == 'MapIntExpression'):
                     if (node.children[1].children.length() == 1):
                         if (node.children[1].children[0].kind == 'Identifier'):
@@ -4216,7 +4254,7 @@ string[] lower_program(Node program):
     program = bind_private_module_globals(program)
     SubmitLambdaRewrite scoped_rewritten = rewrite_submit_lambdas_in_program(program, false)
     program = scoped_rewritten.node
-    SubmitLambdaRewrite map_rewritten = rewrite_int_array_expressions_in_program(program)
+    SubmitLambdaRewrite map_rewritten = rewrite_array_map_expressions_in_program(program)
     program = map_rewritten.node
     program = normalize_program_local_bindings(program)
     program = bind_private_module_enums(program)
@@ -4360,7 +4398,7 @@ ProgramIR lower_program_ir(Node program):
     program = bind_private_module_records(program)
     program = bind_private_module_globals(program)
     SubmitLambdaRewrite rewritten = rewrite_submit_lambdas_in_program(program, true)
-    SubmitLambdaRewrite map_rewritten = rewrite_int_array_expressions_in_program(rewritten.node)
+    SubmitLambdaRewrite map_rewritten = rewrite_array_map_expressions_in_program(rewritten.node)
     program = map_rewritten.node
     program = normalize_program_local_bindings(program)
     program = bind_private_module_enums(program)
