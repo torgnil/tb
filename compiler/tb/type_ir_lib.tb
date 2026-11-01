@@ -1279,6 +1279,17 @@ bool is_native_contains_receiver_type(string base_type):
         return true
     return normalized_type.starts_with('map<') || normalized_type.starts_with('set<')
 
+private bool is_native_array_contains_receiver_type(string base_type):
+    string normalized_type = normalize_llvm_type_name(base_type)
+    return normalized_type == 'int[]' || normalized_type == 'bool[]' || normalized_type == 'string[]'
+
+private void validate_array_contains_needle_type(string receiver_type, string needle_type, EnumTypeIR[] enum_types):
+    string normalized_receiver_type = normalize_llvm_type_name(receiver_type)
+    string expected_type = array_item_type(normalized_receiver_type)
+    string actual_type = normalize_enum_type_name(normalize_llvm_type_name(needle_type), enum_types)
+    if (actual_type != expected_type):
+        throw 'array contains requires ' + expected_type + '; got ' + actual_type
+
 bool is_native_record_array_query_type(string base_type):
     if (!base_type.ends_with('[]')):
         return false
@@ -1988,7 +1999,9 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
                 string receiver_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
                 if (receiver_type.starts_with('map<')):
                     result_type = 'bool'
-                if (receiver_type == 'int[]' || receiver_type == 'bool[]' || receiver_type == 'string[]'):
+                if (is_native_array_contains_receiver_type(receiver_type)):
+                    if (op.args.length() == 3):
+                        validate_array_contains_needle_type(receiver_type, lookup_temp_type_slot(temp_types, op.args[2]), enum_types)
                     result_type = 'bool'
         if (result_type == 'unknown' && op.args[0] == 'index_of' && lookup_function_return_type(functions, 'index_of') == 'unknown'):
             if (!record_type_exists(record_names, 'index_of')):
@@ -2189,6 +2202,11 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
                     throw 'thread_pool.submit argument for ' + source_name_for_function_sig(functions, op.args[2]) + ' requires ' + expected_type + '; got ' + actual_type
             return refined_value_op(op, future_type, refine_ownership_mode(op, future_type))
         if (method_name == 'contains'):
+            string contains_receiver_type = normalize_llvm_type_name(base_type)
+            if (is_native_array_contains_receiver_type(contains_receiver_type)):
+                if (op.args.length() == 3):
+                    validate_array_contains_needle_type(contains_receiver_type, lookup_temp_type_slot(temp_types, op.args[2]), enum_types)
+                return refined_value_op(op, 'bool', 'plain')
             string result_type = infer_method_call_type_cached(method_name, base_type, functions, TYPE_IR_FUNCTION_TYPE_CACHE_NAMES, TYPE_IR_FUNCTION_TYPE_CACHE_VALUES)
             return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
         if (method_name == 'starts_with' || method_name == 'ends_with' || method_name == 'starts_with_at' || method_name == 'is_alpha' || method_name == 'is_digit' || method_name == 'is_alnum' || method_name == 'is_space' || method_name == 'is_whitespace'):
