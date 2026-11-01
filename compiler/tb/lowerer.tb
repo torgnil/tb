@@ -233,6 +233,8 @@ string submit_lambda_expression_type_context(Node node, SubmitLambdaScope scope,
             throw 'thread_pool.submit lambda array index must have type int'
         if (base_type == 'int[]'):
             return 'int'
+        if (array_callback_context && base_type == 'bool[]'):
+            return 'bool'
         if (base_type == 'int[][]'):
             return 'int[]'
         if (base_type == 'string'):
@@ -928,6 +930,9 @@ BindingIR[] submit_lambda_captures(Node lambda_node, BindingIR[] bindings):
             throw 'thread_pool.submit lambda managed captures require a zero-argument lambda with only int[] and scalar captures, or one string or int[][] capture'
     return captured
 
+private bool int_array_callback_snapshot_type(string type_name):
+    return type_name == 'int[]' || type_name == 'bool[]' || type_name == 'string[]' || type_name == 'int[][]'
+
 ArrayScalarCaptureResult int_array_scalar_captures(Node lambda_node, BindingIR[] bindings):
     if (lambda_node.kind != 'Lambda' || lambda_node.children.length() != 1):
         return ArrayScalarCaptureResult([], false)
@@ -943,7 +948,7 @@ ArrayScalarCaptureResult int_array_scalar_captures(Node lambda_node, BindingIR[]
         string capture_type = binding.type_name
         if (capture_type.starts_with('const ')):
             capture_type = capture_type.substring(6)
-        if (!(capture_type == 'int' || capture_type == 'bool' || capture_type == 'string' || capture_type == 'int[]' || capture_type == 'string[]' || capture_type == 'int[][]')):
+        if (!(capture_type == 'int' || capture_type == 'bool' || capture_type == 'string' || int_array_callback_snapshot_type(capture_type))):
             return ArrayScalarCaptureResult([], false)
         captured.push(binding)
     return ArrayScalarCaptureResult(captured, true)
@@ -1466,7 +1471,7 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
             if (capture_type.starts_with('const ')):
                 capture_type = capture_type.substring(6)
             string capture_parameter_name = binding.name
-            if (capture_type == 'int[]' || capture_type == 'string[]' || capture_type == 'int[][]'):
+            if (int_array_callback_snapshot_type(capture_type)):
                 has_array_snapshot_capture = true
                 capture_parameter_name = submit_capture_name(current_names, '__tb_array_callback_capture_', current_index)
                 current_names = add_unique_name(current_names, capture_parameter_name)
@@ -1520,7 +1525,7 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
                 string capture_type = binding.type_name
                 if (capture_type.starts_with('const ')):
                     capture_type = capture_type.substring(6)
-                if (capture_type == 'int[]' || capture_type == 'string[]' || capture_type == 'int[][]'):
+                if (int_array_callback_snapshot_type(capture_type)):
                     cleanup_statements.push(Node('Assign', '', [Node('Identifier', binding.name, []), Node('Array', '', [])]))
             cleanup_statements.push(Node('Assign', '', [output_ref, Node('Array', '', [])]))
             cleanup_statements.push(Node('Throw', '', [Node('Identifier', catch_name, [])]))
