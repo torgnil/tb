@@ -694,7 +694,8 @@ Array helpers
 - sort(arr: T[], compare: (T, T) -> int) -> void
   - Sort the array in place using the provided comparator.
   - `string[]` also supports `values.sort()` with no comparator. It sorts in place by ascending bytewise lexicographic order and returns a borrowed reference to the receiver.
-  - Native `int[]` and record-array sort methods require one comparator. A named comparator must resolve to a function returning `int` with exactly two parameters matching the array element type, such as `int compare(int a, int b)`. An inline lambda such as `(int a, int b) -> a - b` is also supported.
+  - `int[]` also supports `values.sort()` with no comparator, sorting in place in ascending signed integer order and returning a borrowed reference to the receiver.
+  - Record-array sort methods require one comparator. A named comparator must resolve to a function returning `int` with exactly two parameters matching the array element type, such as `int compare(int a, int b)`. An inline lambda such as `(int a, int b) -> a - b` is also supported.
   - Record arrays also accept the inline ascending integer-field form `(Item left, Item right) -> left.key - right.key` when `key` is a declared `int` field. The backend compares signed field values using their declared record offsets; this form sorts in place and the result borrows the source array. Missing or non-`int` fields produce a compiler diagnostic before LLVM emission.
   - Invalid named comparators for those native array sort methods produce a compiler diagnostic. Scalar functions named `sort` keep normal method-call dispatch, for example `value.sort()` can call `int sort(int value)`.
 

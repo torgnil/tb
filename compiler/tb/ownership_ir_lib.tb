@@ -285,8 +285,9 @@ string identifier_target_binding_cached(OwnershipIdentifierTargetCache cache, st
         index -= 1
     return ''
 
-string borrowed_int_array_named_sort_receiver_binding(ParsedFunction function_ir, OwnershipTempMetaCache cache, OwnershipIdentifierTargetCache identifier_target_cache, string temp_name):
-    if (normalize_llvm_type_name(lookup_temp_result_type_cached(cache, temp_name)) != 'int[]'):
+string borrowed_primitive_array_named_sort_receiver_binding(ParsedFunction function_ir, OwnershipTempMetaCache cache, OwnershipIdentifierTargetCache identifier_target_cache, string temp_name):
+    string result_type = normalize_llvm_type_name(lookup_temp_result_type_cached(cache, temp_name))
+    if (result_type != 'int[]' && result_type != 'string[]'):
         return ''
     if (lookup_temp_ownership_mode_cached(cache, temp_name) != 'borrowed'):
         return ''
@@ -295,12 +296,13 @@ string borrowed_int_array_named_sort_receiver_binding(ParsedFunction function_ir
             if (op.lhs == temp_name && op.kind == 'value' && op.detail == 'method-call'):
                 if (op.args.length() >= 2):
                     if (op.args[0] == 'sort'):
-                        if (op.args.length() == 3):
-                            if (normalize_llvm_type_name(lookup_temp_result_type_cached(cache, op.args[1])) == 'int[]'):
-                                string receiver_binding = identifier_target_binding_cached(identifier_target_cache, op.args[1])
-                                if (receiver_binding != ''):
-                                    return receiver_binding
-                                return borrowed_int_array_named_sort_receiver_binding(function_ir, cache, identifier_target_cache, op.args[1])
+                        string receiver_type = normalize_llvm_type_name(lookup_temp_result_type_cached(cache, op.args[1]))
+                        bool sort_arity_supported = op.args.length() == 2 || (receiver_type == 'int[]' && op.args.length() == 3)
+                        if (sort_arity_supported && (receiver_type == 'int[]' || receiver_type == 'string[]')):
+                            string receiver_binding = identifier_target_binding_cached(identifier_target_cache, op.args[1])
+                            if (receiver_binding != ''):
+                                return receiver_binding
+                            return borrowed_primitive_array_named_sort_receiver_binding(function_ir, cache, identifier_target_cache, op.args[1])
     return ''
 
 string named_binding_decl(ParsedFunction function_ir, string name):
@@ -563,7 +565,7 @@ LinearInstruction[] apply_ownership_to_instructions(ParsedFunction function_ir, 
                 if (binding_decl != '' && binding_is_managed_cached(binding_decl, record_names, enum_names)):
                     if (source_binding_decl == binding_decl):
                         continue
-                    string sort_receiver_binding_decl = borrowed_int_array_named_sort_receiver_binding(function_ir, cache, identifier_target_cache, op.args[0])
+                    string sort_receiver_binding_decl = borrowed_primitive_array_named_sort_receiver_binding(function_ir, cache, identifier_target_cache, op.args[0])
                     if (sort_receiver_binding_decl == binding_decl):
                         continue
             if (binding_decl != '' && binding_is_managed_cached(binding_decl, record_names, enum_names)):

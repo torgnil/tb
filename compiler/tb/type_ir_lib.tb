@@ -1666,8 +1666,10 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             if (op.args[0] == 'sort'):
                 string sort_receiver_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
                 if (sort_receiver_type == 'int[]'):
+                    if (op.args.length() == 2):
+                        return refined_value_op(op, 'int[]', 'borrowed')
                     if (op.args.length() != 3):
-                        throw 'int[] sort requires exactly one comparator'
+                        throw 'int[] sort accepts zero or one comparator'
                     return refined_value_op(op, 'int[]', 'borrowed')
                 if (sort_receiver_type == 'string[]'):
                     if (op.args.length() != 2):
