@@ -1816,6 +1816,25 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
                 if (filter_return_type != 'bool'):
                     throw 'int[] filter expression must return bool; got ' + filter_return_type
                 return refined_value_op(op, 'int[]', 'owned')
+            if (op.args[0] == 'filter_string_expr'):
+                if (op.args.length() != 4):
+                    throw 'string[] filter expression has invalid IR arity'
+                string string_filter_receiver_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+                if (string_filter_receiver_type != 'string[]'):
+                    throw 'string[] filter expression requires string[] receiver; got ' + string_filter_receiver_type
+                BindingIR string_filter_parameter = ir_parse_binding_decl(op.args[2])
+                string string_filter_parameter_type = normalize_llvm_type_name(string_filter_parameter.type_name)
+                if (string_filter_parameter_type != 'string'):
+                    throw 'string[] filter expression requires string parameter; got ' + string_filter_parameter_type
+                FunctionSigIR string_filter_callback = lookup_function_sig(functions, op.args[3])
+                if (string_filter_callback.name == '' || string_filter_callback.param_types.length() != 1):
+                    throw 'string[] filter expression callback must have signature bool(string)'
+                if (normalize_llvm_type_name(string_filter_callback.param_types[0]) != 'string'):
+                    throw 'string[] filter expression callback must have signature bool(string)'
+                string string_filter_return_type = normalize_llvm_type_name(string_filter_callback.return_type)
+                if (string_filter_return_type != 'bool'):
+                    throw 'string[] filter expression must return bool; got ' + string_filter_return_type
+                return refined_value_op(op, 'string[]', 'owned')
     if (op.detail == 'unary'):
         if (op.args.length() < 2):
             return op

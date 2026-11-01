@@ -1,0 +1,45 @@
+int predicate_calls = 0
+
+bool keep_nonempty(string value):
+    predicate_calls += 1
+    return !value.trim().is_empty()
+
+bool fail_on_stop(string value):
+    if (value == 'stop'):
+        throw 'string filter callback failed'
+    return true
+
+int main(string[] args):
+    string[] source = [' first ', '', 'second', ' first ']
+    string[] selected = source.filter(string word -> keep_nonempty(word))
+    print(selected)
+    print(predicate_calls)
+    selected[0] = 'changed'
+    print(source)
+
+    string[] transformed = source.filter(string word -> !word.trim().is_empty()).map_to(string word -> word.trim().replace('i', 'I'))
+    print(transformed)
+
+    const string[] fixed_source = ['left', '', 'right']
+    print(fixed_source.filter(string word -> !word.is_empty()))
+
+    predicate_calls = 0
+    string[] empty_source = []
+    string[] empty_result = empty_source.filter(string word -> keep_nonempty(word))
+    print(empty_result.length())
+    print(predicate_calls)
+
+    try:
+        ['first', 'stop', 'unused'].filter(string word -> fail_on_stop(word))
+    catch (exception error):
+        print(error)
+
+    string[] borrowed_source = ['first', 'stop']
+    try:
+        borrowed_source.filter(string word -> fail_on_stop(word))
+    catch (exception error):
+        print(error)
+    print(borrowed_source)
+
+    print(source.filter(string word -> !word.trim().is_empty()).length())
+    return 0

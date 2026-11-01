@@ -778,6 +778,29 @@ string filter_expression_helper_name(string[] used_names, int start_index):
         index += 1
     return '__tb_int_filter_expression_' + index.to_string()
 
+string string_array_filter_expression_helper_name(string[] used_names, int start_index):
+    int index = start_index
+    while (contains_name(used_names, '__tb_string_array_filter_expression_' + index.to_string())):
+        index += 1
+    return '__tb_string_array_filter_expression_' + index.to_string()
+
+SubmitLambdaRewrite rewrite_string_array_filter_lambda(Node lambda_node, string[] used_names, int next_index):
+    if (lambda_node.kind != 'Lambda' || lambda_node.children.length() != 1 || lambda_node.children[0].kind == 'Block'):
+        return SubmitLambdaRewrite(lambda_node, [], used_names, next_index)
+    BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+    string parameter_type = parameter.type_name
+    if (parameter_type.starts_with('const ')):
+        parameter_type = parameter_type.substring(6)
+    if (parameter_type != 'string'):
+        return SubmitLambdaRewrite(lambda_node, [], used_names, next_index)
+    string[] free_names = submit_lambda_free_identifiers(lambda_node.children[0], [parameter.name], [])
+    if (!free_names.is_empty()):
+        throw 'string[] filter callback captures are not supported'
+    string helper_name = string_array_filter_expression_helper_name(used_names, next_index)
+    Node helper = Node('Function', 'bool ' + helper_name, [Node('Param', 'string ' + parameter.name, []), Node('Return', '', [lambda_node.children[0]])])
+    Node rewritten = Node('FilterStringExpression', lambda_node.value, [Node('Identifier', helper_name, [])])
+    return SubmitLambdaRewrite(rewritten, [helper], add_unique_name(used_names, helper_name), next_index + 1)
+
 SubmitLambdaRewrite rewrite_string_array_map_lambda(Node lambda_node, string[] used_names, int next_index):
     if (lambda_node.kind != 'Lambda' || lambda_node.children.length() != 1 || lambda_node.children[0].kind == 'Block'):
         return SubmitLambdaRewrite(lambda_node, [], used_names, next_index)
@@ -841,6 +864,13 @@ SubmitLambdaRewrite rewrite_array_map_expression(Node node, string[] used_names,
                             rewritten = Node(node.kind, node.value, children)
     if (node.kind == 'MethodCall' && node.value == 'filter'):
         if (children.length() == 2):
+            SubmitLambdaRewrite string_filter = rewrite_string_array_filter_lambda(children[1], current_names, current_index)
+            if (string_filter.node.kind == 'FilterStringExpression'):
+                generated = append_nodes(generated, string_filter.generated)
+                current_names = string_filter.used_names
+                current_index = string_filter.next_index
+                children[1] = string_filter.node
+                rewritten = Node(node.kind, node.value, children)
             if (children[1].kind == 'Lambda'):
                 Node lambda_node = children[1]
                 if (lambda_node.children.length() == 1):
@@ -2149,6 +2179,11 @@ TempResult lower_linear_value(Node node, int next_temp):
                         return TempResult(name, lines, base.next_temp + 1)
         if (node.value == 'filter'):
             if (node.children.length() == 2):
+                if (node.children[1].kind == 'FilterStringExpression' && node.children[1].children.length() == 1 && node.children[1].children[0].kind == 'Identifier'):
+                    string name = temp_name(base.next_temp)
+                    string[] lines = base.lines
+                    lines.push(name + ' = method-call-lambda filter_string_expr ' + base.name + ' ' + node.children[1].value + ' ' + node.children[1].children[0].value)
+                    return TempResult(name, lines, base.next_temp + 1)
                 if (node.children[1].kind == 'FilterIntExpression'):
                     if (node.children[1].children.length() == 1):
                         if (node.children[1].children[0].kind == 'Identifier'):
@@ -2444,6 +2479,10 @@ TempIRResult lower_linear_value_ir(Node node, int next_temp):
                         return TempIRResult(name, instructions, base.next_temp + 1)
         if (node.value == 'filter'):
             if (node.children.length() == 2):
+                if (node.children[1].kind == 'FilterStringExpression' && node.children[1].children.length() == 1 && node.children[1].children[0].kind == 'Identifier'):
+                    string name = temp_name(base.next_temp)
+                    LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', name, 'unknown', 'unknown', 'method-call-lambda', ['filter_string_expr', base.name, node.children[1].value, node.children[1].children[0].value])])
+                    return TempIRResult(name, instructions, base.next_temp + 1)
                 if (node.children[1].kind == 'FilterIntExpression'):
                     if (node.children[1].children.length() == 1):
                         if (node.children[1].children[0].kind == 'Identifier'):
