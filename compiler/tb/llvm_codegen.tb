@@ -2015,6 +2015,29 @@ string emit_owned_string_receiver_release(ParsedFunction function_ir, string val
         return consumer_line
     return consumer_line + '\n' + emit_backend_release_ptr('string', temp_ref(value_name))
 
+string emit_checked_to_int_call(ParsedFunction function_ir, string receiver_name, string result_name):
+    string result_ref = temp_ref(result_name)
+    string parsed_name = result_name + '.to_int.parsed'
+    string parsed_ref = temp_ref(parsed_name)
+    string value_name = result_name + '.to_int.value'
+    string valid_name = result_name + '.to_int.valid'
+    string invalid_label = result_name + '.to_int.invalid'
+    string valid_label = result_name + '.to_int.valid_path'
+    string consumer_line = '  ' + parsed_ref + ' = call %tb_bootstrap_to_int_result @tb_bootstrap_to_int_parse(ptr ' + temp_ref(receiver_name) + ')'
+    consumer_line += '\n  ' + temp_ref(value_name) + ' = extractvalue %tb_bootstrap_to_int_result ' + parsed_ref + ', 0'
+    consumer_line += '\n  ' + temp_ref(valid_name) + ' = extractvalue %tb_bootstrap_to_int_result ' + parsed_ref + ', 1'
+    if (temp_is_owned_string_array_index_result(function_ir, receiver_name)):
+        consumer_line = emit_owned_string_array_index_result_release(function_ir, receiver_name, result_name, consumer_line)
+    else:
+        consumer_line = emit_owned_string_receiver_release(function_ir, receiver_name, result_name, consumer_line)
+    consumer_line += '\n  br i1 ' + temp_ref(valid_name) + ', label %' + valid_label + ', label %' + invalid_label
+    consumer_line += '\n' + invalid_label + ':'
+    consumer_line += '\n  call void @tb_bootstrap_to_int_failure()'
+    consumer_line += '\n  unreachable'
+    consumer_line += '\n' + valid_label + ':'
+    consumer_line += '\n  ' + result_ref + ' = add i64 ' + temp_ref(value_name) + ', 0'
+    return consumer_line
+
 string emit_owned_print_container_release(ParsedFunction function_ir, string value_name, string consumer_temp_name, string consumer_line):
     string value_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, value_name))
     if (value_type != 'int[]' && value_type != 'string[]' && value_type != 'set<int>'):
@@ -3751,6 +3774,8 @@ void analyze_program_features(ProgramIR program, string[] map_types):
                         if (base_type.starts_with('map<') && normalize_llvm_type_name(map_value_type(base_type)) == 'int'):
                             needs_int_to_string = true
                     string method_base_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[1]))
+                    if (op.args[0] == 'to_int' && method_base_type == 'string'):
+                        needs_to_int = true
                     if (op.args[0] == 'to_num'):
                         if (method_base_type == 'string'):
                             if (lookup_named_function_decl(program, 'to_num').header == ''):
@@ -3828,6 +3853,9 @@ void analyze_program_features(ProgramIR program, string[] map_types):
         LLVM_SCAN_NEEDS_MAP_TO_EDGE_DISTANCE = 1
     if (needs_flat_map_edges_for_point):
         LLVM_SCAN_NEEDS_FLAT_MAP_EDGES_FOR_POINT = 1
+    if (needs_to_int):
+        needs_throw = true
+        needs_runtime_string_copy = true
     if (needs_runtime_string_copy):
         LLVM_SCAN_NEEDS_RUNTIME_STRING_COPY = 1
     if (needs_backend_free):
@@ -6011,8 +6039,7 @@ string emit_call_value_instruction_core(ProgramIR program, ParsedFunction functi
     if (call_name == 'to_int'):
         if (op.args.length() != 2):
             throw 'unsupported llvm to_int arity'
-        string to_int_line = '  ' + lhs + ' = call i64 @tb_bootstrap_to_int(ptr ' + temp_ref(op.args[1]) + ')'
-        to_int_line = emit_owned_string_array_index_result_release(function_ir, op.args[1], op.lhs, to_int_line)
+        string to_int_line = emit_checked_to_int_call(function_ir, op.args[1], op.lhs)
         return emit_tracked_builtin_call_line(to_int_line)
     if (call_name == 'to_string'):
         if (op.args.length() != 2):
@@ -6314,18 +6341,7 @@ string emit_string_method_call_value_instruction(ProgramIR program, ParsedFuncti
         if (method_base_type == 'num'):
             return '  ' + lhs + '.text = call ptr @tb_bootstrap_num_to_string(%tb_bootstrap_num ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = call i64 @tb_bootstrap_hash_string(ptr ' + temp_ref(op.lhs + '.text') + ')\n  call void @tb_release(ptr ' + temp_ref(op.lhs + '.text') + ')'
     if (method_name == 'to_int'):
-        LinearInstruction source_op = lookup_temp_instruction(function_ir, op.args[1])
-        if (source_op.kind == 'value' && source_op.detail == 'method-call' && source_op.args.length() >= 2 && source_op.args[0] == 'substring'):
-            if (source_op.args.length() == 3):
-                return '  ' + lhs + ' = call i64 @tb_bootstrap_to_int_start(ptr ' + temp_ref(source_op.args[1]) + ', i64 ' + temp_ref(source_op.args[2]) + ')'
-            if (source_op.args.length() == 4):
-                return '  ' + lhs + ' = call i64 @tb_bootstrap_to_int_range(ptr ' + temp_ref(source_op.args[1]) + ', i64 ' + temp_ref(source_op.args[2]) + ', i64 ' + temp_ref(source_op.args[3]) + ')'
-        if (source_op.kind == 'value' && source_op.detail == 'call' && !source_op.args.is_empty() && source_op.args[0] == 'substring'):
-            if (source_op.args.length() == 3):
-                return '  ' + lhs + ' = call i64 @tb_bootstrap_to_int_start(ptr ' + temp_ref(source_op.args[1]) + ', i64 ' + temp_ref(source_op.args[2]) + ')'
-            if (source_op.args.length() == 4):
-                return '  ' + lhs + ' = call i64 @tb_bootstrap_to_int_range(ptr ' + temp_ref(source_op.args[1]) + ', i64 ' + temp_ref(source_op.args[2]) + ', i64 ' + temp_ref(source_op.args[3]) + ')'
-        return '  ' + lhs + ' = call i64 @tb_bootstrap_to_int(ptr ' + temp_ref(op.args[1]) + ')'
+        return emit_checked_to_int_call(function_ir, op.args[1], op.lhs)
     if (method_name == 'index_of' && method_base_type == 'string'):
         if (op.args.length() != 3):
             throw 'bootstrap index_of currently requires one needle argument'
@@ -10003,8 +10019,16 @@ string[] emit_integer_shift_helpers():
     return llvm_embedded_helper_text('integer_shifts.ll').split_lines()
 
 
-string[] emit_string_helpers(bool include_num_to_string):
-    string[] lines = llvm_embedded_helper_text('string_base.ll').split_lines()
+string[] emit_string_helpers(bool include_num_to_string, bool include_to_int):
+    string[] lines = []
+    bool in_to_int_helpers = false
+    for (string line in llvm_embedded_helper_text('string_base.ll').split_lines()):
+        if (line == '; __TB_TO_INT_HELPERS_BEGIN__'):
+            in_to_int_helpers = true
+        else if (line == '; __TB_TO_INT_HELPERS_END__'):
+            in_to_int_helpers = false
+        else if (!in_to_int_helpers || include_to_int):
+            lines.push(line)
     if (include_num_to_string):
         for (string line in llvm_embedded_helper_text('string_num_to_string.ll').split_lines()):
             lines.push(line)
@@ -11091,7 +11115,7 @@ string[] llvm_codegen_ir(ProgramIR program):
         for (string helper in llvm_embedded_helper_text('array_index.ll').split_lines()):
             lines.push(helper)
     if (needs_string_helpers):
-        for (string helper in emit_string_helpers(needs_num_hash || needs_num_to_string)):
+        for (string helper in emit_string_helpers(needs_num_hash || needs_num_to_string, needs_to_int)):
             lines.push(helper)
     if (needs_string_array_helpers):
         for (string helper in emit_string_array_helpers()):
@@ -11452,7 +11476,7 @@ void llvm_print_ir(ProgramIR program):
         for (string line in llvm_embedded_helper_text('array_index.ll').split_lines()):
             print(line)
     if (needs_string_helpers):
-        string[] string_helper_lines = emit_string_helpers(needs_num_hash || needs_num_to_string)
+        string[] string_helper_lines = emit_string_helpers(needs_num_hash || needs_num_to_string, needs_to_int)
         for (string line in string_helper_lines):
             print(line)
     if (needs_string_array_helpers):

@@ -1,4 +1,5 @@
 %tb_bootstrap_rc_header = type { i64, i64, i64 }
+%tb_bootstrap_to_int_result = type { i64, i1 }
 @tb_rt_sc = internal global i64 0
 @tb_rt_sb = internal global i64 0
 @tb_rt_xc = internal global i64 0
@@ -711,11 +712,119 @@ copy:
   call void @tb_release(ptr %left)
   ret ptr %data
 }
-define private i64 @tb_bootstrap_to_int(ptr %src) {
+; __TB_TO_INT_HELPERS_BEGIN__
+@.msg.to_int.invalid = private unnamed_addr constant [24 x i8] c"to_int: invalid integer\00"
+define private void @tb_bootstrap_to_int_failure() {
 entry:
-  %value = call i64 @strtoll(ptr %src, ptr null, i32 10)
-  ret i64 %value
+  %handler = load ptr, ptr @__tb_exception_handler
+  %has.handler = icmp ne ptr %handler, null
+  br i1 %has.handler, label %unwind, label %fatal
+unwind:
+  %message = call ptr @tb_bootstrap_string_copy(ptr @.msg.to_int.invalid)
+  store ptr %message, ptr @__tb_exception_message
+  call void @longjmp(ptr %handler, i32 1)
+  unreachable
+fatal:
+  call i32 @puts(ptr @.msg.to_int.invalid)
+  call void @exit(i32 1)
+  unreachable
 }
+define private %tb_bootstrap_to_int_result @tb_bootstrap_to_int_parse(ptr %src) {
+entry:
+  %src.null = icmp eq ptr %src, null
+  br i1 %src.null, label %invalid, label %leading.start
+leading.start:
+  br label %leading.cond
+leading.cond:
+  %leading.index = phi i64 [0, %leading.start], [%leading.next, %leading.step]
+  %leading.ptr = getelementptr inbounds i8, ptr %src, i64 %leading.index
+  %leading.char = load i8, ptr %leading.ptr
+  %leading.space = icmp eq i8 %leading.char, 32
+  %leading.tab = icmp eq i8 %leading.char, 9
+  %leading.lf = icmp eq i8 %leading.char, 10
+  %leading.cr = icmp eq i8 %leading.char, 13
+  %leading.vt = icmp eq i8 %leading.char, 11
+  %leading.ff = icmp eq i8 %leading.char, 12
+  %leading.ws.a = or i1 %leading.space, %leading.tab
+  %leading.ws.b = or i1 %leading.lf, %leading.cr
+  %leading.ws.c = or i1 %leading.vt, %leading.ff
+  %leading.ws.d = or i1 %leading.ws.a, %leading.ws.b
+  %leading.ws = or i1 %leading.ws.d, %leading.ws.c
+  br i1 %leading.ws, label %leading.step, label %sign.check
+leading.step:
+  %leading.next = add i64 %leading.index, 1
+  br label %leading.cond
+sign.check:
+  %negative = icmp eq i8 %leading.char, 45
+  %positive = icmp eq i8 %leading.char, 43
+  %has.sign = or i1 %negative, %positive
+  %digit.start = zext i1 %has.sign to i64
+  %digit.index.start = add i64 %leading.index, %digit.start
+  br label %digits.cond
+digits.cond:
+  %index = phi i64 [%digit.index.start, %sign.check], [%next.index, %digits.next]
+  %magnitude = phi i64 [0, %sign.check], [%next.magnitude, %digits.next]
+  %has.digit = phi i1 [false, %sign.check], [true, %digits.next]
+  %char.ptr = getelementptr inbounds i8, ptr %src, i64 %index
+  %char = load i8, ptr %char.ptr
+  %end = icmp eq i8 %char, 0
+  br i1 %end, label %digits.done, label %classify
+classify:
+  %digit.low = icmp uge i8 %char, 48
+  %digit.high = icmp ule i8 %char, 57
+  %is.digit = and i1 %digit.low, %digit.high
+  br i1 %is.digit, label %overflow.check, label %trailing.start
+overflow.check:
+  %digit.byte = sub i8 %char, 48
+  %digit.value = zext i8 %digit.byte to i64
+  %magnitude.too.large = icmp ugt i64 %magnitude, 922337203685477580
+  %magnitude.at.limit = icmp eq i64 %magnitude, 922337203685477580
+  %last.limit = select i1 %negative, i64 8, i64 7
+  %digit.too.large = icmp ugt i64 %digit.value, %last.limit
+  %limit.overflow = and i1 %magnitude.at.limit, %digit.too.large
+  %overflow = or i1 %magnitude.too.large, %limit.overflow
+  br i1 %overflow, label %invalid, label %digits.next
+digits.next:
+  %times.ten = mul i64 %magnitude, 10
+  %next.magnitude = add i64 %times.ten, %digit.value
+  %next.index = add i64 %index, 1
+  br label %digits.cond
+trailing.start:
+  br label %trailing.cond
+trailing.cond:
+  %trailing.index = phi i64 [%index, %trailing.start], [%trailing.next, %trailing.step]
+  %trailing.ptr = getelementptr inbounds i8, ptr %src, i64 %trailing.index
+  %trailing.char = load i8, ptr %trailing.ptr
+  %trailing.end = icmp eq i8 %trailing.char, 0
+  %trailing.space = icmp eq i8 %trailing.char, 32
+  %trailing.tab = icmp eq i8 %trailing.char, 9
+  %trailing.lf = icmp eq i8 %trailing.char, 10
+  %trailing.cr = icmp eq i8 %trailing.char, 13
+  %trailing.vt = icmp eq i8 %trailing.char, 11
+  %trailing.ff = icmp eq i8 %trailing.char, 12
+  %trailing.ws.a = or i1 %trailing.space, %trailing.tab
+  %trailing.ws.b = or i1 %trailing.lf, %trailing.cr
+  %trailing.ws.c = or i1 %trailing.vt, %trailing.ff
+  %trailing.ws.d = or i1 %trailing.ws.a, %trailing.ws.b
+  %trailing.ws = or i1 %trailing.ws.d, %trailing.ws.c
+  br i1 %trailing.end, label %digits.done, label %trailing.classify
+trailing.classify:
+  br i1 %trailing.ws, label %trailing.step, label %invalid
+trailing.step:
+  %trailing.next = add i64 %trailing.index, 1
+  br label %trailing.cond
+digits.done:
+  br i1 %has.digit, label %success, label %invalid
+success:
+  %negative.value = sub i64 0, %magnitude
+  %value = select i1 %negative, i64 %negative.value, i64 %magnitude
+  %result.value = insertvalue %tb_bootstrap_to_int_result undef, i64 %value, 0
+  %result.valid = insertvalue %tb_bootstrap_to_int_result %result.value, i1 true, 1
+  ret %tb_bootstrap_to_int_result %result.valid
+invalid:
+  ret %tb_bootstrap_to_int_result zeroinitializer
+}
+; __TB_TO_INT_HELPERS_END__
 define private i64 @tb_bootstrap_to_int_start(ptr %src, i64 %start) {
 entry:
   %len = call i64 @strlen(ptr %src)

@@ -558,7 +558,14 @@ Core IO and string helpers
 Conversion and numeric helpers
 
 - to_int(s: string) -> int
-  - Parse integer from string. If `s` is compile-time known, resolves at compile time.
+  - Parse a signed 64-bit ASCII base-10 integer. Optional ASCII whitespace (space,
+    tab, line feed, carriage return, vertical tab, or form feed) may surround
+    an optional sign and one or more ASCII digits. The entire trimmed string
+    must be a valid integer and fit in the signed 64-bit range. Invalid, null, or
+    out-of-range input raises `to_int: invalid integer`. If `s` is compile-time
+    known, it may resolve at compile time. A declared function or record named
+    `to_int` keeps precedence.
+  - The same conversion is available as `s.to_int()` with no explicit arguments.
 
 - to_num(s: string) -> num
   - Parse an ASCII decimal at runtime into a signed 64-bit coefficient and decimal scale, preserving fractional trailing zeroes. The input allows an optional `+` or `-`, digits, and at most one decimal point; at least one digit is required. Whitespace and exponents are not accepted. Invalid input, an out-of-range coefficient, or a scale above 2,147,483,647 raises `to_num: invalid number`. A declared function or record named `to_num` keeps precedence over the builtin.
