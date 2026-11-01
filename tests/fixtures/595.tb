@@ -1,0 +1,22 @@
+int count_true(bool[] flags):
+    return flags.sum()
+
+int main(string[] args):
+    thread_pool pool = thread_pool(1)
+    bool[] flags = [true, false, true]
+    future<int> count = pool.submit(bool[] input -> count_true(input), flags)
+    future<bool> first = pool.submit(bool[] input -> {
+        if (input.length() > 0) {
+            return input[0]
+        }
+        return false
+    }, flags)
+    flags[0] = false
+    print(count.await())
+    print(count.await())
+    print(first.await())
+
+    bool[] empty = []
+    future<bool> empty_check = pool.submit(bool[] input -> input.is_empty(), empty)
+    print(empty_check.await())
+    return 0
