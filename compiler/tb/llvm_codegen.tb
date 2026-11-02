@@ -3832,6 +3832,10 @@ void analyze_program_features(ProgramIR program, string[] map_types):
                         needs_string_array_map_expression = true
                         needs_string_array = true
                         needs_throw = true
+                    if (op.args[0] == 'map_to_string_expr_captured'):
+                        needs_string_array_map_expression = true
+                        needs_string_array = true
+                        needs_throw = true
                     if (op.args[0] == 'filter_string_expr'):
                         needs_string_array_filter_expression = true
                         needs_string_array = true
@@ -5235,6 +5239,30 @@ string emit_bootstrap_fixture_lambda_instruction(ProgramIR program, ParsedFuncti
             release_flag = 'true'
         string call_line = '  ' + lhs + ' = call ptr @tb_bootstrap_string_array_map_string_expr(ptr ' + temp_ref(op.args[1]) + ', ptr @' + op.args[3] + ', i1 ' + release_flag + ')'
         return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, call_line)
+    if (op.args[0] == 'map_to_string_expr_captured'):
+        if (op.args.length() < 5):
+            throw 'unsupported captured string[] map_to expression lambda arity'
+        string[] capture_types = []
+        for (int index = 4; index < op.args.length(); index += 1):
+            string capture_type = llvm_type(lookup_temp_llvm_type(function_ir, op.args[index]))
+            if (!(capture_type == 'i64' || capture_type == 'i1' || capture_type == 'ptr')):
+                throw 'unsupported string[] map_to capture type'
+            capture_types.push(capture_type)
+        string context_type = '{ ' + join_llvm_strings(capture_types, ', ') + ' }'
+        string context_ref = temp_ref(op.lhs) + '.capture.context'
+        string lines = '  ' + context_ref + ' = alloca ' + context_type
+        for (int index = 0; index < capture_types.length(); index += 1):
+            string field = temp_ref(op.lhs) + '.capture.field.' + index.to_string()
+            lines += '\n  ' + field + ' = getelementptr ' + context_type + ', ptr ' + context_ref + ', i32 0, i32 ' + index.to_string()
+            lines += '\n  store ' + capture_types[index] + ' ' + temp_ref(op.args[index + 4]) + ', ptr ' + field
+        bool release_receiver = array_scalar_query_releases_receiver(function_ir, op.args[1], op.lhs)
+        string release_flag = 'false'
+        if (release_receiver):
+            release_flag = 'true'
+        string callback_name = 'tb_bootstrap_string_array_map_capture_' + op.args[3]
+        string call_line = '  ' + lhs + ' = call ptr @tb_bootstrap_string_array_map_string_expr_captured(ptr ' + temp_ref(op.args[1]) + ', ptr @' + callback_name + ', ptr ' + context_ref + ', i1 ' + release_flag + ')'
+        lines += '\n' + call_line
+        return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, lines)
     if (op.args[0] == 'map_to_string_length'):
         return '  ' + lhs + ' = call ptr @tb_bootstrap_string_array_map_to_length(ptr ' + temp_ref(op.args[1]) + ')'
     if (op.args[0] == 'map_to_parse_point'):
@@ -7682,7 +7710,7 @@ string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, Lin
                 return emit_prio_q_lambda_instruction(program, function_ir, op)
             if (op.args[0] == 'sort_int_asc' || op.args[0] == 'sort_int_desc' || op.args[0] == 'sort_record_field_asc'):
                 return emit_sort_lambda_instruction(program, function_ir, op)
-            if (op.args[0] == 'filter_string_expr' || op.args[0] == 'map_to_string_expr' || op.args[0] == 'map_to_parse_point' || op.args[0] == 'map_to_string_length' || op.args[0] == 'map_to_edge_distance' || op.args[0] == 'flat_map_edges_for_point'):
+            if (op.args[0] == 'filter_string_expr' || op.args[0] == 'map_to_string_expr' || op.args[0] == 'map_to_string_expr_captured' || op.args[0] == 'map_to_parse_point' || op.args[0] == 'map_to_string_length' || op.args[0] == 'map_to_edge_distance' || op.args[0] == 'flat_map_edges_for_point'):
                 return emit_bootstrap_fixture_lambda_instruction(program, function_ir, op)
         if (op.args.length() >= 5):
             if (op.args[0] == 'map_to'):
@@ -9629,6 +9657,42 @@ string[] emit_function(ProgramIR program, ParsedFunction function_ir, bool needs
     append_function_lines(lines, program, function_ir, needs_runtime_global_init)
     return lines
 
+string[] emit_string_map_capture_thunks(ProgramIR program):
+    string[] lines = []
+    string[] emitted_callbacks = []
+    for (ParsedFunction function_ir : program.functions):
+        for (BlockIR block : function_ir.blocks):
+            for (LinearInstruction op : block.instructions):
+                if (op.kind != 'value' || op.detail != 'method-call-lambda' || op.args.is_empty() || op.args[0] != 'map_to_string_expr_captured' || op.args.length() < 5):
+                    continue
+                string callback_name = op.args[3]
+                bool already_emitted = false
+                for (string emitted_callback : emitted_callbacks):
+                    if (emitted_callback == callback_name):
+                        already_emitted = true
+                if (already_emitted):
+                    continue
+                emitted_callbacks.push(callback_name)
+                string[] capture_types = []
+                for (int capture_index = 4; capture_index < op.args.length(); capture_index += 1):
+                    capture_types.push(llvm_type(lookup_temp_llvm_type(function_ir, op.args[capture_index])))
+                string context_type = '{ ' + join_llvm_strings(capture_types, ', ') + ' }'
+                string thunk_name = 'tb_bootstrap_string_array_map_capture_' + callback_name
+                lines.push('define private ptr @' + thunk_name + '(ptr %item, ptr %context) {')
+                lines.push('entry:')
+                string[] call_args = ['ptr %item']
+                for (int capture_index = 0; capture_index < capture_types.length(); capture_index += 1):
+                    string field = '%capture.field.' + capture_index.to_string()
+                    string value = '%capture.value.' + capture_index.to_string()
+                    lines.push('  ' + field + ' = getelementptr ' + context_type + ', ptr %context, i32 0, i32 ' + capture_index.to_string())
+                    lines.push('  ' + value + ' = load ' + capture_types[capture_index] + ', ptr ' + field)
+                    call_args.push(capture_types[capture_index] + ' ' + value)
+                lines.push('  %mapped = call ptr @' + callback_name + '(' + join_llvm_strings(call_args, ', ') + ')')
+                lines.push('  ret ptr %mapped')
+                lines.push('}')
+                lines.push('')
+    return lines
+
 string emit_global_initializer(GlobalDeclIR global_decl):
     if (global_decl.instructions.length() != 1):
         throw 'llvm bootstrap backend only supports simple scalar global initializers'
@@ -11351,6 +11415,8 @@ string[] llvm_codegen_ir(ProgramIR program):
         if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
             LLVM_PHASE_FUNCTION_MS += time_ms() - function_start_ms
             LLVM_PHASE_FUNCTION_COUNT += 1
+    for (string line in emit_string_map_capture_thunks(program)):
+        lines.push(line)
     for (string comparator_name in LLVM_NAMED_INT_SORT_COMPARATOR_NAMES):
         for (string helper in emit_named_int_sort_helper(comparator_name)):
             lines.push(helper)
@@ -11731,6 +11797,7 @@ void llvm_print_ir(ProgramIR program):
         for (string line in function_lines):
             print(line)
         print('')
+    print_llvm_lines(emit_string_map_capture_thunks(program))
     for (string comparator_name in LLVM_NAMED_INT_SORT_COMPARATOR_NAMES):
         print_llvm_lines(emit_named_int_sort_helper(comparator_name))
         print('')

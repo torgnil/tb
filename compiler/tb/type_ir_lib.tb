@@ -2366,6 +2366,18 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
                 if (normalize_llvm_type_name(base_type) != 'string[]'):
                     throw 'string[] map_to callback requires string[] receiver; got ' + base_type
                 return refined_value_op(op, 'string[]', 'owned')
+            if (op.args[0] == 'map_to_string_expr_captured'):
+                if (normalize_llvm_type_name(base_type) != 'string[]'):
+                    throw 'string[] map_to callback requires string[] receiver; got ' + base_type
+                if (op.args.length() < 5):
+                    throw 'string[] map_to callback requires at least one scalar capture'
+                int capture_index = 4
+                while (capture_index < op.args.length()):
+                    string capture_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[capture_index]))
+                    if (!(capture_type == 'int' || capture_type == 'bool' || capture_type == 'string')):
+                        throw 'string[] map_to callback captures must be int, bool, or string; got ' + capture_type
+                    capture_index += 1
+                return refined_value_op(op, 'string[]', 'owned')
             if (op.args[0] == 'map_to_edge_distance' && base_type == 'int[]'):
                 return refined_value_op(op, 'Edge[]', 'owned')
             if (op.args[0] == 'flat_map_edges_for_point' && base_type == 'int[]'):

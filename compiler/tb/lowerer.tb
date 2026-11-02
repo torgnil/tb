@@ -818,6 +818,29 @@ SubmitLambdaRewrite rewrite_string_array_map_lambda(Node lambda_node, string[] u
     Node rewritten = Node('MapStringExpression', lambda_node.value, [Node('Identifier', helper_name, [])])
     return SubmitLambdaRewrite(rewritten, [helper], add_unique_name(used_names, helper_name), next_index + 1)
 
+ArrayScalarCaptureResult string_array_map_scalar_captures(Node lambda_node, BindingIR[] bindings):
+    if (lambda_node.kind != 'Lambda' || lambda_node.children.length() != 1 || lambda_node.children[0].kind == 'Block'):
+        return ArrayScalarCaptureResult([], false)
+    BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+    string parameter_type = parameter.type_name
+    if (parameter_type.starts_with('const ')):
+        parameter_type = parameter_type.substring(6)
+    if (parameter_type != 'string'):
+        return ArrayScalarCaptureResult([], false)
+    string[] free_names = submit_lambda_free_identifiers(lambda_node.children[0], [parameter.name], [])
+    BindingIR[] captured = []
+    for (string name : free_names):
+        BindingIR binding = const_lookup_binding(bindings, name)
+        if (binding.name == ''):
+            return ArrayScalarCaptureResult([], false)
+        string capture_type = binding.type_name
+        if (capture_type.starts_with('const ')):
+            capture_type = capture_type.substring(6)
+        if (!(capture_type == 'int' || capture_type == 'bool' || capture_type == 'string')):
+            return ArrayScalarCaptureResult([], false)
+        captured.push(binding)
+    return ArrayScalarCaptureResult(captured, true)
+
 SubmitLambdaRewrite rewrite_array_map_expression(Node node, string[] used_names, int next_index, Node[] functions):
     if (node.kind == 'Lambda' || node.kind == 'Lambda0' || node.kind == 'Lambda2'):
         return SubmitLambdaRewrite(node, [], used_names, next_index)
@@ -1307,6 +1330,26 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
         current_index = rewritten_child.next_index
 
     Node rewritten = Node(node.kind, node.value, rewritten_children)
+    if (!top_level_global_initializer && node.kind == 'MethodCall' && node.value == 'map_to' && node.children.length() == 2):
+        Node lambda_node = node.children[1]
+        ArrayScalarCaptureResult capture_result = string_array_map_scalar_captures(lambda_node, bindings)
+        if (capture_result.complete && !capture_result.captures.is_empty()):
+            BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+            string helper_name = string_array_map_expression_helper_name(current_names, current_index)
+            current_names = add_unique_name(current_names, helper_name)
+            current_index += 1
+            Node[] helper_children = [Node('Param', 'string ' + parameter.name, [])]
+            Node[] mapped_captures = [Node('Identifier', helper_name, [])]
+            for (BindingIR binding : capture_result.captures):
+                string capture_type = binding.type_name
+                if (capture_type.starts_with('const ')):
+                    capture_type = capture_type.substring(6)
+                helper_children.push(Node('Param', 'const ' + capture_type + ' ' + binding.name, []))
+                mapped_captures.push(Node('Identifier', binding.name, []))
+            helper_children.push(Node('Return', '', [lambda_node.children[0]]))
+            generated.push(Node('Function', 'string ' + helper_name, helper_children))
+            rewritten_children[1] = Node('MapStringExpression', lambda_node.value, mapped_captures)
+            rewritten = Node(node.kind, node.value, rewritten_children)
     if (rewrite_worker):
         Node lambda_node = node.children[1]
         if (lambda_node.kind == 'Lambda0' && captured.length() > 1):
@@ -2206,11 +2249,24 @@ TempResult lower_linear_value(Node node, int next_temp):
                     return TempResult(name, lines, height.next_temp + 1)
         if (node.value == 'map_to'):
             if (node.children.length() == 2):
-                if (node.children[1].kind == 'MapStringExpression' && node.children[1].children.length() == 1 && node.children[1].children[0].kind == 'Identifier'):
+                if (node.children[1].kind == 'MapStringExpression' && node.children[1].children.length() >= 1 && node.children[1].children[0].kind == 'Identifier'):
                     string name = temp_name(base.next_temp)
                     string[] lines = base.lines
-                    lines.push(name + ' = method-call-lambda map_to_string_expr ' + base.name + ' ' + node.children[1].value + ' ' + node.children[1].children[0].value)
-                    return TempResult(name, lines, base.next_temp + 1)
+                    int next_temp = base.next_temp
+                    string op_name = 'map_to_string_expr'
+                    if (node.children[1].children.length() > 1):
+                        op_name = 'map_to_string_expr_captured'
+                    string[] capture_names = []
+                    for (int capture_index = 1; capture_index < node.children[1].children.length(); capture_index += 1):
+                        TempResult capture_value = lower_linear_value(node.children[1].children[capture_index], next_temp)
+                        lines = append_lines(lines, capture_value.lines)
+                        capture_names.push(capture_value.name)
+                        next_temp = capture_value.next_temp
+                    string op_line = name + ' = method-call-lambda ' + op_name + ' ' + base.name + ' ' + node.children[1].value + ' ' + node.children[1].children[0].value
+                    if (!capture_names.is_empty()):
+                        op_line += ' ' + join_strings(capture_names, ' ')
+                    lines.push(op_line)
+                    return TempResult(name, lines, next_temp + 1)
                 if (node.children[1].kind == 'MapIntExpression'):
                     if (node.children[1].children.length() == 1):
                         if (node.children[1].children[0].kind == 'Identifier'):
@@ -2504,9 +2560,20 @@ TempIRResult lower_linear_value_ir(Node node, int next_temp):
                     return TempIRResult(name, instructions, height.next_temp + 1)
         if (node.value == 'map_to'):
             if (node.children.length() == 2):
-                if (node.children[1].kind == 'MapStringExpression' && node.children[1].children.length() == 1 && node.children[1].children[0].kind == 'Identifier'):
-                    LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', temp_name(base.next_temp), 'unknown', 'unknown', 'method-call-lambda', ['map_to_string_expr', base.name, node.children[1].value, node.children[1].children[0].value])])
-                    return TempIRResult(temp_name(base.next_temp), instructions, base.next_temp + 1)
+                if (node.children[1].kind == 'MapStringExpression' && node.children[1].children.length() >= 1 && node.children[1].children[0].kind == 'Identifier'):
+                    int next_temp = base.next_temp
+                    LinearInstruction[] instructions = base.instructions
+                    string[] args = ['map_to_string_expr', base.name, node.children[1].value, node.children[1].children[0].value]
+                    if (node.children[1].children.length() > 1):
+                        args[0] = 'map_to_string_expr_captured'
+                        for (int capture_index = 1; capture_index < node.children[1].children.length(); capture_index += 1):
+                            TempIRResult capture_value = lower_linear_value_ir(node.children[1].children[capture_index], next_temp)
+                            instructions = append_instructions(instructions, capture_value.instructions)
+                            args.push(capture_value.name)
+                            next_temp = capture_value.next_temp
+                    string name = temp_name(next_temp)
+                    instructions.push(LinearInstruction('value', name, 'unknown', 'unknown', 'method-call-lambda', args))
+                    return TempIRResult(name, instructions, next_temp + 1)
                 if (node.children[1].kind == 'MapIntExpression'):
                     if (node.children[1].children.length() == 1):
                         if (node.children[1].children[0].kind == 'Identifier'):
