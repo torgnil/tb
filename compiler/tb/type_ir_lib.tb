@@ -371,6 +371,20 @@ string lookup_record_field_type(RecordFieldIR[] fields, string record_name, stri
         index -= 1
     return 'unknown'
 
+private map<string, string> index_record_field_types(RecordFieldIR[] fields):
+    map<string, string> field_types = {}
+    for (RecordFieldIR field in fields):
+        field_types[field.record_name + '.' + field.field_name] = field.field_type
+    return field_types
+
+private string lookup_indexed_record_field_type(map<string, string> field_types, string record_name, string field_name):
+    if (TYPE_IR_PROFILE_ACTIVE != 0):
+        TYPE_IR_LOOKUP_RECORD_FIELD_CALLS += 1
+    string key = record_name + '.' + field_name
+    if (field_types.contains(key)):
+        return field_types[key]
+    return 'unknown'
+
 bool record_type_exists(string[] record_names, string record_name):
     if (TYPE_IR_PROFILE_ACTIVE != 0):
         TYPE_IR_RECORD_TYPE_EXISTS_CALLS += 1
@@ -1695,7 +1709,7 @@ LinearInstruction refine_string_method_signature(LinearInstruction op, string me
         return refined_value_op(op, 'int', 'plain')
     return op
 
-LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bindings, FunctionSigIR[] functions, RecordFieldIR[] record_fields, string[] record_names, EnumTypeIR[] enum_types, string[] temp_types):
+LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bindings, FunctionSigIR[] functions, RecordFieldIR[] record_fields, map<string, string> field_types, string[] record_names, EnumTypeIR[] enum_types, string[] temp_types):
     if (op.kind != 'value'):
         return op
     if (op.detail == 'foreach-value'):
@@ -2197,7 +2211,7 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
         string record_name = record_name_from_type(base_type)
         string result_type = lookup_cached_field_type(TYPE_IR_FIELD_TYPE_CACHE_KEYS, TYPE_IR_FIELD_TYPE_CACHE_VALUES, record_name, op.args[0])
         if (result_type == 'unknown'):
-            result_type = lookup_record_field_type(record_fields, record_name, op.args[0])
+            result_type = lookup_indexed_record_field_type(field_types, record_name, op.args[0])
             TYPE_IR_FIELD_TYPE_CACHE_KEYS.push(record_name + '.' + op.args[0])
             TYPE_IR_FIELD_TYPE_CACHE_VALUES.push(result_type)
         return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
@@ -2575,7 +2589,7 @@ private BindingIR[] combined_refine_bindings(BindingIR[] globals, BindingIR[] pa
         bindings.push(binding)
     return bindings
 
-RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, BindingIR[] bindings, FunctionSigIR[] functions, RecordFieldIR[] record_fields, string[] record_names, EnumTypeIR[] enum_types, LinearInstruction[] prior_instructions, string[] temp_types, bool regex_imported):
+RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, BindingIR[] bindings, FunctionSigIR[] functions, RecordFieldIR[] record_fields, map<string, string> field_types, string[] record_names, EnumTypeIR[] enum_types, LinearInstruction[] prior_instructions, string[] temp_types, bool regex_imported):
 
     bool has_integer_enum = false
     for (EnumTypeIR enum_type : enum_types):
@@ -2652,7 +2666,7 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                         join_args.push(op.args[join_arg_index])
                         join_arg_index += 1
                     value_op = LinearInstruction('value', op.lhs, op.result_type, op.ownership_mode, 'method-call', join_args)
-        LinearInstruction current = refine_value_instruction(value_op, bindings, functions, record_fields, record_names, enum_types, temp_types)
+        LinearInstruction current = refine_value_instruction(value_op, bindings, functions, record_fields, field_types, record_names, enum_types, temp_types)
         if (current.kind == 'value' && (current.detail == 'call' || current.detail == 'method-call')):
             if (current.args.length() == 3):
                 if (current.args[0] == 'split'):
@@ -2786,7 +2800,7 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                 string base_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[0]))
                 string record_name = record_name_from_type(base_type)
                 if (record_name != ''):
-                    string field_type = normalize_llvm_type_name(lookup_record_field_type(record_fields, record_name, current.detail))
+                    string field_type = normalize_llvm_type_name(lookup_indexed_record_field_type(field_types, record_name, current.detail))
                     if (field_type.ends_with('[]')):
                         string value_name = current.args[1]
                         if (lookup_temp_type_slot(temp_types, value_name) == '[]'):
@@ -2912,8 +2926,9 @@ BlockIR refine_block(BlockIR block, BindingIR[] globals, BindingIR[] params, Bin
     while (temp_types.length() <= max_index):
         temp_types.push('unknown')
     BindingIR[] bindings = combined_refine_bindings(globals, params, locals)
+    map<string, string> field_types = index_record_field_types(record_fields)
     reset_type_ir_lookup_caches()
-    RefineInstructionsResult refined = refine_instructions(block.instructions, bindings, functions, record_fields, record_names, enum_types, prior_instructions, temp_types, false)
+    RefineInstructionsResult refined = refine_instructions(block.instructions, bindings, functions, record_fields, field_types, record_names, enum_types, prior_instructions, temp_types, false)
     return BlockIR(block.label.substring(0), refined.instructions, clone_terminator_ir(block.terminator))
 
 GlobalDeclIR refine_global(GlobalDeclIR global_decl, BindingIR[] globals, FunctionSigIR[] functions, RecordFieldIR[] record_fields, string[] record_names, EnumTypeIR[] enum_types, LinearInstruction[] prior_instructions):
@@ -2925,7 +2940,8 @@ GlobalDeclIR refine_global(GlobalDeclIR global_decl, BindingIR[] globals, Functi
         max_index = global_max_index
     while (temp_types.length() <= max_index):
         temp_types.push('unknown')
-    RefineInstructionsResult refined_result = refine_instructions(global_decl.instructions, globals, functions, record_fields, record_names, enum_types, prior_instructions, temp_types, false)
+    map<string, string> field_types = index_record_field_types(record_fields)
+    RefineInstructionsResult refined_result = refine_instructions(global_decl.instructions, globals, functions, record_fields, field_types, record_names, enum_types, prior_instructions, temp_types, false)
     LinearInstruction[] refined = refined_result.instructions
     BindingIR binding = ir_parse_binding_decl(strip_prefix(global_decl.header, 'global '))
     string value_type = lookup_temp_type(refined, global_decl.value_name)
@@ -2969,7 +2985,7 @@ ParsedFunction resolve_conditional_bindings(ParsedFunction function_ir):
         blocks.push(BlockIR(block.label, instructions, block.terminator))
     return ParsedFunction(function_ir.header, function_ir.name, function_ir.source_name, function_ir.module_id, function_ir.is_private, function_ir.return_type, function_ir.params, locals, blocks)
 
-ParsedFunction refine_function(ParsedFunction function_ir, BindingIR[] globals, FunctionSigIR[] functions, RecordFieldIR[] record_fields, string[] record_names, EnumTypeIR[] enum_types, bool regex_imported):
+ParsedFunction refine_function(ParsedFunction function_ir, BindingIR[] globals, FunctionSigIR[] functions, RecordFieldIR[] record_fields, map<string, string> field_types, string[] record_names, EnumTypeIR[] enum_types, bool regex_imported):
     string function_return_type = function_return_type_from_header(function_ir.header)
     string normalized_return_type = normalize_llvm_type_name(normalize_integer_enum_type_name(function_return_type, enum_types))
     BindingIR[] params = normalize_enum_bindings(function_ir.params, enum_types)
@@ -2980,7 +2996,7 @@ ParsedFunction refine_function(ParsedFunction function_ir, BindingIR[] globals, 
     string[] temp_types = unknown_temp_type_slots(max_function_temp_slot_index(function_ir) + 1)
     reset_type_ir_lookup_caches()
     for (BlockIR block in function_ir.blocks):
-        RefineInstructionsResult refined_result = refine_instructions(block.instructions, bindings, functions, record_fields, record_names, enum_types, prior_instructions, temp_types, regex_imported)
+        RefineInstructionsResult refined_result = refine_instructions(block.instructions, bindings, functions, record_fields, field_types, record_names, enum_types, prior_instructions, temp_types, regex_imported)
         BlockIR refined_block = BlockIR(block.label.substring(0), refined_result.instructions, clone_terminator_ir(block.terminator))
         temp_types = refined_result.temp_types
         if ((refined_block.terminator.kind == 'return' || refined_block.terminator.kind == 'return_owned') && refined_block.terminator.args.length() == 1 && normalized_return_type.ends_with('[]')):
@@ -3395,6 +3411,7 @@ ProgramIR refine_program_ir_with_regex(ProgramIR program, bool regex_imported):
         record_names = collect_declared_record_names(records)
     BindingIR[] globals = normalize_enum_bindings(collect_global_bindings(program.globals), enum_types)
     FunctionSigIR[] functions = collect_function_sigs(program.functions, enum_types)
+    map<string, string> field_types = index_record_field_types(record_fields)
 
     GlobalDeclIR[] refined_globals = []
     LinearInstruction[] prior_global_instructions = []
@@ -3403,7 +3420,7 @@ ProgramIR refine_program_ir_with_regex(ProgramIR program, bool regex_imported):
         reset_type_ir_lookup_caches()
         BindingIR[] empty_params = []
         BindingIR[] empty_locals = []
-        RefineInstructionsResult refined_global_result = refine_instructions(global_decl.instructions, globals, functions, record_fields, record_names, enum_types, prior_global_instructions, prior_global_temp_types, regex_imported)
+        RefineInstructionsResult refined_global_result = refine_instructions(global_decl.instructions, globals, functions, record_fields, field_types, record_names, enum_types, prior_global_instructions, prior_global_temp_types, regex_imported)
         BindingIR binding = ir_parse_binding_decl(strip_prefix(global_decl.header, 'global '))
         string normalized_global_type = normalize_integer_enum_type_name(binding.type_name, enum_types)
         string global_header = global_decl.header
@@ -3436,7 +3453,7 @@ ProgramIR refine_program_ir_with_regex(ProgramIR program, bool regex_imported):
 
     ParsedFunction[] refined_functions = []
     for (ParsedFunction function_ir in program.functions):
-        refined_functions.push(refine_function(function_ir, globals, functions, record_fields, record_names, enum_types, regex_imported))
+        refined_functions.push(refine_function(function_ir, globals, functions, record_fields, field_types, record_names, enum_types, regex_imported))
     if (normalize_records):
         return ProgramIR(program.imports, refined_globals, records, program.enums, refined_functions)
     return ProgramIR(program.imports, refined_globals, program.records, program.enums, refined_functions)
