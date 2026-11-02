@@ -1370,6 +1370,11 @@ bool is_native_query_receiver_type(string method_name, string base_type):
         return normalized_type == 'int' || normalized_type == 'num' || normalized_type == 'string'
     return false
 
+void validate_native_zero_argument_query_arity(LinearInstruction op, string method_name, string receiver_type):
+    if (method_name == 'length' || method_name == 'is_empty'):
+        if (is_native_query_receiver_type(method_name, receiver_type) && op.args.length() != 2):
+            throw method_name + ' takes no arguments'
+
 string infer_method_call_type(string method_name, string base_type, FunctionSigIR[] functions):
     if (method_name == 'await' && is_future_type(base_type)):
         return future_value_type(base_type)
@@ -1762,6 +1767,7 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
         string query_method_name = op.args[0]
         if (query_method_name == 'length' || query_method_name == 'is_empty' || query_method_name == 'index_of' || query_method_name == 'hash'):
             string query_base_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+            validate_native_zero_argument_query_arity(op, query_method_name, query_base_type)
             string query_result_type = infer_method_call_type_cached(query_method_name, query_base_type, functions, TYPE_IR_FUNCTION_TYPE_CACHE_NAMES, TYPE_IR_FUNCTION_TYPE_CACHE_VALUES)
             return refined_value_op(op, query_result_type, refine_ownership_mode(op, query_result_type))
     if (op.detail == 'binary' && op.args.length() >= 3):

@@ -298,7 +298,7 @@ captures resolve to the nearest binding visible when submission occurs.
 - Lambdas: single-parameter lambdas such as `int x -> x * 2`, block lambdas such as `int[] row -> { return row[0] < 0; }`, and multi-parameter comparator lambdas such as `(int a, int b) -> a - b`.
 - UFCS (parser sugar): `value.method(args)` lowers to `method(value, args)` — parser-only sugar, no dynamic dispatch.
 - Native `contains` builtins return `bool` for strings, `int[]`, `bool[]`, `string[]`, maps, and sets. When UFCS falls back to a user-defined `contains` on another receiver, it uses that function's declared return type.
-- UFCS `length`, `is_empty`, `index_of`, and `hash` calls use their native result types when builtin dispatch applies; otherwise, a same-named user function supplies the result type. Primitive-array `index_of` keeps its existing user-function and record-constructor precedence. For example, `number.is_empty()` can call an `int`-returning `is_empty(number)` helper, while `values.is_empty()` remains the native boolean query.
+- UFCS `length`, `is_empty`, `index_of`, and `hash` calls use their native result types when builtin dispatch applies; otherwise, a same-named user function supplies the result type. Primitive-array `index_of` keeps its existing user-function and record-constructor precedence. For example, `number.is_empty()` can call an `int`-returning `is_empty(number)` helper, while `values.is_empty()` remains the native boolean query. Native `length()` and `is_empty()` query calls take no explicit arguments.
 
 ### Thread pools and futures
 
