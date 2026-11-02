@@ -130,7 +130,7 @@ loop.body:
 done:
   ret ptr %array
 }
-define private ptr @tb_bootstrap_range_step(i64 %start, i64 %end, i64 %step) {
+define private i64 @tb_bootstrap_range_step_count(i64 %start, i64 %end, i64 %step) {
 entry:
   %step.zero = icmp eq i64 %step, 0
   br i1 %step.zero, label %invalid.step, label %direction
@@ -156,18 +156,25 @@ count:
   %quotient.at.limit = icmp eq i64 %quotient, 2147483647
   %rounded.too.large = and i1 %has.remainder, %quotient.at.limit
   %too.large = or i1 %quotient.too.large, %rounded.too.large
-  br i1 %too.large, label %invalid.length, label %allocate
+  br i1 %too.large, label %invalid.length, label %count.result
 invalid.length:
   call void @abort()
   unreachable
-allocate:
+count.result:
   %remainder.count = zext i1 %has.remainder to i64
   %count64 = add i64 %quotient, %remainder.count
+  ret i64 %count64
+empty:
+  ret i64 0
+}
+define private ptr @tb_bootstrap_range_step(i64 %start, i64 %end, i64 %step) {
+entry:
+  %count64 = call i64 @tb_bootstrap_range_step_count(i64 %start, i64 %end, i64 %step)
   %count32 = trunc i64 %count64 to i32
   %array = call ptr @tb_bootstrap_int_array_new(i32 %count32)
   br label %loop.cond
 loop.cond:
-  %index = phi i32 [0, %allocate], [%next.index, %loop.body]
+  %index = phi i32 [0, %entry], [%next.index, %loop.body]
   %keep.loop = icmp slt i32 %index, %count32
   br i1 %keep.loop, label %loop.body, label %done
 loop.body:
@@ -177,9 +184,6 @@ loop.body:
   call void @tb_bootstrap_int_array_set(ptr %array, i32 %index, i64 %value)
   %next.index = add i32 %index, 1
   br label %loop.cond
-empty:
-  %empty.array = call ptr @tb_bootstrap_int_array_new(i32 0)
-  ret ptr %empty.array
 done:
   ret ptr %array
 }

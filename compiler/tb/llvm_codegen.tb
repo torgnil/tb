@@ -3727,6 +3727,8 @@ void analyze_program_features(ProgramIR program, string[] map_types):
                     needs_try_catch = true
                 if (op.kind == 'range_guard'):
                     needs_int_array = true
+                if (op.kind == 'value' && op.detail == 'range-step-count'):
+                    needs_int_array = true
                 if (op.kind == 'assign_index_add' && op.args.length() >= 3):
                     string add_base_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0]))
                     string add_value_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[2]))
@@ -7455,6 +7457,10 @@ string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, Lin
     string lhs = temp_ref(op.lhs)
     if (op.detail == 'int'):
         return '  ' + lhs + ' = add i64 0, ' + op.args[0]
+    if (op.detail == 'range-step-count'):
+        if (op.args.length() != 3):
+            throw 'unsupported llvm stepped range count arity'
+        return '  ' + lhs + ' = call i64 @tb_bootstrap_range_step_count(i64 ' + temp_ref(op.args[0]) + ', i64 ' + temp_ref(op.args[1]) + ', i64 ' + temp_ref(op.args[2]) + ')'
     if (op.detail == 'num'):
         return '  ' + lhs + ' = call %tb_bootstrap_num @tb_bootstrap_num_make(i64 ' + num_literal_value_text(op.args[0]) + ', i64 ' + num_literal_scale(op.args[0]).to_string() + ')'
     if (op.detail == 'bool'):
