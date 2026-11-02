@@ -1,0 +1,20 @@
+int callback_calls = 0
+
+bool fail_on_stop(string value):
+    callback_calls += 1
+    if (value == 'stop'):
+        throw 'captured filter failed'
+    return true
+
+int main():
+    string target = 'stop'
+    try:
+        ['first', 'stop', 'unused'].filter(string value -> fail_on_stop(value) && value == target)
+    catch (exception error):
+        print(error)
+    print(callback_calls)
+    string[] empty = []
+    print(empty.filter(string value -> fail_on_stop(value) && value == target).length())
+    print(callback_calls)
+    print(['safe'].filter(string value -> value == target).length())
+    return 0
