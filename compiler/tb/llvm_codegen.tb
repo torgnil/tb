@@ -1499,8 +1499,8 @@ ParsedFunction lookup_named_function_decl(ProgramIR program, string name):
             return function_ir
     return ParsedFunction('', '', '', '', false, '', [], [], [])
 
-bool direct_split_matches_named_function(ProgramIR program, ParsedFunction caller, LinearInstruction op):
-    ParsedFunction callee = lookup_named_function_decl(program, 'split')
+bool direct_call_matches_named_function(ProgramIR program, ParsedFunction caller, LinearInstruction op, string call_name):
+    ParsedFunction callee = lookup_named_function_decl(program, call_name)
     if (callee.header == '' || op.args.length() != callee.params.length() + 1):
         return false
     EnumTypeIR[] enum_types = collect_enum_types(program.enums)
@@ -1512,6 +1512,9 @@ bool direct_split_matches_named_function(ProgramIR program, ParsedFunction calle
             return false
         index += 1
     return true
+
+bool direct_split_matches_named_function(ProgramIR program, ParsedFunction caller, LinearInstruction op):
+    return direct_call_matches_named_function(program, caller, op, 'split')
 
 bool direct_split_matches_record_constructor(ProgramIR program, ParsedFunction caller, LinearInstruction op):
     RecordDeclIR record_decl = lookup_record_decl(program, 'split')
@@ -6496,6 +6499,8 @@ string emit_string_method_call_value_instruction(ProgramIR program, ParsedFuncti
 string emit_builtin_query_call_value_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op, string call_name, string call_arg1_type):
     string lhs = temp_ref(op.lhs)
     if (call_name == 'contains'):
+        if (direct_call_matches_named_function(program, function_ir, op, call_name)):
+            return ''
         if (call_arg1_type.starts_with('map<')):
             if (op.args.length() != 3):
                 throw 'unsupported llvm map contains arity'
@@ -7747,6 +7752,8 @@ string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, Lin
                 return '  ' + lhs + ' = call i64 @tb_bootstrap_int_array_array_sum_grid_eq(ptr ' + temp_ref(op.args[1]) + ', ptr ' + temp_ref(op.args[3]) + ', i64 ' + temp_ref(op.args[4]) + ', i64 ' + temp_ref(op.args[5]) + ', ptr ' + temp_ref(op.args[6]) + ')'
         throw 'unsupported llvm method-call-lambda: ' + join_llvm_strings(op.args, ' ')
     if (op.detail == 'method-call'):
+        if (op.args.length() >= 2 && op.args[0] == 'contains' && direct_call_matches_named_function(program, function_ir, op, 'contains')):
+            return track_call_value(emit_call_value_instruction(program, function_ir, op))
         string method_line = emit_method_call_value_instruction(program, function_ir, op)
         string method_base_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[1]))
         if (method_base_type == 'string' || method_base_type == 'string[]' || method_base_type == 'string[][]'):
