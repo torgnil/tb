@@ -1883,7 +1883,7 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
                 return refined_value_op(op, 'string[]', 'owned')
             if (op.args[0] == 'filter_string_expr_captured'):
                 if (op.args.length() < 5):
-                    throw 'string[] filter expression requires at least one scalar capture'
+                    throw 'string[] filter expression requires at least one supported capture'
                 string captured_filter_receiver_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
                 if (captured_filter_receiver_type != 'string[]'):
                     throw 'string[] filter expression requires string[] receiver; got ' + captured_filter_receiver_type
@@ -1898,8 +1898,8 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
                     throw 'captured string[] filter callback signature must start with string'
                 for (int capture_index = 4; capture_index < op.args.length(); capture_index += 1):
                     string capture_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[capture_index]))
-                    if (!(capture_type == 'int' || capture_type == 'bool' || capture_type == 'string')):
-                        throw 'string[] filter callback captures must be int, bool, or string; got ' + capture_type
+                    if (!(capture_type == 'int' || capture_type == 'bool' || capture_type == 'string' || capture_type == 'int[]')):
+                        throw 'string[] filter callback captures must be int, bool, string, or int[]; got ' + capture_type
                     if (normalize_llvm_type_name(captured_filter_callback.param_types[capture_index - 3]) != capture_type):
                         throw 'captured string[] filter callback parameter type does not match capture; got ' + capture_type
                 string captured_filter_return_type = normalize_llvm_type_name(captured_filter_callback.return_type)
@@ -2427,12 +2427,12 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
                 if (normalize_llvm_type_name(base_type) != 'string[]'):
                     throw 'string[] map_to callback requires string[] receiver; got ' + base_type
                 if (op.args.length() < 5):
-                    throw 'string[] map_to callback requires at least one scalar capture'
+                    throw 'string[] map_to callback requires at least one supported capture'
                 int capture_index = 4
                 while (capture_index < op.args.length()):
                     string capture_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[capture_index]))
-                    if (!(capture_type == 'int' || capture_type == 'bool' || capture_type == 'string')):
-                        throw 'string[] map_to callback captures must be int, bool, or string; got ' + capture_type
+                    if (!(capture_type == 'int' || capture_type == 'bool' || capture_type == 'string' || capture_type == 'int[]')):
+                        throw 'string[] map_to callback captures must be int, bool, string, or int[]; got ' + capture_type
                     capture_index += 1
                 return refined_value_op(op, 'string[]', 'owned')
             if (op.args[0] == 'map_to_edge_distance' && base_type == 'int[]'):

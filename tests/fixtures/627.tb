@@ -1,0 +1,36 @@
+int[] map_codes = [8]
+int[] filter_codes = [9]
+int map_calls = 0
+int filter_calls = 0
+
+string[] make_words():
+    return ['first', 'second', 'third']
+
+string map_or_throw(string word, const int[] codes):
+    map_calls += 1
+    if (map_calls == 2):
+        throw 'map capture boom'
+    return word + codes[0].to_string()
+
+bool filter_or_throw(string word, const int[] codes):
+    filter_calls += 1
+    if (filter_calls == 2):
+        throw 'filter capture boom'
+    return true
+
+int main():
+    try:
+        string[] mapped = make_words().map_to(string word -> map_or_throw(word, map_codes))
+        print(mapped)
+    catch (exception error):
+        print(error)
+    print(map_codes)
+
+    try:
+        string[] selected = make_words().filter(string word -> filter_or_throw(word, filter_codes))
+        print(selected)
+    catch (exception error):
+        print(error)
+    print(filter_codes)
+    print('continued')
+    return 0

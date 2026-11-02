@@ -42,7 +42,7 @@ done:
   ret ptr %result
 }
 
-define private ptr @tb_bootstrap_string_array_filter_expr_captured(ptr %array, ptr %callback, ptr %context, i1 %release.array.on.exception) {
+define private ptr @tb_bootstrap_string_array_filter_expr_captured(ptr %array, ptr %callback, ptr %context, ptr %cleanup, i1 %release.array.on.exception) {
 entry:
   %len = call i32 @tb_bootstrap_string_array_length(ptr %array)
   %result = call ptr @tb_bootstrap_string_array_new(i32 0)
@@ -79,9 +79,11 @@ callback.exception.free.array:
   call void @tb_bootstrap_string_array_free(ptr %array)
   br label %callback.exception.rethrow
 callback.exception.rethrow:
+  call void %cleanup(ptr %context)
   call void @longjmp(ptr %prior.handler, i32 1)
   unreachable
 done:
   store ptr %prior.handler, ptr @__tb_exception_handler
+  call void %cleanup(ptr %context)
   ret ptr %result
 }

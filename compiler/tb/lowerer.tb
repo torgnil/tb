@@ -818,7 +818,7 @@ SubmitLambdaRewrite rewrite_string_array_map_lambda(Node lambda_node, string[] u
     Node rewritten = Node('MapStringExpression', lambda_node.value, [Node('Identifier', helper_name, [])])
     return SubmitLambdaRewrite(rewritten, [helper], add_unique_name(used_names, helper_name), next_index + 1)
 
-ArrayScalarCaptureResult string_array_scalar_captures(Node lambda_node, BindingIR[] bindings):
+ArrayScalarCaptureResult string_array_callback_captures(Node lambda_node, BindingIR[] bindings):
     if (lambda_node.kind != 'Lambda' || lambda_node.children.length() != 1 || lambda_node.children[0].kind == 'Block'):
         return ArrayScalarCaptureResult([], false)
     BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
@@ -836,7 +836,7 @@ ArrayScalarCaptureResult string_array_scalar_captures(Node lambda_node, BindingI
         string capture_type = binding.type_name
         if (capture_type.starts_with('const ')):
             capture_type = capture_type.substring(6)
-        if (!(capture_type == 'int' || capture_type == 'bool' || capture_type == 'string')):
+        if (!(capture_type == 'int' || capture_type == 'bool' || capture_type == 'string' || capture_type == 'int[]')):
             return ArrayScalarCaptureResult([], false)
         captured.push(binding)
     return ArrayScalarCaptureResult(captured, true)
@@ -1332,7 +1332,7 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
     Node rewritten = Node(node.kind, node.value, rewritten_children)
     if (!top_level_global_initializer && node.kind == 'MethodCall' && node.value == 'map_to' && node.children.length() == 2):
         Node lambda_node = node.children[1]
-        ArrayScalarCaptureResult capture_result = string_array_scalar_captures(lambda_node, bindings)
+        ArrayScalarCaptureResult capture_result = string_array_callback_captures(lambda_node, bindings)
         if (capture_result.complete && !capture_result.captures.is_empty()):
             BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
             string helper_name = string_array_map_expression_helper_name(current_names, current_index)
@@ -1352,7 +1352,7 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
             rewritten = Node(node.kind, node.value, rewritten_children)
     if (!top_level_global_initializer && node.kind == 'MethodCall' && node.value == 'filter' && node.children.length() == 2):
         Node lambda_node = node.children[1]
-        ArrayScalarCaptureResult capture_result = string_array_scalar_captures(lambda_node, bindings)
+        ArrayScalarCaptureResult capture_result = string_array_callback_captures(lambda_node, bindings)
         if (capture_result.complete && !capture_result.captures.is_empty()):
             BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
             string helper_name = string_array_filter_expression_helper_name(current_names, current_index)
