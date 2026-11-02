@@ -145,6 +145,9 @@ int LLVM_EMIT_RECORD_VALUE_MS = 0;
 int LLVM_EMIT_RECORD_VALUE_COUNT = 0;
 int LLVM_EMIT_CALL_VALUE_MS = 0;
 int LLVM_EMIT_CALL_VALUE_COUNT = 0;
+int LLVM_LOOKUP_NAMED_FUNCTION_CALLS = 0;
+int LLVM_LOOKUP_NAMED_FUNCTION_CACHE_HITS = 0;
+int LLVM_LOOKUP_NAMED_FUNCTION_SCAN_TOTAL = 0;
 int LLVM_EMIT_METHOD_VALUE_MS = 0;
 int LLVM_EMIT_METHOD_VALUE_COUNT = 0;
 int LLVM_PHASE_GLOBAL_MS = 0;
@@ -169,7 +172,7 @@ string[] LLVM_LOOKUP_CACHE_BINDING_TYPES = [];
 string[] LLVM_LOOKUP_CACHE_LOCAL_BINDING_NAMES = [];
 string[] LLVM_LOOKUP_CACHE_LOCAL_BINDING_TYPES = [];
 BindingIR[] LLVM_PROGRAM_CACHE_GLOBAL_BINDINGS = [];
-string[] LLVM_PROGRAM_CACHE_FUNCTION_NAMES = [];
+map<string, int> LLVM_PROGRAM_FUNCTION_INDEX = {};
 string[] LLVM_PROGRAM_CACHE_RECORD_NAMES = [];
 RecordDeclIR[] LLVM_PROGRAM_CACHE_RECORD_DECLS = [];
 int LLVM_SCAN_NEEDS_STRCMP = 0;
@@ -602,6 +605,9 @@ void reset_llvm_backend_helper_stats():
     LLVM_EMIT_RECORD_VALUE_COUNT = 0
     LLVM_EMIT_CALL_VALUE_MS = 0
     LLVM_EMIT_CALL_VALUE_COUNT = 0
+    LLVM_LOOKUP_NAMED_FUNCTION_CALLS = 0
+    LLVM_LOOKUP_NAMED_FUNCTION_CACHE_HITS = 0
+    LLVM_LOOKUP_NAMED_FUNCTION_SCAN_TOTAL = 0
     LLVM_EMIT_METHOD_VALUE_MS = 0
     LLVM_EMIT_METHOD_VALUE_COUNT = 0
     LLVM_PHASE_GLOBAL_MS = 0
@@ -626,7 +632,6 @@ void reset_llvm_backend_helper_stats():
     LLVM_LOOKUP_CACHE_LOCAL_BINDING_NAMES = []
     LLVM_LOOKUP_CACHE_LOCAL_BINDING_TYPES = []
     LLVM_PROGRAM_CACHE_GLOBAL_BINDINGS = []
-    LLVM_PROGRAM_CACHE_FUNCTION_NAMES = []
     LLVM_PROGRAM_CACHE_RECORD_NAMES = []
     LLVM_PROGRAM_CACHE_RECORD_DECLS = []
     LLVM_SCAN_NEEDS_STRCMP = 0
@@ -790,6 +795,9 @@ string llvm_backend_helper_report():
     lines += '\nemit_record_value_count=' + LLVM_EMIT_RECORD_VALUE_COUNT.to_string()
     lines += '\nemit_call_value_ms=' + LLVM_EMIT_CALL_VALUE_MS.to_string()
     lines += '\nemit_call_value_count=' + LLVM_EMIT_CALL_VALUE_COUNT.to_string()
+    lines += '\nlookup_named_function_calls=' + LLVM_LOOKUP_NAMED_FUNCTION_CALLS.to_string()
+    lines += '\nlookup_named_function_cache_hits=' + LLVM_LOOKUP_NAMED_FUNCTION_CACHE_HITS.to_string()
+    lines += '\nlookup_named_function_scan_total=' + LLVM_LOOKUP_NAMED_FUNCTION_SCAN_TOTAL.to_string()
     lines += '\nemit_method_value_ms=' + LLVM_EMIT_METHOD_VALUE_MS.to_string()
     lines += '\nemit_method_value_count=' + LLVM_EMIT_METHOD_VALUE_COUNT.to_string()
     lines += '\nphase_global_ms=' + LLVM_PHASE_GLOBAL_MS.to_string()
@@ -1298,14 +1306,11 @@ string emit_string_release_ptr(string ptr_name):
 
 void load_program_lookup_cache(ProgramIR program, RecordDeclIR[] record_decls):
     LLVM_PROGRAM_CACHE_GLOBAL_BINDINGS = []
-    LLVM_PROGRAM_CACHE_FUNCTION_NAMES = []
     LLVM_PROGRAM_CACHE_RECORD_NAMES = []
     LLVM_PROGRAM_CACHE_RECORD_DECLS = []
     for (GlobalDeclIR global_decl in program.globals):
         BindingIR binding = ir_parse_binding_decl(strip_prefix(global_decl.header, 'global '))
         LLVM_PROGRAM_CACHE_GLOBAL_BINDINGS.push(BindingIR(binding.type_name.substring(0), binding.name.substring(0)))
-    for (ParsedFunction function_ir in program.functions):
-        LLVM_PROGRAM_CACHE_FUNCTION_NAMES.push(function_ir.name.substring(0))
     for (RecordDeclIR record_decl in record_decls):
         string record_name = strip_prefix(record_decl.header, 'record ')
         LLVM_PROGRAM_CACHE_RECORD_NAMES.push(record_name.substring(0))
@@ -1494,9 +1499,25 @@ LinearInstruction lookup_temp_instruction(ParsedFunction function_ir, string tem
     return LinearInstruction('', '', '', '', '', [])
 
 ParsedFunction lookup_named_function_decl(ProgramIR program, string name):
-    for (ParsedFunction function_ir in program.functions):
+    if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
+        LLVM_LOOKUP_NAMED_FUNCTION_CALLS += 1
+    if (LLVM_PROGRAM_FUNCTION_INDEX.contains(name)):
+        if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
+            LLVM_LOOKUP_NAMED_FUNCTION_CACHE_HITS += 1
+        int cached_index = LLVM_PROGRAM_FUNCTION_INDEX[name]
+        if (cached_index >= 0 && cached_index < program.functions.length()):
+            return program.functions[cached_index]
+        return ParsedFunction('', '', '', '', false, '', [], [], [])
+    int index = 0
+    while (index < program.functions.length()):
+        if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
+            LLVM_LOOKUP_NAMED_FUNCTION_SCAN_TOTAL += 1
+        ParsedFunction function_ir = program.functions[index]
         if (function_ir.name == name):
+            LLVM_PROGRAM_FUNCTION_INDEX[name] = index
             return function_ir
+        index += 1
+    LLVM_PROGRAM_FUNCTION_INDEX[name] = -1
     return ParsedFunction('', '', '', '', false, '', [], [], [])
 
 bool direct_call_matches_named_function(ProgramIR program, ParsedFunction caller, LinearInstruction op, string call_name):
@@ -1760,13 +1781,7 @@ string validate_named_array_comparator(ProgramIR program, ParsedFunction functio
     return comparator_name
 
 bool function_name_exists(ProgramIR program, string name):
-    int name_length = name.length()
-    int index = LLVM_PROGRAM_CACHE_FUNCTION_NAMES.length() - 1
-    while (index >= 0):
-        if (LLVM_PROGRAM_CACHE_FUNCTION_NAMES[index].length() == name_length && LLVM_PROGRAM_CACHE_FUNCTION_NAMES[index] == name):
-            return true
-        index -= 1
-    return false
+    return LLVM_PROGRAM_FUNCTION_INDEX.contains(name) && LLVM_PROGRAM_FUNCTION_INDEX[name] >= 0
 
 string call_return_type(ProgramIR program, string name):
     ParsedFunction function_ir = lookup_named_function_decl(program, name)
@@ -11172,6 +11187,13 @@ string[] emit_map_helpers(string type_name):
 string[] llvm_codegen_ir(ProgramIR program):
     if (!program.imports.is_empty()):
         throw 'llvm bootstrap backend only supports modules without imports'
+    LLVM_PROGRAM_FUNCTION_INDEX = {}
+    int function_index = 0
+    while (function_index < program.functions.length()):
+        string function_name = program.functions[function_index].name
+        if (!LLVM_PROGRAM_FUNCTION_INDEX.contains(function_name)):
+            LLVM_PROGRAM_FUNCTION_INDEX[function_name] = function_index
+        function_index += 1
     LLVM_NAMED_INT_SORT_COMPARATOR_NAMES = []
     LLVM_NAMED_RECORD_SORT_COMPARATOR_KEYS = []
     LLVM_INLINE_RECORD_FIELD_COMPARATOR_KEYS = []
