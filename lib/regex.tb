@@ -1552,22 +1552,41 @@ private string __tb_regex_replace_captures(Regex program, string text, string re
     return parts.join('')
 
 # Called by the compiler's split overload after evaluating both arguments.
+private void __tb_regex_split_append_captures(string[] parts, RegexCapture capture, string text):
+    for (int group = 1; group < capture.starts.length(); group += 1):
+        parts.push(regex_group(capture, text, group))
+
 string[] __tb_regex_split(string text, Regex program):
     string[] parts = []
     int length = text.length()
     int field_start = 0
     int search_start = 0
+    int group_count = regex_capture_group_count(program)
     while (search_start <= length):
-        RegexMatch match = regex_find_from(program, text, search_start)
-        if (!match.matched):
-            break
-        parts.push(text.substring(field_start, match.start))
-        field_start = match.end
-        if (match.start == match.end):
-            if (match.end == length):
+        int match_start = -1
+        int match_end = -1
+        RegexCapture captures = RegexCapture(false, [], [])
+        if (group_count > 0):
+            captures = regex_find_captures_from(program, text, search_start)
+            if (!captures.matched):
                 break
-            search_start = match.end + 1
+            match_start = captures.starts[0]
+            match_end = captures.ends[0]
         else:
-            search_start = match.end
+            RegexMatch match = regex_find_from(program, text, search_start)
+            if (!match.matched):
+                break
+            match_start = match.start
+            match_end = match.end
+        parts.push(text.substring(field_start, match_start))
+        if (group_count > 0):
+            __tb_regex_split_append_captures(parts, captures, text)
+        field_start = match_end
+        if (match_start == match_end):
+            if (match_end == length):
+                break
+            search_start = match_end + 1
+        else:
+            search_start = match_end
     parts.push(text.substring(field_start, length))
     return parts

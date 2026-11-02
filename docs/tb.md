@@ -599,7 +599,8 @@ String helpers
   - A matching declared function named `split` keeps direct-call precedence;
     untyped array arguments receive the matching parameter types.
   - UFCS helpers can be used in assignments too, for example `parts = text.split(',');` and `text = text.trim();`.
-  - With `import regex;`, `split(s, pattern)` and `s.split(pattern)` also accept a compiled `Regex`. They preserve empty fields and use the match priority described below. An invalid regex acts as no separator and returns one field containing `s`.
+  - With `import regex;`, `split(s, pattern)` and `s.split(pattern)` also accept a compiled `Regex`. They preserve empty fields and use the match priority described below. Each capturing group contributes its captured text after the field before that match, in opening-parenthesis order; a group that did not participate contributes an empty string.
+    Empty-match progress follows the rule below. An invalid regex acts as no separator and returns one field containing `s`. Splitting with capture groups uses the same repeat-nesting limit as the regex capture APIs.
 
 - trim(s: string) -> string
   - Remove leading and trailing whitespace. UFCS sugar `s.trim()` supported.
