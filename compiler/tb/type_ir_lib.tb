@@ -1375,6 +1375,29 @@ void validate_native_zero_argument_query_arity(LinearInstruction op, string meth
         if (is_native_query_receiver_type(method_name, receiver_type) && op.args.length() != 2):
             throw method_name + ' takes no arguments'
 
+private bool is_native_direct_query_receiver_type(string query_name, string receiver_type, string[] record_names):
+    string normalized_type = normalize_llvm_type_name(receiver_type)
+    if (query_name == 'length'):
+        return normalized_type == 'int[]' || normalized_type == 'set<int>' || (is_native_record_array_query_type(normalized_type) && record_type_exists(record_names, record_name_from_type(array_item_type(normalized_type))))
+    if (query_name == 'is_empty'):
+        if (normalized_type == 'string' || normalized_type == 'int[]' || normalized_type == 'bool[]' || normalized_type == 'string[]' || normalized_type == 'int[][]' || normalized_type == 'string[][]' || normalized_type == 'set<int>' || normalized_type.starts_with('map<')):
+            return true
+        return is_native_record_array_query_type(normalized_type) && record_type_exists(record_names, record_name_from_type(array_item_type(normalized_type)))
+    return false
+
+private void validate_direct_native_query_receiver(LinearInstruction op, string query_name, FunctionSigIR[] functions, RecordFieldIR[] record_fields, EnumTypeIR[] enum_types, string[] temp_types, string[] record_names):
+    if (op.args.length() != 2):
+        return
+    FunctionSigIR query_function = lookup_function_sig(functions, query_name)
+    if (has_matching_direct_signature(op, query_function, enum_types, temp_types) || has_matching_record_constructor_signature(op, query_name, record_fields, enum_types, temp_types)):
+        return
+    string receiver_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
+    if (!is_native_direct_query_receiver_type(query_name, receiver_type, record_names)):
+        string supported_receivers = 'int[], set<int>, or a declared record array'
+        if (query_name == 'is_empty'):
+            supported_receivers = 'string, int[], bool[], string[], int[][], string[][], set<int>, maps, or declared record arrays'
+        throw query_name + ' requires ' + supported_receivers + '; got ' + receiver_type
+
 string infer_method_call_type(string method_name, string base_type, FunctionSigIR[] functions):
     if (method_name == 'await' && is_future_type(base_type)):
         return future_value_type(base_type)
@@ -1955,6 +1978,8 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
     if (op.detail == 'call'):
         if (op.args.is_empty()):
             return op
+        if (op.args[0] == 'length' || op.args[0] == 'is_empty'):
+            validate_direct_native_query_receiver(op, op.args[0], functions, record_fields, enum_types, temp_types, record_names)
         if (op.args[0] == 'to_int'):
             if (op.args.length() == 2):
                 string to_int_argument_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)

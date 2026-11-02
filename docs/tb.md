@@ -299,6 +299,7 @@ captures resolve to the nearest binding visible when submission occurs.
 - UFCS (parser sugar): `value.method(args)` lowers to `method(value, args)` — parser-only sugar, no dynamic dispatch.
 - Native `contains` builtins return `bool` for strings, `int[]`, `bool[]`, `string[]`, maps, and sets. A matching declared `contains` function takes precedence when its parameter types exactly match the arguments; otherwise, native builtin dispatch applies. UFCS is parser sugar, so it follows the same rule. For example, an `int[]` with no matching user function uses native membership for both `contains(values, item)` and `values.contains(item)`.
 - UFCS `length`, `is_empty`, `index_of`, and `hash` calls use their native result types when builtin dispatch applies; otherwise, a same-named user function supplies the result type. Primitive-array `index_of` keeps its existing user-function and record-constructor precedence. For example, `number.is_empty()` can call an `int`-returning `is_empty(number)` helper, while `values.is_empty()` remains the native boolean query. Native `length()`, `is_empty()`, and `hash()` query calls take no explicit arguments.
+- Direct `length(value)` and `is_empty(value)` calls diagnose known unsupported receiver types before LLVM generation; exact matching user functions and record constructors keep their existing precedence.
 
 ### Thread pools and futures
 
