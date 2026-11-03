@@ -1350,6 +1350,24 @@ private void validate_native_array_contains_arity(LinearInstruction op):
     if (argument_count != 1):
         throw 'array contains requires exactly one needle argument; got ' + argument_count.to_string()
 
+private void validate_native_collection_contains_arity(LinearInstruction op, string collection_name, string item_name):
+    int argument_count = op.args.length() - 2
+    if (argument_count != 1):
+        throw collection_name + ' contains requires exactly one ' + item_name + ' argument; got ' + argument_count.to_string()
+
+private void validate_native_collection_contains_item(LinearInstruction op, string collection_name, string item_name, string expected_type, EnumTypeIR[] enum_types, string[] temp_types):
+    validate_native_collection_contains_arity(op, collection_name, item_name)
+    string normalized_expected_type = normalize_enum_type_name(normalize_llvm_type_name(expected_type), enum_types)
+    string actual_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2])), enum_types)
+    if (normalized_expected_type != 'unknown' && actual_type != 'unknown' && actual_type != normalized_expected_type):
+        throw collection_name + ' contains requires ' + item_name + ' type ' + normalized_expected_type + '; got ' + actual_type
+
+private void validate_native_map_contains(LinearInstruction op, string map_type, EnumTypeIR[] enum_types, string[] temp_types):
+    validate_native_collection_contains_item(op, 'map', 'key', map_key_type(map_type), enum_types, temp_types)
+
+private void validate_native_set_contains(LinearInstruction op, string set_type, EnumTypeIR[] enum_types, string[] temp_types):
+    validate_native_collection_contains_item(op, 'set', 'item', set_item_type(set_type), enum_types, temp_types)
+
 bool is_native_record_array_query_type(string base_type):
     if (!base_type.ends_with('[]')):
         return false
@@ -2168,6 +2186,7 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
                     result_type = contains_sig.return_type
                 else:
                     if (receiver_type.starts_with('map<')):
+                        validate_native_map_contains(op, receiver_type, enum_types, temp_types)
                         result_type = 'bool'
                     if (is_native_array_contains_receiver_type(receiver_type)):
                         validate_native_array_contains_arity(op)
@@ -2384,6 +2403,12 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             if (is_native_array_contains_receiver_type(contains_receiver_type)):
                 validate_native_array_contains_arity(op)
                 validate_array_contains_needle_type(contains_receiver_type, lookup_temp_type_slot(temp_types, op.args[2]), enum_types)
+                return refined_value_op(op, 'bool', 'plain')
+            if (contains_receiver_type.starts_with('map<')):
+                validate_native_map_contains(op, contains_receiver_type, enum_types, temp_types)
+                return refined_value_op(op, 'bool', 'plain')
+            if (is_native_set_query_type(contains_receiver_type)):
+                validate_native_set_contains(op, contains_receiver_type, enum_types, temp_types)
                 return refined_value_op(op, 'bool', 'plain')
             string result_type = infer_method_call_type_cached(method_name, base_type, functions, TYPE_IR_FUNCTION_TYPE_CACHE_NAMES, TYPE_IR_FUNCTION_TYPE_CACHE_VALUES)
             return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
