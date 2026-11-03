@@ -1,0 +1,34 @@
+int main(string[] args):
+    thread_pool pool = thread_pool(1)
+    int[][] rows = [[1, 2], [], [3], [4, 5, 6]]
+    future<int> total = pool.submit(int[][] grid -> {
+        int sum = 0
+        for (const int[] row : grid) {
+            for (int value : row) {
+                if (value == 2) {
+                    continue
+                }
+                sum += value
+            }
+            if (row.is_empty()) {
+                continue
+            }
+        }
+        return sum
+    }, rows)
+    future<int[]> first_row = pool.submit(int[][] grid -> {
+        for (const int[] row : grid) {
+            if (!row.is_empty()) {
+                return row
+            }
+        }
+        return grid[0]
+    }, rows)
+    rows[0][0] = 99
+    print(total.await())
+    print(total.await())
+    int[] copied_row = first_row.await()
+    print(copied_row[0])
+    copied_row[0] = 77
+    print(first_row.await()[0])
+    return 0
