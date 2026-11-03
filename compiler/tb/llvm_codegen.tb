@@ -6534,6 +6534,13 @@ string emit_string_method_call_value_instruction(ProgramIR program, ParsedFuncti
 
 string emit_builtin_query_call_value_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op, string call_name, string call_arg1_type):
     string lhs = temp_ref(op.lhs)
+    if (call_name == 'pop' && is_native_prio_q_query_type(call_arg1_type)):
+        bool calls_user_function = direct_call_matches_named_function(program, function_ir, op, call_name)
+        bool calls_record_constructor = direct_call_matches_record_constructor(program, function_ir, op, call_name)
+        if (!calls_user_function && !calls_record_constructor):
+            if (op.args.length() != 2):
+                throw 'unsupported llvm priority queue pop arity'
+            return emit_prio_q_method_call_value_instruction(program, function_ir, op, call_name, call_arg1_type)
     if (call_name == 'contains'):
         if (direct_call_matches_named_function(program, function_ir, op, call_name)):
             return ''

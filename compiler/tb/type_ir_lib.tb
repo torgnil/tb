@@ -2130,6 +2130,17 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
                         return refined_value_op(op, last_result_type, refine_ownership_mode(op, last_result_type))
                     if (last_function.name == '' && !record_type_exists(record_names, 'last')):
                         throw 'last requires string, int[], bool[], string[], int[][], or string[][]; got ' + last_array_type
+        if (op.args[0] == 'pop' && op.args.length() >= 2):
+            string pop_receiver_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+            if (is_native_prio_q_query_type(pop_receiver_type)):
+                FunctionSigIR pop_function = lookup_function_sig(functions, 'pop')
+                bool calls_user_function = has_matching_direct_signature(op, pop_function, enum_types, temp_types)
+                bool calls_record_constructor = has_matching_record_constructor_signature(op, 'pop', record_fields, enum_types, temp_types)
+                if (!calls_user_function && !calls_record_constructor):
+                    if (op.args.length() != 2):
+                        throw 'pop requires exactly one priority queue argument'
+                    string pop_result_type = prio_q_item_type(pop_receiver_type)
+                    return refined_value_op(op, pop_result_type, refine_ownership_mode(op, pop_result_type))
         if (result_type == 'unknown' && op.args[0] == 'clear' && lookup_function_return_type(functions, 'clear') == 'unknown' && !record_type_exists(record_names, 'clear')):
             if (op.args.length() != 2):
                 throw 'clear requires exactly one array argument'
