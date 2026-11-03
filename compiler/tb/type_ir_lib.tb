@@ -1610,6 +1610,48 @@ LinearInstruction refined_value_op(LinearInstruction op, string result_type, str
 bool is_integer_only_binary_operator(string op_name):
     return op_name == '%' || op_name == '&' || op_name == '|' || op_name == '^' || op_name == '<<' || op_name == '>>'
 
+private bool is_numeric_arithmetic_type(string type_name):
+    return type_name == 'int' || type_name == 'num'
+
+private bool is_supported_string_concat_pair(string left_type, string right_type):
+    bool left_is_string_or_int = left_type == 'string' || left_type == 'int'
+    bool right_is_string_or_int = right_type == 'string' || right_type == 'int'
+    return (left_type == 'string' || right_type == 'string') && left_is_string_or_int && right_is_string_or_int
+
+private bool is_map_string_compound_add_value(LinearInstruction op, LinearInstruction[] instructions, LinearInstruction[] earlier_block_instructions, LinearInstruction[] prior_instructions, string[] temp_types):
+    if (op.args.length() < 3 || op.args[0] != '+'):
+        return false
+    for (LinearInstruction assignment in instructions):
+        if (assignment.kind != 'assign_index' || assignment.args.length() != 3 || assignment.args[2] != op.lhs):
+            continue
+        if (normalize_llvm_type_name(lookup_temp_type_slot(temp_types, assignment.args[0])) != 'map<int[], string>'):
+            continue
+        LinearInstruction old_value = lookup_instruction_pair(earlier_block_instructions, prior_instructions, op.args[1])
+        if (old_value.kind != 'value' || old_value.detail != 'index' || old_value.args.length() != 2):
+            continue
+        if (old_value.args[0] != assignment.args[0] || old_value.args[1] != assignment.args[1]):
+            continue
+        LinearInstruction key = lookup_instruction_pair(earlier_block_instructions, prior_instructions, assignment.args[1])
+        if (key.kind == 'value' && key.detail == 'target-index' && key.args.length() == 2 && key.args[0] == assignment.args[0]):
+            return true
+    return false
+
+private void validate_binary_arithmetic_operands(LinearInstruction op, EnumTypeIR[] enum_types, string[] temp_types):
+    string operator_name = op.args[0]
+    if (operator_name != '+' && operator_name != '-' && operator_name != '*' && operator_name != '/'):
+        return
+    string left_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
+    string right_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2])), enum_types)
+    if (left_type == '' || left_type == 'unknown' || right_type == '' || right_type == 'unknown'):
+        return
+    bool numeric_operands = is_numeric_arithmetic_type(left_type) && is_numeric_arithmetic_type(right_type)
+    bool string_concat_operands = operator_name == '+' && is_supported_string_concat_pair(left_type, right_type)
+    if (numeric_operands || string_concat_operands):
+        return
+    if (operator_name == '+'):
+        throw 'operator + requires numeric operands or string/int concatenation; got ' + left_type + ' and ' + right_type
+    throw 'operator ' + operator_name + ' requires int or num operands; got ' + left_type + ' and ' + right_type
+
 LinearInstruction clone_linear_instruction(LinearInstruction op):
     if (TYPE_IR_PROFILE_ACTIVE != 0):
         TYPE_IR_CLONE_LINEAR_INSTRUCTION_CALLS += 1
@@ -2679,6 +2721,8 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
             validate_map_index_type(index_base_type, index_type)
         if (op.kind == 'value' && op.detail == 'binary'):
             if (op.args.length() >= 3):
+                if (!is_map_string_compound_add_value(op, instructions, block_refined, prior_instructions, temp_types)):
+                    validate_binary_arithmetic_operands(op, enum_types, temp_types)
                 if (op.args[0] == 'in' || op.args[0] == 'not in'):
                     RefineInstructionsResult contextual_key = contextualize_array_map_key(block_refined, temp_types, op.args[2], op.args[1])
                     block_refined = contextual_key.instructions

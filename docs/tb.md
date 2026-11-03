@@ -281,6 +281,7 @@ captures resolve to the nearest binding visible when submission occurs.
 6. Expressions and operators
 
 - Arithmetic: `+`, `-`, `*`, `/`, `%`. Unary `-` accepts `int` and `num` values, including `const` values, and preserves the operand type.
+- Known operands for binary `+`, `-`, `*`, and `/` are checked before LLVM generation. Numeric arithmetic accepts `int` and `num` pairs; `+` also concatenates `string` with `string` or `int` in either order. Other known operand pairs receive a compiler diagnostic. An operand whose type is still unknown keeps the existing deferred behavior.
 - Integer `%`, `&`, `|`, `^`, `<<`, and `>>` require `int` operands when their types are known; `const int` operands use their underlying `int` type. Other known types, including `num` values with scale zero, are rejected. The same rule applies to ordinary compound assignments such as `values[0] ^= mask` and `point.value %= divisor`.
 - Integer `/` and `%` use signed truncating division. Division rounds toward zero, and the remainder keeps the sign of the left operand. Examples: `(0 - 5) / 3` is `-1`, `(0 - 5) % 3` is `-2`, `5 % (0 - 3)` is `2`, and `(0 - 5) % (0 - 3)` is `-2`. A zero divisor, or `INT64_MIN` divided or remaindered by `-1`, aborts the process. The same rule applies in integer-array `map_to` operations; an empty source array performs no element operation.
 - Compile-time `num` arithmetic keeps the highest operand precision for `+`, `-`, `*`, and `/`. For example, `1.5 + 2.50` yields `4.00`, `2.50 * 1.5` yields `3.75`, and `2.50 / 1.5` yields `1.67`.
