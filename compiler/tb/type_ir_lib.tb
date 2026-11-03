@@ -1417,8 +1417,14 @@ private bool is_native_direct_query_receiver_type(string query_name, string rece
     if (query_name == 'length'):
         return normalized_type == 'int[]' || normalized_type == 'set<int>' || (is_native_record_array_query_type(normalized_type) && record_type_exists(record_names, record_name_from_type(array_item_type(normalized_type))))
     if (query_name == 'is_empty'):
-        if (normalized_type == 'string' || normalized_type == 'int[]' || normalized_type == 'bool[]' || normalized_type == 'string[]' || normalized_type == 'int[][]' || normalized_type == 'string[][]' || normalized_type == 'set<int>' || normalized_type.starts_with('map<')):
+        if (normalized_type == 'string' || normalized_type == 'int[]' || normalized_type == 'bool[]' || normalized_type == 'string[]' || normalized_type == 'int[][]' || normalized_type == 'string[][]' || normalized_type.starts_with('map<')):
             return true
+        if (is_native_set_query_type(normalized_type)):
+            string set_item = set_item_type(normalized_type)
+            return set_item == 'int' || record_type_exists(record_names, record_name_from_type(set_item))
+        if (is_native_prio_q_query_type(normalized_type)):
+            string queue_item = prio_q_item_type(normalized_type)
+            return queue_item == 'int' || record_type_exists(record_names, record_name_from_type(queue_item))
         return is_native_record_array_query_type(normalized_type) && record_type_exists(record_names, record_name_from_type(array_item_type(normalized_type)))
     return false
 
@@ -1432,7 +1438,7 @@ private void validate_direct_native_query_receiver(LinearInstruction op, string 
     if (!is_native_direct_query_receiver_type(query_name, receiver_type, record_names)):
         string supported_receivers = 'int[], set<int>, or a declared record array'
         if (query_name == 'is_empty'):
-            supported_receivers = 'string, int[], bool[], string[], int[][], string[][], set<int>, maps, or declared record arrays'
+            supported_receivers = 'string, native arrays, sets, maps, priority queues, or declared record arrays'
         throw query_name + ' requires ' + supported_receivers + '; got ' + receiver_type
 
 string infer_method_call_type(string method_name, string base_type, FunctionSigIR[] functions):
@@ -2054,20 +2060,12 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             if (argument_type != 'string'):
                 throw op.args[0] + ' requires a string argument, got: ' + argument_type
             result_type = 'bool'
-        if (result_type == 'unknown'):
-            if (op.args[0] == 'is_empty'):
-                if (op.args.length() == 2):
-                    FunctionSigIR is_empty_function = lookup_function_sig(functions, 'is_empty')
-                    if (is_empty_function.name == ''):
-                        if (!record_type_exists(record_names, 'is_empty')):
-                            string is_empty_receiver_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
-                            if (is_array_copy_type(is_empty_receiver_type)):
-                                result_type = 'bool'
-                            else if (is_empty_receiver_type.ends_with('[]')):
-                                string is_empty_record_name = record_name_from_type(array_item_type(is_empty_receiver_type))
-                                if (is_empty_record_name != ''):
-                                    if (record_type_exists(record_names, is_empty_record_name)):
-                                        result_type = 'bool'
+        if (op.args[0] == 'is_empty' && op.args.length() == 2):
+            FunctionSigIR is_empty_function = lookup_function_sig(functions, 'is_empty')
+            bool calls_user_function = has_matching_direct_signature(op, is_empty_function, enum_types, temp_types)
+            bool calls_record_constructor = has_matching_record_constructor_signature(op, 'is_empty', record_fields, enum_types, temp_types)
+            if (!calls_user_function && !calls_record_constructor):
+                result_type = 'bool'
         if (op.args[0] == 'sum' && record_type_exists(record_names, 'sum')):
             return refined_value_op(op, 'sum', refine_ownership_mode(op, 'sum'))
         if (op.args[0] == 'last' && result_type == 'unknown' && lookup_function_return_type(functions, 'last') == 'unknown' && !record_type_exists(record_names, 'last')):
@@ -2191,6 +2189,9 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
                     if (is_native_array_contains_receiver_type(receiver_type)):
                         validate_native_array_contains_arity(op)
                         validate_array_contains_needle_type(receiver_type, lookup_temp_type_slot(temp_types, op.args[2]), enum_types)
+                        result_type = 'bool'
+                    if (is_native_set_query_type(receiver_type)):
+                        validate_native_set_contains(op, receiver_type, enum_types, temp_types)
                         result_type = 'bool'
         if (result_type == 'unknown' && op.args[0] == 'index_of' && lookup_function_return_type(functions, 'index_of') == 'unknown'):
             if (!record_type_exists(record_names, 'index_of')):
