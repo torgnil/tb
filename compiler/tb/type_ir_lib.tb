@@ -1345,6 +1345,11 @@ private void validate_array_contains_needle_type(string receiver_type, string ne
     if (actual_type != expected_type):
         throw 'array contains requires ' + expected_type + '; got ' + actual_type
 
+private void validate_native_array_contains_arity(LinearInstruction op):
+    int argument_count = op.args.length() - 2
+    if (argument_count != 1):
+        throw 'array contains requires exactly one needle argument; got ' + argument_count.to_string()
+
 bool is_native_record_array_query_type(string base_type):
     if (!base_type.ends_with('[]')):
         return false
@@ -2165,8 +2170,8 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
                     if (receiver_type.starts_with('map<')):
                         result_type = 'bool'
                     if (is_native_array_contains_receiver_type(receiver_type)):
-                        if (op.args.length() == 3):
-                            validate_array_contains_needle_type(receiver_type, lookup_temp_type_slot(temp_types, op.args[2]), enum_types)
+                        validate_native_array_contains_arity(op)
+                        validate_array_contains_needle_type(receiver_type, lookup_temp_type_slot(temp_types, op.args[2]), enum_types)
                         result_type = 'bool'
         if (result_type == 'unknown' && op.args[0] == 'index_of' && lookup_function_return_type(functions, 'index_of') == 'unknown'):
             if (!record_type_exists(record_names, 'index_of')):
@@ -2377,8 +2382,8 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
                 FunctionSigIR contains_method_sig = lookup_function_sig(functions, method_name)
                 return refined_value_op(op, contains_method_sig.return_type, refine_ownership_mode(op, contains_method_sig.return_type))
             if (is_native_array_contains_receiver_type(contains_receiver_type)):
-                if (op.args.length() == 3):
-                    validate_array_contains_needle_type(contains_receiver_type, lookup_temp_type_slot(temp_types, op.args[2]), enum_types)
+                validate_native_array_contains_arity(op)
+                validate_array_contains_needle_type(contains_receiver_type, lookup_temp_type_slot(temp_types, op.args[2]), enum_types)
                 return refined_value_op(op, 'bool', 'plain')
             string result_type = infer_method_call_type_cached(method_name, base_type, functions, TYPE_IR_FUNCTION_TYPE_CACHE_NAMES, TYPE_IR_FUNCTION_TYPE_CACHE_VALUES)
             return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
