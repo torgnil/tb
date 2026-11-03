@@ -1,0 +1,45 @@
+int bound_calls = 0
+
+int identity(int value):
+    bound_calls = bound_calls * 10 + value
+    return value
+
+int main():
+    thread_pool pool = thread_pool(1)
+    future<int> result = pool.submit(int end -> {
+        int total = 0
+        for (int ascending_value : range(identity(1), end, identity(3))) {
+            total += ascending_value
+        }
+        for (int descending_value : range(end, identity(0), -4)) {
+            total += descending_value
+        }
+        for (int wrong_direction_value : range(0, end, -1)) {
+            total += 100
+        }
+
+        int nested = 0
+        for (int outer_value : range(1, 4, 2)) {
+            for (const int inner_value : range(0, 4, 2)) {
+                nested += outer_value + inner_value
+            }
+        }
+
+        int control = 0
+        for (int control_value : range(0, end, 2)) {
+            if (control_value == 2) {
+                continue
+            }
+            if (control_value == 8) {
+                break
+            }
+            if (control_value == 4) {
+                control_value = 100
+            }
+            control = control * 10 + control_value
+        }
+        return total + nested + control
+    }, 10)
+    print(result.await())
+    print(bound_calls)
+    return 0
