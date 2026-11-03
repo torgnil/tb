@@ -642,7 +642,7 @@ String helpers
   - Alias for `is_whitespace(ch)`.
 
 - last(s: string) -> string
-  - Return the last byte-character as a single-character string, or `''` for the empty string. Both `last(s)` and `s.last()` are supported for runtime and const strings; Unicode codepoint handling is not provided.
+  - Return the last byte-character as a single-character string, or `''` for the empty string. Both `last(s)` and `s.last()` are supported for runtime and const strings; Unicode codepoint handling is not provided. A matching same-name user function or lowercase `last` record constructor takes precedence; a mismatched declaration does not block the builtin.
 
 - replace(s: string, old: string, new: string) -> string
   - Replace occurrences of `old` with `new`.
@@ -670,6 +670,7 @@ Array helpers
   - For native `int[]` and `bool[]`, return the last element without changing the array. For `string[]`, return an independent string copy of the last element without changing the array; the copy remains valid after the source slot is popped or the array is cleared or destroyed. Also available as `arr.last()`, including for const arrays. Calling either form on an empty array aborts before reading an element.
   - For `int[][]` and `string[][]`, return an independent mutable copy of the last row. The outer array is unchanged, and an empty selected row is valid. Calling either form on an empty outer array aborts before reading an element; immutable strings in a copied `string[]` row may be shared.
   - A recognized owned native-array temporary used only as the direct or UFCS receiver is released after `last` has produced its result. Named or reused arrays remain available, and string receivers keep their existing lifetime behavior.
+  - A matching same-name user function or lowercase `last` record constructor takes precedence; a different parameter signature does not block the builtin. Record constructors can be called directly or through UFCS.
 
 - insert(arr: T[], index: int, value: T) -> int for `int[]`; `void` for `bool[]` and `string[]`
   - Both direct calls (`insert(values, index, value)`) and array methods (`values.insert(index, value)`) are supported for native `int[]`, `bool[]`, and `string[]`. Insertion shifts the selected element and later values right. The full signed 64-bit index is used: negative indices clamp to the start, and indices past the end append. Inserting at the last occupied index preserves that element in the new final slot. The index must be `int`, and the value must match the array element type. `int[]` insertion returns the new array length; `bool[]` and `string[]` insertion return `void` and must be used as statements. Borrowed strings are retained before mutation; owned string temporaries transfer into the array. A direct user-defined `insert` function or a record named `insert` keeps precedence over the builtin. For UFCS, `int[]` uses the builtin ahead of a same-named user function; `bool[]` and `string[]` preserve user-function precedence. A recognized sole-use owned array temporary passed to the direct builtin call or used as the receiver of a builtin UFCS method call is released after insertion. Named, borrowed, global, record-field, or reused arrays remain with their owners.
