@@ -2239,6 +2239,12 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             string sum_arg_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
             if (sum_arg_type == 'int[]' || sum_arg_type == 'bool[]'):
                 result_type = 'int'
+        if (op.args[0] == 'sum' && result_type == 'unknown' && lookup_function_return_type(functions, 'sum') == 'unknown' && !record_type_exists(record_names, 'sum')):
+            if (op.args.length() != 2):
+                throw 'sum requires exactly one int[] or bool[] argument'
+            string sum_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+            if (sum_type != 'int[]' && sum_type != 'bool[]'):
+                throw 'sum requires int[] or bool[]; got ' + sum_type
         if (op.args[0] == 'abs'):
             if (op.args.length() == 2):
                 string argument_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
