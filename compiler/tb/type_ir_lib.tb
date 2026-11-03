@@ -2145,10 +2145,10 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
             if (op.args.length() != 2):
                 throw 'clear requires exactly one array argument'
             string clear_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
-            if (clear_type == 'bool[]'):
+            if (clear_type == 'bool[]' || clear_type == 'string[]' || clear_type == 'int[][]' || clear_type == 'string[][]'):
                 result_type = 'void'
-            if (clear_type == 'int[][]' || clear_type == 'string[][]'):
-                result_type = 'void'
+            else:
+                throw 'clear requires bool[], string[], int[][], or string[][]; got ' + clear_type
         if (op.args[0] == 'pop' && lookup_function_return_type(functions, 'pop') == 'unknown' && !record_type_exists(record_names, 'pop')):
             if (op.args.length() != 2):
                 throw 'pop requires exactly one array argument'
@@ -2264,9 +2264,6 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
                     result_type = 'int'
                 else:
                     throw 'array index_of requires int[], bool[], or string[]; got ' + index_of_array_type
-        if (result_type == 'unknown' && op.args[0] == 'clear' && op.args.length() == 2):
-            if (lookup_temp_type_slot(temp_types, op.args[1]) == 'string[]'):
-                result_type = 'void'
         if ((op.args[0] == 'min' || op.args[0] == 'max') && op.args.length() == 3):
             string left_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
             string right_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2]))

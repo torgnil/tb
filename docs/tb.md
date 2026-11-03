@@ -691,7 +691,7 @@ Array helpers
   - Nested arrays copy their rows as well as the outer array; immutable strings may be shared. When a declared user function named `copy` is selected, its typed array parameters provide context for bare empty literals in direct and UFCS calls, including the receiver. Same-named record declarations remain excluded from UFCS empty-literal context.
 
 - clear(arr: T[]) -> void
-  - For `string[]`, clear releases owned strings in live slots and keeps the array storage available for reuse. For `bool[]`, it sets the live length to zero and keeps the array available for reuse. Also available as `arr.clear()`.
+  - For `string[]`, clear releases owned strings in live slots and keeps the array storage available for reuse. For `bool[]`, it sets the live length to zero and keeps the array available for reuse. Direct calls support `string[]`, `bool[]`, `int[][]`, and `string[][]`; `int[]` supports the UFCS form (`values.clear()`). Also available as `arr.clear()`.
   - For `int[][]` and `string[][]`, clear releases owned live rows, preserves borrowed rows, clears the outer slots, and sets the outer length to zero while keeping its storage available for reuse. Also available as `rows.clear()`. A user-defined `clear` function takes precedence for direct and UFCS calls; a lowercase `clear` record remains a direct-call constructor while `rows.clear()` uses the builtin.
 
 - contains(arr: T[], value: T) -> bool
