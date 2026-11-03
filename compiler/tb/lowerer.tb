@@ -1007,22 +1007,29 @@ BindingIR[] submit_lambda_captures(Node lambda_node, BindingIR[] bindings):
                 captured.push(binding)
             else if (lambda_node.kind == 'Lambda' && int_array_task && type_name == 'int[]'):
                 captured.push(binding)
+            else if (lambda_node.kind == 'Lambda0' && type_name == 'string[]'):
+                captured.push(binding)
             else if (lambda_node.kind == 'Lambda0' && submit_lambda_managed_type(type_name)):
                 captured.push(binding)
             else:
                 if (lambda_node.kind == 'Lambda0'):
                     throw 'thread_pool.submit zero-argument lambda can capture int or bool values, or one string, int[], or int[][] value; unsupported capture ' + name
                 throw 'thread_pool.submit lambda can capture only int or bool values; unsupported capture ' + name
+    int string_array_capture_count = 0
     int managed_capture_count = 0
     int int_array_capture_count = 0
     for (BindingIR binding : captured):
         string capture_type = binding.type_name
         if (capture_type.starts_with('const ')):
             capture_type = capture_type.substring(6)
+        if (capture_type == 'string[]'):
+            string_array_capture_count += 1
         if (submit_lambda_managed_type(capture_type)):
             managed_capture_count += 1
         if (capture_type == 'int[]'):
             int_array_capture_count += 1
+    if (string_array_capture_count > 0 && (lambda_node.kind != 'Lambda0' || captured.length() != 1)):
+        throw 'thread_pool.submit zero-argument lambda can capture one string[] value by itself'
     if (managed_capture_count > 0):
         int array_capture_index = submit_lambda_array_capture_index(captured)
         bool supported_single_managed_capture = managed_capture_count == 1 && (captured.length() == 1 || array_capture_index >= 0)
