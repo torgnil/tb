@@ -1537,8 +1537,8 @@ bool direct_call_matches_named_function(ProgramIR program, ParsedFunction caller
 bool direct_split_matches_named_function(ProgramIR program, ParsedFunction caller, LinearInstruction op):
     return direct_call_matches_named_function(program, caller, op, 'split')
 
-bool direct_split_matches_record_constructor(ProgramIR program, ParsedFunction caller, LinearInstruction op):
-    RecordDeclIR record_decl = lookup_record_decl(program, 'split')
+bool direct_call_matches_record_constructor(ProgramIR program, ParsedFunction caller, LinearInstruction op, string constructor_name):
+    RecordDeclIR record_decl = lookup_record_decl(program, constructor_name)
     if (record_decl.header == ''):
         return false
     if (op.args.length() != record_decl.fields.length() + 1):
@@ -1553,6 +1553,9 @@ bool direct_split_matches_record_constructor(ProgramIR program, ParsedFunction c
             return false
         index += 1
     return true
+
+bool direct_split_matches_record_constructor(ProgramIR program, ParsedFunction caller, LinearInstruction op):
+    return direct_call_matches_record_constructor(program, caller, op, 'split')
 
 string source_function_display_name(ParsedFunction function_ir):
     if (function_ir.source_name != ''):
@@ -6570,17 +6573,10 @@ string emit_builtin_query_call_value_instruction(ProgramIR program, ParsedFuncti
     if (call_name == 'length'):
         if (op.args.length() != 2):
             throw 'unsupported llvm length arity'
-        if (call_arg1_type == 'int[]'):
-            return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, '  ' + lhs + '.len32 = call i32 @tb_bootstrap_int_array_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64')
-        if (call_arg1_type == 'set<int>'):
-            return '  ' + lhs + '.len32 = call i32 @tb_bootstrap_int_set_length(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64'
-        if (call_arg1_type.ends_with('[]') && record_name_from_type(array_item_type(call_arg1_type)) != ''):
-            string record_name = record_name_from_type(array_item_type(call_arg1_type))
-            string length_line = '  ' + lhs + '.len32 = call i32 @tb_bootstrap_record_array_length_' + record_name + '(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64'
-            if (temp_needs_backend_free(function_ir, op.args[1]) && !temp_is_moved(function_ir, op.args[1]) && temp_is_query_only_use_in_producing_block(function_ir, op.args[1], op.lhs)):
-                return length_line + '\n' + emit_backend_release_ptr(call_arg1_type, temp_ref(op.args[1]))
-            return length_line
-        return ''
+        if (direct_call_matches_named_function(program, function_ir, op, call_name) || direct_call_matches_record_constructor(program, function_ir, op, call_name)):
+            return ''
+        LinearInstruction length_method = LinearInstruction('value', op.lhs, op.result_type, op.ownership_mode, 'method-call', ['length', op.args[1]])
+        return emit_method_call_value_instruction_core(program, function_ir, length_method)
     if (call_name == 'hash'):
         if (op.args.length() != 2):
             throw 'unsupported llvm hash arity'

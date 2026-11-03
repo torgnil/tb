@@ -653,7 +653,7 @@ String helpers
 Array helpers
 
 - length(x: T[] | string | map) -> int
-  - Return length of array, string, set, or `map<string, int>`. For arrays of declared record types, direct `length(records)` and UFCS `records.length()` are supported.
+  - Return length of an array, string, set, or map. Direct `length(value)` and UFCS `value.length()` support strings, native arrays, sets, maps, and arrays of declared record types.
   - A recognized owned record-array expression used only by either query is released after the length is read; named bindings (including const bindings), borrowed, global, record-field, moved, or reused receivers remain with their owners.
 
 - push(arr: T[], value: T) -> int
