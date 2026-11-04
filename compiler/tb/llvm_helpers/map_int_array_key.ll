@@ -1,52 +1,6 @@
-define private i64 @tb_bootstrap_hash_int_array(ptr %value) {
-entry:
-  %len32 = call i32 @tb_bootstrap_int_array_length(ptr %value)
-  %len = sext i32 %len32 to i64
-  %hash.seed.raw = mul i64 5381, 33
-  %hash.seed = add i64 %hash.seed.raw, %len
-  br label %loop
-loop:
-  %index = phi i32 [0, %entry], [%next.index, %body]
-  %hash = phi i64 [%hash.seed, %entry], [%next.hash, %body]
-  %done = icmp sge i32 %index, %len32
-  br i1 %done, label %exit, label %body
-body:
-  %item = call i64 @tb_bootstrap_int_array_get(ptr %value, i32 %index)
-  %hash.item = mul i64 %hash, 33
-  %next.hash = add i64 %hash.item, %item
-  %next.index = add i32 %index, 1
-  br label %loop
-exit:
-  ret i64 %hash
-}
-
-define private i1 @tb_bootstrap_int_array_equals(ptr %left, ptr %right) {
-entry:
-  %left.len = call i32 @tb_bootstrap_int_array_length(ptr %left)
-  %right.len = call i32 @tb_bootstrap_int_array_length(ptr %right)
-  %len.match = icmp eq i32 %left.len, %right.len
-  br i1 %len.match, label %loop.cond, label %false
-loop.cond:
-  %index = phi i32 [0, %entry], [%next.index, %loop.step]
-  %keep.loop = icmp slt i32 %index, %left.len
-  br i1 %keep.loop, label %loop.body, label %true
-loop.body:
-  %left.item = call i64 @tb_bootstrap_int_array_get(ptr %left, i32 %index)
-  %right.item = call i64 @tb_bootstrap_int_array_get(ptr %right, i32 %index)
-  %item.match = icmp eq i64 %left.item, %right.item
-  br i1 %item.match, label %loop.step, label %false
-loop.step:
-  %next.index = add i32 %index, 1
-  br label %loop.cond
-true:
-  ret i1 true
-false:
-  ret i1 false
-}
-
 define private i32 __MAP_REHASH_INSERT_NAME__(ptr %keys, ptr %values, ptr %owned, ptr %states, i32 %cap, ptr %key, __VALUE_LLVM_TYPE__ %value, i8 %owned.byte) {
 entry:
-  %hash = call i64 @tb_bootstrap_hash_int_array(ptr %key)
+  %hash = call i64 __MAP_KEY_HASH_NAME__(ptr %key)
   %cap64 = zext i32 %cap to i64
   %slot64 = urem i64 %hash, %cap64
   %slot = trunc i64 %slot64 to i32
@@ -210,7 +164,7 @@ entry:
   %states = load ptr, ptr %states.ptr
   %order.ptr = getelementptr inbounds __MAP_STRUCT__, ptr %map, i32 0, i32 6
   %order = load ptr, ptr %order.ptr
-  %hash = call i64 @tb_bootstrap_hash_int_array(ptr %key)
+  %hash = call i64 __MAP_KEY_HASH_NAME__(ptr %key)
   %cap64 = zext i32 %cap to i64
   %slot64 = urem i64 %hash, %cap64
   %slot = trunc i64 %slot64 to i32
@@ -224,7 +178,7 @@ probe:
 check:
   %key.slot = getelementptr inbounds ptr, ptr %keys, i32 %index
   %key.value = load ptr, ptr %key.slot
-  %key.match = call i1 @tb_bootstrap_int_array_equals(ptr %key.value, ptr %key)
+  %key.match = call i1 __MAP_KEY_EQUALS_NAME__(ptr %key.value, ptr %key)
   br i1 %key.match, label %found, label %step
 found:
   %value.slot = getelementptr inbounds __VALUE_LLVM_TYPE__, ptr %values, i32 %index
@@ -247,7 +201,7 @@ entry:
   %keys = load ptr, ptr %keys.ptr
   %states.ptr = getelementptr inbounds __MAP_STRUCT__, ptr %map, i32 0, i32 5
   %states = load ptr, ptr %states.ptr
-  %hash = call i64 @tb_bootstrap_hash_int_array(ptr %key)
+  %hash = call i64 __MAP_KEY_HASH_NAME__(ptr %key)
   %cap64 = zext i32 %cap to i64
   %slot64 = urem i64 %hash, %cap64
   %slot = trunc i64 %slot64 to i32
@@ -261,7 +215,7 @@ probe:
 check:
   %key.slot = getelementptr inbounds ptr, ptr %keys, i32 %index
   %key.value = load ptr, ptr %key.slot
-  %key.match = call i1 @tb_bootstrap_int_array_equals(ptr %key.value, ptr %key)
+  %key.match = call i1 __MAP_KEY_EQUALS_NAME__(ptr %key.value, ptr %key)
   br i1 %key.match, label %found, label %step
 found:
   ret i1 true
@@ -302,7 +256,7 @@ probe.setup:
   %states = load ptr, ptr %states.ptr
   %order.ptr = getelementptr inbounds __MAP_STRUCT__, ptr %map, i32 0, i32 6
   %order = load ptr, ptr %order.ptr
-  %hash = call i64 @tb_bootstrap_hash_int_array(ptr %key)
+  %hash = call i64 __MAP_KEY_HASH_NAME__(ptr %key)
   %cap64 = zext i32 %cap.reload to i64
   %slot64 = urem i64 %hash, %cap64
   %slot = trunc i64 %slot64 to i32
@@ -316,7 +270,7 @@ probe:
 check:
   %key.slot = getelementptr inbounds ptr, ptr %keys, i32 %index
   %key.value = load ptr, ptr %key.slot
-  %key.match = call i1 @tb_bootstrap_int_array_equals(ptr %key.value, ptr %key)
+  %key.match = call i1 __MAP_KEY_EQUALS_NAME__(ptr %key.value, ptr %key)
   br i1 %key.match, label %update, label %step
 update:
   %value.slot = getelementptr inbounds __VALUE_LLVM_TYPE__, ptr %values, i32 %index
@@ -326,7 +280,7 @@ update:
   store i8 %owned.byte, ptr %owned.slot
   ret void
 insert:
-  %key.copy = call ptr @tb_bootstrap_int_array_clone(ptr %key)
+  %key.copy = call ptr __MAP_KEY_CLONE_NAME__(ptr %key)
   %key.slot.insert = getelementptr inbounds ptr, ptr %keys, i32 %index
   store ptr %key.copy, ptr %key.slot.insert
   %value.slot.insert = getelementptr inbounds __VALUE_LLVM_TYPE__, ptr %values, i32 %index
@@ -361,7 +315,7 @@ entry:
   %owned = load ptr, ptr %owned.ptr
   %states.ptr = getelementptr inbounds __MAP_STRUCT__, ptr %map, i32 0, i32 5
   %states = load ptr, ptr %states.ptr
-  %hash = call i64 @tb_bootstrap_hash_int_array(ptr %key)
+  %hash = call i64 __MAP_KEY_HASH_NAME__(ptr %key)
   %cap64 = zext i32 %cap to i64
   %slot64 = urem i64 %hash, %cap64
   %slot = trunc i64 %slot64 to i32
@@ -375,7 +329,7 @@ probe:
 check:
   %key.slot = getelementptr inbounds ptr, ptr %keys, i32 %index
   %key.value = load ptr, ptr %key.slot
-  %key.match = call i1 @tb_bootstrap_int_array_equals(ptr %key.value, ptr %key)
+  %key.match = call i1 __MAP_KEY_EQUALS_NAME__(ptr %key.value, ptr %key)
   br i1 %key.match, label %found, label %step
 found:
   %owned.slot = getelementptr inbounds i8, ptr %owned, i32 %index
@@ -423,7 +377,7 @@ loop.body:
 emit:
   %key.slot = getelementptr inbounds ptr, ptr %keys, i32 %slot
   %key.value = load ptr, ptr %key.slot
-  %key.copy = call ptr @tb_bootstrap_int_array_clone(ptr %key.value)
+  %key.copy = call ptr __MAP_KEY_CLONE_NAME__(ptr %key.value)
   call void @tb_bootstrap_int_array_array_set_owned(ptr %result, i32 %index, ptr %key.copy, i1 true)
   br label %loop.step
 loop.step:
@@ -510,7 +464,7 @@ loop.body:
 release.entry:
   %key.slot = getelementptr inbounds ptr, ptr %keys, i32 %slot
   %key.value = load ptr, ptr %key.slot
-  call void @tb_bootstrap_int_array_free(ptr %key.value)
+  call void __MAP_KEY_FREE_NAME__(ptr %key.value)
 __FREE_VALUE_BLOCK__
   br label %loop.step
 loop.step:
