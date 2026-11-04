@@ -2280,11 +2280,17 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
                     result_type = 'int'
                 else:
                     throw 'array index_of requires int[], bool[], or string[]; got ' + index_of_array_type
-        if ((op.args[0] == 'min' || op.args[0] == 'max') && op.args.length() == 3):
-            string left_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
-            string right_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2]))
-            if (left_type == right_type && (left_type == 'int' || left_type == 'num')):
-                result_type = left_type
+        if (op.args[0] == 'min' || op.args[0] == 'max'):
+            bool direct_builtin_minmax = result_type == 'unknown' && lookup_function_return_type(functions, op.args[0]) == 'unknown' && !record_type_exists(record_names, op.args[0])
+            if (op.args.length() == 3):
+                string left_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+                string right_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2]))
+                if (left_type == right_type && (left_type == 'int' || left_type == 'num')):
+                    result_type = left_type
+                else if (direct_builtin_minmax):
+                    throw op.args[0] + ' requires two int or two num arguments; got ' + left_type + ' and ' + right_type
+            else if (direct_builtin_minmax):
+                throw op.args[0] + ' requires exactly two arguments; got ' + (op.args.length() - 1).to_string()
         if (result_type == 'unknown' && !op.args.is_empty()):
             if (record_type_exists(record_names, op.args[0])):
                 result_type = op.args[0]
