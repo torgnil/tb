@@ -1,0 +1,55 @@
+bool[] FLAGS = [false, true]
+
+string[] words_after_change():
+    FLAGS[0] = true
+    return ['oak', 'pine']
+
+string transform(string word, const bool[] flags, int number):
+    FLAGS[0] = false
+    if (flags[0]):
+        return word + number.to_string()
+    return 'off'
+
+bool choose(string word, const bool[] flags):
+    FLAGS[1] = false
+    return flags[1] && word != 'skip'
+
+string fail_map(string word, const bool[] flags):
+    if (word == 'stop' && flags[0]):
+        throw 'map failed'
+    return word
+
+bool fail_filter(string word, const bool[] flags):
+    if (word == 'stop' && flags[0]):
+        throw 'filter failed'
+    return true
+
+bool take_and_flip(string word, bool[] flags):
+    bool was_set = flags[0]
+    flags[0] = false
+    return was_set
+
+int main():
+    int suffix = 7
+    print(words_after_change().map_to(string word -> transform(word, FLAGS, suffix)))
+    print(FLAGS[0])
+    print(['oak', 'skip', 'pine'].filter(string word -> choose(word, FLAGS)))
+    print(FLAGS[1])
+    bool[] mutable_flags = [true]
+    print(['first', 'second'].filter(string word -> take_and_flip(word, mutable_flags)))
+    print(mutable_flags[0])
+    const bool[] fixed = [true]
+    print(['x'].map_to(string word -> fixed[0] ? word : 'no'))
+    bool[] empty_flags = []
+    string[] empty = []
+    print(empty.filter(string word -> empty_flags[0]).length())
+    try:
+        ['first', 'stop'].map_to(string word -> fail_map(word, fixed))
+    catch (exception error):
+        print(error)
+    try:
+        ['first', 'stop'].filter(string word -> fail_filter(word, fixed))
+    catch (exception error):
+        print(error)
+    print(fixed[0])
+    return 0

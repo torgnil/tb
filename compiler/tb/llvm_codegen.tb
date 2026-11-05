@@ -5277,6 +5277,9 @@ string emit_bootstrap_fixture_lambda_instruction(ProgramIR program, ParsedFuncti
             if (capture_source_types[index] == 'int[]'):
                 captured_value = temp_ref(op.lhs) + '.capture.snapshot.' + index.to_string()
                 lines += '\n  ' + captured_value + ' = call ptr @tb_bootstrap_int_array_clone(ptr ' + temp_ref(op.args[index + 4]) + ')'
+            else if (capture_source_types[index] == 'bool[]'):
+                captured_value = temp_ref(op.lhs) + '.capture.snapshot.' + index.to_string()
+                lines += '\n  ' + captured_value + ' = call ptr @tb_bootstrap_bool_array_clone(ptr ' + temp_ref(op.args[index + 4]) + ')'
             else if (capture_source_types[index] == 'string[]'):
                 captured_value = temp_ref(op.lhs) + '.capture.snapshot.' + index.to_string()
                 lines += '\n  ' + captured_value + ' = call ptr @tb_bootstrap_string_array_clone(ptr ' + temp_ref(op.args[index + 4]) + ')'
@@ -5320,6 +5323,9 @@ string emit_bootstrap_fixture_lambda_instruction(ProgramIR program, ParsedFuncti
             if (capture_source_types[index] == 'int[]'):
                 captured_value = temp_ref(op.lhs) + '.capture.snapshot.' + index.to_string()
                 lines += '\n  ' + captured_value + ' = call ptr @tb_bootstrap_int_array_clone(ptr ' + temp_ref(op.args[index + 4]) + ')'
+            else if (capture_source_types[index] == 'bool[]'):
+                captured_value = temp_ref(op.lhs) + '.capture.snapshot.' + index.to_string()
+                lines += '\n  ' + captured_value + ' = call ptr @tb_bootstrap_bool_array_clone(ptr ' + temp_ref(op.args[index + 4]) + ')'
             else if (capture_source_types[index] == 'string[]'):
                 captured_value = temp_ref(op.lhs) + '.capture.snapshot.' + index.to_string()
                 lines += '\n  ' + captured_value + ' = call ptr @tb_bootstrap_string_array_clone(ptr ' + temp_ref(op.args[index + 4]) + ')'
@@ -9839,6 +9845,12 @@ string[] emit_string_array_capture_thunks(ProgramIR program):
                         lines.push('  ' + field + ' = getelementptr ' + context_type + ', ptr %context, i32 0, i32 ' + capture_index.to_string())
                         lines.push('  ' + value + ' = load ptr, ptr ' + field)
                         lines.push('  call void @tb_bootstrap_int_array_free(ptr ' + value + ')')
+                    else if (capture_source_types[capture_index] == 'bool[]'):
+                        string field = '%cleanup.capture.field.' + capture_index.to_string()
+                        string value = '%cleanup.capture.value.' + capture_index.to_string()
+                        lines.push('  ' + field + ' = getelementptr ' + context_type + ', ptr %context, i32 0, i32 ' + capture_index.to_string())
+                        lines.push('  ' + value + ' = load ptr, ptr ' + field)
+                        lines.push('  call void @tb_bootstrap_bool_array_free(ptr ' + value + ')')
                     else if (capture_source_types[capture_index] == 'string[]'):
                         string field = '%cleanup.capture.field.' + capture_index.to_string()
                         string value = '%cleanup.capture.value.' + capture_index.to_string()
