@@ -2081,6 +2081,11 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
     if (op.detail == 'call'):
         if (op.args.is_empty()):
             return op
+        if (op.args[0] == 'sort'):
+            bool has_sort_function = lookup_function_return_type(functions, 'sort') != 'unknown'
+            bool has_sort_record = record_type_exists(record_names, 'sort')
+            if (!has_sort_function && !has_sort_record):
+                throw 'sort is an array method; use array.sort(...)'
         if (op.args[0] == 'length' || op.args[0] == 'is_empty'):
             validate_direct_native_query_receiver(op, op.args[0], functions, record_fields, enum_types, temp_types, record_names)
         if (op.args[0] == 'to_int'):
