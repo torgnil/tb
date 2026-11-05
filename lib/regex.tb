@@ -1482,7 +1482,9 @@ RegexCapture[] regex_find_all_captures_from(Regex program, string text, int star
         return matches
     int search_start = start
     while (search_start <= text_length):
-        RegexCapture match = regex_find_captures_from(program, text, search_start)
+        RegexCapture match = regex_capture_search(program, text, search_start, false)
+        if (regex_capture_is_depth_limit(match)):
+            throw 'regex captures: repeat nesting exceeds 12'
         if (!match.matched):
             break
         matches.push(match)
