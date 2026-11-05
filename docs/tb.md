@@ -128,9 +128,11 @@ one-dimensional integer-backed enum array may be stored as a map value and
 uses the existing `int[]` representation, including recursively inside nested
 map values. A two-dimensional integer-backed enum array may also be stored as a
 map value and uses the existing `int[][]` representation, including recursively
-inside nested map values. It may also be used as a key for the direct array-key
-map value families described above. Nested enum-array map keys remain
-unsupported. Bare enums continue to use their existing string representation.
+inside nested map values. It may also be used as a key for the direct bool-valued
+map `map<Code[][], bool>` (normalized to `map<int[][], bool>`), with the
+structural snapshot behavior described above. Other value types, nested maps,
+and deeper-rank enum-array keys remain unsupported. Bare enums continue to use
+their existing string representation.
 
 String-backed enum values use their string representation in named function parameters and
 returns. A returned enum call can be printed, compared with an enum member,
