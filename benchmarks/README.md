@@ -19,7 +19,7 @@ Run a subset or choose another compiler:
 Python comparisons require Python 3.10 or newer. The runner uses `python3` from
 `PATH` by default; use `--python PATH` to choose an interpreter explicitly.
 
-The runner compiles each benchmark as setup, but reports only executable runtime. Build outputs are written to `.build/benchmarks/`.
+The runner compiles each benchmark as setup, but reports only executable runtime. Generated tb LLVM and C baselines are both compiled with `clang -O3`. Build outputs are written to `.build/benchmarks/`.
 
 The regex benchmarks use ASCII inputs and patterns supported by all three
 implementations. `regex_compile` compiles 1,000 distinct patterns, avoiding
