@@ -1,0 +1,46 @@
+bool[] flags = [true, false, true]
+
+bool enabled(const bool[] source, int index):
+    flags[0] = false
+    return source[index]
+
+int score(const bool[] source, int index):
+    return enabled(source, index) ? index + 10 : -1
+
+int failing_score(const bool[] source, int index):
+    if (index == 1):
+        throw 'bool helper failed'
+    return score(source, index)
+
+bool consume(bool[] source, int index):
+    bool result = source[index]
+    source[index] = false
+    return result
+
+bool forward(const bool[] source, int index):
+    return consume(source, index)
+
+int main():
+    int[] values = [0, 1, 2]
+    print(values.map_to(int item -> score(flags, item)))
+    print(flags[0])
+    flags[0] = true
+    print(values.filter(int item -> enabled(flags, item)))
+    print(flags[0])
+    const bool[] fixed = [true, false, true]
+    print(values.map_to(int item -> {
+        return score(fixed, item)
+    }))
+    print(values.filter(int item -> {
+        return enabled(fixed, item)
+    }))
+    print([0, 0].filter(int item -> forward(fixed, item)))
+    print(fixed[0])
+    int[] empty = []
+    print(empty.map_to(int item -> failing_score(fixed, item)))
+    try:
+        values.map_to(int item -> failing_score(fixed, item))
+    catch (exception error):
+        print(error)
+    print(fixed[0])
+    return 0
