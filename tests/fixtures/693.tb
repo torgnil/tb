@@ -1,0 +1,31 @@
+import regex;
+
+void show_captures(RegexCapture[] matches, string text):
+    print(matches.length())
+    for (RegexCapture match : matches):
+        print(match.starts[0])
+        print(match.ends[0])
+        print('[' + regex_group(match, text, 1) + ']')
+        print('[' + regex_group(match, text, 2) + ']')
+
+int main():
+    Regex pattern = regex_compile('(a)(b)?')
+    show_captures(regex_find_all_captures(pattern, 'ab a'), 'ab a')
+    show_captures(regex_find_all_captures_from(pattern, 'ab a', 1), 'ab a')
+    show_captures(regex_find_all_captures(regex_compile('(a?)'), 'xy'), 'xy')
+    show_captures(regex_find_all_captures_from(regex_compile('($)'), 'xy', 1), 'xy')
+    print(regex_find_all_captures_from(pattern, 'ab', -1).length())
+    print(regex_find_all_captures_from(pattern, 'ab', 3).length())
+    print(regex_find_all_captures(regex_compile('('), 'ab').length())
+    print(regex_find_all_captures(regex_compile('z'), 'ab').length())
+    RegexCapture[] independent = regex_find_all_captures(pattern, 'ab a')
+    independent[0].starts[0] = 1
+    print(independent[0].starts[0])
+    print(independent[1].starts[0])
+    print(regex_find_all_captures(regex_compile('a'), 'aa').length())
+    try:
+        Regex deep = regex_compile('(((((((((((((a)+)+)+)+)+)+)+)+)+)+)+)+)+')
+        print(regex_find_all_captures(deep, 'a').length())
+    catch (exception err):
+        print(err)
+    return 0

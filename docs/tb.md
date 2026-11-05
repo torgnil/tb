@@ -902,6 +902,18 @@ amortized constant-time operations.
 `regex_match_captures(program, text)` uses the same result type but requires a
 full-string match. It considers later alternatives when an earlier one matches
 only a prefix; for example `(a|ab)` captures `ab` when matching `ab` in full.
+`regex_find_all_captures(program, text)` returns a `RegexCapture[]` for all
+non-overlapping matches. `regex_find_all_captures_from(program, text, start)`
+starts at the specified byte offset. Each result has the same prioritized
+captures as `regex_find_captures_from`, and the returned position arrays are
+independent. Invalid programs or offsets and no matches produce an empty array.
+The next search begins at the end of a nonempty match, or one byte after an
+empty match; an empty match at the end is included once. Anchors refer to the
+whole original text. These functions inherit the capture search's limits and
+exceptions; repeated searches may rescan the input.
+For example, `regex_find_all_captures(regex_compile('(a)(b)?'), 'ab a')`
+returns two results; group 2 is `b` in the first and nonparticipating in the
+second.
 Splitting with a regex repeatedly searches the original text, so anchors retain
 their whole-text meaning. Empty matches split at that byte boundary, then the
 next search begins one byte later; that byte remains in the next field. An
