@@ -4,7 +4,6 @@ tb is a small compiled programming language with an LLVM-based toolchain.
 
 This repository contains:
 - the self-hosted tb compiler
-- the frozen Python bootstrap compiler
 - the language reference
 - fixtures and sample programs
 
@@ -45,14 +44,17 @@ tb-ir path/to/program.tb output.ll
 
 ## Build from source
 
-Build the self-hosted compiler using the released tb 0.2.2 seed:
+Build the self-hosted compiler using the native compiler from the historical
+`v0.2.2` release:
 
 ```bash
 ./build_tb.sh
 ```
 
 The default seed is the LLVM compiler binary in Homebrew's versioned tb 0.2.2
-Cellar directory. The build checks its version, records its SHA-256 in
+Cellar directory. The `v0.2.2` tag and release provide the historical bootstrap
+compiler; this checkout does not include or require the Python compiler. The
+build checks the seed version, records its SHA-256 in
 `.build/stage2/bootstrap.json`, and uses a private copy for stage 1. It then
 uses stage 1 to compile the current source again for the final `bin/tb`.
 It never selects the active `bin/tb` or an arbitrary `tb` command from PATH.
@@ -101,19 +103,10 @@ These generated files include their required header declarations. The `.csources
 Use an explicit LLVM output path when compiling threaded programs so these files
 and the metadata are generated.
 
-An explicit frozen Python bootstrap fallback remains available:
-
-```bash
-./build_tb.sh --bootstrap-python
-```
-
-The fallback requires Python 3.10+, uses `.build/python-bootstrap/`, and also
-produces `bin/tb`.
-The native compiler defines current language behavior. The Python compiler's
-existing supported subset is frozen; new features do not require a matching
-Python implementation. Compiler source must remain acceptable to the pinned
-native seed until that seed is deliberately upgraded. Self-hosting generation
-stability is checked for releases and bootstrap changes.
+Python 3.8+ is required for build utilities. The native compiler defines
+current language behavior. Compiler source must remain acceptable to the
+pinned native seed until that seed is deliberately upgraded. Self-hosting
+generation stability is checked for releases and bootstrap changes.
 
 ## Tests
 
@@ -141,8 +134,6 @@ produce no LLVM file. Successful runtime fixtures also require Clang.
 
 - Building and using the self-hosted tb compiler
 - Native numbered runtime and compiler-rejection fixtures in `tests/fixtures/`
-- Frozen Python bootstrap fallback and its existing fixtures through phase 76;
-  this is a separate suite from the native numbered fixtures
 - The current AoC sample set in `examples/aoc`
 - Stage 2 and stage 3 self-hosting on the current verified path
 - The bundled `raylib` demo path when its external raylib dependencies are
