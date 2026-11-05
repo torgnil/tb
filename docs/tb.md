@@ -907,8 +907,11 @@ their whole-text meaning. Empty matches split at that byte boundary, then the
 next search begins one byte later; that byte remains in the next field. An
 empty match at the end is processed once. A nonempty alternative at the same
 boundary after an empty match is skipped. For example, splitting `abc` with an
-empty regex gives `['', 'a', 'b', 'c', '']`. Captures are not included in the
-result. Because repeated searches materialize the original text and may rescan
+empty regex gives `['', 'a', 'b', 'c', '']`. Each capturing group contributes
+its captured text after the preceding field, in opening-parenthesis order; a
+nonparticipating group contributes an empty string. For example, splitting
+`a,b;c` with `(,)|(;)` gives `['a', ',', '', 'b', '', ';', 'c']`.
+Because repeated searches materialize the original text and may rescan
 it, k matches can take O((k+1)*n*m^2) work, plus bracket scans, and O(n+m^2)
 working space in addition to the output.
 `regex_escape(text)` returns regex source that matches the input bytes literally,
