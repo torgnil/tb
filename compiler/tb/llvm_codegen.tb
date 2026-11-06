@@ -7349,6 +7349,27 @@ string emit_method_call_value_instruction(ProgramIR program, ParsedFunction func
         return line
     return emit_method_call_value_instruction_core(program, function_ir, op)
 
+bool temp_is_owned_bool_values_scalar_read(ParsedFunction function_ir, string row_name, string scalar_name):
+    LinearInstruction row = lookup_temp_instruction(function_ir, row_name)
+    if (row.kind != 'value' || row.detail != 'index' || row.args.length() != 2):
+        return false
+    string grid_name = row.args[0]
+    if (normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, grid_name)) != 'bool[][]'):
+        return false
+    LinearInstruction grid = lookup_temp_instruction(function_ir, grid_name)
+    if (grid.kind != 'value' || grid.detail != 'method-call' || grid.args.length() != 2):
+        return false
+    if (grid.args[0] != 'values'):
+        return false
+    string map_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, grid.args[1]))
+    if (!(map_type == 'map<int, bool[]>' || map_type == 'map<string, bool[]>' || map_type == 'map<int[], bool[]>')):
+        return false
+    if (!temp_needs_backend_free(function_ir, grid_name) || temp_is_moved(function_ir, grid_name) || temp_is_moved(function_ir, row_name)):
+        return false
+    if (!temp_is_query_only_use_in_producing_block(function_ir, grid_name, row_name)):
+        return false
+    return temp_is_query_only_use_in_producing_block(function_ir, row_name, scalar_name)
+
 string emit_index_value_instruction(ParsedFunction function_ir, LinearInstruction op):
     string lhs = temp_ref(op.lhs)
     string base_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0]))
@@ -7368,6 +7389,9 @@ string emit_index_value_instruction(ParsedFunction function_ir, LinearInstructio
         return emit_array_index_materialize(base_type, op.args[0], op.args[1], op.lhs) + '\n  ' + lhs + ' = call ptr @tb_bootstrap_bool_array_array_get(ptr ' + temp_ref(op.args[0]) + ', i32 ' + llvm_i32_index_temp(op.lhs) + ')'
     if (base_type == 'bool[]'):
         string index_line = emit_array_index_materialize(base_type, op.args[0], op.args[1], op.lhs) + '\n  ' + lhs + ' = call i1 @tb_bootstrap_bool_array_get(ptr ' + temp_ref(op.args[0]) + ', i32 ' + llvm_i32_index_temp(op.lhs) + ')'
+        if (temp_is_owned_bool_values_scalar_read(function_ir, op.args[0], op.lhs)):
+            LinearInstruction row = lookup_temp_instruction(function_ir, op.args[0])
+            return index_line + '\n' + emit_backend_release_ptr('bool[][]', temp_ref(row.args[0]))
         return emit_array_scalar_query_with_release(function_ir, op.args[0], op.lhs, index_line)
     if (base_type == 'int[]'):
         string index_line = emit_array_index_materialize(base_type, op.args[0], op.args[1], op.lhs) + '\n  ' + lhs + ' = call i64 @tb_bootstrap_int_array_get(ptr ' + temp_ref(op.args[0]) + ', i32 ' + llvm_i32_index_temp(op.lhs) + ')'
