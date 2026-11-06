@@ -766,6 +766,9 @@ Array helpers
   - Return the square root as `num`. Constant inputs are folded at compile time.
   - Direct native calls require exactly one `int` or `num` argument; known
     incompatible types and wrong arity are rejected during type refinement.
+  - A matching user-defined function takes precedence over the builtin. With no
+    same-name function, a matching `sqrt` record constructor also takes
+    precedence. Nonmatching declarations leave the native numeric form available.
 
 Set and map helpers
 

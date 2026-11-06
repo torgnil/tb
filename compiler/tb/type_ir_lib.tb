@@ -1762,6 +1762,13 @@ bool has_matching_record_constructor_signature(LinearInstruction op, string reco
         index += 1
     return true
 
+private bool direct_sqrt_record_matches(LinearInstruction op, RecordFieldIR[] record_fields, string[] record_names, EnumTypeIR[] enum_types, string[] temp_types):
+    if (!record_type_exists(record_names, 'sqrt')):
+        return false
+    if (op.args.length() == 1 && record_constructor_arg_types(record_fields, 'sqrt').is_empty()):
+        return true
+    return has_matching_record_constructor_signature(op, 'sqrt', record_fields, enum_types, temp_types)
+
 LinearInstruction refine_string_method_signature(LinearInstruction op, string method_name, EnumTypeIR[] enum_types, string[] temp_types):
     if (method_name == 'trim' || method_name == 'trim_left' || method_name == 'trim_right'):
         if (op.args.length() != 2):
@@ -1808,6 +1815,12 @@ LinearInstruction refine_string_method_signature(LinearInstruction op, string me
 LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bindings, FunctionSigIR[] functions, RecordFieldIR[] record_fields, map<string, string> field_types, string[] record_names, EnumTypeIR[] enum_types, string[] temp_types):
     if (op.kind != 'value'):
         return op
+    if (op.detail == 'call' && !op.args.is_empty() && op.args[0] == 'sqrt'):
+        FunctionSigIR sqrt_sig = lookup_function_sig(functions, 'sqrt')
+        if (has_matching_direct_signature(op, sqrt_sig, enum_types, temp_types)):
+            return refined_value_op(op, sqrt_sig.return_type, refine_ownership_mode(op, sqrt_sig.return_type))
+        if (sqrt_sig.name == '' && direct_sqrt_record_matches(op, record_fields, record_names, enum_types, temp_types)):
+            return refined_value_op(op, 'sqrt', refine_ownership_mode(op, 'sqrt'))
     if (op.detail == 'foreach-value'):
         if (op.args.length() != 1):
             throw 'foreach iterable marker requires one source value'
@@ -2751,7 +2764,9 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
         if (op.kind == 'value' && op.detail == 'call'):
             if (!op.args.is_empty() && op.args[0] == 'sqrt'):
                 FunctionSigIR sqrt_sig = lookup_function_sig(functions, 'sqrt')
-                if (sqrt_sig.name == '' && !record_type_exists(record_names, 'sqrt')):
+                bool sqrt_user = has_matching_direct_signature(op, sqrt_sig, enum_types, temp_types)
+                bool sqrt_record = sqrt_sig.name == '' && direct_sqrt_record_matches(op, record_fields, record_names, enum_types, temp_types)
+                if (!sqrt_user && !sqrt_record):
                     if (op.args.length() != 2):
                         throw 'sqrt requires exactly one int or num argument'
                     string sqrt_arg_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)

@@ -6283,7 +6283,7 @@ string emit_call_value_instruction_core(ProgramIR program, ParsedFunction functi
             lines.push('  ' + lhs + ' = select i1 ' + temp_ref(op.lhs + '.take_left') + ', %tb_bootstrap_num ' + temp_ref(op.args[1]) + ', %tb_bootstrap_num ' + temp_ref(op.args[2]))
             return emit_tracked_builtin_call_line(join_llvm_strings(lines, '\n'))
         throw 'unsupported llvm ' + call_name + ' arg types: ' + left_type + ' ' + right_type
-    if (call_name == 'sqrt'):
+    if (call_name == 'sqrt' && !direct_call_matches_named_function(program, function_ir, op, call_name) && !(lookup_named_function_decl(program, call_name).header == '' && direct_call_matches_record_constructor(program, function_ir, op, call_name))):
         if (op.args.length() != 2):
             throw 'unsupported llvm sqrt arity'
         string[] lines = emit_num_materialize_if_needed(function_ir, op.args[1], op.lhs + '.sqrt')
