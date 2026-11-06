@@ -269,20 +269,20 @@ RefineInstructionsResult contextualize_call_array_literal(LinearInstruction[] in
         temp_types = set_temp_type_slot(temp_types, array_name, normalized_expected_type)
     return RefineInstructionsResult(instructions, temp_types)
 
-private RefineInstructionsResult contextualize_direct_split_user_arrays(LinearInstruction op, LinearInstruction[] instructions, string[] temp_types, FunctionSigIR[] functions, EnumTypeIR[] enum_types):
-    FunctionSigIR split_sig = lookup_function_sig(functions, 'split')
-    if (split_sig.name == '' || op.args.length() != split_sig.param_types.length() + 1):
+private RefineInstructionsResult contextualize_direct_user_arrays(LinearInstruction op, LinearInstruction[] instructions, string[] temp_types, FunctionSigIR[] functions, EnumTypeIR[] enum_types):
+    FunctionSigIR call_sig = lookup_function_sig(functions, op.args[0])
+    if (call_sig.name == '' || op.args.length() != call_sig.param_types.length() + 1):
         return RefineInstructionsResult(instructions, temp_types)
     int index = 0
-    while (index < split_sig.param_types.length()):
-        string expected_type = normalize_enum_type_name(normalize_llvm_type_name(split_sig.param_types[index]), enum_types)
+    while (index < call_sig.param_types.length()):
+        string expected_type = normalize_enum_type_name(normalize_llvm_type_name(call_sig.param_types[index]), enum_types)
         string actual_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[index + 1])), enum_types)
         if (actual_type != expected_type && (!is_untyped_array_shape(actual_type) || !is_supported_call_array_type(expected_type) || !can_contextualize_call_array_literal(instructions, temp_types, op.args[index + 1], expected_type))):
             return RefineInstructionsResult(instructions, temp_types)
         index += 1
     index = 0
-    while (index < split_sig.param_types.length()):
-        string expected_type = normalize_enum_type_name(normalize_llvm_type_name(split_sig.param_types[index]), enum_types)
+    while (index < call_sig.param_types.length()):
+        string expected_type = normalize_enum_type_name(normalize_llvm_type_name(call_sig.param_types[index]), enum_types)
         string actual_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[index + 1])), enum_types)
         if (is_untyped_array_shape(actual_type)):
             RefineInstructionsResult contextual_arg = contextualize_call_array_literal(instructions, temp_types, op.args[index + 1], expected_type)
@@ -2744,10 +2744,10 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
         if (op.kind == 'range_guard'):
             for (string bound in op.args):
                 validate_range_bound_type(bound, temp_types, enum_types)
-        if (op.kind == 'value' && op.detail == 'call' && !op.args.is_empty() && op.args[0] == 'split'):
-            RefineInstructionsResult contextual_split = contextualize_direct_split_user_arrays(op, block_refined, temp_types, functions, enum_types)
-            block_refined = contextual_split.instructions
-            temp_types = contextual_split.temp_types
+        if (op.kind == 'value' && op.detail == 'call' && !op.args.is_empty() && (op.args[0] == 'split' || op.args[0] == 'join')):
+            RefineInstructionsResult contextual_call = contextualize_direct_user_arrays(op, block_refined, temp_types, functions, enum_types)
+            block_refined = contextual_call.instructions
+            temp_types = contextual_call.temp_types
         if (op.kind == 'value' && op.detail == 'call'):
             if (op.args.length() >= 2):
                 if (op.args[0] == 'range'):

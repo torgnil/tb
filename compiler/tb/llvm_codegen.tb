@@ -11402,7 +11402,9 @@ string[] llvm_codegen_ir(ProgramIR program):
     StringConstIR[] string_constants = collect_string_constants(program)
     LLVM_PHASE_STRING_CONSTANTS_MS += time_ms() - string_constants_start_ms
     string[] foreign_modules = active_foreign_modules(program)
-    bool needs_string_helpers = needs_runtime_string_copy || needs_to_int || needs_int_to_string || needs_num_to_string || needs_hash || LLVM_SCAN_NEEDS_STRING_HELPERS_OPS != 0 || needs_read_lines || needs_read_file || needs_write_all || needs_getenv || needs_thread_pool
+    # The integer-grid helper includes a string-grid query and calls string
+    # and string-array helpers even when the source has no string operations.
+    bool needs_string_helpers = needs_runtime_string_copy || needs_to_int || needs_int_to_string || needs_num_to_string || needs_hash || LLVM_SCAN_NEEDS_STRING_HELPERS_OPS != 0 || needs_read_lines || needs_read_file || needs_write_all || needs_getenv || needs_thread_pool || needs_int_array_array
     bool needs_string_array_helpers = needs_string_array || needs_string_helpers
     bool needs_runtime_global_init = LLVM_SCAN_NEEDS_RUNTIME_GLOBAL_INIT != 0
     lines.push('%tb_bootstrap_num = type { i64, i64 }')
@@ -11744,7 +11746,8 @@ void llvm_print_ir(ProgramIR program):
     bool needs_thread_pool = LLVM_SCAN_NEEDS_THREAD_POOL != 0
     reset_function_lookup_cache()
     string[] foreign_modules = active_foreign_modules(program)
-    bool needs_string_helpers = needs_runtime_string_copy || needs_to_int || needs_int_to_string || needs_num_to_string || needs_hash || LLVM_SCAN_NEEDS_STRING_HELPERS_OPS != 0 || needs_read_lines || needs_read_file || needs_write_all || needs_getenv
+    # The integer-grid helper also calls string and string-array helpers.
+    bool needs_string_helpers = needs_runtime_string_copy || needs_to_int || needs_int_to_string || needs_num_to_string || needs_hash || LLVM_SCAN_NEEDS_STRING_HELPERS_OPS != 0 || needs_read_lines || needs_read_file || needs_write_all || needs_getenv || needs_int_array_array
     bool needs_string_array_helpers = needs_string_array || needs_string_helpers
     bool needs_runtime_global_init = LLVM_SCAN_NEEDS_RUNTIME_GLOBAL_INIT != 0
     bool emitted_any_header = false

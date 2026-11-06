@@ -655,6 +655,9 @@ String helpers
 
 - join(arr: string[], sep: string) -> string
   - Join array elements with `sep`. Both `join(parts, sep)` and `parts.join(sep)` are supported.
+  - A matching user-defined function keeps direct-call precedence. Its declared
+    native array parameter types provide context for empty array arguments,
+    including nested empty rows; other arguments must match its signature.
 
 Array helpers
 
