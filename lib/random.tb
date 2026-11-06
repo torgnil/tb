@@ -23,19 +23,23 @@ int random_between(int lower, int upper):
 
 # A deterministic xorshift64 generator. State is stored as a signed int, but
 # every operation is defined on its 64-bit two's-complement bit pattern.
+private const int RANDOM_DEFAULT_SEED = -7046029254386353131
+# Clear the seven sign-extension bits after the signed right shift.
+private const int RANDOM_SHIFT_7_MASK = 144115188075855871
+
 record RandomGenerator(int state);
 
 RandomGenerator seeded_random(int seed):
     if (seed == 0):
-        seed = -7046029254386353131
+        seed = RANDOM_DEFAULT_SEED
     return RandomGenerator(seed)
 
 int random_next(RandomGenerator generator):
     int value = generator.state
     if (value == 0):
-        value = -7046029254386353131
+        value = RANDOM_DEFAULT_SEED
     value ^= value << 13
-    value ^= (value >> 7) & 144115188075855871
+    value ^= (value >> 7) & RANDOM_SHIFT_7_MASK
     value ^= value << 17
     generator.state = value
     return value
