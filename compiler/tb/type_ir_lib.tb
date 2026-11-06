@@ -1493,7 +1493,7 @@ string infer_method_call_type(string method_name, string base_type, FunctionSigI
             return 'string[]'
         if (value_type == 'int[]'):
             return 'int[][]'
-        if (normalize_llvm_type_name(map_key_type(base_type)) == 'int[]' && normalize_llvm_type_name(value_type) == 'bool[]'):
+        if (normalize_llvm_type_name(value_type) == 'bool[]' && (normalize_llvm_type_name(map_key_type(base_type)) == 'int' || normalize_llvm_type_name(map_key_type(base_type)) == 'string' || normalize_llvm_type_name(map_key_type(base_type)) == 'int[]')):
             return 'bool[][]'
         if (value_type == 'string[]'):
             return 'string[][]'
@@ -2336,7 +2336,7 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
         if (op.args.length() < 2):
             return op
         string method_name = op.args[0]
-        if (method_name == 'values' && lookup_function_return_type(functions, method_name) == 'unknown' && !record_type_exists(record_names, method_name) && normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])) == 'map<int[], bool[]>'):
+        if (method_name == 'values' && lookup_function_return_type(functions, method_name) == 'unknown' && !record_type_exists(record_names, method_name) && (normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])) == 'map<int[], bool[]>' || normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])) == 'map<int, bool[]>' || normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])) == 'map<string, bool[]>')):
             return refined_value_op(op, 'bool[][]', 'owned')
         if ((method_name == 'copy' || method_name == 'fill') && lookup_function_return_type(functions, method_name) == 'unknown' && record_type_exists(record_names, method_name)):
             string[] constructor_arg_types = record_constructor_arg_types(record_fields, method_name)
