@@ -1,0 +1,25 @@
+# Search byte offsets, matching substring and regular-expression positions.
+int byte_index_of(string text, string needle):
+    return byte_index_of_from(text, needle, 0)
+
+int byte_index_of_from(string text, string needle, int start):
+    int text_length = text.length()
+    int needle_length = needle.length()
+    if (start < 0 || start > text_length):
+        return -1
+    if (needle_length == 0):
+        return start
+    if (needle_length > text_length - start):
+        return -1
+    int last_start = text_length - needle_length
+    int position = start
+    while (position <= last_start):
+        int offset = 0
+        while (offset < needle_length):
+            if (text[position + offset] != needle[offset]):
+                break
+            offset += 1
+        if (offset == needle_length):
+            return position
+        position += 1
+    return -1
