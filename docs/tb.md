@@ -859,6 +859,13 @@ specified byte offset and leaves all earlier bytes unchanged; offset validation
 and whole-text anchor rules match `regex_find_all_from`. An invalid offset,
 invalid program, or no matches returns the original text. `regex_replace` is
 equivalent to `regex_replace_from` with offset 0.
+`regex_replace_first(program, text, replacement)` replaces only the first
+prioritized match. `regex_replace_first_from(program, text, replacement, start)`
+starts at the given byte offset, preserving the text before the match. They use
+the same replacement syntax, original-text anchors, invalid-input behavior,
+and capture-search limits as the replace-all forms. An empty match inserts the
+replacement once at its boundary. For example,
+`regex_replace_first(regex_compile('a'), 'aba', 'X')` returns `'Xba'`.
 `$0` expands to the whole match; `$1`, `$2`, and later decimal references
 expand captures numbered in opening-parenthesis order. References consume all
 following digits, so `$12` means group 12. A missing or nonparticipating group

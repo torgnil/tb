@@ -1251,6 +1251,32 @@ private string __tb_regex_replacement_literal(string replacement):
 string regex_replace(Regex program, string text, string replacement):
     return regex_replace_from(program, text, replacement, 0)
 
+string regex_replace_first(Regex program, string text, string replacement):
+    return regex_replace_first_from(program, text, replacement, 0)
+
+string regex_replace_first_from(Regex program, string text, string replacement, int start):
+    if (start < 0 || start > text.length()):
+        return text
+    int match_start = -1
+    int match_end = -1
+    string expanded = ''
+    if (__tb_regex_replacement_uses_captures(replacement)):
+        RegexCapture capture = regex_find_captures_from(program, text, start)
+        if (!capture.matched):
+            return text
+        match_start = capture.starts[0]
+        match_end = capture.ends[0]
+        expanded = __tb_regex_replacement_expand(replacement, capture, text)
+    else:
+        RegexMatch match = regex_find_from(program, text, start)
+        if (!match.matched):
+            return text
+        match_start = match.start
+        match_end = match.end
+        expanded = __tb_regex_replacement_literal(replacement)
+    string[] parts = [text.substring(0, match_start), expanded, text.substring(match_end)]
+    return parts.join('')
+
 string regex_replace_from(Regex program, string text, string replacement, int start):
     if (start < 0 || start > text.length()):
         return text
