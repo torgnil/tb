@@ -43,3 +43,31 @@ int random_next(RandomGenerator generator):
     value ^= value << 17
     generator.state = value
     return value
+
+# Draw uniformly over [0, upper) across the nonzero generator state cycle.
+int random_next_below(RandomGenerator generator, int upper):
+    if (upper <= 0):
+        throw 'random: invalid range'
+    int threshold = 9223372036854775807 % upper
+    while (true):
+        int value = random_next(generator) & 9223372036854775807
+        if (value > 0):
+            value -= 1
+            if (value >= threshold):
+                return value % upper
+    return 0
+
+# Draw uniformly over [lower, upper), including intervals wider than INT64_MAX.
+int random_next_between(RandomGenerator generator, int lower, int upper):
+    if (lower >= upper):
+        throw 'random: invalid range'
+    if (lower < 0):
+        if (upper > 9223372036854775807 + lower):
+            while (true):
+                int value = random_next(generator)
+                # The nonzero cycle omits zero; substitute it for the excluded upper endpoint.
+                if (value == upper):
+                    value = 0
+                if (value >= lower && value < upper):
+                    return value
+    return lower + random_next_below(generator, upper - lower)
