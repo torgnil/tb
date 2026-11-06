@@ -803,8 +803,29 @@ string string_array_filter_expression_helper_name(string[] used_names, int start
         index += 1
     return '__tb_string_array_filter_expression_' + index.to_string()
 
-SubmitLambdaRewrite rewrite_string_array_filter_lambda(Node lambda_node, string[] used_names, int next_index):
-    if (lambda_node.kind != 'Lambda' || lambda_node.children.length() != 1 || lambda_node.children[0].kind == 'Block'):
+string validate_string_array_block(Node lambda_node, BindingIR[] captured, Node[] functions, string callback_name):
+    string result_type = ''
+    try:
+        result_type = validate_submit_lambda(lambda_node, functions, captured)
+    catch (string error):
+        string prefix = 'thread_pool.submit lambda'
+        if (error.starts_with(prefix)):
+            throw 'string[] ' + callback_name + ' callback' + error.substring(prefix.length())
+        throw error
+    string required_type = 'string'
+    if (callback_name == 'filter'):
+        required_type = 'bool'
+    if (result_type != required_type):
+        throw 'string[] ' + callback_name + ' block must return ' + required_type + '; got ' + result_type
+    return result_type
+
+Node[] string_array_callback_body(Node lambda_node):
+    if (lambda_node.children[0].kind == 'Block'):
+        return lambda_node.children[0].children
+    return [Node('Return', '', [lambda_node.children[0]])]
+
+SubmitLambdaRewrite rewrite_string_array_filter_lambda(Node lambda_node, string[] used_names, int next_index, Node[] functions):
+    if (lambda_node.kind != 'Lambda' || lambda_node.children.length() != 1):
         return SubmitLambdaRewrite(lambda_node, [], used_names, next_index)
     BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
     string parameter_type = parameter.type_name
@@ -812,16 +833,22 @@ SubmitLambdaRewrite rewrite_string_array_filter_lambda(Node lambda_node, string[
         parameter_type = parameter_type.substring(6)
     if (parameter_type != 'string'):
         return SubmitLambdaRewrite(lambda_node, [], used_names, next_index)
-    string[] free_names = submit_lambda_free_identifiers(lambda_node.children[0], [parameter.name], [])
+    string[] locals = submit_lambda_local_names(lambda_node.children[0], [parameter.name])
+    string[] free_names = submit_lambda_free_identifiers(lambda_node.children[0], locals, [])
     if (!free_names.is_empty()):
         throw 'string[] filter callback captures are not supported'
     string helper_name = string_array_filter_expression_helper_name(used_names, next_index)
-    Node helper = Node('Function', 'bool ' + helper_name, [Node('Param', 'string ' + parameter.name, []), Node('Return', '', [lambda_node.children[0]])])
+    if (lambda_node.children[0].kind == 'Block'):
+        BindingIR[] no_captures = []
+        validate_string_array_block(lambda_node, no_captures, functions, 'filter')
+    Node[] helper_children = [Node('Param', 'string ' + parameter.name, [])]
+    helper_children = append_nodes(helper_children, string_array_callback_body(lambda_node))
+    Node helper = Node('Function', 'bool ' + helper_name, helper_children)
     Node rewritten = Node('FilterStringExpression', lambda_node.value, [Node('Identifier', helper_name, [])])
     return SubmitLambdaRewrite(rewritten, [helper], add_unique_name(used_names, helper_name), next_index + 1)
 
-SubmitLambdaRewrite rewrite_string_array_map_lambda(Node lambda_node, string[] used_names, int next_index):
-    if (lambda_node.kind != 'Lambda' || lambda_node.children.length() != 1 || lambda_node.children[0].kind == 'Block'):
+SubmitLambdaRewrite rewrite_string_array_map_lambda(Node lambda_node, string[] used_names, int next_index, Node[] functions):
+    if (lambda_node.kind != 'Lambda' || lambda_node.children.length() != 1):
         return SubmitLambdaRewrite(lambda_node, [], used_names, next_index)
     BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
     string parameter_type = parameter.type_name
@@ -829,16 +856,22 @@ SubmitLambdaRewrite rewrite_string_array_map_lambda(Node lambda_node, string[] u
         parameter_type = parameter_type.substring(6)
     if (parameter_type != 'string' || is_parse_binding_call_lambda(lambda_node) || is_string_length_map_lambda(lambda_node)):
         return SubmitLambdaRewrite(lambda_node, [], used_names, next_index)
-    string[] free_names = submit_lambda_free_identifiers(lambda_node.children[0], [parameter.name], [])
+    string[] locals = submit_lambda_local_names(lambda_node.children[0], [parameter.name])
+    string[] free_names = submit_lambda_free_identifiers(lambda_node.children[0], locals, [])
     if (!free_names.is_empty()):
         throw 'string[] map_to callback captures are not supported'
     string helper_name = string_array_map_expression_helper_name(used_names, next_index)
-    Node helper = Node('Function', 'string ' + helper_name, [Node('Param', 'string ' + parameter.name, []), Node('Return', '', [lambda_node.children[0]])])
+    if (lambda_node.children[0].kind == 'Block'):
+        BindingIR[] no_captures = []
+        validate_string_array_block(lambda_node, no_captures, functions, 'map_to')
+    Node[] helper_children = [Node('Param', 'string ' + parameter.name, [])]
+    helper_children = append_nodes(helper_children, string_array_callback_body(lambda_node))
+    Node helper = Node('Function', 'string ' + helper_name, helper_children)
     Node rewritten = Node('MapStringExpression', lambda_node.value, [Node('Identifier', helper_name, [])])
     return SubmitLambdaRewrite(rewritten, [helper], add_unique_name(used_names, helper_name), next_index + 1)
 
 ArrayScalarCaptureResult string_array_callback_captures(Node lambda_node, BindingIR[] bindings):
-    if (lambda_node.kind != 'Lambda' || lambda_node.children.length() != 1 || lambda_node.children[0].kind == 'Block'):
+    if (lambda_node.kind != 'Lambda' || lambda_node.children.length() != 1):
         return ArrayScalarCaptureResult([], false)
     BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
     string parameter_type = parameter.type_name
@@ -846,7 +879,8 @@ ArrayScalarCaptureResult string_array_callback_captures(Node lambda_node, Bindin
         parameter_type = parameter_type.substring(6)
     if (parameter_type != 'string'):
         return ArrayScalarCaptureResult([], false)
-    string[] free_names = submit_lambda_free_identifiers(lambda_node.children[0], [parameter.name], [])
+    string[] locals = submit_lambda_local_names(lambda_node.children[0], [parameter.name])
+    string[] free_names = submit_lambda_free_identifiers(lambda_node.children[0], locals, [])
     BindingIR[] captured = []
     for (string name : free_names):
         BindingIR binding = const_lookup_binding(bindings, name)
@@ -876,7 +910,7 @@ SubmitLambdaRewrite rewrite_array_map_expression(Node node, string[] used_names,
     Node rewritten = Node(node.kind, node.value, children)
     if (node.kind == 'MethodCall' && node.value == 'map_to'):
         if (children.length() == 2):
-            SubmitLambdaRewrite string_map = rewrite_string_array_map_lambda(children[1], current_names, current_index)
+            SubmitLambdaRewrite string_map = rewrite_string_array_map_lambda(children[1], current_names, current_index, functions)
             if (string_map.node.kind == 'MapStringExpression'):
                 generated = append_nodes(generated, string_map.generated)
                 current_names = string_map.used_names
@@ -906,7 +940,7 @@ SubmitLambdaRewrite rewrite_array_map_expression(Node node, string[] used_names,
                             rewritten = Node(node.kind, node.value, children)
     if (node.kind == 'MethodCall' && node.value == 'filter'):
         if (children.length() == 2):
-            SubmitLambdaRewrite string_filter = rewrite_string_array_filter_lambda(children[1], current_names, current_index)
+            SubmitLambdaRewrite string_filter = rewrite_string_array_filter_lambda(children[1], current_names, current_index, functions)
             if (string_filter.node.kind == 'FilterStringExpression'):
                 generated = append_nodes(generated, string_filter.generated)
                 current_names = string_filter.used_names
@@ -1376,6 +1410,8 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
         ArrayScalarCaptureResult capture_result = string_array_callback_captures(lambda_node, bindings)
         if (capture_result.complete && !capture_result.captures.is_empty()):
             BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+            if (lambda_node.children[0].kind == 'Block'):
+                validate_string_array_block(lambda_node, capture_result.captures, functions, 'map_to')
             string helper_name = string_array_map_expression_helper_name(current_names, current_index)
             current_names = add_unique_name(current_names, helper_name)
             current_index += 1
@@ -1387,7 +1423,7 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
                     capture_type = capture_type.substring(6)
                 helper_children.push(Node('Param', 'const ' + capture_type + ' ' + binding.name, []))
                 mapped_captures.push(Node('Identifier', binding.name, []))
-            helper_children.push(Node('Return', '', [lambda_node.children[0]]))
+            helper_children = append_nodes(helper_children, string_array_callback_body(lambda_node))
             generated.push(Node('Function', 'string ' + helper_name, helper_children))
             rewritten_children[1] = Node('MapStringExpression', lambda_node.value, mapped_captures)
             rewritten = Node(node.kind, node.value, rewritten_children)
@@ -1396,6 +1432,8 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
         ArrayScalarCaptureResult capture_result = string_array_callback_captures(lambda_node, bindings)
         if (capture_result.complete && !capture_result.captures.is_empty()):
             BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+            if (lambda_node.children[0].kind == 'Block'):
+                validate_string_array_block(lambda_node, capture_result.captures, functions, 'filter')
             string helper_name = string_array_filter_expression_helper_name(current_names, current_index)
             current_names = add_unique_name(current_names, helper_name)
             current_index += 1
@@ -1407,7 +1445,7 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
                     capture_type = capture_type.substring(6)
                 helper_children.push(Node('Param', 'const ' + capture_type + ' ' + binding.name, []))
                 captured_values.push(Node('Identifier', binding.name, []))
-            helper_children.push(Node('Return', '', [lambda_node.children[0]]))
+            helper_children = append_nodes(helper_children, string_array_callback_body(lambda_node))
             generated.push(Node('Function', 'bool ' + helper_name, helper_children))
             rewritten_children[1] = Node('FilterStringExpression', lambda_node.value, captured_values)
             rewritten = Node(node.kind, node.value, rewritten_children)

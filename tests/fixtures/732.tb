@@ -1,0 +1,64 @@
+int calls = 0
+
+bool nonempty(string value):
+    calls += 1
+    return !value.is_empty()
+
+int main(string[] args):
+    string[] source = ['a', '', 'bb', 'stop']
+    string[] closed = source.filter(string word -> {
+        int count = word.length()
+        if (count > 1) {
+            return true
+        }
+        return false
+    })
+    print(closed)
+    print(source)
+
+    int minimum = 2
+    if (args.length() > 100):
+        minimum = 3
+    string[] selected = source.filter(string word -> {
+        int count = word.length()
+        return count >= minimum && nonempty(word)
+    })
+    print(selected)
+    print(calls)
+
+    string prefix = '>'
+    string[] mapped = selected.map_to(string word -> {
+        if (word.length() > 2) {
+            return prefix + word
+        }
+        return word + '!'
+    })
+    print(mapped)
+    mapped[0] = 'changed'
+    print(selected)
+
+    string[] labels = ['#']
+    try:
+        source.map_to(string word -> {
+            if (word == 'stop') {
+                throw 'map block failed'
+            }
+            return labels[0] + word
+        })
+    catch (exception error):
+        print(error)
+    print(labels)
+    print(source.filter(string word -> {
+        return !word.is_empty()
+    }).length())
+    string word = 'outer'
+    string[] empty = []
+    print(empty.filter(string word -> {
+        return nonempty(word)
+    }).length())
+    print(empty.map_to(string word -> {
+        return prefix + word
+    }).length())
+    print(calls)
+    print(word)
+    return 0
