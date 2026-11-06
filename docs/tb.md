@@ -78,6 +78,9 @@ in its file. A module may declare a private record with `private record Name(...
 It may also declare a private enum with `private enum Name { ... }`. Their types,
 constructors, and enum members are available only in the declaring source file;
 another file may use the module's public functions without naming private types.
+A private record does not hide a same-named public record or enum, or a private
+enum declared in the other file. Within its own file the private record takes
+precedence.
 Private records and enums cannot appear in public function signatures, globals,
 or record fields.
 Private cached functions keep the existing parameter and return restrictions
@@ -819,6 +822,10 @@ int main():
     if (pattern.valid):
         print(regex_match(pattern, 'abc'))  # true
 ```
+
+`RegexPostfix` and `RegexRepeat` are private parser implementation records;
+importing `regex` does not expose their names to callers. Programs that used
+these implementation types directly must use their own types instead.
 
 `regex_match` checks the entire string; `regex_contains` returns true when any
 substring, including an empty substring, matches. `regex_find_start` returns

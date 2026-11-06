@@ -4164,6 +4164,7 @@ bool lower_program_has_module_markers(Node program):
 
 record PrivateRecordBinding(string source_name, string module_id, string identity);
 record PrivateRecordFunction(string source_name, string module_id, bool is_private);
+record VisibleTypeBinding(string source_name, string module_id, bool is_public);
 
 bool type_name_identifier_part(string character):
     return character == '_' || character.is_alpha() || character.is_digit()
@@ -4201,7 +4202,7 @@ string replace_type_name_identifier(string type_name, string name, string replac
             index += 1
     return result
 
-string private_record_type_name(string type_name, PrivateRecordBinding[] records, string module_id, bool reject_hidden):
+string private_record_type_name(string type_name, PrivateRecordBinding[] records, VisibleTypeBinding[] visible_types, string module_id, bool reject_hidden):
     string rewritten = type_name.substring(0)
     string hidden_source_name = ''
     for (PrivateRecordBinding record_binding : records):
@@ -4214,12 +4215,16 @@ string private_record_type_name(string type_name, PrivateRecordBinding[] records
                 if (local_record.module_id == module_id && local_record.source_name == record_binding.source_name):
                     locally_visible = true
             if (!locally_visible):
+                for (VisibleTypeBinding visible_type : visible_types):
+                    if (visible_type.source_name == record_binding.source_name && (visible_type.is_public || visible_type.module_id == module_id)):
+                        locally_visible = true
+            if (!locally_visible):
                 hidden_source_name = record_binding.source_name
     if (hidden_source_name != ''):
         throw 'private record is not visible in this module: ' + hidden_source_name
     return rewritten
 
-string private_record_binding_value(string value, PrivateRecordBinding[] records, string module_id, bool reject_hidden):
+string private_record_binding_value(string value, PrivateRecordBinding[] records, VisibleTypeBinding[] visible_types, string module_id, bool reject_hidden):
     string prefix = ''
     string declaration = value.substring(0)
     if (declaration.starts_with('private ')):
@@ -4229,7 +4234,7 @@ string private_record_binding_value(string value, PrivateRecordBinding[] records
         prefix += 'const '
         declaration = declaration.substring(6)
     BindingIR binding = ir_parse_binding_decl(declaration)
-    string type_name = private_record_type_name(binding.type_name, records, module_id, reject_hidden)
+    string type_name = private_record_type_name(binding.type_name, records, visible_types, module_id, reject_hidden)
     if (binding.type_name == ''):
         return value.substring(0)
     return prefix + type_name + ' ' + binding.name
@@ -4240,39 +4245,39 @@ bool private_record_function_visible(string name, string module_id, PrivateRecor
             return true
     return false
 
-Node rewrite_private_record_node(Node node, PrivateRecordBinding[] records, PrivateRecordFunction[] functions, string module_id, bool public_context):
+Node rewrite_private_record_node(Node node, PrivateRecordBinding[] records, VisibleTypeBinding[] visible_types, PrivateRecordFunction[] functions, string module_id, bool public_context):
     string value = node.value.substring(0)
     bool is_public = public_context
     bool is_private_record = false
     if (node.kind == 'Function' || node.kind == 'CachedFunction'):
         is_public = true
         BindingIR signature = ir_parse_binding_decl(value)
-        string rewritten_return = private_record_type_name(signature.type_name, records, module_id, true)
+        string rewritten_return = private_record_type_name(signature.type_name, records, visible_types, module_id, true)
         if (rewritten_return != signature.type_name):
             throw 'private record cannot appear in a public function signature: ' + signature.name
-        value = private_record_binding_value(value, records, module_id, true)
+        value = private_record_binding_value(value, records, visible_types, module_id, true)
     else if (node.kind == 'PrivateFunction' || node.kind == 'PrivateCachedFunction'):
-        value = private_record_binding_value(value, records, module_id, true)
+        value = private_record_binding_value(value, records, visible_types, module_id, true)
     else if (node.kind == 'Param'):
         BindingIR param = ir_parse_binding_decl(value)
-        string rewritten_param_type = private_record_type_name(param.type_name, records, module_id, true)
+        string rewritten_param_type = private_record_type_name(param.type_name, records, visible_types, module_id, true)
         if (public_context && rewritten_param_type != param.type_name):
             throw 'private record cannot appear in a public function signature: ' + param.name
-        value = private_record_binding_value(value, records, module_id, true)
+        value = private_record_binding_value(value, records, visible_types, module_id, true)
     else if (node.kind == 'VarDecl' || node.kind == 'ForEach' || node.kind == 'Catch' || node.kind == 'Lambda' || node.kind == 'FieldDecl'):
-        value = private_record_binding_value(value, records, module_id, true)
+        value = private_record_binding_value(value, records, visible_types, module_id, true)
     else if (node.kind == 'Call'):
         if (!private_record_function_visible(value, module_id, functions)):
-            value = private_record_type_name(value, records, module_id, true)
+            value = private_record_type_name(value, records, visible_types, module_id, true)
     else if (node.kind == 'PrivateRecordDecl'):
-        value = private_record_type_name(value, records, module_id, false)
+        value = private_record_type_name(value, records, visible_types, module_id, false)
         is_public = false
         is_private_record = true
         node = Node('RecordDecl', value, node.children)
     else if (node.kind == 'RecordDecl'):
         for (Node field_decl : node.children):
             BindingIR field = ir_parse_binding_decl(field_decl.value)
-            string rewritten_field_type = private_record_type_name(field.type_name, records, module_id, true)
+            string rewritten_field_type = private_record_type_name(field.type_name, records, visible_types, module_id, true)
             if (rewritten_field_type != field.type_name):
                 throw 'private record cannot appear in a public record field: ' + field.name
     Node[] children = []
@@ -4282,11 +4287,12 @@ Node rewrite_private_record_node(Node node, PrivateRecordBinding[] records, Priv
             child_public_context = is_public && child.kind == 'Param'
         else if (node.kind == 'RecordDecl'):
             child_public_context = !is_private_record
-        children.push(rewrite_private_record_node(child, records, functions, module_id, child_public_context))
+        children.push(rewrite_private_record_node(child, records, visible_types, functions, module_id, child_public_context))
     return Node(node.kind, value, children)
 
 Node bind_private_module_records(Node program):
     PrivateRecordBinding[] records = []
+    VisibleTypeBinding[] visible_types = []
     PrivateRecordFunction[] functions = []
     string module_id = ''
     int private_index = 0
@@ -4297,6 +4303,10 @@ Node bind_private_module_records(Node program):
             BindingIR signature = ir_parse_binding_decl(child.value)
             bool is_private = child.kind == 'PrivateFunction' || child.kind == 'PrivateCachedFunction'
             functions.push(PrivateRecordFunction(signature.name, module_id, is_private))
+        else if (child.kind == 'RecordDecl' || child.kind == 'EnumDecl'):
+            visible_types.push(VisibleTypeBinding(child.value, module_id, true))
+        else if (child.kind == 'PrivateEnumDecl'):
+            visible_types.push(VisibleTypeBinding(child.value, module_id, false))
         else if (child.kind == 'PrivateRecordDecl'):
             for (PrivateRecordBinding existing : records):
                 if (existing.module_id == module_id && existing.source_name == child.value):
@@ -4314,10 +4324,10 @@ Node bind_private_module_records(Node program):
         else:
             if (child.kind == 'VarDecl' && !child.value.starts_with('private ')):
                 BindingIR global_binding = ir_parse_binding_decl(child.value)
-                string rewritten_global_type = private_record_type_name(global_binding.type_name, records, module_id, true)
+                string rewritten_global_type = private_record_type_name(global_binding.type_name, records, visible_types, module_id, true)
                 if (rewritten_global_type != global_binding.type_name):
                     throw 'private record cannot appear in a public global: ' + global_binding.name
-            children.push(rewrite_private_record_node(child, records, functions, module_id, false))
+            children.push(rewrite_private_record_node(child, records, visible_types, functions, module_id, false))
     return Node(program.kind, program.value, children)
 
 record PrivateEnumBinding(string source_name, string module_id, string identity);
