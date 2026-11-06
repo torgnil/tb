@@ -764,6 +764,8 @@ Array helpers
 
 - sqrt(x: int | num) -> num
   - Return the square root as `num`. Constant inputs are folded at compile time.
+  - Direct native calls require exactly one `int` or `num` argument; known
+    incompatible types and wrong arity are rejected during type refinement.
 
 Set and map helpers
 

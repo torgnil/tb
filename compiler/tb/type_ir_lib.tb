@@ -2749,6 +2749,14 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
             block_refined = contextual_call.instructions
             temp_types = contextual_call.temp_types
         if (op.kind == 'value' && op.detail == 'call'):
+            if (!op.args.is_empty() && op.args[0] == 'sqrt'):
+                FunctionSigIR sqrt_sig = lookup_function_sig(functions, 'sqrt')
+                if (sqrt_sig.name == '' && !record_type_exists(record_names, 'sqrt')):
+                    if (op.args.length() != 2):
+                        throw 'sqrt requires exactly one int or num argument'
+                    string sqrt_arg_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
+                    if (sqrt_arg_type != '' && sqrt_arg_type != 'unknown' && sqrt_arg_type != 'int' && sqrt_arg_type != 'num'):
+                        throw 'sqrt requires int or num; got ' + sqrt_arg_type
             if (op.args.length() >= 2):
                 if (op.args[0] == 'range'):
                     if (op.args.length() >= 2 && op.args.length() <= 4):
