@@ -4332,7 +4332,7 @@ Node bind_private_module_records(Node program):
 
 record PrivateEnumBinding(string source_name, string module_id, string identity);
 
-string private_enum_type_name(string type_name, PrivateEnumBinding[] enums, string module_id, bool reject_hidden):
+string private_enum_type_name(string type_name, PrivateEnumBinding[] enums, string[] public_types, string module_id, bool reject_hidden):
     string rewritten = type_name.substring(0)
     string hidden_source_name = ''
     for (PrivateEnumBinding enum_binding : enums):
@@ -4344,13 +4344,13 @@ string private_enum_type_name(string type_name, PrivateEnumBinding[] enums, stri
             for (PrivateEnumBinding local_enum : enums):
                 if (local_enum.module_id == module_id && local_enum.source_name == enum_binding.source_name):
                     locally_visible = true
-            if (!locally_visible):
+            if (!locally_visible && !contains_name(public_types, enum_binding.source_name)):
                 hidden_source_name = enum_binding.source_name
     if (hidden_source_name != ''):
         throw 'private enum is not visible in this module: ' + hidden_source_name
     return rewritten
 
-string private_enum_binding_value(string value, PrivateEnumBinding[] enums, string module_id):
+string private_enum_binding_value(string value, PrivateEnumBinding[] enums, string[] public_types, string module_id):
     string prefix = ''
     string declaration = value.substring(0)
     if (declaration.starts_with('private ')):
@@ -4362,13 +4362,13 @@ string private_enum_binding_value(string value, PrivateEnumBinding[] enums, stri
     BindingIR binding = ir_parse_binding_decl(declaration)
     if (binding.type_name == ''):
         return value.substring(0)
-    string type_name = private_enum_type_name(binding.type_name, enums, module_id, true)
+    string type_name = private_enum_type_name(binding.type_name, enums, public_types, module_id, true)
     return prefix + type_name + ' ' + binding.name
 
 bool private_enum_name_is_shadowed(string name, string[] shadowed_names, string[] public_globals):
     return contains_name(shadowed_names, name) || contains_name(public_globals, name)
 
-string private_enum_member_identity(string name, PrivateEnumBinding[] enums, string module_id, string[] shadowed_names, string[] public_globals):
+string private_enum_member_identity(string name, PrivateEnumBinding[] enums, string[] public_enums, string module_id, string[] shadowed_names, string[] public_globals):
     if (private_enum_name_is_shadowed(name, shadowed_names, public_globals)):
         return name.substring(0)
     string identity = ''
@@ -4382,6 +4382,8 @@ string private_enum_member_identity(string name, PrivateEnumBinding[] enums, str
             hidden_source_name = enum_binding.source_name
     if (identity != ''):
         return identity
+    if (contains_name(public_enums, name)):
+        return name.substring(0)
     if (hidden_source_name != ''):
         throw 'private enum is not visible in this module: ' + hidden_source_name
     return name.substring(0)
@@ -4399,35 +4401,35 @@ string[] private_enum_lambda_shadows(Node node, string[] shadowed_names):
             result.push(ir_parse_binding_decl(node.value.substring(separator + 3)).name)
     return result
 
-Node rewrite_private_enum_node(Node node, PrivateEnumBinding[] enums, string module_id, bool public_context, string[] shadowed_names, string[] public_globals):
+Node rewrite_private_enum_node(Node node, PrivateEnumBinding[] enums, string[] public_types, string[] public_enums, string module_id, bool public_context, string[] shadowed_names, string[] public_globals):
     string value = node.value.substring(0)
     bool is_private_enum = false
     bool is_private_record = node.kind == 'RecordDecl' && value.starts_with('__tb.private.record.')
     if (node.kind == 'Function' || node.kind == 'CachedFunction'):
         BindingIR signature = ir_parse_binding_decl(value)
-        string rewritten_return = private_enum_type_name(signature.type_name, enums, module_id, true)
+        string rewritten_return = private_enum_type_name(signature.type_name, enums, public_types, module_id, true)
         if (rewritten_return != signature.type_name):
             throw 'private enum cannot appear in a public function signature: ' + signature.name
-        value = private_enum_binding_value(value, enums, module_id)
+        value = private_enum_binding_value(value, enums, public_types, module_id)
     else if (node.kind == 'PrivateFunction' || node.kind == 'PrivateCachedFunction'):
-        value = private_enum_binding_value(value, enums, module_id)
+        value = private_enum_binding_value(value, enums, public_types, module_id)
     else if (node.kind == 'Param'):
         BindingIR param = ir_parse_binding_decl(value)
-        string rewritten_type = private_enum_type_name(param.type_name, enums, module_id, true)
+        string rewritten_type = private_enum_type_name(param.type_name, enums, public_types, module_id, true)
         if (public_context && rewritten_type != param.type_name):
             throw 'private enum cannot appear in a public function signature: ' + param.name
-        value = private_enum_binding_value(value, enums, module_id)
+        value = private_enum_binding_value(value, enums, public_types, module_id)
     else if (node.kind == 'VarDecl' || node.kind == 'ForEach' || node.kind == 'Catch' || node.kind == 'Lambda' || node.kind == 'FieldDecl'):
-        value = private_enum_binding_value(value, enums, module_id)
+        value = private_enum_binding_value(value, enums, public_types, module_id)
     else if (node.kind == 'PrivateEnumDecl'):
-        value = private_enum_type_name(value, enums, module_id, false)
+        value = private_enum_type_name(value, enums, public_types, module_id, false)
         is_private_enum = true
         node = Node('EnumDecl', value, node.children)
     else if (node.kind == 'RecordDecl'):
         if (!is_private_record):
             for (Node field_decl : node.children):
                 BindingIR field = ir_parse_binding_decl(field_decl.value)
-                string rewritten_field_type = private_enum_type_name(field.type_name, enums, module_id, true)
+                string rewritten_field_type = private_enum_type_name(field.type_name, enums, public_types, module_id, true)
                 if (rewritten_field_type != field.type_name):
                     throw 'private enum cannot appear in a public record field: ' + field.name
     Node[] children = []
@@ -4448,19 +4450,25 @@ Node rewrite_private_enum_node(Node node, PrivateEnumBinding[] enums, string mod
         else if (node.kind == 'RecordDecl'):
             child_public_context = !is_private_enum && !is_private_record
         if (node.kind == 'Field' && child.kind == 'Identifier'):
-            string identity = private_enum_member_identity(child.value, enums, module_id, child_shadows, public_globals)
+            string identity = private_enum_member_identity(child.value, enums, public_enums, module_id, child_shadows, public_globals)
             children.push(Node('Identifier', identity, []))
         else:
-            children.push(rewrite_private_enum_node(child, enums, module_id, child_public_context, child_shadows, public_globals))
+            children.push(rewrite_private_enum_node(child, enums, public_types, public_enums, module_id, child_public_context, child_shadows, public_globals))
     return Node(node.kind, value, children)
 
 Node bind_private_module_enums(Node program):
     PrivateEnumBinding[] enums = []
+    string[] public_types = []
+    string[] public_enums = []
     string module_id = ''
     int private_index = 0
     for (Node child : program.children):
         if (child.kind == 'ModuleMarker'):
             module_id = child.value
+        else if (child.kind == 'RecordDecl' || child.kind == 'EnumDecl'):
+            public_types.push(child.value)
+            if (child.kind == 'EnumDecl'):
+                public_enums.push(child.value)
         else if (child.kind == 'PrivateEnumDecl'):
             for (PrivateEnumBinding existing : enums):
                 if (existing.module_id == module_id && existing.source_name == child.value):
@@ -4488,10 +4496,10 @@ Node bind_private_module_enums(Node program):
                 BindingIR global_binding = ir_parse_binding_decl(child.value)
                 bool is_private_global = child.value.starts_with('private ') || global_binding.name.contains('$private_global.')
                 if (!is_private_global):
-                    string rewritten_global_type = private_enum_type_name(global_binding.type_name, enums, module_id, true)
+                    string rewritten_global_type = private_enum_type_name(global_binding.type_name, enums, public_types, module_id, true)
                     if (rewritten_global_type != global_binding.type_name):
                         throw 'private enum cannot appear in a public global: ' + global_binding.name
-            children.push(rewrite_private_enum_node(child, enums, module_id, false, no_shadows, public_globals))
+            children.push(rewrite_private_enum_node(child, enums, public_types, public_enums, module_id, false, no_shadows, public_globals))
     return Node(program.kind, program.value, children)
 
 Node lower_program_with_default_module(Node program):

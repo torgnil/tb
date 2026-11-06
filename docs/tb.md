@@ -80,7 +80,8 @@ constructors, and enum members are available only in the declaring source file;
 another file may use the module's public functions without naming private types.
 A private record does not hide a same-named public record or enum, or a private
 enum declared in the other file. Within its own file the private record takes
-precedence.
+precedence. A private enum likewise does not hide a same-named public record
+or enum in another file; its own file uses the private enum.
 Private records and enums cannot appear in public function signatures, globals,
 or record fields.
 Private cached functions keep the existing parameter and return restrictions
