@@ -636,6 +636,7 @@ Managed string allocation aborts if its requested length is invalid or storage c
   - Returns the UTF-8 character position of the first matching byte sequence, counting non-continuation bytes before the match, or `-1`. This position can differ from the byte offsets used by string indexing, `substring`, and regex search.
 
 - `import strings;` provides `byte_index_of(text, needle) -> int` and `byte_index_of_from(text, needle, start) -> int`, including UFCS calls. These search for the first exact byte sequence and return a byte offset usable with indexing, `substring`, and regex positions. The `start` form searches at or after a byte offset; a negative start or a start beyond the text length returns `-1`. An empty needle matches any valid start, including the end. The search may begin inside a multibyte UTF-8 sequence and takes O(text length × needle length) time. The module is embedded; `strings` is a reserved built-in module name and takes precedence over a same-named local module.
+- `byte_count(text, needle) -> int` counts non-overlapping occurrences of an exact byte sequence, including via `text.byte_count(needle)`. An empty needle matches every byte boundary, giving the byte length plus one; an empty text therefore has one empty match. UTF-8 is treated as bytes, consistent with the module's byte-offset searches.
 
 - contains(s: string, sub: string) -> bool
   - True when `sub` appears in `s`.
