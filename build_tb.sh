@@ -117,6 +117,8 @@ lines.append("    if (name == 'uuid'):")
 lines.append(f"        return {tb_string(source_text(repo_root / 'lib/uuid.tb'))}")
 lines.append("    if (name == 'strings'):")
 lines.append(f"        return {tb_string(source_text(repo_root / 'lib/strings.tb'))}")
+lines.append("    if (name == 'union_find'):")
+lines.append(f"        return {tb_string(source_text(repo_root / 'lib/union_find.tb'))}")
 lines.append("    throw 'unknown built-in module: ' + name")
 
 runtime = repo_root / 'compiler/tb/runtime'
