@@ -766,9 +766,11 @@ Array helpers
 
 - min(a: int | num, b: int | num) -> int | num
   - Return the smaller value. Runtime lowering supports same-type `int` and `num` operands; `num` keeps the selected operand's scale. Equal values select the right operand.
+  - Two numeric operands use the builtin; other direct calls may use an exactly matching user-defined `min` function.
 
 - max(a: int | num, b: int | num) -> int | num
   - Return the larger value. Runtime lowering supports same-type `int` and `num` operands; `num` keeps the selected operand's scale. Equal values select the right operand.
+  - Two numeric operands use the builtin; other direct calls may use an exactly matching user-defined `max` function.
   - UFCS forms `a.min(b)` and `a.max(b)` are supported for `int` and `num`.
 
 - sqrt(x: int | num) -> num

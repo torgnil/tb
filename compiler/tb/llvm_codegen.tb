@@ -1534,6 +1534,13 @@ bool direct_call_matches_named_function(ProgramIR program, ParsedFunction caller
         index += 1
     return true
 
+private bool is_numeric_minmax_call(ParsedFunction caller, LinearInstruction op):
+    if (op.args.length() != 3):
+        return false
+    string left_type = normalize_llvm_type_name(lookup_temp_llvm_type(caller, op.args[1]))
+    string right_type = normalize_llvm_type_name(lookup_temp_llvm_type(caller, op.args[2]))
+    return left_type == right_type && (left_type == 'int' || left_type == 'num')
+
 bool direct_split_matches_named_function(ProgramIR program, ParsedFunction caller, LinearInstruction op):
     return direct_call_matches_named_function(program, caller, op, 'split')
 
@@ -6260,7 +6267,7 @@ string emit_call_value_instruction_core(ProgramIR program, ParsedFunction functi
         string[] lines = emit_num_materialize_if_needed(function_ir, op.args[1], op.lhs + '.round.left')
         lines.push('  ' + lhs + ' = call %tb_bootstrap_num @tb_bootstrap_num_round(%tb_bootstrap_num ' + emit_num_store_value(function_ir, op.args[1], op.lhs + '.round.left') + ', i64 ' + temp_ref(op.args[2]) + ')')
         return emit_tracked_builtin_call_line(join_llvm_strings(lines, '\n'))
-    if (call_name == 'min' || call_name == 'max'):
+    if ((call_name == 'min' || call_name == 'max') && (is_numeric_minmax_call(function_ir, op) || !direct_call_matches_named_function(program, function_ir, op, call_name))):
         if (op.args.length() != 3):
             throw 'unsupported llvm ' + op.args[0] + ' arity'
         string left_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[1]))
