@@ -3,6 +3,27 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+static inline void* tb_thread_pool_checked_malloc(size_t size) {
+    void* allocation = malloc(size);
+    if (allocation == NULL) {
+        fputs("thread_pool submission failed\n", stderr);
+        exit(1);
+    }
+    return allocation;
+}
+
+static inline void* tb_thread_pool_checked_calloc(size_t count, size_t size) {
+    void* allocation = calloc(count, size);
+    if (allocation == NULL) {
+        fputs("thread_pool submission failed\n", stderr);
+        exit(1);
+    }
+    return allocation;
+}
 
 typedef struct tb_thread_pool_int_array {
     int32_t length;

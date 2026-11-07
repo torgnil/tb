@@ -827,7 +827,7 @@ tb_thread_pool* tb_thread_pool_retain(tb_thread_pool* pool) {
 }
 
 tb_future_i64* tb_thread_pool_submit_i64(tb_thread_pool* pool, tb_i64_task_fn function) {
-    tb_future_i64* future = (tb_future_i64*)malloc(sizeof(tb_future_i64));
+    tb_future_i64* future = (tb_future_i64*)tb_thread_pool_checked_malloc(sizeof(tb_future_i64));
     pthread_mutex_init(&future->mutex, NULL);
     pthread_cond_init(&future->cond, NULL);
     future->refcount = 2;
@@ -836,7 +836,7 @@ tb_future_i64* tb_thread_pool_submit_i64(tb_thread_pool* pool, tb_i64_task_fn fu
     future->error = NULL;
     future->result = 0;
 
-    tb_task* task = (tb_task*)malloc(sizeof(tb_task));
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
     task->kind = TB_TASK_KIND_I64;
     task->function.i64_fn = function;
     task->future.i64_future = future;
@@ -856,7 +856,7 @@ tb_future_i64* tb_thread_pool_submit_i64(tb_thread_pool* pool, tb_i64_task_fn fu
 }
 
 tb_future_num* tb_thread_pool_submit_num(tb_thread_pool* pool, tb_num_task_fn function) {
-    tb_future_num* future = (tb_future_num*)malloc(sizeof(tb_future_num));
+    tb_future_num* future = (tb_future_num*)tb_thread_pool_checked_malloc(sizeof(tb_future_num));
     pthread_mutex_init(&future->mutex, NULL);
     pthread_cond_init(&future->cond, NULL);
     future->refcount = 2;
@@ -865,7 +865,7 @@ tb_future_num* tb_thread_pool_submit_num(tb_thread_pool* pool, tb_num_task_fn fu
     future->error = NULL;
     future->result = (tb_num){0, 0};
 
-    tb_task* task = (tb_task*)malloc(sizeof(tb_task));
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
     task->kind = TB_TASK_KIND_NUM;
     task->function.num_fn = function;
     task->future.num_future = future;
@@ -885,7 +885,7 @@ tb_future_num* tb_thread_pool_submit_num(tb_thread_pool* pool, tb_num_task_fn fu
 }
 
 tb_future_num* tb_thread_pool_submit_num_num(tb_thread_pool* pool, tb_num_from_num_task_fn function, tb_num arg) {
-    tb_future_num* future = (tb_future_num*)malloc(sizeof(tb_future_num));
+    tb_future_num* future = (tb_future_num*)tb_thread_pool_checked_malloc(sizeof(tb_future_num));
     pthread_mutex_init(&future->mutex, NULL);
     pthread_cond_init(&future->cond, NULL);
     future->refcount = 2;
@@ -894,7 +894,7 @@ tb_future_num* tb_thread_pool_submit_num_num(tb_thread_pool* pool, tb_num_from_n
     future->error = NULL;
     future->result = (tb_num){0, 0};
 
-    tb_task* task = (tb_task*)malloc(sizeof(tb_task));
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
     task->kind = TB_TASK_KIND_NUM_FROM_NUM;
     task->arg.num_arg = arg;
     task->function.num_from_num_fn = function;
@@ -915,7 +915,7 @@ tb_future_num* tb_thread_pool_submit_num_num(tb_thread_pool* pool, tb_num_from_n
 }
 
 tb_future_num* tb_thread_pool_submit_num_i64(tb_thread_pool* pool, tb_num_from_i64_task_fn function, int64_t arg) {
-    tb_future_num* future = (tb_future_num*)malloc(sizeof(tb_future_num));
+    tb_future_num* future = (tb_future_num*)tb_thread_pool_checked_malloc(sizeof(tb_future_num));
     pthread_mutex_init(&future->mutex, NULL);
     pthread_cond_init(&future->cond, NULL);
     future->refcount = 2;
@@ -924,7 +924,7 @@ tb_future_num* tb_thread_pool_submit_num_i64(tb_thread_pool* pool, tb_num_from_i
     future->error = NULL;
     future->result = (tb_num){0, 0};
 
-    tb_task* task = (tb_task*)malloc(sizeof(tb_task));
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
     task->kind = TB_TASK_KIND_NUM_FROM_I64;
     task->arg.i64_arg = arg;
     task->function.num_from_i64_fn = function;
@@ -945,7 +945,7 @@ tb_future_num* tb_thread_pool_submit_num_i64(tb_thread_pool* pool, tb_num_from_i
 }
 
 tb_future_bool* tb_thread_pool_submit_bool(tb_thread_pool* pool, tb_bool_task_fn function) {
-    tb_future_bool* future = (tb_future_bool*)malloc(sizeof(tb_future_bool));
+    tb_future_bool* future = (tb_future_bool*)tb_thread_pool_checked_malloc(sizeof(tb_future_bool));
     pthread_mutex_init(&future->mutex, NULL);
     pthread_cond_init(&future->cond, NULL);
     future->refcount = 2;
@@ -954,7 +954,7 @@ tb_future_bool* tb_thread_pool_submit_bool(tb_thread_pool* pool, tb_bool_task_fn
     future->error = NULL;
     future->result = false;
 
-    tb_task* task = (tb_task*)malloc(sizeof(tb_task));
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
     task->kind = TB_TASK_KIND_BOOL;
     task->function.bool_fn = function;
     task->future.bool_future = future;
@@ -974,7 +974,7 @@ tb_future_bool* tb_thread_pool_submit_bool(tb_thread_pool* pool, tb_bool_task_fn
 }
 
 tb_future_string* tb_thread_pool_submit_string(tb_thread_pool* pool, tb_string_task_fn function) {
-    tb_future_string* future = (tb_future_string*)malloc(sizeof(tb_future_string));
+    tb_future_string* future = (tb_future_string*)tb_thread_pool_checked_malloc(sizeof(tb_future_string));
     pthread_mutex_init(&future->mutex, NULL);
     pthread_cond_init(&future->cond, NULL);
     future->refcount = 2;
@@ -983,7 +983,7 @@ tb_future_string* tb_thread_pool_submit_string(tb_thread_pool* pool, tb_string_t
     future->error = NULL;
     future->result = NULL;
 
-    tb_task* task = (tb_task*)malloc(sizeof(tb_task));
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
     task->kind = TB_TASK_KIND_STRING;
     task->function.string_fn = function;
     task->future.string_future = future;
@@ -1028,7 +1028,7 @@ void tb_thread_pool_release(tb_thread_pool* pool) {
 }
 
 static tb_future_int_array* tb_future_int_array_new(void (*release_result)(void*)) {
-    tb_future_int_array* future = (tb_future_int_array*)malloc(sizeof(tb_future_int_array));
+    tb_future_int_array* future = (tb_future_int_array*)tb_thread_pool_checked_malloc(sizeof(tb_future_int_array));
     pthread_mutex_init(&future->mutex, NULL);
     pthread_cond_init(&future->cond, NULL);
     future->refcount = 2;
@@ -1055,7 +1055,7 @@ static void tb_thread_pool_enqueue(tb_thread_pool* pool, tb_task* task) {
 
 tb_future_int_array* tb_thread_pool_submit_int_array(tb_thread_pool* pool, tb_int_array_task_fn function) {
     tb_future_int_array* future = tb_future_int_array_new(tb_thread_pool_int_array_snapshot_free);
-    tb_task* task = (tb_task*)malloc(sizeof(tb_task));
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
     task->kind = TB_TASK_KIND_INT_ARRAY;
     task->function.int_array_fn = function;
     task->future.int_array_future = future;
@@ -1066,7 +1066,7 @@ tb_future_int_array* tb_thread_pool_submit_int_array(tb_thread_pool* pool, tb_in
 
 tb_future_int_array* tb_thread_pool_submit_int_array_i64(tb_thread_pool* pool, tb_int_array_from_i64_task_fn function, int64_t arg) {
     tb_future_int_array* future = tb_future_int_array_new(tb_thread_pool_int_array_snapshot_free);
-    tb_task* task = (tb_task*)malloc(sizeof(tb_task));
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
     task->kind = TB_TASK_KIND_INT_ARRAY_FROM_I64;
     task->arg.i64_arg = arg;
     task->function.int_array_from_i64_fn = function;
@@ -1078,7 +1078,7 @@ tb_future_int_array* tb_thread_pool_submit_int_array_i64(tb_thread_pool* pool, t
 
 tb_future_int_array* tb_thread_pool_submit_int_array_bool(tb_thread_pool* pool, tb_int_array_from_bool_task_fn function, bool arg) {
     tb_future_int_array* future = tb_future_int_array_new(tb_thread_pool_int_array_snapshot_free);
-    tb_task* task = (tb_task*)malloc(sizeof(tb_task));
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
     task->kind = TB_TASK_KIND_INT_ARRAY_FROM_BOOL;
     task->arg.bool_arg = arg;
     task->function.int_array_from_bool_fn = function;
@@ -1090,7 +1090,7 @@ tb_future_int_array* tb_thread_pool_submit_int_array_bool(tb_thread_pool* pool, 
 
 tb_future_int_array* tb_thread_pool_submit_int_array_string(tb_thread_pool* pool, tb_int_array_from_string_task_fn function, char* arg) {
     tb_future_int_array* future = tb_future_int_array_new(tb_thread_pool_int_array_snapshot_free);
-    tb_task* task = (tb_task*)malloc(sizeof(tb_task));
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
     task->kind = TB_TASK_KIND_INT_ARRAY_FROM_STRING;
     task->arg.string_arg = (char*)tb_runtime_retain(arg);
     task->function.int_array_from_string_fn = function;
@@ -1102,7 +1102,7 @@ tb_future_int_array* tb_thread_pool_submit_int_array_string(tb_thread_pool* pool
 
 tb_future_int_array* tb_thread_pool_submit_int_array_int_array(tb_thread_pool* pool, tb_int_array_from_int_array_task_fn function, void* arg) {
     tb_future_int_array* future = tb_future_int_array_new(tb_thread_pool_int_array_snapshot_free);
-    tb_task* task = (tb_task*)malloc(sizeof(tb_task));
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
     task->kind = TB_TASK_KIND_INT_ARRAY_FROM_INT_ARRAY;
     task->arg.string_arg = tb_thread_pool_int_array_snapshot(arg);
     task->function.int_array_from_int_array_fn = function;
@@ -1114,7 +1114,7 @@ tb_future_int_array* tb_thread_pool_submit_int_array_int_array(tb_thread_pool* p
 
 tb_future_int_array* tb_thread_pool_submit_int_array_int_array_array(tb_thread_pool* pool, tb_int_array_from_int_array_array_task_fn function, void* arg) {
     tb_future_int_array* future = tb_future_int_array_new(tb_thread_pool_int_array_snapshot_free);
-    tb_task* task = (tb_task*)malloc(sizeof(tb_task));
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
     task->kind = TB_TASK_KIND_INT_ARRAY_FROM_INT_ARRAY_ARRAY;
     task->arg.string_arg = tb_thread_pool_int_array_array_snapshot(arg);
     task->function.int_array_from_int_array_array_fn = function;
@@ -1126,7 +1126,7 @@ tb_future_int_array* tb_thread_pool_submit_int_array_int_array_array(tb_thread_p
 
 tb_future_int_array_array* tb_thread_pool_submit_int_array_array(tb_thread_pool* pool, tb_int_array_array_task_fn function) {
     tb_future_int_array_array* future = tb_future_int_array_new(tb_thread_pool_int_array_array_snapshot_free);
-    tb_task* task = (tb_task*)malloc(sizeof(tb_task));
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
     task->kind = TB_TASK_KIND_INT_ARRAY_ARRAY;
     task->function.int_array_array_fn = function;
     task->future.int_array_array_future = future;
@@ -1137,7 +1137,7 @@ tb_future_int_array_array* tb_thread_pool_submit_int_array_array(tb_thread_pool*
 
 tb_future_int_array_array* tb_thread_pool_submit_int_array_array_i64(tb_thread_pool* pool, tb_int_array_array_from_i64_task_fn function, int64_t arg) {
     tb_future_int_array_array* future = tb_future_int_array_new(tb_thread_pool_int_array_array_snapshot_free);
-    tb_task* task = (tb_task*)malloc(sizeof(tb_task));
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
     task->kind = TB_TASK_KIND_INT_ARRAY_ARRAY_FROM_I64;
     task->arg.i64_arg = arg;
     task->function.int_array_array_from_i64_fn = function;
@@ -1149,7 +1149,7 @@ tb_future_int_array_array* tb_thread_pool_submit_int_array_array_i64(tb_thread_p
 
 tb_future_int_array_array* tb_thread_pool_submit_int_array_array_bool(tb_thread_pool* pool, tb_int_array_array_from_bool_task_fn function, bool arg) {
     tb_future_int_array_array* future = tb_future_int_array_new(tb_thread_pool_int_array_array_snapshot_free);
-    tb_task* task = (tb_task*)malloc(sizeof(tb_task));
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
     task->kind = TB_TASK_KIND_INT_ARRAY_ARRAY_FROM_BOOL;
     task->arg.bool_arg = arg;
     task->function.int_array_array_from_bool_fn = function;
@@ -1161,7 +1161,7 @@ tb_future_int_array_array* tb_thread_pool_submit_int_array_array_bool(tb_thread_
 
 tb_future_int_array_array* tb_thread_pool_submit_int_array_array_string(tb_thread_pool* pool, tb_int_array_array_from_string_task_fn function, char* arg) {
     tb_future_int_array_array* future = tb_future_int_array_new(tb_thread_pool_int_array_array_snapshot_free);
-    tb_task* task = (tb_task*)malloc(sizeof(tb_task));
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
     task->kind = TB_TASK_KIND_INT_ARRAY_ARRAY_FROM_STRING;
     task->arg.string_arg = (char*)tb_runtime_retain(arg);
     task->function.int_array_array_from_string_fn = function;
@@ -1173,7 +1173,7 @@ tb_future_int_array_array* tb_thread_pool_submit_int_array_array_string(tb_threa
 
 tb_future_int_array_array* tb_thread_pool_submit_int_array_array_int_array(tb_thread_pool* pool, tb_int_array_array_from_int_array_task_fn function, void* arg) {
     tb_future_int_array_array* future = tb_future_int_array_new(tb_thread_pool_int_array_array_snapshot_free);
-    tb_task* task = (tb_task*)malloc(sizeof(tb_task));
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
     task->kind = TB_TASK_KIND_INT_ARRAY_ARRAY_FROM_INT_ARRAY;
     task->arg.string_arg = tb_thread_pool_int_array_snapshot(arg);
     task->function.int_array_array_from_int_array_fn = function;
@@ -1185,7 +1185,7 @@ tb_future_int_array_array* tb_thread_pool_submit_int_array_array_int_array(tb_th
 
 tb_future_int_array_array* tb_thread_pool_submit_int_array_array_int_array_array(tb_thread_pool* pool, tb_int_array_array_from_int_array_array_task_fn function, void* arg) {
     tb_future_int_array_array* future = tb_future_int_array_new(tb_thread_pool_int_array_array_snapshot_free);
-    tb_task* task = (tb_task*)malloc(sizeof(tb_task));
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
     task->kind = TB_TASK_KIND_INT_ARRAY_ARRAY_FROM_INT_ARRAY_ARRAY;
     task->arg.string_arg = tb_thread_pool_int_array_array_snapshot(arg);
     task->function.int_array_array_from_int_array_array_fn = function;
@@ -1196,10 +1196,10 @@ tb_future_int_array_array* tb_thread_pool_submit_int_array_array_int_array_array
 }
 
 tb_future_i64* tb_thread_pool_submit_i64_int_array(tb_thread_pool* pool, tb_i64_from_int_array_task_fn function, void* arg) {
-    tb_future_i64* future = (tb_future_i64*)malloc(sizeof(tb_future_i64));
+    tb_future_i64* future = (tb_future_i64*)tb_thread_pool_checked_malloc(sizeof(tb_future_i64));
     pthread_mutex_init(&future->mutex, NULL); pthread_cond_init(&future->cond, NULL);
     future->refcount = 2; future->done = false; future->failed = false; future->error = NULL; future->result = 0;
-    tb_task* task = (tb_task*)malloc(sizeof(tb_task));
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
     task->kind = TB_TASK_KIND_I64_FROM_INT_ARRAY; task->arg.string_arg = tb_thread_pool_int_array_snapshot(arg); task->function.i64_from_int_array_fn = function; task->future.i64_future = future; task->next = NULL;
     pthread_mutex_lock(&pool->mutex);
     if (pool->tail == NULL) { pool->head = task; pool->tail = task; } else { pool->tail->next = task; pool->tail = task; }
@@ -1208,10 +1208,10 @@ tb_future_i64* tb_thread_pool_submit_i64_int_array(tb_thread_pool* pool, tb_i64_
 }
 
 tb_future_i64* tb_thread_pool_submit_i64_int_array_array(tb_thread_pool* pool, tb_i64_from_int_array_array_task_fn function, void* arg) {
-    tb_future_i64* future = (tb_future_i64*)malloc(sizeof(tb_future_i64));
+    tb_future_i64* future = (tb_future_i64*)tb_thread_pool_checked_malloc(sizeof(tb_future_i64));
     pthread_mutex_init(&future->mutex, NULL); pthread_cond_init(&future->cond, NULL);
     future->refcount = 2; future->done = false; future->failed = false; future->error = NULL; future->result = 0;
-    tb_task* task = (tb_task*)malloc(sizeof(tb_task));
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
     task->kind = TB_TASK_KIND_I64_FROM_INT_ARRAY_ARRAY; task->arg.string_arg = tb_thread_pool_int_array_array_snapshot(arg); task->function.i64_from_int_array_array_fn = function; task->future.i64_future = future; task->next = NULL;
     pthread_mutex_lock(&pool->mutex);
     if (pool->tail == NULL) { pool->head = task; pool->tail = task; } else { pool->tail->next = task; pool->tail = task; }
@@ -1220,10 +1220,10 @@ tb_future_i64* tb_thread_pool_submit_i64_int_array_array(tb_thread_pool* pool, t
 }
 
 tb_future_i64* tb_thread_pool_submit_i64_bool_array(tb_thread_pool* pool, tb_i64_from_bool_array_task_fn function, void* arg) {
-    tb_future_i64* future = (tb_future_i64*)malloc(sizeof(tb_future_i64));
+    tb_future_i64* future = (tb_future_i64*)tb_thread_pool_checked_malloc(sizeof(tb_future_i64));
     pthread_mutex_init(&future->mutex, NULL); pthread_cond_init(&future->cond, NULL);
     future->refcount = 2; future->done = false; future->failed = false; future->error = NULL; future->result = 0;
-    tb_task* task = (tb_task*)malloc(sizeof(tb_task));
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
     task->kind = TB_TASK_KIND_I64_FROM_BOOL_ARRAY;
     task->arg.string_arg = tb_thread_pool_bool_array_snapshot(arg);
     task->function.i64_from_bool_array_fn = function;
@@ -1234,10 +1234,10 @@ tb_future_i64* tb_thread_pool_submit_i64_bool_array(tb_thread_pool* pool, tb_i64
 }
 
 tb_future_i64* tb_thread_pool_submit_i64_string_array(tb_thread_pool* pool, tb_i64_from_string_array_task_fn function, void* arg) {
-    tb_future_i64* future = (tb_future_i64*)malloc(sizeof(tb_future_i64));
+    tb_future_i64* future = (tb_future_i64*)tb_thread_pool_checked_malloc(sizeof(tb_future_i64));
     pthread_mutex_init(&future->mutex, NULL); pthread_cond_init(&future->cond, NULL);
     future->refcount = 2; future->done = false; future->failed = false; future->error = NULL; future->result = 0;
-    tb_task* task = (tb_task*)malloc(sizeof(tb_task));
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
     task->kind = TB_TASK_KIND_I64_FROM_STRING_ARRAY;
     task->arg.string_arg = tb_thread_pool_string_array_snapshot(arg);
     task->function.i64_from_string_array_fn = function;
@@ -1248,7 +1248,7 @@ tb_future_i64* tb_thread_pool_submit_i64_string_array(tb_thread_pool* pool, tb_i
 }
 
 tb_future_i64* tb_thread_pool_submit_i64_i64(tb_thread_pool* pool, tb_i64_from_i64_task_fn function, int64_t arg) {
-    tb_future_i64* future = (tb_future_i64*)malloc(sizeof(tb_future_i64));
+    tb_future_i64* future = (tb_future_i64*)tb_thread_pool_checked_malloc(sizeof(tb_future_i64));
     pthread_mutex_init(&future->mutex, NULL);
     pthread_cond_init(&future->cond, NULL);
     future->refcount = 2;
@@ -1257,7 +1257,7 @@ tb_future_i64* tb_thread_pool_submit_i64_i64(tb_thread_pool* pool, tb_i64_from_i
     future->error = NULL;
     future->result = 0;
 
-    tb_task* task = (tb_task*)malloc(sizeof(tb_task));
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
     task->kind = TB_TASK_KIND_I64_FROM_I64;
     task->arg.i64_arg = arg;
     task->function.i64_from_i64_fn = function;
@@ -1278,7 +1278,7 @@ tb_future_i64* tb_thread_pool_submit_i64_i64(tb_thread_pool* pool, tb_i64_from_i
 }
 
 tb_future_i64* tb_thread_pool_submit_i64_bool(tb_thread_pool* pool, tb_i64_from_bool_task_fn function, bool arg) {
-    tb_future_i64* future = (tb_future_i64*)malloc(sizeof(tb_future_i64));
+    tb_future_i64* future = (tb_future_i64*)tb_thread_pool_checked_malloc(sizeof(tb_future_i64));
     pthread_mutex_init(&future->mutex, NULL);
     pthread_cond_init(&future->cond, NULL);
     future->refcount = 2;
@@ -1287,7 +1287,7 @@ tb_future_i64* tb_thread_pool_submit_i64_bool(tb_thread_pool* pool, tb_i64_from_
     future->error = NULL;
     future->result = 0;
 
-    tb_task* task = (tb_task*)malloc(sizeof(tb_task));
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
     task->kind = TB_TASK_KIND_I64_FROM_BOOL;
     task->arg.bool_arg = arg;
     task->function.i64_from_bool_fn = function;
@@ -1308,7 +1308,7 @@ tb_future_i64* tb_thread_pool_submit_i64_bool(tb_thread_pool* pool, tb_i64_from_
 }
 
 tb_future_bool* tb_thread_pool_submit_bool_i64(tb_thread_pool* pool, tb_bool_from_i64_task_fn function, int64_t arg) {
-    tb_future_bool* future = (tb_future_bool*)malloc(sizeof(tb_future_bool));
+    tb_future_bool* future = (tb_future_bool*)tb_thread_pool_checked_malloc(sizeof(tb_future_bool));
     pthread_mutex_init(&future->mutex, NULL);
     pthread_cond_init(&future->cond, NULL);
     future->refcount = 2;
@@ -1317,7 +1317,7 @@ tb_future_bool* tb_thread_pool_submit_bool_i64(tb_thread_pool* pool, tb_bool_fro
     future->error = NULL;
     future->result = false;
 
-    tb_task* task = (tb_task*)malloc(sizeof(tb_task));
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
     task->kind = TB_TASK_KIND_BOOL_FROM_I64;
     task->arg.i64_arg = arg;
     task->function.bool_from_i64_fn = function;
@@ -1338,7 +1338,7 @@ tb_future_bool* tb_thread_pool_submit_bool_i64(tb_thread_pool* pool, tb_bool_fro
 }
 
 tb_future_bool* tb_thread_pool_submit_bool_bool(tb_thread_pool* pool, tb_bool_from_bool_task_fn function, bool arg) {
-    tb_future_bool* future = (tb_future_bool*)malloc(sizeof(tb_future_bool));
+    tb_future_bool* future = (tb_future_bool*)tb_thread_pool_checked_malloc(sizeof(tb_future_bool));
     pthread_mutex_init(&future->mutex, NULL);
     pthread_cond_init(&future->cond, NULL);
     future->refcount = 2;
@@ -1347,7 +1347,7 @@ tb_future_bool* tb_thread_pool_submit_bool_bool(tb_thread_pool* pool, tb_bool_fr
     future->error = NULL;
     future->result = false;
 
-    tb_task* task = (tb_task*)malloc(sizeof(tb_task));
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
     task->kind = TB_TASK_KIND_BOOL_FROM_BOOL;
     task->arg.bool_arg = arg;
     task->function.bool_from_bool_fn = function;
@@ -1368,7 +1368,7 @@ tb_future_bool* tb_thread_pool_submit_bool_bool(tb_thread_pool* pool, tb_bool_fr
 }
 
 tb_future_string* tb_thread_pool_submit_string_i64(tb_thread_pool* pool, tb_string_from_i64_task_fn function, int64_t arg) {
-    tb_future_string* future = (tb_future_string*)malloc(sizeof(tb_future_string));
+    tb_future_string* future = (tb_future_string*)tb_thread_pool_checked_malloc(sizeof(tb_future_string));
     pthread_mutex_init(&future->mutex, NULL);
     pthread_cond_init(&future->cond, NULL);
     future->refcount = 2;
@@ -1377,7 +1377,7 @@ tb_future_string* tb_thread_pool_submit_string_i64(tb_thread_pool* pool, tb_stri
     future->error = NULL;
     future->result = NULL;
 
-    tb_task* task = (tb_task*)malloc(sizeof(tb_task));
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
     task->kind = TB_TASK_KIND_STRING_FROM_I64;
     task->arg.i64_arg = arg;
     task->function.string_from_i64_fn = function;
@@ -1398,7 +1398,7 @@ tb_future_string* tb_thread_pool_submit_string_i64(tb_thread_pool* pool, tb_stri
 }
 
 tb_future_string* tb_thread_pool_submit_string_bool(tb_thread_pool* pool, tb_string_from_bool_task_fn function, bool arg) {
-    tb_future_string* future = (tb_future_string*)malloc(sizeof(tb_future_string));
+    tb_future_string* future = (tb_future_string*)tb_thread_pool_checked_malloc(sizeof(tb_future_string));
     pthread_mutex_init(&future->mutex, NULL);
     pthread_cond_init(&future->cond, NULL);
     future->refcount = 2;
@@ -1407,7 +1407,7 @@ tb_future_string* tb_thread_pool_submit_string_bool(tb_thread_pool* pool, tb_str
     future->error = NULL;
     future->result = NULL;
 
-    tb_task* task = (tb_task*)malloc(sizeof(tb_task));
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
     task->kind = TB_TASK_KIND_STRING_FROM_BOOL;
     task->arg.bool_arg = arg;
     task->function.string_from_bool_fn = function;
@@ -1428,7 +1428,7 @@ tb_future_string* tb_thread_pool_submit_string_bool(tb_thread_pool* pool, tb_str
 }
 
 tb_future_i64* tb_thread_pool_submit_i64_string(tb_thread_pool* pool, tb_i64_from_string_task_fn function, char* arg) {
-    tb_future_i64* future = (tb_future_i64*)malloc(sizeof(tb_future_i64));
+    tb_future_i64* future = (tb_future_i64*)tb_thread_pool_checked_malloc(sizeof(tb_future_i64));
     pthread_mutex_init(&future->mutex, NULL);
     pthread_cond_init(&future->cond, NULL);
     future->refcount = 2;
@@ -1437,7 +1437,7 @@ tb_future_i64* tb_thread_pool_submit_i64_string(tb_thread_pool* pool, tb_i64_fro
     future->error = NULL;
     future->result = 0;
 
-    tb_task* task = (tb_task*)malloc(sizeof(tb_task));
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
     task->kind = TB_TASK_KIND_I64_FROM_STRING;
     task->arg.string_arg = (char*)tb_runtime_retain(arg);
     task->function.i64_from_string_fn = function;
@@ -1458,7 +1458,7 @@ tb_future_i64* tb_thread_pool_submit_i64_string(tb_thread_pool* pool, tb_i64_fro
 }
 
 tb_future_bool* tb_thread_pool_submit_bool_string(tb_thread_pool* pool, tb_bool_from_string_task_fn function, char* arg) {
-    tb_future_bool* future = (tb_future_bool*)malloc(sizeof(tb_future_bool));
+    tb_future_bool* future = (tb_future_bool*)tb_thread_pool_checked_malloc(sizeof(tb_future_bool));
     pthread_mutex_init(&future->mutex, NULL);
     pthread_cond_init(&future->cond, NULL);
     future->refcount = 2;
@@ -1467,7 +1467,7 @@ tb_future_bool* tb_thread_pool_submit_bool_string(tb_thread_pool* pool, tb_bool_
     future->error = NULL;
     future->result = false;
 
-    tb_task* task = (tb_task*)malloc(sizeof(tb_task));
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
     task->kind = TB_TASK_KIND_BOOL_FROM_STRING;
     task->arg.string_arg = (char*)tb_runtime_retain(arg);
     task->function.bool_from_string_fn = function;
@@ -1488,7 +1488,7 @@ tb_future_bool* tb_thread_pool_submit_bool_string(tb_thread_pool* pool, tb_bool_
 }
 
 tb_future_bool* tb_thread_pool_submit_bool_int_array(tb_thread_pool* pool, tb_bool_from_int_array_task_fn function, void* arg) {
-    tb_future_bool* future = (tb_future_bool*)malloc(sizeof(tb_future_bool));
+    tb_future_bool* future = (tb_future_bool*)tb_thread_pool_checked_malloc(sizeof(tb_future_bool));
     pthread_mutex_init(&future->mutex, NULL);
     pthread_cond_init(&future->cond, NULL);
     future->refcount = 2;
@@ -1497,7 +1497,7 @@ tb_future_bool* tb_thread_pool_submit_bool_int_array(tb_thread_pool* pool, tb_bo
     future->error = NULL;
     future->result = false;
 
-    tb_task* task = (tb_task*)malloc(sizeof(tb_task));
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
     task->kind = TB_TASK_KIND_BOOL_FROM_INT_ARRAY;
     task->arg.string_arg = tb_thread_pool_int_array_snapshot(arg);
     task->function.bool_from_int_array_fn = function;
@@ -1518,10 +1518,10 @@ tb_future_bool* tb_thread_pool_submit_bool_int_array(tb_thread_pool* pool, tb_bo
 }
 
 tb_future_bool* tb_thread_pool_submit_bool_bool_array(tb_thread_pool* pool, tb_bool_from_bool_array_task_fn function, void* arg) {
-    tb_future_bool* future = (tb_future_bool*)malloc(sizeof(tb_future_bool));
+    tb_future_bool* future = (tb_future_bool*)tb_thread_pool_checked_malloc(sizeof(tb_future_bool));
     pthread_mutex_init(&future->mutex, NULL); pthread_cond_init(&future->cond, NULL);
     future->refcount = 2; future->done = false; future->failed = false; future->error = NULL; future->result = false;
-    tb_task* task = (tb_task*)malloc(sizeof(tb_task));
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
     task->kind = TB_TASK_KIND_BOOL_FROM_BOOL_ARRAY;
     task->arg.string_arg = tb_thread_pool_bool_array_snapshot(arg);
     task->function.bool_from_bool_array_fn = function;
@@ -1532,10 +1532,10 @@ tb_future_bool* tb_thread_pool_submit_bool_bool_array(tb_thread_pool* pool, tb_b
 }
 
 tb_future_bool* tb_thread_pool_submit_bool_string_array(tb_thread_pool* pool, tb_bool_from_string_array_task_fn function, void* arg) {
-    tb_future_bool* future = (tb_future_bool*)malloc(sizeof(tb_future_bool));
+    tb_future_bool* future = (tb_future_bool*)tb_thread_pool_checked_malloc(sizeof(tb_future_bool));
     pthread_mutex_init(&future->mutex, NULL); pthread_cond_init(&future->cond, NULL);
     future->refcount = 2; future->done = false; future->failed = false; future->error = NULL; future->result = false;
-    tb_task* task = (tb_task*)malloc(sizeof(tb_task));
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
     task->kind = TB_TASK_KIND_BOOL_FROM_STRING_ARRAY;
     task->arg.string_arg = tb_thread_pool_string_array_snapshot(arg);
     task->function.bool_from_string_array_fn = function;
@@ -1546,7 +1546,7 @@ tb_future_bool* tb_thread_pool_submit_bool_string_array(tb_thread_pool* pool, tb
 }
 
 tb_future_bool* tb_thread_pool_submit_bool_int_array_array(tb_thread_pool* pool, tb_bool_from_int_array_array_task_fn function, void* arg) {
-    tb_future_bool* future = (tb_future_bool*)malloc(sizeof(tb_future_bool));
+    tb_future_bool* future = (tb_future_bool*)tb_thread_pool_checked_malloc(sizeof(tb_future_bool));
     pthread_mutex_init(&future->mutex, NULL);
     pthread_cond_init(&future->cond, NULL);
     future->refcount = 2;
@@ -1555,7 +1555,7 @@ tb_future_bool* tb_thread_pool_submit_bool_int_array_array(tb_thread_pool* pool,
     future->error = NULL;
     future->result = false;
 
-    tb_task* task = (tb_task*)malloc(sizeof(tb_task));
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
     task->kind = TB_TASK_KIND_BOOL_FROM_INT_ARRAY_ARRAY;
     task->arg.string_arg = tb_thread_pool_int_array_array_snapshot(arg);
     task->function.bool_from_int_array_array_fn = function;
@@ -1576,7 +1576,7 @@ tb_future_bool* tb_thread_pool_submit_bool_int_array_array(tb_thread_pool* pool,
 }
 
 tb_future_string* tb_thread_pool_submit_string_int_array(tb_thread_pool* pool, tb_string_from_int_array_task_fn function, void* arg) {
-    tb_future_string* future = (tb_future_string*)malloc(sizeof(tb_future_string));
+    tb_future_string* future = (tb_future_string*)tb_thread_pool_checked_malloc(sizeof(tb_future_string));
     pthread_mutex_init(&future->mutex, NULL);
     pthread_cond_init(&future->cond, NULL);
     future->refcount = 2;
@@ -1585,7 +1585,7 @@ tb_future_string* tb_thread_pool_submit_string_int_array(tb_thread_pool* pool, t
     future->error = NULL;
     future->result = NULL;
 
-    tb_task* task = (tb_task*)malloc(sizeof(tb_task));
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
     task->kind = TB_TASK_KIND_STRING_FROM_INT_ARRAY;
     task->arg.string_arg = tb_thread_pool_int_array_snapshot(arg);
     task->function.string_from_int_array_fn = function;
@@ -1606,7 +1606,7 @@ tb_future_string* tb_thread_pool_submit_string_int_array(tb_thread_pool* pool, t
 }
 
 tb_future_string* tb_thread_pool_submit_string_int_array_array(tb_thread_pool* pool, tb_string_from_int_array_array_task_fn function, void* arg) {
-    tb_future_string* future = (tb_future_string*)malloc(sizeof(tb_future_string));
+    tb_future_string* future = (tb_future_string*)tb_thread_pool_checked_malloc(sizeof(tb_future_string));
     pthread_mutex_init(&future->mutex, NULL);
     pthread_cond_init(&future->cond, NULL);
     future->refcount = 2;
@@ -1615,7 +1615,7 @@ tb_future_string* tb_thread_pool_submit_string_int_array_array(tb_thread_pool* p
     future->error = NULL;
     future->result = NULL;
 
-    tb_task* task = (tb_task*)malloc(sizeof(tb_task));
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
     task->kind = TB_TASK_KIND_STRING_FROM_INT_ARRAY_ARRAY;
     task->arg.string_arg = tb_thread_pool_int_array_array_snapshot(arg);
     task->function.string_from_int_array_array_fn = function;
@@ -1636,7 +1636,7 @@ tb_future_string* tb_thread_pool_submit_string_int_array_array(tb_thread_pool* p
 }
 
 tb_future_string* tb_thread_pool_submit_string_string(tb_thread_pool* pool, tb_string_from_string_task_fn function, char* arg) {
-    tb_future_string* future = (tb_future_string*)malloc(sizeof(tb_future_string));
+    tb_future_string* future = (tb_future_string*)tb_thread_pool_checked_malloc(sizeof(tb_future_string));
     pthread_mutex_init(&future->mutex, NULL);
     pthread_cond_init(&future->cond, NULL);
     future->refcount = 2;
@@ -1645,7 +1645,7 @@ tb_future_string* tb_thread_pool_submit_string_string(tb_thread_pool* pool, tb_s
     future->error = NULL;
     future->result = NULL;
 
-    tb_task* task = (tb_task*)malloc(sizeof(tb_task));
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
     task->kind = TB_TASK_KIND_STRING_FROM_STRING;
     task->arg.string_arg = (char*)tb_runtime_retain(arg);
     task->function.string_from_string_fn = function;
