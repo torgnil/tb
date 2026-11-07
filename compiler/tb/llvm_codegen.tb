@@ -208,6 +208,7 @@ int LLVM_SCAN_NEEDS_TRY_CATCH = 0;
 int LLVM_SCAN_NEEDS_READ_LINES = 0;
 int LLVM_SCAN_NEEDS_READ_FILE = 0;
 int LLVM_SCAN_NEEDS_WRITE_ALL = 0;
+int LLVM_SCAN_NEEDS_APPEND_ALL = 0;
 int LLVM_SCAN_NEEDS_GETENV = 0;
 int LLVM_SCAN_NEEDS_TIME_MS = 0;
 int LLVM_SCAN_NEEDS_SECURE_RANDOM = 0;
@@ -667,6 +668,7 @@ void reset_llvm_backend_helper_stats():
     LLVM_SCAN_NEEDS_READ_LINES = 0
     LLVM_SCAN_NEEDS_READ_FILE = 0
     LLVM_SCAN_NEEDS_WRITE_ALL = 0
+    LLVM_SCAN_NEEDS_APPEND_ALL = 0
     LLVM_SCAN_NEEDS_GETENV = 0
     LLVM_SCAN_NEEDS_TIME_MS = 0
     LLVM_SCAN_NEEDS_SECURE_RANDOM = 0
@@ -3402,9 +3404,12 @@ string[] collect_used_map_types(ProgramIR program):
 
 void analyze_program_features(ProgramIR program, string[] map_types):
     bool has_user_write_all = false
+    bool has_user_append_all = false
     for (ParsedFunction function_ir in program.functions):
         if (function_ir.source_name == 'write_all'):
             has_user_write_all = true
+        if (function_ir.source_name == 'append_all'):
+            has_user_append_all = true
     LLVM_SCAN_NEEDS_STRCMP = 0
     LLVM_SCAN_NEEDS_STRING_SEARCH = 0
     LLVM_SCAN_NEEDS_STRLEN = 0
@@ -3438,6 +3443,7 @@ void analyze_program_features(ProgramIR program, string[] map_types):
     LLVM_SCAN_NEEDS_READ_LINES = 0
     LLVM_SCAN_NEEDS_READ_FILE = 0
     LLVM_SCAN_NEEDS_WRITE_ALL = 0
+    LLVM_SCAN_NEEDS_APPEND_ALL = 0
     LLVM_SCAN_NEEDS_GETENV = 0
     LLVM_SCAN_NEEDS_TIME_MS = 0
     LLVM_SCAN_NEEDS_SECURE_RANDOM = 0
@@ -3488,6 +3494,7 @@ void analyze_program_features(ProgramIR program, string[] map_types):
     bool needs_read_lines = false
     bool needs_read_file = false
     bool needs_write_all = false
+    bool needs_append_all = false
     bool needs_getenv = false
     bool needs_time_ms = false
     bool needs_secure_random = false
@@ -3596,6 +3603,8 @@ void analyze_program_features(ProgramIR program, string[] map_types):
                     needs_read_file = true
                 if (op.args[0] == 'write_all' && !has_user_write_all):
                     needs_write_all = true
+                if (op.args[0] == 'append_all' && !has_user_append_all):
+                    needs_append_all = true
                 if (op.args[0] == 'getenv'):
                     needs_getenv = true
                 if (op.args[0] == 'time_ms'):
@@ -3789,6 +3798,8 @@ void analyze_program_features(ProgramIR program, string[] map_types):
                         needs_read_file = true
                     if (op.args[0] == 'write_all' && !has_user_write_all):
                         needs_write_all = true
+                    if (op.args[0] == 'append_all' && !has_user_append_all):
+                        needs_append_all = true
                     if (op.args[0] == 'getenv'):
                         needs_getenv = true
                     if (op.args[0] == 'time_ms'):
@@ -3829,6 +3840,8 @@ void analyze_program_features(ProgramIR program, string[] map_types):
                     if (!op.args.is_empty()):
                         if (op.args[0] == 'write_all' && !has_user_write_all):
                             needs_write_all = true
+                        if (op.args[0] == 'append_all' && !has_user_append_all):
+                            needs_append_all = true
                     if (op.args[0] == 'submit' || op.args[0] == 'await'):
                         needs_thread_pool = true
                     if (!op.args.is_empty() && op.args[0] == 'hash'):
@@ -3969,6 +3982,8 @@ void analyze_program_features(ProgramIR program, string[] map_types):
         LLVM_SCAN_NEEDS_READ_FILE = 1
     if (needs_write_all):
         LLVM_SCAN_NEEDS_WRITE_ALL = 1
+    if (needs_append_all):
+        LLVM_SCAN_NEEDS_APPEND_ALL = 1
     if (needs_getenv):
         LLVM_SCAN_NEEDS_GETENV = 1
     if (needs_time_ms):
@@ -4941,14 +4956,20 @@ string[] emit_read_file_helper():
     lines.push('}')
     return lines
 
-string[] emit_write_all_helper():
+string[] emit_path_write_helper(string operation, string mode_text):
     string[] lines = []
-    lines.push('@.mode.write_all = private unnamed_addr constant [2 x i8] c"w\\00"')
-    lines.push('@.fmt.write_all.error = private unnamed_addr constant [6 x i8] c"%s%s\\0A\\00"')
-    lines.push('@.prefix.write_all.error = private unnamed_addr constant [28 x i8] c"write_all: unable to write \\00"')
-    lines.push('define private void @tb_bootstrap_write_all(ptr %path, ptr %text) {')
+    string mode_constant = '@.mode.' + operation
+    string error_format = '@.fmt.' + operation + '.error'
+    string error_prefix = operation + ': unable to write '
+    string error_prefix_constant = '@.prefix.' + operation + '.error'
+    int mode_size = mode_text.length() + 1
+    int error_prefix_size = error_prefix.length() + 1
+    lines.push(mode_constant + ' = private unnamed_addr constant [' + mode_size.to_string() + ' x i8] c"' + mode_text + '\\00"')
+    lines.push(error_format + ' = private unnamed_addr constant [6 x i8] c"%s%s\\0A\\00"')
+    lines.push(error_prefix_constant + ' = private unnamed_addr constant [' + error_prefix_size.to_string() + ' x i8] c"' + error_prefix + '\\00"')
+    lines.push('define private void @tb_bootstrap_' + operation + '(ptr %path, ptr %text) {')
     lines.push('entry:')
-    lines.push('  %mode = getelementptr inbounds [2 x i8], ptr @.mode.write_all, i32 0, i32 0')
+    lines.push('  %mode = getelementptr inbounds [' + mode_size.to_string() + ' x i8], ptr ' + mode_constant + ', i32 0, i32 0')
     lines.push('  %file = call ptr @fopen(ptr %path, ptr %mode)')
     lines.push('  %file.ok = icmp ne ptr %file, null')
     lines.push('  br i1 %file.ok, label %write, label %failure')
@@ -4964,14 +4985,14 @@ string[] emit_write_all_helper():
     lines.push('  %has.handler = icmp ne ptr %handler, null')
     lines.push('  br i1 %has.handler, label %unwind, label %fatal')
     lines.push('unwind:')
-    lines.push('  %prefix = getelementptr inbounds [28 x i8], ptr @.prefix.write_all.error, i32 0, i32 0')
+    lines.push('  %prefix = getelementptr inbounds [' + error_prefix_size.to_string() + ' x i8], ptr ' + error_prefix_constant + ', i32 0, i32 0')
     lines.push('  %message = call ptr @tb_bootstrap_string_concat(ptr %prefix, ptr %path)')
     lines.push('  store ptr %message, ptr ' + exception_message_symbol())
     lines.push('  call void @longjmp(ptr %handler, i32 1)')
     lines.push('  unreachable')
     lines.push('fatal:')
-    lines.push('  %fmt = getelementptr inbounds [6 x i8], ptr @.fmt.write_all.error, i32 0, i32 0')
-    lines.push('  %fatal.prefix = getelementptr inbounds [28 x i8], ptr @.prefix.write_all.error, i32 0, i32 0')
+    lines.push('  %fmt = getelementptr inbounds [6 x i8], ptr ' + error_format + ', i32 0, i32 0')
+    lines.push('  %fatal.prefix = getelementptr inbounds [' + error_prefix_size.to_string() + ' x i8], ptr ' + error_prefix_constant + ', i32 0, i32 0')
     lines.push('  %print = call i32 (ptr, ...) @printf(ptr %fmt, ptr %fatal.prefix, ptr %path)')
     lines.push('  call void @exit(i32 1)')
     lines.push('  unreachable')
@@ -4979,6 +5000,12 @@ string[] emit_write_all_helper():
     lines.push('  ret void')
     lines.push('}')
     return lines
+
+string[] emit_write_all_helper():
+    return emit_path_write_helper('write_all', 'w')
+
+string[] emit_append_all_helper():
+    return emit_path_write_helper('append_all', 'a')
 
 string[] emit_getenv_helper():
     string[] lines = []
@@ -6333,6 +6360,17 @@ string emit_call_value_instruction_core(ProgramIR program, ParsedFunction functi
             if (function_uses_temp(function_ir, op.lhs)):
                 throw 'write_all result cannot be used as a value'
             return emit_tracked_builtin_call_line('  call void @tb_bootstrap_write_all(ptr ' + temp_ref(op.args[1]) + ', ptr ' + temp_ref(op.args[2]) + ')')
+    if (call_name == 'append_all'):
+        if (lookup_call_meta_index(call_name) < 0):
+            if (op.args.length() != 3):
+                throw 'unsupported llvm append_all arity'
+            string path_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[1]))
+            string text_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[2]))
+            if (path_type != 'string' || text_type != 'string'):
+                throw 'unsupported llvm append_all arg types: ' + path_type + ' ' + text_type
+            if (function_uses_temp(function_ir, op.lhs)):
+                throw 'append_all result cannot be used as a value'
+            return emit_tracked_builtin_call_line('  call void @tb_bootstrap_append_all(ptr ' + temp_ref(op.args[1]) + ', ptr ' + temp_ref(op.args[2]) + ')')
     if (call_name == 'dump_runtime_activity'):
         if (op.args.length() != 1):
             throw 'unsupported llvm dump_runtime_activity arity'
@@ -6947,12 +6985,12 @@ string emit_set_method_call_value_instruction(ProgramIR program, ParsedFunction 
 string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction function_ir, LinearInstruction op):
     string lhs = temp_ref(op.lhs)
     string method_name = op.args[0]
-    if (method_name == 'write_all'):
+    if (method_name == 'write_all' || method_name == 'append_all'):
         if (lookup_call_meta_index(method_name) < 0):
             if (op.args.length() != 3):
-                throw 'unsupported llvm write_all method arity'
-            LinearInstruction write_all_call = LinearInstruction('value', op.lhs, op.result_type, op.ownership_mode, 'call', ['write_all', op.args[1], op.args[2]])
-            return emit_call_value_instruction_core(program, function_ir, write_all_call)
+                throw 'unsupported llvm ' + method_name + ' method arity'
+            LinearInstruction path_write_call = LinearInstruction('value', op.lhs, op.result_type, op.ownership_mode, 'call', [method_name, op.args[1], op.args[2]])
+            return emit_call_value_instruction_core(program, function_ir, path_write_call)
     if (op.args.length() < 2):
         throw 'unsupported llvm method-call arity: ' + method_name
     string method_base_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[1]))
@@ -11382,6 +11420,8 @@ string[] llvm_codegen_ir(ProgramIR program):
     bool needs_read_lines = LLVM_SCAN_NEEDS_READ_LINES != 0
     bool needs_read_file = LLVM_SCAN_NEEDS_READ_FILE != 0
     bool needs_write_all = LLVM_SCAN_NEEDS_WRITE_ALL != 0
+    bool needs_append_all = LLVM_SCAN_NEEDS_APPEND_ALL != 0
+    bool needs_path_write = needs_write_all || needs_append_all
     bool needs_getenv = LLVM_SCAN_NEEDS_GETENV != 0 || program_uses_getenv(program)
     bool needs_time_ms = LLVM_SCAN_NEEDS_TIME_MS != 0
     bool needs_secure_random = LLVM_SCAN_NEEDS_SECURE_RANDOM != 0
@@ -11411,7 +11451,7 @@ string[] llvm_codegen_ir(ProgramIR program):
     string[] foreign_modules = active_foreign_modules(program)
     # The integer-grid helper includes a string-grid query and calls string
     # and string-array helpers even when the source has no string operations.
-    bool needs_string_helpers = needs_runtime_string_copy || needs_to_int || needs_int_to_string || needs_num_to_string || needs_hash || LLVM_SCAN_NEEDS_STRING_HELPERS_OPS != 0 || needs_read_lines || needs_read_file || needs_write_all || needs_getenv || needs_thread_pool || needs_int_array_array
+    bool needs_string_helpers = needs_runtime_string_copy || needs_to_int || needs_int_to_string || needs_num_to_string || needs_hash || LLVM_SCAN_NEEDS_STRING_HELPERS_OPS != 0 || needs_read_lines || needs_read_file || needs_path_write || needs_getenv || needs_thread_pool || needs_int_array_array
     bool needs_string_array_helpers = needs_string_array || needs_string_helpers
     bool needs_runtime_global_init = LLVM_SCAN_NEEDS_RUNTIME_GLOBAL_INIT != 0
     lines.push('%tb_bootstrap_num = type { i64, i64 }')
@@ -11439,14 +11479,14 @@ string[] llvm_codegen_ir(ProgramIR program):
     if (!string_constants.is_empty()):
         for (StringConstIR constant in string_constants):
             lines.push(emit_string_constant(constant))
-    if (needs_thread_pool || needs_throw || needs_try_catch || needs_read_lines || needs_read_file || needs_write_all || needs_int_array):
+    if (needs_thread_pool || needs_throw || needs_try_catch || needs_read_lines || needs_read_file || needs_path_write || needs_int_array):
         lines.push(exception_handler_symbol() + ' = thread_local global ptr null')
         lines.push(exception_message_symbol() + ' = thread_local global ptr null')
     for (string map_type in map_types):
         lines.push(emit_map_type(map_type))
     for (RecordDeclIR record_decl in record_decls):
         lines.push(emit_record_type(record_decl))
-    if (needs_string_array_helpers || needs_string_array_array || needs_bool_array || needs_int_array || needs_int_array_array || needs_record_array || needs_runtime_string_copy || needs_records || needs_maps || needs_read_lines || needs_read_file || needs_write_all):
+    if (needs_string_array_helpers || needs_string_array_array || needs_bool_array || needs_int_array || needs_int_array_array || needs_record_array || needs_runtime_string_copy || needs_records || needs_maps || needs_read_lines || needs_read_file || needs_path_write):
         lines.push('declare ptr @malloc(i64)')
         lines.push('declare ptr @realloc(ptr, i64)')
         lines.push('declare void @qsort(ptr, i64, i64, ptr)')
@@ -11455,23 +11495,23 @@ string[] llvm_codegen_ir(ProgramIR program):
     if (needs_thread_pool):
         for (string declaration in emit_thread_pool_runtime_declarations()):
             lines.push(declaration)
-    if (needs_string_helpers || needs_thread_pool || needs_try_catch || needs_write_all || needs_int_array || needs_string_array_map_expression || needs_string_array_filter_expression):
+    if (needs_string_helpers || needs_thread_pool || needs_try_catch || needs_path_write || needs_int_array || needs_string_array_map_expression || needs_string_array_filter_expression):
         lines.push('declare i32 @setjmp(ptr) returns_twice')
-    if (needs_string_helpers || needs_thread_pool || needs_throw || needs_try_catch || needs_read_lines || needs_read_file || needs_write_all || needs_int_array || needs_string_array_map_expression || needs_string_array_filter_expression):
+    if (needs_string_helpers || needs_thread_pool || needs_throw || needs_try_catch || needs_read_lines || needs_read_file || needs_path_write || needs_int_array || needs_string_array_map_expression || needs_string_array_filter_expression):
         lines.push('declare void @longjmp(ptr, i32) noreturn')
     if (needs_string_array_helpers || needs_string_array_array || needs_bool_array || needs_int_array || needs_int_array_array || needs_record_array || needs_backend_free || needs_records || needs_maps || needs_read_lines || needs_read_file):
         lines.push('declare void @free(ptr)')
-    if (needs_print_int || needs_print_string_array || needs_print_int_array || needs_print_num || needs_num || needs_int_array || needs_int_set || needs_string_array_helpers || needs_read_lines || needs_read_file || needs_file_output || needs_write_all):
+    if (needs_print_int || needs_print_string_array || needs_print_int_array || needs_print_num || needs_num || needs_int_array || needs_int_set || needs_string_array_helpers || needs_read_lines || needs_read_file || needs_file_output || needs_path_write):
         lines.push('declare i32 @printf(ptr, ...)')
     if (needs_int_set):
         lines.push('declare i32 @putchar(i32)')
     if (needs_print_string || needs_print_bool || needs_throw || needs_try_catch):
         lines.push('declare i32 @puts(ptr)')
-    if (needs_throw || needs_try_catch || needs_read_lines || needs_read_file || needs_write_all):
+    if (needs_throw || needs_try_catch || needs_read_lines || needs_read_file || needs_path_write):
         lines.push('declare void @exit(i32)')
     if (needs_strcmp || needs_string_search || needs_string_array_helpers):
         lines.push('declare i32 @strcmp(ptr, ptr)')
-    if (needs_strlen || needs_runtime_string_copy || needs_read_lines || needs_read_file || needs_string_helpers || needs_write_all):
+    if (needs_strlen || needs_runtime_string_copy || needs_read_lines || needs_read_file || needs_string_helpers || needs_path_write):
         lines.push('declare i64 @strlen(ptr)')
     if (needs_getenv):
         lines.push('declare ptr @getenv(ptr)')
@@ -11492,17 +11532,17 @@ string[] llvm_codegen_ir(ProgramIR program):
         lines.push('declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)')
     if (needs_string_array_helpers || needs_string_array_array || needs_bool_array || needs_int_array || needs_int_array_array || needs_record_array || needs_maps || needs_read_lines):
         lines.push('declare void @llvm.memset.p0.i64(ptr, i8, i64, i1)')
-    if (needs_read_lines || needs_read_file || needs_file_output || needs_write_all):
+    if (needs_read_lines || needs_read_file || needs_file_output || needs_path_write):
         lines.push('declare ptr @fopen(ptr, ptr)')
     if (needs_time_ms):
         lines.push('declare i32 @gettimeofday(ptr, ptr)')
     if (needs_secure_random):
         lines.push('declare i32 @tb_secure_random_i64(ptr)')
-    if (needs_file_output || needs_write_all):
+    if (needs_file_output || needs_path_write):
         lines.push('declare i32 @fputs(ptr, ptr)')
     if (needs_file_output):
         lines.push('declare i32 @fputc(i32, ptr)')
-    if (needs_read_lines || needs_read_file || needs_file_output || needs_write_all):
+    if (needs_read_lines || needs_read_file || needs_file_output || needs_path_write):
         lines.push('declare i32 @fclose(ptr)')
     if (needs_read_lines || needs_read_file):
         lines.push('declare i32 @ferror(ptr)')
@@ -11589,6 +11629,9 @@ string[] llvm_codegen_ir(ProgramIR program):
             lines.push(helper)
     if (needs_write_all):
         for (string helper in emit_write_all_helper()):
+            lines.push(helper)
+    if (needs_append_all):
+        for (string helper in emit_append_all_helper()):
             lines.push(helper)
     if (needs_getenv):
         for (string helper in emit_getenv_helper()):
@@ -11737,6 +11780,8 @@ void llvm_print_ir(ProgramIR program):
     bool needs_read_lines = LLVM_SCAN_NEEDS_READ_LINES != 0
     bool needs_read_file = LLVM_SCAN_NEEDS_READ_FILE != 0
     bool needs_write_all = LLVM_SCAN_NEEDS_WRITE_ALL != 0
+    bool needs_append_all = LLVM_SCAN_NEEDS_APPEND_ALL != 0
+    bool needs_path_write = needs_write_all || needs_append_all
     bool needs_getenv = LLVM_SCAN_NEEDS_GETENV != 0 || program_uses_getenv(program)
     bool needs_time_ms = LLVM_SCAN_NEEDS_TIME_MS != 0
     bool needs_secure_random = LLVM_SCAN_NEEDS_SECURE_RANDOM != 0
@@ -11754,7 +11799,7 @@ void llvm_print_ir(ProgramIR program):
     reset_function_lookup_cache()
     string[] foreign_modules = active_foreign_modules(program)
     # The integer-grid helper also calls string and string-array helpers.
-    bool needs_string_helpers = needs_runtime_string_copy || needs_to_int || needs_int_to_string || needs_num_to_string || needs_hash || LLVM_SCAN_NEEDS_STRING_HELPERS_OPS != 0 || needs_read_lines || needs_read_file || needs_write_all || needs_getenv || needs_int_array_array
+    bool needs_string_helpers = needs_runtime_string_copy || needs_to_int || needs_int_to_string || needs_num_to_string || needs_hash || LLVM_SCAN_NEEDS_STRING_HELPERS_OPS != 0 || needs_read_lines || needs_read_file || needs_path_write || needs_getenv || needs_thread_pool || needs_int_array_array
     bool needs_string_array_helpers = needs_string_array || needs_string_helpers
     bool needs_runtime_global_init = LLVM_SCAN_NEEDS_RUNTIME_GLOBAL_INIT != 0
     bool emitted_any_header = false
@@ -11791,7 +11836,7 @@ void llvm_print_ir(ProgramIR program):
         for (StringConstIR constant in string_constants):
             print(emit_string_constant(constant))
         emitted_any_header = true
-    if (needs_thread_pool || needs_throw || needs_try_catch || needs_read_lines || needs_read_file || needs_write_all || needs_int_array):
+    if (needs_thread_pool || needs_throw || needs_try_catch || needs_read_lines || needs_read_file || needs_path_write || needs_int_array):
         print(exception_handler_symbol() + ' = thread_local global ptr null')
         print(exception_message_symbol() + ' = thread_local global ptr null')
         emitted_any_header = true
@@ -11801,7 +11846,7 @@ void llvm_print_ir(ProgramIR program):
     for (RecordDeclIR record_decl in record_decls):
         print(emit_record_type(record_decl))
         emitted_any_header = true
-    if (needs_string_array_helpers || needs_string_array_array || needs_bool_array || needs_int_array || needs_int_array_array || needs_record_array || needs_runtime_string_copy || needs_records || needs_maps || needs_read_lines || needs_read_file || needs_write_all):
+    if (needs_string_array_helpers || needs_string_array_array || needs_bool_array || needs_int_array || needs_int_array_array || needs_record_array || needs_runtime_string_copy || needs_records || needs_maps || needs_read_lines || needs_read_file || needs_path_write):
         print('declare ptr @malloc(i64)')
         print('declare ptr @realloc(ptr, i64)')
         print('declare void @qsort(ptr, i64, i64, ptr)')
@@ -11810,10 +11855,10 @@ void llvm_print_ir(ProgramIR program):
         for (string declaration in emit_thread_pool_runtime_declarations()):
             print(declaration)
         emitted_any_header = true
-    if (needs_string_helpers || needs_thread_pool || needs_try_catch || needs_write_all || needs_int_array || needs_string_array_map_expression || needs_string_array_filter_expression):
+    if (needs_string_helpers || needs_thread_pool || needs_try_catch || needs_path_write || needs_int_array || needs_string_array_map_expression || needs_string_array_filter_expression):
         print('declare i32 @setjmp(ptr) returns_twice')
         emitted_any_header = true
-    if (needs_string_helpers || needs_thread_pool || needs_throw || needs_try_catch || needs_read_lines || needs_read_file || needs_write_all || needs_int_array || needs_string_array_map_expression || needs_string_array_filter_expression):
+    if (needs_string_helpers || needs_thread_pool || needs_throw || needs_try_catch || needs_read_lines || needs_read_file || needs_path_write || needs_int_array || needs_string_array_map_expression || needs_string_array_filter_expression):
         print('declare void @longjmp(ptr, i32) noreturn')
         emitted_any_header = true
     if (needs_string_array_helpers || needs_string_array_array || needs_bool_array || needs_int_array || needs_int_array_array || needs_record_array || needs_backend_free || needs_records || needs_maps || needs_read_lines || needs_read_file):
@@ -11822,7 +11867,7 @@ void llvm_print_ir(ProgramIR program):
     if (needs_bool_array_array):
         print('declare ptr @calloc(i64, i64)')
         emitted_any_header = true
-    if (needs_print_int || needs_print_string_array || needs_print_int_array || needs_print_num || needs_num || needs_int_array || needs_int_set || needs_string_array_helpers || needs_read_lines || needs_read_file || needs_file_output || needs_write_all):
+    if (needs_print_int || needs_print_string_array || needs_print_int_array || needs_print_num || needs_num || needs_int_array || needs_int_set || needs_string_array_helpers || needs_read_lines || needs_read_file || needs_file_output || needs_path_write):
         print('declare i32 @printf(ptr, ...)')
         emitted_any_header = true
     if (needs_int_set):
@@ -11831,13 +11876,13 @@ void llvm_print_ir(ProgramIR program):
     if (needs_print_string || needs_print_bool || needs_throw || needs_try_catch):
         print('declare i32 @puts(ptr)')
         emitted_any_header = true
-    if (needs_throw || needs_try_catch || needs_read_lines || needs_read_file || needs_write_all):
+    if (needs_throw || needs_try_catch || needs_read_lines || needs_read_file || needs_path_write):
         print('declare void @exit(i32)')
         emitted_any_header = true
     if (needs_strcmp || needs_string_search || needs_string_array_helpers):
         print('declare i32 @strcmp(ptr, ptr)')
         emitted_any_header = true
-    if (needs_strlen || needs_runtime_string_copy || needs_read_lines || needs_read_file || needs_string_helpers || needs_write_all):
+    if (needs_strlen || needs_runtime_string_copy || needs_read_lines || needs_read_file || needs_string_helpers || needs_path_write):
         print('declare i64 @strlen(ptr)')
         emitted_any_header = true
     if (needs_getenv):
@@ -11864,7 +11909,7 @@ void llvm_print_ir(ProgramIR program):
     if (needs_string_array_helpers || needs_string_array_array || needs_bool_array || needs_int_array || needs_int_array_array || needs_record_array || needs_maps || needs_read_lines):
         print('declare void @llvm.memset.p0.i64(ptr, i8, i64, i1)')
         emitted_any_header = true
-    if (needs_read_lines || needs_read_file || needs_file_output || needs_write_all):
+    if (needs_read_lines || needs_read_file || needs_file_output || needs_path_write):
         print('declare ptr @fopen(ptr, ptr)')
         emitted_any_header = true
     if (needs_time_ms):
@@ -11873,12 +11918,12 @@ void llvm_print_ir(ProgramIR program):
     if (needs_secure_random):
         print('declare i32 @tb_secure_random_i64(ptr)')
         emitted_any_header = true
-    if (needs_file_output || needs_write_all):
+    if (needs_file_output || needs_path_write):
         print('declare i32 @fputs(ptr, ptr)')
     if (needs_file_output):
         print('declare i32 @fputc(i32, ptr)')
         emitted_any_header = true
-    if (needs_read_lines || needs_read_file || needs_file_output || needs_write_all):
+    if (needs_read_lines || needs_read_file || needs_file_output || needs_path_write):
         print('declare i32 @fclose(ptr)')
         emitted_any_header = true
     if (needs_read_lines || needs_read_file):
@@ -11985,6 +12030,10 @@ void llvm_print_ir(ProgramIR program):
     if (needs_write_all):
         string[] write_all_helper_lines = emit_write_all_helper()
         for (string line in write_all_helper_lines):
+            print(line)
+    if (needs_append_all):
+        string[] append_all_helper_lines = emit_append_all_helper()
+        for (string line in append_all_helper_lines):
             print(line)
     if (needs_getenv):
         string[] getenv_helper_lines = emit_getenv_helper()

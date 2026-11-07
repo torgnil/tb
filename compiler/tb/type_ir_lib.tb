@@ -311,7 +311,7 @@ bool is_builtin_ufcs_array_context_name(string method_name):
         return true
     if (infer_method_call_type(method_name, 'unknown', empty_functions) != 'unknown'):
         return true
-    return method_name == 'abs' || method_name == 'add' || method_name == 'await' || method_name == 'char_at' || method_name == 'clear' || method_name == 'contains' || method_name == 'copy' || method_name == 'create_prio_q' || method_name == 'ends_with' || method_name == 'ends_with_at' || method_name == 'fill' || method_name == 'hash' || method_name == 'index_of' || method_name == 'insert' || method_name == 'is_alnum' || method_name == 'is_alpha' || method_name == 'is_digit' || method_name == 'is_done' || method_name == 'is_empty' || method_name == 'is_space' || method_name == 'is_whitespace' || method_name == 'join' || method_name == 'keys' || method_name == 'last' || method_name == 'max' || method_name == 'min' || method_name == 'pop' || method_name == 'print' || method_name == 'push' || method_name == 'remove_at' || method_name == 'replace' || method_name == 'sort' || method_name == 'starts_with' || method_name == 'starts_with_at' || method_name == 'submit' || method_name == 'sum' || method_name == 'to_int' || method_name == 'union' || method_name == 'values' || method_name == 'wait_for' || method_name == 'write_all'
+    return method_name == 'abs' || method_name == 'add' || method_name == 'append_all' || method_name == 'await' || method_name == 'char_at' || method_name == 'clear' || method_name == 'contains' || method_name == 'copy' || method_name == 'create_prio_q' || method_name == 'ends_with' || method_name == 'ends_with_at' || method_name == 'fill' || method_name == 'hash' || method_name == 'index_of' || method_name == 'insert' || method_name == 'is_alnum' || method_name == 'is_alpha' || method_name == 'is_digit' || method_name == 'is_done' || method_name == 'is_empty' || method_name == 'is_space' || method_name == 'is_whitespace' || method_name == 'join' || method_name == 'keys' || method_name == 'last' || method_name == 'max' || method_name == 'min' || method_name == 'pop' || method_name == 'print' || method_name == 'push' || method_name == 'remove_at' || method_name == 'replace' || method_name == 'sort' || method_name == 'starts_with' || method_name == 'starts_with_at' || method_name == 'submit' || method_name == 'sum' || method_name == 'to_int' || method_name == 'union' || method_name == 'values' || method_name == 'wait_for' || method_name == 'write_all'
 
 bool is_same_known_type(string left, string right):
     return left != '' && left != 'unknown' && left == right
@@ -1219,6 +1219,8 @@ string infer_call_type(string name, FunctionSigIR[] functions):
         return 'string'
     if (name == 'write_all'):
         return 'void'
+    if (name == 'append_all'):
+        return 'void'
     if (name == 'time_ms'):
         return 'int'
     if (name == 'random_bits'):
@@ -1284,7 +1286,7 @@ string infer_call_type_cached(string name, FunctionSigIR[] functions, string[] c
         string user_result_type = lookup_function_return_type(functions, name)
         if (user_result_type != 'unknown'):
             return user_result_type
-    if (name == 'write_all'):
+    if (name == 'write_all' || name == 'append_all'):
         string user_result_type = lookup_function_return_type(functions, name)
         if (user_result_type != 'unknown'):
             return user_result_type
@@ -1551,7 +1553,7 @@ string infer_method_call_type(string method_name, string base_type, FunctionSigI
     return lookup_function_return_type(functions, method_name)
 
 string infer_method_call_type_cached(string method_name, string base_type, FunctionSigIR[] functions, string[] cache_names, string[] cache_types):
-    if (method_name == 'write_all'):
+    if (method_name == 'write_all' || method_name == 'append_all'):
         string user_result_type = lookup_function_return_type(functions, method_name)
         if (user_result_type != 'unknown'):
             return user_result_type

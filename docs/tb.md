@@ -479,6 +479,7 @@ Submitted scalar lambda blocks also support `try` / `catch` with brace-delimited
   - `read_lines(path)` always reads `path` when the compiled program runs.
   - `read_file(path)` always reads `path` when the compiled program runs.
   - `write_all(path, text)` always opens `path` with mode `w` and writes `text` without adding a newline.
+  - `append_all(path, text)` always opens `path` with mode `a` and writes `text` without adding a newline, preserving existing contents and creating a missing path.
   - The compiler emits the file path string, not the file contents, into the generated LLVM.
   - Missing `read_file` and `read_lines` inputs, read errors, or close errors report an operation and path, such as `read_lines: unable to read input.txt`; inside a `try` block the same message can be caught as an exception, and an uncaught error exits with status 1. A failed read or close discards partial content and closes the stream once. `write_all` reports `write_all: unable to write <path>` when opening, writing, or closing fails; a `try` block can catch that message, while an uncaught failure prints it and exits with status 1. After a successful open it closes the file once, including when writing fails.
   - `open(path)` opens a file for writing and raises `open: unable to open <path>` if opening fails; an uncaught failure prints that message and exits with status 1. Use `read_file` and `read_lines` to read files. Call `close(file)` when finished. `write_line` and `write_lines` report write failures and stop at the first failed operation; `close` reports flush and close failures and consumes the handle even when it raises.
@@ -548,6 +549,11 @@ Core IO and string helpers
   - The self-hosted compiler supports this helper. It overwrites or creates `path` at runtime, writing `text` exactly without adding a newline. Empty text creates or truncates the file to zero bytes.
   - Opening, writing, or closing failures raise `write_all: unable to write <path>`; an uncaught failure prints that message and exits with status 1.
   - It borrows both strings, accepts const string bindings, and supports UFCS as `path.write_all(text)`. A user-defined function named `write_all` takes precedence over the builtin.
+
+- append_all(path: string, text: string) -> void
+  - Append `text` to `path` at runtime without adding a newline. Create the file when it does not exist. Empty text leaves existing contents unchanged and creates an empty file when needed.
+  - Opening, writing, or closing failures raise `append_all: unable to write <path>`; an uncaught failure prints that message and exits with status 1.
+  - It borrows both strings, accepts const string bindings, and supports UFCS as `path.append_all(text)`. A user-defined function named `append_all` takes precedence over the builtin.
 
 - open(path: string) -> file
   - Open a file handle for writing at runtime. If opening fails, raise `open: unable to open <path>`; an uncaught failure prints that message and exits with status 1. Use `read_file` or `read_lines` for reads.
