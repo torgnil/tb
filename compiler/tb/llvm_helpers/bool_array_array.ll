@@ -36,6 +36,27 @@ fail:
   unreachable
 }
 
+define private ptr @tb_bootstrap_bool_array_array_clone(ptr %source) {
+entry:
+  %len = call i32 @tb_bootstrap_bool_array_array_length(ptr %source)
+  %copy = call ptr @tb_bootstrap_bool_array_array_new(i32 %len)
+  br label %loop.cond
+loop.cond:
+  %index = phi i32 [ 0, %entry ], [ %next, %loop.step ]
+  %more = icmp slt i32 %index, %len
+  br i1 %more, label %loop.body, label %done
+loop.body:
+  %row = call ptr @tb_bootstrap_bool_array_array_get(ptr %source, i32 %index)
+  %row.copy = call ptr @tb_bootstrap_bool_array_clone(ptr %row)
+  call void @tb_bootstrap_bool_array_array_set_owned(ptr %copy, i32 %index, ptr %row.copy, i1 true)
+  br label %loop.step
+loop.step:
+  %next = add i32 %index, 1
+  br label %loop.cond
+done:
+  ret ptr %copy
+}
+
 define private i32 @tb_bootstrap_bool_array_array_length(ptr %array) {
 entry:
   %len.ptr = getelementptr inbounds %tb_bootstrap_bool_array_array, ptr %array, i32 0, i32 0

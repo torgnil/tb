@@ -2456,7 +2456,7 @@ string emit_user_call_managed_argument_releases(ProgramIR program, ParsedFunctio
         if (!already_released):
             string arg_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, temp_name))
             bool record_array = temp_is_record_array(function_ir, temp_name)
-            bool supported_managed = arg_type == 'string' || arg_type == 'int[]' || arg_type == 'bool[]' || arg_type == 'string[]' || arg_type == 'int[][]' || arg_type == 'string[][]' || temp_is_record(function_ir, temp_name)
+            bool supported_managed = arg_type == 'string' || arg_type == 'int[]' || arg_type == 'bool[]' || arg_type == 'string[]' || arg_type == 'int[][]' || arg_type == 'bool[][]' || arg_type == 'string[][]' || temp_is_record(function_ir, temp_name)
             if (record_array && direct_named_call && record_array_call_temporary_is_releasable(program, function_ir, call_name, call_args, first_arg_index, call_result_temp)):
                 lines.push(emit_backend_release_ptr(arg_type, temp_ref(temp_name)))
                 released_temps.push(temp_name)
@@ -3677,6 +3677,9 @@ void analyze_program_features(ProgramIR program, string[] map_types):
                 needs_int_array_array = true
             if (type_name == 'bool[]'):
                 needs_bool_array = true
+            if (type_name == 'bool[][]'):
+                needs_bool_array = true
+                needs_bool_array_array = true
             if (type_name == 'prio_q<int>'):
                 needs_prio_q_int = true
             if (type_name == 'set<int>'):
@@ -3705,6 +3708,9 @@ void analyze_program_features(ProgramIR program, string[] map_types):
                 needs_int_array_array = true
             if (type_name == 'bool[]'):
                 needs_bool_array = true
+            if (type_name == 'bool[][]'):
+                needs_bool_array = true
+                needs_bool_array_array = true
             if (type_name == 'prio_q<int>'):
                 needs_prio_q_int = true
             if (type_name == 'set<int>'):
@@ -8944,6 +8950,8 @@ string emit_instruction(ProgramIR program, ParsedFunction function_ir, string bl
         if (transferable_local_binding_name(function_ir, op.args[0]) != '' && temp_is_int_array_array(function_ir, op.args[0])):
             return '  ; return int[][] local transfers directly'
         return join_llvm_strings(emit_int_array_array_materialize_if_needed(function_ir, op.args[0], 'return.' + block_label), '\n')
+    if (op.kind == 'prepare_return_bool_array_array'):
+        return '  ; return bool[][] owned value transfers directly or borrowed value is cloned at return'
     if (op.kind == 'prepare_return_record_array'):
         string return_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0]))
         string record_name = record_name_from_type(array_item_type(return_type))
@@ -9357,6 +9365,16 @@ string[] emit_terminator(ParsedFunction function_ir, BlockIR block, TerminatorIR
             string returned_value = temp_ref(terminator.args[0])
             if (temp_is_int_array_array(function_ir, terminator.args[0]) && !temp_needs_backend_free(function_ir, terminator.args[0])):
                 returned_value = emit_int_array_array_owned_value(function_ir, terminator.args[0], 'return.' + temp_suffix)
+            for (string restore_line in emit_try_restore_lines(try_suffix, temp_suffix)):
+                lines.push(restore_line)
+            lines.push('  ret ptr ' + returned_value)
+            return lines
+        if (normalize_llvm_type_name(result_type) == 'bool[][]'):
+            string[] lines = []
+            string returned_value = temp_ref(terminator.args[0])
+            if (!temp_needs_backend_free(function_ir, terminator.args[0])):
+                returned_value = '%return.bool_array_array.copy.' + temp_suffix
+                lines.push('  ' + returned_value + ' = call ptr @tb_bootstrap_bool_array_array_clone(ptr ' + temp_ref(terminator.args[0]) + ')')
             for (string restore_line in emit_try_restore_lines(try_suffix, temp_suffix)):
                 lines.push(restore_line)
             lines.push('  ret ptr ' + returned_value)
