@@ -204,6 +204,71 @@ done:
   ret i32 %result.len
 }
 
+define private i1 @tb_bootstrap_int_set_remove(ptr %set, i64 %value) {
+entry:
+  %len.ptr = getelementptr inbounds %tb_bootstrap_int_set, ptr %set, i32 0, i32 0
+  %data.ptr = getelementptr inbounds %tb_bootstrap_int_set, ptr %set, i32 0, i32 2
+  %index.cap.ptr = getelementptr inbounds %tb_bootstrap_int_set, ptr %set, i32 0, i32 3
+  %hashes.ptr.ptr = getelementptr inbounds %tb_bootstrap_int_set, ptr %set, i32 0, i32 4
+  %present = call i1 @tb_bootstrap_int_set_contains(ptr %set, i64 %value)
+  br i1 %present, label %find.data, label %absent
+find.data:
+  %len = load i32, ptr %len.ptr
+  %data = load ptr, ptr %data.ptr
+  br label %find.loop
+find.loop:
+  %find.index = phi i32 [0, %find.data], [%find.next, %find.next.block]
+  %find.slot = getelementptr inbounds i64, ptr %data, i32 %find.index
+  %find.value = load i64, ptr %find.slot
+  %found = icmp eq i64 %find.value, %value
+  br i1 %found, label %shift.start, label %find.next.block
+find.next.block:
+  %find.next = add i32 %find.index, 1
+  br label %find.loop
+shift.start:
+  %shift.index = add i32 %find.index, 1
+  br label %shift.loop
+shift.loop:
+  %current.index = phi i32 [%shift.index, %shift.start], [%next.shift.index, %shift.body]
+  %has.more = icmp slt i32 %current.index, %len
+  br i1 %has.more, label %shift.body, label %shift.done
+shift.body:
+  %previous.index = sub i32 %current.index, 1
+  %current.slot = getelementptr inbounds i64, ptr %data, i32 %current.index
+  %previous.slot = getelementptr inbounds i64, ptr %data, i32 %previous.index
+  %current.value = load i64, ptr %current.slot
+  store i64 %current.value, ptr %previous.slot
+  %next.shift.index = add i32 %current.index, 1
+  br label %shift.loop
+shift.done:
+  %last.index = sub i32 %len, 1
+  %last.slot = getelementptr inbounds i64, ptr %data, i32 %last.index
+  store i64 0, ptr %last.slot
+  %next.len = sub i32 %len, 1
+  store i32 %next.len, ptr %len.ptr
+  %hashes.ptr = load ptr, ptr %hashes.ptr.ptr
+  %index.cap = load i32, ptr %index.cap.ptr
+  %index.cap64 = zext i32 %index.cap to i64
+  %hash.bytes = mul i64 %index.cap64, 8
+  call void @llvm.memset.p0.i64(ptr %hashes.ptr, i8 0, i64 %hash.bytes, i1 false)
+  br label %rebuild.loop
+rebuild.loop:
+  %rebuild.index = phi i32 [0, %shift.done], [%rebuild.next, %rebuild.body]
+  %has.items = icmp slt i32 %rebuild.index, %next.len
+  br i1 %has.items, label %rebuild.body, label %removed
+rebuild.body:
+  %rebuild.slot = getelementptr inbounds i64, ptr %data, i32 %rebuild.index
+  %rebuild.value = load i64, ptr %rebuild.slot
+  %rebuild.hash = call i64 @tb_bootstrap_int_set_hash(i64 %rebuild.value)
+  call void @tb_bootstrap_int_set_insert_index(ptr %set, i64 %rebuild.hash, i64 %rebuild.value)
+  %rebuild.next = add i32 %rebuild.index, 1
+  br label %rebuild.loop
+removed:
+  ret i1 true
+absent:
+  ret i1 false
+}
+
 define private ptr @tb_bootstrap_int_set_union(ptr %left, ptr %right) {
 entry:
   %result = call ptr @tb_bootstrap_int_set_clone(ptr %left)

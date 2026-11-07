@@ -311,7 +311,7 @@ bool is_builtin_ufcs_array_context_name(string method_name):
         return true
     if (infer_method_call_type(method_name, 'unknown', empty_functions) != 'unknown'):
         return true
-    return method_name == 'abs' || method_name == 'add' || method_name == 'append_all' || method_name == 'await' || method_name == 'char_at' || method_name == 'clear' || method_name == 'contains' || method_name == 'copy' || method_name == 'create_prio_q' || method_name == 'ends_with' || method_name == 'ends_with_at' || method_name == 'fill' || method_name == 'hash' || method_name == 'index_of' || method_name == 'insert' || method_name == 'is_alnum' || method_name == 'is_alpha' || method_name == 'is_digit' || method_name == 'is_done' || method_name == 'is_empty' || method_name == 'is_space' || method_name == 'is_whitespace' || method_name == 'join' || method_name == 'keys' || method_name == 'last' || method_name == 'max' || method_name == 'min' || method_name == 'pop' || method_name == 'print' || method_name == 'push' || method_name == 'remove_at' || method_name == 'replace' || method_name == 'sort' || method_name == 'starts_with' || method_name == 'starts_with_at' || method_name == 'submit' || method_name == 'sum' || method_name == 'to_int' || method_name == 'union' || method_name == 'values' || method_name == 'wait_for' || method_name == 'write_all'
+    return method_name == 'abs' || method_name == 'add' || method_name == 'append_all' || method_name == 'await' || method_name == 'char_at' || method_name == 'clear' || method_name == 'contains' || method_name == 'copy' || method_name == 'create_prio_q' || method_name == 'ends_with' || method_name == 'ends_with_at' || method_name == 'fill' || method_name == 'hash' || method_name == 'index_of' || method_name == 'insert' || method_name == 'is_alnum' || method_name == 'is_alpha' || method_name == 'is_digit' || method_name == 'is_done' || method_name == 'is_empty' || method_name == 'is_space' || method_name == 'is_whitespace' || method_name == 'join' || method_name == 'keys' || method_name == 'last' || method_name == 'max' || method_name == 'min' || method_name == 'pop' || method_name == 'print' || method_name == 'push' || method_name == 'remove' || method_name == 'remove_at' || method_name == 'replace' || method_name == 'sort' || method_name == 'starts_with' || method_name == 'starts_with_at' || method_name == 'submit' || method_name == 'sum' || method_name == 'to_int' || method_name == 'union' || method_name == 'values' || method_name == 'wait_for' || method_name == 'write_all'
 
 bool is_same_known_type(string left, string right):
     return left != '' && left != 'unknown' && left == right
@@ -2520,6 +2520,16 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
                 return refined_value_op(op, 'bool', 'plain')
             string result_type = infer_method_call_type_cached(method_name, base_type, functions, TYPE_IR_FUNCTION_TYPE_CACHE_NAMES, TYPE_IR_FUNCTION_TYPE_CACHE_VALUES)
             return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
+        if (method_name == 'remove' && normalize_llvm_type_name(base_type) == 'set<int>'):
+            if (has_matching_ufcs_signature(op, method_name, functions, enum_types, temp_types)):
+                FunctionSigIR remove_method_sig = lookup_function_sig(functions, method_name)
+                return refined_value_op(op, remove_method_sig.return_type, refine_ownership_mode(op, remove_method_sig.return_type))
+            if (op.args.length() != 3):
+                throw 'set remove requires exactly one int item argument; got ' + (op.args.length() - 2).to_string()
+            string remove_item_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2])), enum_types)
+            if (remove_item_type != 'int' && remove_item_type != 'unknown'):
+                throw 'set remove requires item type int; got ' + remove_item_type
+            return refined_value_op(op, 'bool', 'plain')
         if (method_name == 'starts_with' || method_name == 'ends_with' || method_name == 'starts_with_at' || method_name == 'is_alpha' || method_name == 'is_digit' || method_name == 'is_alnum' || method_name == 'is_space' || method_name == 'is_whitespace'):
             string predicate_receiver_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
             if (predicate_receiver_type != 'string'):

@@ -6946,6 +6946,10 @@ string emit_set_method_call_value_instruction(ProgramIR program, ParsedFunction 
             if (op.args.length() != 3):
                 throw 'unsupported llvm set<int> contains arity'
             return '  ' + lhs + ' = call i1 @tb_bootstrap_int_set_contains(ptr ' + temp_ref(op.args[1]) + ', i64 ' + temp_ref(op.args[2]) + ')'
+        if (method_name == 'remove'):
+            if (op.args.length() != 3):
+                throw 'unsupported llvm set<int> remove arity'
+            return '  ' + lhs + ' = call i1 @tb_bootstrap_int_set_remove(ptr ' + temp_ref(op.args[1]) + ', i64 ' + temp_ref(op.args[2]) + ')'
         return ''
     if (!method_base_type.starts_with('set<')):
         return ''
@@ -7027,6 +7031,14 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
         if (method_base_type == 'string'):
             return last_line
         return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, last_line)
+    if (method_name == 'remove' && direct_call_matches_named_function(program, function_ir, op, method_name)):
+        string[] remove_call_args = [method_name]
+        int remove_arg = 1
+        while (remove_arg < op.args.length()):
+            remove_call_args.push(op.args[remove_arg])
+            remove_arg += 1
+        LinearInstruction remove_call = LinearInstruction('value', op.lhs, op.result_type, op.ownership_mode, 'call', remove_call_args)
+        return emit_call_value_instruction_core(program, function_ir, remove_call)
     if (method_name == 'pop' && method_base_type == 'bool[]' && lookup_call_meta_index(method_name) < 0):
         if (op.args.length() != 2):
             throw 'unsupported llvm bool[] pop arity'

@@ -3938,7 +3938,7 @@ bool const_method_mutates_type(string method, string type_name):
     string value_type = type_name
     if (value_type.starts_with('const ')):
         value_type = value_type.substring(6)
-    if (method == 'add'):
+    if (method == 'add' || method == 'remove'):
         return value_type.starts_with('set<')
     if (method == 'push' || method == 'pop'):
         return const_type_is_array(value_type) || value_type.starts_with('prio_q<')
@@ -3985,7 +3985,7 @@ bool const_method_mutates_receiver(string method, Node receiver, BindingIR[] bin
     return const_method_mutates_type(method, const_type_of_expression(receiver, bindings, record_nodes))
 
 bool const_function_mutates_first_arg(string name):
-    return name == 'push' || name == 'pop' || name == 'insert' || name == 'remove_at' || name == 'clear' || name == 'sort' || name == 'add' || name == 'fill'
+    return name == 'push' || name == 'pop' || name == 'insert' || name == 'remove' || name == 'remove_at' || name == 'clear' || name == 'sort' || name == 'add' || name == 'fill'
 
 bool const_record_name_exists(Node[] record_nodes, string name):
     for (Node record_node : record_nodes):
