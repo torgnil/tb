@@ -63,8 +63,19 @@ entry:
 }
 define private ptr @tb_string_new(i64 %length) {
 entry:
+  ; Reserve 24 bytes for the header and one for the terminator.
+  ; The unsigned comparison also rejects negative signed lengths.
+  %invalid.length = icmp ugt i64 %length, 9223372036854775782
+  br i1 %invalid.length, label %invalid, label %allocate
+invalid:
+  call void @abort()
+  unreachable
+allocate:
   %total.size = add i64 %length, 25
   %allocation = call ptr @malloc(i64 %total.size)
+  %allocation.failed = icmp eq ptr %allocation, null
+  br i1 %allocation.failed, label %invalid, label %initialize
+initialize:
   %magic.ptr = getelementptr inbounds %tb_bootstrap_rc_header, ptr %allocation, i32 0, i32 0
   %refcount.ptr = getelementptr inbounds %tb_bootstrap_rc_header, ptr %allocation, i32 0, i32 1
   %length.ptr = getelementptr inbounds %tb_bootstrap_rc_header, ptr %allocation, i32 0, i32 2

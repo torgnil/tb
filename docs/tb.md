@@ -604,6 +604,8 @@ Conversion and numeric helpers
 
 String helpers
 
+Managed string allocation aborts if its requested length is invalid or storage cannot be allocated.
+
 - split(s: string, sep: string) -> string[]
   - Split string on `sep`. Also available as UFCS: `s.split(',')`.
   - A matching declared function named `split` keeps direct-call precedence;
