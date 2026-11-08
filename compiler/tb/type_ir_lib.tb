@@ -139,7 +139,7 @@ string future_value_type(string type_name):
 
 bool is_thread_pool_submit_arg_type(string type_name):
     type_name = normalize_llvm_type_name(type_name)
-    return type_name == 'int' || type_name == 'bool' || type_name == 'string' || type_name == 'int[]' || type_name == 'bool[]' || type_name == 'int[][]' || type_name == 'string[]'
+    return type_name == 'int' || type_name == 'bool' || type_name == 'string' || type_name == 'int[]' || type_name == 'bool[]' || type_name == 'int[][]' || type_name == 'bool[][]' || type_name == 'string[]'
 
 bool is_thread_pool_submit_return_type(string type_name):
     type_name = normalize_llvm_type_name(type_name)
@@ -503,20 +503,22 @@ string thread_pool_submit_result_type(FunctionSigIR[] functions, string function
         throw 'thread_pool.submit currently supports num functions with signature num fn(), num fn(num), or num fn(int)'
     if (argument_count == 0):
         if (function_sig.param_types.length() != 0):
-            throw 'thread_pool.submit currently requires a function with signature T fn() or T fn(U) where T is int, bool, string, or int[] and U is int, bool, string, int[], bool[], int[][], or string[]'
+            throw 'thread_pool.submit currently requires a function with signature T fn() or T fn(U) where T is int, bool, string, or int[] and U is int, bool, string, int[], bool[], int[][], bool[][], or string[]'
     else if (argument_count == 1):
         if (function_sig.param_types.length() != 1):
-            throw 'thread_pool.submit currently requires a function with signature T fn() or T fn(U) where T is int, bool, string, or int[] and U is int, bool, string, int[], bool[], int[][], or string[]'
+            throw 'thread_pool.submit currently requires a function with signature T fn() or T fn(U) where T is int, bool, string, or int[] and U is int, bool, string, int[], bool[], int[][], bool[][], or string[]'
         if (!is_thread_pool_submit_arg_type(function_sig.param_types[0])):
-            throw 'thread_pool.submit currently requires a function with signature T fn() or T fn(U) where T is int, bool, string, or int[] and U is int, bool, string, int[], bool[], int[][], or string[]'
+            throw 'thread_pool.submit currently requires a function with signature T fn() or T fn(U) where T is int, bool, string, or int[] and U is int, bool, string, int[], bool[], int[][], bool[][], or string[]'
     else:
         throw 'thread_pool.submit currently requires a function name with zero or one argument'
     if (!is_thread_pool_submit_return_type(function_sig.return_type)):
-        throw 'thread_pool.submit currently requires a function with signature T fn() or T fn(U) where T is int, bool, string, int[], or int[][] and U is int, bool, string, int[], bool[], int[][], or string[]'
+        throw 'thread_pool.submit currently requires a function with signature T fn() or T fn(U) where T is int, bool, string, int[], or int[][] and U is int, bool, string, int[], bool[], int[][], bool[][], or string[]'
     if (function_sig.param_types.length() == 1 && function_sig.param_types[0] == 'bool[]' && (function_sig.return_type != 'int' && function_sig.return_type != 'bool')):
         throw 'thread_pool.submit currently requires a function with signature int fn(bool[]) or bool fn(bool[])'
     if (function_sig.param_types.length() == 1 && function_sig.param_types[0] == 'string[]' && (function_sig.return_type != 'int' && function_sig.return_type != 'bool')):
         throw 'thread_pool.submit currently requires a function with signature int fn(string[]) or bool fn(string[])'
+    if (function_sig.param_types.length() == 1 && function_sig.param_types[0] == 'bool[][]' && (function_sig.return_type != 'int' && function_sig.return_type != 'bool')):
+        throw 'thread_pool.submit currently requires a function with signature int fn(bool[][]) or bool fn(bool[][])'
     return 'future<' + function_sig.return_type + '>'
 
 RecordFieldIR[] collect_record_fields(RecordDeclIR[] records):

@@ -56,6 +56,47 @@ void tb_thread_pool_bool_array_snapshot_free(void* raw_array) {
     free(array);
 }
 
+void* tb_thread_pool_bool_array_array_snapshot(void* raw_array) {
+    tb_thread_pool_bool_array_array* source = (tb_thread_pool_bool_array_array*)raw_array;
+    if (source == NULL || source->length < 0) {
+        return NULL;
+    }
+    tb_thread_pool_bool_array_array* snapshot = (tb_thread_pool_bool_array_array*)tb_thread_pool_checked_malloc(sizeof(tb_thread_pool_bool_array_array));
+    snapshot->length = source->length;
+    snapshot->data = source->length > 0
+        ? (void**)tb_thread_pool_checked_calloc((size_t)source->length, sizeof(void*))
+        : NULL;
+    snapshot->owned = source->length > 0
+        ? (unsigned char*)tb_thread_pool_checked_calloc((size_t)source->length, sizeof(unsigned char))
+        : NULL;
+    for (int32_t index = 0; index < source->length; index += 1) {
+        if (source->data[index] != NULL) {
+            snapshot->data[index] = tb_thread_pool_bool_array_snapshot(source->data[index]);
+            if (snapshot->data[index] == NULL) {
+                tb_thread_pool_bool_array_array_snapshot_free(snapshot);
+                return NULL;
+            }
+            snapshot->owned[index] = 1;
+        }
+    }
+    return snapshot;
+}
+
+void tb_thread_pool_bool_array_array_snapshot_free(void* raw_array) {
+    tb_thread_pool_bool_array_array* array = (tb_thread_pool_bool_array_array*)raw_array;
+    if (array == NULL) {
+        return;
+    }
+    for (int32_t index = 0; index < array->length; index += 1) {
+        if (array->owned[index] != 0) {
+            tb_thread_pool_bool_array_snapshot_free(array->data[index]);
+        }
+    }
+    free(array->data);
+    free(array->owned);
+    free(array);
+}
+
 void* tb_thread_pool_string_array_snapshot(void* raw_array) {
     tb_thread_pool_string_array* source = (tb_thread_pool_string_array*)raw_array;
     if (source == NULL || source->length < 0) {
