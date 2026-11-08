@@ -429,7 +429,7 @@ bool is_checked_record_field_assignment_type(string[] record_names, string type_
     type_name = normalize_llvm_type_name(type_name)
     if (type_name == 'int' || type_name == 'bool' || type_name == 'num' || type_name == 'string'):
         return true
-    if (type_name == 'int[]' || type_name == 'bool[]' || type_name == 'string[]' || type_name == 'int[][]' || type_name == 'string[][]'):
+    if (type_name == 'int[]' || type_name == 'bool[]' || type_name == 'string[]' || type_name == 'int[][]' || type_name == 'bool[][]' || type_name == 'string[][]'):
         return true
     if (type_name.starts_with('map<') && type_name.ends_with('>')):
         return true
@@ -823,12 +823,6 @@ void validate_array_map_key_types(ProgramIR program, EnumTypeIR[] enums):
             for (LinearInstruction op in block.instructions):
                 validate_array_map_key_type(op.result_type, enums)
 
-void validate_bool_grid_storage_types(ProgramIR program):
-    for (RecordDeclIR record_decl in program.records):
-        for (string field in record_decl.fields):
-            BindingIR binding = ir_parse_binding_decl(strip_prefix(field, 'field '))
-            if (normalize_llvm_type_name(binding.type_name) == 'bool[][]'):
-                throw 'bool[][] record fields are unsupported'
 BindingIR normalize_enum_binding(BindingIR binding, EnumTypeIR[] enums):
     return BindingIR(normalize_enum_type_name(binding.type_name, enums), binding.name)
 
@@ -3008,6 +3002,10 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                 string record_name = record_name_from_type(base_type)
                 if (record_name != ''):
                     string field_type = normalize_llvm_type_name(lookup_indexed_record_field_type(field_types, record_name, current.detail))
+                    if (field_type == 'bool[][]'):
+                        RefineInstructionsResult contextual_grid = contextualize_bool_grid_literal(block_refined, temp_types, current.args[1])
+                        block_refined = contextual_grid.instructions
+                        temp_types = contextual_grid.temp_types
                     if (field_type.ends_with('[]')):
                         string value_name = current.args[1]
                         if (lookup_temp_type_slot(temp_types, value_name) == '[]'):
@@ -3616,7 +3614,6 @@ ProgramIR refine_program_ir_with_regex(ProgramIR program, bool regex_imported):
             throw 'regex split internal helper must be declared exactly once'
     EnumTypeIR[] enum_types = collect_enum_types(program.enums)
     validate_array_map_key_types(program, enum_types)
-    validate_bool_grid_storage_types(program)
     bool has_integer_enum = validate_integer_enum_declared_types(program, enum_types)
     bool has_string_enum_record_field = has_string_enum_record_fields(program.records, enum_types)
     bool normalize_records = has_integer_enum || has_string_enum_record_field

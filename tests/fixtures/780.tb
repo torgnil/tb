@@ -1,4 +1,36 @@
 record GridBox(bool[][] values);
 
+GridBox make_box(bool[][] values):
+    return GridBox(values)
+
+GridBox[] clone_boxes(GridBox[] boxes):
+    return boxes
+
 int main():
+    bool[] shared = [true, false]
+    bool[][] source = [shared, shared, [], [false]]
+    GridBox box = GridBox(source)
+    shared[0] = false
+    print(box.values[0][0])
+    print(box.values[1][0])
+
+    GridBox copied = box
+    copied.values[0][0] = false
+    print(box.values[0][0])
+    print(copied.values[0][0])
+
+    box.values = [[], [true]]
+    print(box.values.length())
+    print(box.values[0].length())
+    print(box.values[1][0])
+
+    GridBox returned = make_box(box.values)
+    returned.values[1][0] = false
+    print(box.values[1][0])
+
+    GridBox[] boxes = [box, copied]
+    GridBox[] boxes_copy = clone_boxes(boxes)
+    boxes_copy[0].values[1][0] = false
+    print(boxes[0].values[1][0])
+    print(boxes_copy[0].values[1][0])
     return 0
