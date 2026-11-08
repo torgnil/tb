@@ -75,6 +75,39 @@ entry:
   %clone = call ptr @tb_bootstrap_record_array_clone___RECORD__(ptr %set)
   ret ptr %clone
 }
+define private ptr @tb_bootstrap_record_set_union___RECORD__(ptr %left, ptr %right) {
+entry:
+  %result = call ptr @tb_bootstrap_record_set_new___RECORD__()
+  %left.len = call i32 @tb_bootstrap_record_set_length___RECORD__(ptr %left)
+  %right.len = call i32 @tb_bootstrap_record_set_length___RECORD__(ptr %right)
+  br label %left.loop.cond
+left.loop.cond:
+  %left.index = phi i32 [0, %entry], [%left.next.index, %left.loop.step]
+  %left.keep.loop = icmp slt i32 %left.index, %left.len
+  br i1 %left.keep.loop, label %left.loop.body, label %right.loop.cond
+left.loop.body:
+  %left.item = call ptr @tb_bootstrap_record_set_get___RECORD__(ptr %left, i32 %left.index)
+  %left.copy = call ptr @tb_bootstrap_record_clone___RECORD__(ptr %left.item)
+  %left.ignored = call i32 @tb_bootstrap_record_set_add___RECORD__(ptr %result, ptr %left.copy, i1 true)
+  br label %left.loop.step
+left.loop.step:
+  %left.next.index = add i32 %left.index, 1
+  br label %left.loop.cond
+right.loop.cond:
+  %right.index = phi i32 [0, %left.loop.cond], [%right.next.index, %right.loop.step]
+  %right.keep.loop = icmp slt i32 %right.index, %right.len
+  br i1 %right.keep.loop, label %right.loop.body, label %done
+right.loop.body:
+  %right.item = call ptr @tb_bootstrap_record_set_get___RECORD__(ptr %right, i32 %right.index)
+  %right.copy = call ptr @tb_bootstrap_record_clone___RECORD__(ptr %right.item)
+  %right.ignored = call i32 @tb_bootstrap_record_set_add___RECORD__(ptr %result, ptr %right.copy, i1 true)
+  br label %right.loop.step
+right.loop.step:
+  %right.next.index = add i32 %right.index, 1
+  br label %right.loop.cond
+done:
+  ret ptr %result
+}
 define private void @tb_bootstrap_record_set_free___RECORD__(ptr %set) {
 entry:
   call void @tb_bootstrap_record_array_free___RECORD__(ptr %set)

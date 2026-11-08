@@ -6937,6 +6937,22 @@ string emit_prio_q_method_call_value_instruction(ProgramIR program, ParsedFuncti
         return '  ' + lhs + ' = call ptr @tb_bootstrap_prio_q_generic_' + record_name + '_pop(ptr ' + temp_ref(op.args[1]) + ')'
     return ''
 
+private bool set_method_has_matching_user_call(ProgramIR program, ParsedFunction function_ir, LinearInstruction op, string method_name):
+    int function_index = lookup_call_meta_index(method_name)
+    if (function_index < 0 || function_index >= program.functions.length()):
+        return false
+    ParsedFunction function = program.functions[function_index]
+    if (op.args.length() != function.params.length() + 1):
+        return false
+    int index = 0
+    while (index < function.params.length()):
+        string expected_type = normalize_llvm_type_name(function.params[index].type_name)
+        string actual_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[index + 1]))
+        if (expected_type != actual_type):
+            return false
+        index += 1
+    return true
+
 string emit_set_method_call_value_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op, string method_name, string method_base_type):
     string lhs = temp_ref(op.lhs)
     if (method_base_type == 'set<int>'):
@@ -7003,6 +7019,12 @@ string emit_set_method_call_value_instruction(ProgramIR program, ParsedFunction 
             probe_value = emit_record_owned_value(function_ir, op.args[2], 'set.remove.' + op.lhs)
         lines.push('  ' + lhs + ' = call i1 @tb_bootstrap_record_set_remove_' + record_name + '(ptr ' + temp_ref(op.args[1]) + ', ptr ' + probe_value + ')')
         return join_llvm_strings(lines, '\n')
+    if (method_name == 'union'):
+        if (op.args.length() != 3):
+            throw 'unsupported llvm record set union arity'
+        if (set_method_has_matching_user_call(program, function_ir, op, method_name)):
+            return ''
+        return '  ' + lhs + ' = call ptr @tb_bootstrap_record_set_union_' + record_name + '(ptr ' + temp_ref(op.args[1]) + ', ptr ' + temp_ref(op.args[2]) + ')'
     return ''
 
 string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction function_ir, LinearInstruction op):
