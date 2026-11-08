@@ -824,10 +824,6 @@ void validate_array_map_key_types(ProgramIR program, EnumTypeIR[] enums):
                 validate_array_map_key_type(op.result_type, enums)
 
 void validate_bool_grid_storage_types(ProgramIR program):
-    for (GlobalDeclIR global_decl in program.globals):
-        BindingIR binding = ir_parse_binding_decl(strip_prefix(global_decl.header, 'global '))
-        if (normalize_llvm_type_name(binding.type_name) == 'bool[][]'):
-            throw 'bool[][] globals are unsupported'
     for (RecordDeclIR record_decl in program.records):
         for (string field in record_decl.fields):
             BindingIR binding = ir_parse_binding_decl(strip_prefix(field, 'field '))
@@ -3160,6 +3156,9 @@ GlobalDeclIR refine_global(GlobalDeclIR global_decl, BindingIR[] globals, Functi
     LinearInstruction[] refined = refined_result.instructions
     BindingIR binding = ir_parse_binding_decl(strip_prefix(global_decl.header, 'global '))
     string value_type = lookup_temp_type(refined, global_decl.value_name)
+    if (normalize_llvm_type_name(binding.type_name) == 'bool[][]'):
+        RefineInstructionsResult contextual_grid = contextualize_bool_grid_literal(refined, refined_result.temp_types, global_decl.value_name)
+        refined = contextual_grid.instructions
     validate_future_binding_type(binding.name, binding.type_name, value_type)
     if (value_type == 'unknown' && binding.type_name.starts_with('set<')):
         refined = set_temp_type(refined, global_decl.value_name, binding.type_name)
