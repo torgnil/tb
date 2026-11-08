@@ -5631,6 +5631,32 @@ string emit_int_array_array_value_instruction(ParsedFunction function_ir, Linear
         index += 1
     return join_llvm_strings(lines, '\n')
 
+private string emit_bool_array_array_value_instruction(ParsedFunction function_ir, LinearInstruction op):
+    string lhs = temp_ref(op.lhs)
+    string[] lines = ['  ' + lhs + ' = call ptr @tb_bootstrap_bool_array_array_new(i32 ' + op.args.length() + ')']
+    int index = 0
+    while (index < op.args.length()):
+        string item_name = op.args[index]
+        string stored_value = temp_ref(item_name)
+        string owned_flag = 'false'
+        string item_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, item_name))
+        if (item_type == '[]'):
+            string empty_name = '%bool_array_array.item.' + op.lhs + '.' + index
+            lines.push('  ' + empty_name + ' = call ptr @tb_bootstrap_bool_array_new(i32 0)')
+            stored_value = empty_name
+            owned_flag = 'true'
+        else if (temp_is_bool_array(function_ir, item_name)):
+            if (temp_needs_backend_free(function_ir, item_name)):
+                owned_flag = 'true'
+            else:
+                string clone_name = '%bool_array.clone.' + op.lhs + '.' + index
+                lines.push('  ' + clone_name + ' = call ptr @tb_bootstrap_bool_array_clone(ptr ' + temp_ref(item_name) + ')')
+                stored_value = clone_name
+                owned_flag = 'true'
+        lines.push('  call void @tb_bootstrap_bool_array_array_set_owned(ptr ' + lhs + ', i32 ' + index + ', ptr ' + stored_value + ', i1 ' + owned_flag + ')')
+        index += 1
+    return join_llvm_strings(lines, '\n')
+
 string emit_record_array_value_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op):
     string array_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.lhs))
     string record_name = record_name_from_type(array_item_type(array_type))
@@ -7663,6 +7689,8 @@ string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, Lin
             return emit_int_array_value_instruction(op)
         if (array_result_type == 'int[][]'):
             return emit_int_array_array_value_instruction(function_ir, op)
+        if (array_result_type == 'bool[][]'):
+            return emit_bool_array_array_value_instruction(function_ir, op)
         if (array_result_type.ends_with('[]') && record_name_from_type(array_item_type(array_result_type)) != ''):
             return emit_record_array_value_instruction(program, function_ir, op)
         throw 'unsupported llvm array result type: ' + op.result_type + ' inferred=' + array_result_type + ' lhs=' + op.lhs + ' fn=' + function_ir.header

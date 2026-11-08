@@ -221,7 +221,20 @@ bool is_untyped_array_shape(string type_name):
 
 bool is_supported_call_array_type(string type_name):
     string normalized_type = normalize_llvm_type_name(type_name)
-    return normalized_type == 'int[]' || normalized_type == 'bool[]' || normalized_type == 'string[]' || normalized_type == 'int[][]' || normalized_type == 'string[][]'
+    return normalized_type == 'int[]' || normalized_type == 'bool[]' || normalized_type == 'string[]' || normalized_type == 'int[][]' || normalized_type == 'bool[][]' || normalized_type == 'string[][]'
+
+private RefineInstructionsResult contextualize_bool_grid_literal(LinearInstruction[] instructions, string[] temp_types, string array_name):
+    string actual_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, array_name))
+    if (!is_untyped_array_shape(actual_type)):
+        return RefineInstructionsResult(instructions, temp_types)
+    LinearInstruction array_op = lookup_instruction(instructions, array_name)
+    if (array_op.lhs != array_name || array_op.kind != 'value' || array_op.detail != 'array'):
+        return RefineInstructionsResult(instructions, temp_types)
+    for (string row_name in array_op.args):
+        string row_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, row_name))
+        if (row_type != 'bool[]' && row_type != '[]'):
+            throw 'bool[][] literal row requires bool[]; got ' + row_type
+    return contextualize_call_array_literal(instructions, temp_types, array_name, 'bool[][]')
 
 bool can_contextualize_call_array_literal(LinearInstruction[] instructions, string[] temp_types, string array_name, string expected_type):
     string normalized_expected_type = normalize_llvm_type_name(expected_type)
@@ -2976,6 +2989,10 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                     block_refined = contextual_map.instructions
                     temp_types = contextual_map.temp_types
                 validate_map_binding_type(binding.name, binding.type_name, lookup_temp_type_slot(temp_types, current.args[0]))
+                if (normalize_llvm_type_name(binding.type_name) == 'bool[][]'):
+                    RefineInstructionsResult contextual_grid = contextualize_bool_grid_literal(block_refined, temp_types, current.args[0])
+                    block_refined = contextual_grid.instructions
+                    temp_types = contextual_grid.temp_types
                 if (value_type == '[]' && binding.type_name.ends_with('[]')):
                     block_refined = set_temp_type(block_refined, current.args[0], binding.type_name)
                     temp_types = set_temp_type_slot(temp_types, current.args[0], binding.type_name)
@@ -3092,6 +3109,10 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                     block_refined = contextual_map.instructions
                     temp_types = contextual_map.temp_types
                 validate_map_binding_type(current.detail, binding_type, lookup_temp_type_slot(temp_types, current.args[0]))
+                if (normalized_binding_type == 'bool[][]'):
+                    RefineInstructionsResult contextual_grid = contextualize_bool_grid_literal(block_refined, temp_types, current.args[0])
+                    block_refined = contextual_grid.instructions
+                    temp_types = contextual_grid.temp_types
                 if (value_type == '[]' && binding_type.ends_with('[]')):
                     block_refined = set_temp_type(block_refined, current.args[0], binding_type)
                     temp_types = set_temp_type_slot(temp_types, current.args[0], binding_type)
@@ -3193,6 +3214,10 @@ ParsedFunction refine_function(ParsedFunction function_ir, BindingIR[] globals, 
         RefineInstructionsResult refined_result = refine_instructions(block.instructions, bindings, functions, record_fields, field_types, record_names, enum_types, prior_instructions, temp_types, regex_imported)
         BlockIR refined_block = BlockIR(block.label.substring(0), refined_result.instructions, clone_terminator_ir(block.terminator))
         temp_types = refined_result.temp_types
+        if ((refined_block.terminator.kind == 'return' || refined_block.terminator.kind == 'return_owned') && refined_block.terminator.args.length() == 1 && normalized_return_type == 'bool[][]'):
+            RefineInstructionsResult contextual_grid = contextualize_bool_grid_literal(refined_block.instructions, temp_types, refined_block.terminator.args[0])
+            refined_block = BlockIR(refined_block.label, contextual_grid.instructions, refined_block.terminator)
+            temp_types = contextual_grid.temp_types
         if ((refined_block.terminator.kind == 'return' || refined_block.terminator.kind == 'return_owned') && refined_block.terminator.args.length() == 1 && normalized_return_type.ends_with('[]')):
             string return_temp = refined_block.terminator.args[0]
             if (is_untyped_array_shape(lookup_temp_type(refined_block.instructions, return_temp))):
