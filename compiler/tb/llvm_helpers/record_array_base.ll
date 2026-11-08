@@ -89,6 +89,41 @@ free.item:
 done:
   ret void
 }
+define private void @tb_bootstrap_record_array_remove_at___RECORD__(ptr %array, i32 %index) {
+entry:
+  %len.ptr = getelementptr inbounds %tb_bootstrap_record_array___RECORD__, ptr %array, i32 0, i32 0
+  %len = load i32, ptr %len.ptr
+  call void @tb_bootstrap_record_array_release_slot___RECORD__(ptr %array, i32 %index)
+  %data.ptr = getelementptr inbounds %tb_bootstrap_record_array___RECORD__, ptr %array, i32 0, i32 2
+  %data = load ptr, ptr %data.ptr
+  %owned.ptr = getelementptr inbounds %tb_bootstrap_record_array___RECORD__, ptr %array, i32 0, i32 3
+  %owned = load ptr, ptr %owned.ptr
+  %last.index = sub i32 %len, 1
+  br label %shift.cond
+shift.cond:
+  %shift.index = phi i32 [%index, %entry], [%shift.next, %shift.body]
+  %has.next = icmp slt i32 %shift.index, %last.index
+  br i1 %has.next, label %shift.body, label %shift.done
+shift.body:
+  %shift.next = add i32 %shift.index, 1
+  %next.item.slot = getelementptr inbounds ptr, ptr %data, i32 %shift.next
+  %next.item = load ptr, ptr %next.item.slot
+  %item.slot = getelementptr inbounds ptr, ptr %data, i32 %shift.index
+  store ptr %next.item, ptr %item.slot
+  %next.owned.slot = getelementptr inbounds i8, ptr %owned, i32 %shift.next
+  %next.owned = load i8, ptr %next.owned.slot
+  %owned.slot = getelementptr inbounds i8, ptr %owned, i32 %shift.index
+  store i8 %next.owned, ptr %owned.slot
+  br label %shift.cond
+shift.done:
+  %tail.slot = getelementptr inbounds ptr, ptr %data, i32 %last.index
+  store ptr null, ptr %tail.slot
+  %tail.owned.slot = getelementptr inbounds i8, ptr %owned, i32 %last.index
+  store i8 0, ptr %tail.owned.slot
+  %next.len = sub i32 %len, 1
+  store i32 %next.len, ptr %len.ptr
+  ret void
+}
 define private i32 @tb_bootstrap_record_array_length___RECORD__(ptr %array) {
 entry:
   %is.null = icmp eq ptr %array, null

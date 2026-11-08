@@ -6992,6 +6992,15 @@ string emit_set_method_call_value_instruction(ProgramIR program, ParsedFunction 
             probe_value = emit_record_owned_value(function_ir, op.args[2], 'set.contains.' + op.lhs)
         lines.push('  ' + lhs + ' = call i1 @tb_bootstrap_record_set_contains_' + record_name + '(ptr ' + temp_ref(op.args[1]) + ', ptr ' + probe_value + ')')
         return join_llvm_strings(lines, '\n')
+    if (method_name == 'remove'):
+        if (op.args.length() != 3):
+            throw 'unsupported llvm record set remove arity'
+        string[] lines = emit_record_materialize_if_needed(program, function_ir, op.args[2], 'set.remove.' + op.lhs)
+        string probe_value = temp_ref(op.args[2])
+        if (temp_is_record(function_ir, op.args[2]) && !temp_needs_backend_free(function_ir, op.args[2])):
+            probe_value = emit_record_owned_value(function_ir, op.args[2], 'set.remove.' + op.lhs)
+        lines.push('  ' + lhs + ' = call i1 @tb_bootstrap_record_set_remove_' + record_name + '(ptr ' + temp_ref(op.args[1]) + ', ptr ' + probe_value + ')')
+        return join_llvm_strings(lines, '\n')
     return ''
 
 string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction function_ir, LinearInstruction op):
@@ -10550,8 +10559,10 @@ string[] emit_record_set_helpers(ProgramIR program, string record_name):
             throw 'unsupported record set field type: ' + field.type_name
         field_index += 1
     string[] contains_decision_lines = []
+    string[] remove_decision_lines = []
     if (fields.is_empty()):
         contains_decision_lines.push('  br label %found')
+        remove_decision_lines.push('  br label %remove.item')
     else:
         contains_decision_lines.push('  %all.eq.0 = and i1 %field.eq.' + fields[0].name + ', true')
         int and_index = 1
@@ -10559,10 +10570,18 @@ string[] emit_record_set_helpers(ProgramIR program, string record_name):
             contains_decision_lines.push('  %all.eq.' + and_index + ' = and i1 %all.eq.' + (and_index - 1) + ', %field.eq.' + fields[and_index].name)
             and_index += 1
         contains_decision_lines.push('  br i1 %all.eq.' + (fields.length() - 1) + ', label %found, label %loop.step')
+        remove_decision_lines.push('  %all.remove.eq.0 = and i1 %field.eq.' + fields[0].name + ', true')
+        int remove_and_index = 1
+        while (remove_and_index < fields.length()):
+            remove_decision_lines.push('  %all.remove.eq.' + remove_and_index + ' = and i1 %all.remove.eq.' + (remove_and_index - 1) + ', %field.eq.' + fields[remove_and_index].name)
+            remove_and_index += 1
+        remove_decision_lines.push('  br i1 %all.remove.eq.' + (fields.length() - 1) + ', label %remove.item, label %loop.step')
     string[] lines = llvm_embedded_helper_text('record_set_base.ll').split_lines()
     lines = replace_llvm_template_lines(lines, '__RECORD__', record_name)
     lines = replace_llvm_template_block_lines(lines, '__CONTAINS_FIELD_LINES__', contains_field_lines)
     lines = replace_llvm_template_block_lines(lines, '__CONTAINS_DECISION_LINES__', contains_decision_lines)
+    lines = replace_llvm_template_block_lines(lines, '__REMOVE_FIELD_LINES__', contains_field_lines)
+    lines = replace_llvm_template_block_lines(lines, '__REMOVE_DECISION_LINES__', remove_decision_lines)
     return lines
 
 string[] emit_bool_array_helpers():

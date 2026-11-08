@@ -33,6 +33,27 @@ loop.step:
 missing:
   ret i1 false
 }
+define private i1 @tb_bootstrap_record_set_remove___RECORD__(ptr %set, ptr %value) {
+entry:
+  %len = call i32 @tb_bootstrap_record_set_length___RECORD__(ptr %set)
+  br label %loop.cond
+loop.cond:
+  %index = phi i32 [0, %entry], [%next.index, %loop.step]
+  %keep.loop = icmp slt i32 %index, %len
+  br i1 %keep.loop, label %loop.body, label %missing
+loop.body:
+  %item = call ptr @tb_bootstrap_record_set_get___RECORD__(ptr %set, i32 %index)
+__REMOVE_FIELD_LINES__
+__REMOVE_DECISION_LINES__
+remove.item:
+  call void @tb_bootstrap_record_array_remove_at___RECORD__(ptr %set, i32 %index)
+  ret i1 true
+loop.step:
+  %next.index = add i32 %index, 1
+  br label %loop.cond
+missing:
+  ret i1 false
+}
 define private i32 @tb_bootstrap_record_set_add___RECORD__(ptr %set, ptr %value, i1 %is_owned) {
 entry:
   %exists = call i1 @tb_bootstrap_record_set_contains___RECORD__(ptr %set, ptr %value)
