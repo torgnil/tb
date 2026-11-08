@@ -57,6 +57,27 @@ done:
   ret ptr %copy
 }
 
+define private void @tb_bootstrap_bool_array_array_fill(ptr %array, ptr %value) {
+entry:
+  %hold = call ptr @tb_bootstrap_bool_array_clone(ptr %value)
+  %len = call i32 @tb_bootstrap_bool_array_array_length(ptr %array)
+  br label %fill.cond
+fill.cond:
+  %index = phi i32 [ 0, %entry ], [ %next, %fill.step ]
+  %more = icmp slt i32 %index, %len
+  br i1 %more, label %fill.body, label %fill.done
+fill.body:
+  %copy = call ptr @tb_bootstrap_bool_array_clone(ptr %hold)
+  call void @tb_bootstrap_bool_array_array_set_owned(ptr %array, i32 %index, ptr %copy, i1 true)
+  br label %fill.step
+fill.step:
+  %next = add i32 %index, 1
+  br label %fill.cond
+fill.done:
+  call void @tb_bootstrap_bool_array_free(ptr %hold)
+  ret void
+}
+
 define private i32 @tb_bootstrap_bool_array_array_length(ptr %array) {
 entry:
   %len.ptr = getelementptr inbounds %tb_bootstrap_bool_array_array, ptr %array, i32 0, i32 0
