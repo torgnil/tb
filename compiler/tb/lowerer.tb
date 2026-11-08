@@ -237,6 +237,8 @@ string submit_lambda_expression_type_context(Node node, SubmitLambdaScope scope,
             return 'bool'
         if (base_type == 'int[][]'):
             return 'int[]'
+        if (base_type == 'bool[][]'):
+            return 'bool[]'
         if (base_type == 'string'):
             return 'string'
         if (base_type == 'string[]'):
@@ -345,7 +347,7 @@ string submit_lambda_expression_type_context(Node node, SubmitLambdaScope scope,
             if (!(signature.type_name == 'int' || signature.type_name == 'bool')):
                 throw 'int[] ' + callback_name + ' callback helper ' + node.value + ' must return int or bool; got ' + signature.type_name
             if (invalid_callback_parameter):
-                throw 'int[] ' + callback_name + ' callback helper ' + node.value + ' parameters must use int, bool, string, or const int[], const bool[], const string[], or const int[][]'
+                throw 'int[] ' + callback_name + ' callback helper ' + node.value + ' parameters must use int, bool, string, or const int[], const bool[], const string[], const int[][], or const bool[][]'
         index = 0
         while (index < parameter_count):
             BindingIR parameter = ir_parse_binding_decl(function_node.children[index].value)
@@ -375,7 +377,7 @@ bool int_array_callback_helper_parameter(BindingIR parameter):
         return true
     if (!is_const):
         return false
-    return parameter_type == 'int[]' || parameter_type == 'bool[]' || parameter_type == 'string[]' || parameter_type == 'int[][]'
+    return parameter_type == 'int[]' || parameter_type == 'bool[]' || parameter_type == 'string[]' || parameter_type == 'int[][]' || parameter_type == 'bool[][]'
 
 string merge_submit_return_types(string left, string right):
     if (left == ''):
@@ -1081,7 +1083,7 @@ BindingIR[] submit_lambda_captures(Node lambda_node, BindingIR[] bindings):
     return captured
 
 private bool int_array_callback_snapshot_type(string type_name):
-    return type_name == 'int[]' || type_name == 'bool[]' || type_name == 'string[]' || type_name == 'int[][]'
+    return type_name == 'int[]' || type_name == 'bool[]' || type_name == 'string[]' || type_name == 'int[][]' || type_name == 'bool[][]'
 
 ArrayScalarCaptureResult int_array_scalar_captures(Node lambda_node, BindingIR[] bindings):
     if (lambda_node.kind != 'Lambda' || lambda_node.children.length() != 1):
@@ -1678,7 +1680,10 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
                 capture_parameter_name = submit_capture_name(current_names, '__tb_array_callback_capture_', current_index)
                 current_names = add_unique_name(current_names, capture_parameter_name)
                 current_index += 1
-                capture_snapshot_nodes.push(Node('VarDecl', capture_type + ' ' + binding.name, [Node('Identifier', capture_parameter_name, [])]))
+                Node capture_value = Node('Identifier', capture_parameter_name, [])
+                if (capture_type == 'bool[][]'):
+                    capture_value = Node('BoolGridSnapshotCopy', '', [capture_value])
+                capture_snapshot_nodes.push(Node('VarDecl', capture_type + ' ' + binding.name, [capture_value]))
             helper_children.push(Node('Param', 'const ' + capture_type + ' ' + capture_parameter_name, []))
             call_arguments.push(Node('Identifier', binding.name, []))
         helper_children = append_nodes(helper_children, capture_snapshot_nodes)
@@ -2488,6 +2493,13 @@ TempIRResult lower_linear_value_ir(Node node, int next_temp):
     if (node.kind == 'Identifier'):
         string name = temp_name(next_temp)
         return TempIRResult(name, [LinearInstruction('value', name, 'unknown', 'borrowed', 'identifier', [node.value])], next_temp + 1)
+    if (node.kind == 'BoolGridSnapshotCopy'):
+        if (node.children.length() != 1):
+            throw 'bool[][] callback snapshot copy expects one value'
+        TempIRResult source = lower_linear_value_ir(node.children[0], next_temp)
+        string name = temp_name(source.next_temp)
+        LinearInstruction[] instructions = append_instructions(source.instructions, [LinearInstruction('value', name, 'unknown', 'unknown', 'bool-grid-snapshot-copy', [source.name])])
+        return TempIRResult(name, instructions, source.next_temp + 1)
     if (node.kind == 'Array'):
         TempIRListResult items = lower_linear_values_ir(node.children, next_temp)
         string name = temp_name(items.next_temp)

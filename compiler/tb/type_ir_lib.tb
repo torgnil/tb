@@ -2109,6 +2109,10 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
         if (true_type == 'int' || true_type == 'bool' || true_type == 'num'):
             ownership_mode = 'plain'
         return refined_value_op(op, true_type, ownership_mode)
+    if (op.detail == 'bool-grid-snapshot-copy'):
+        if (op.args.length() != 1 || normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[0])) != 'bool[][]'):
+            throw 'invalid internal bool[][] callback snapshot copy'
+        return refined_value_op(op, 'bool[][]', 'owned')
     if (op.detail == 'call'):
         if (op.args.is_empty()):
             return op

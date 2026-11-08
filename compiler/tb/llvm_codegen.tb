@@ -7688,6 +7688,10 @@ string emit_slice_value_instruction(ParsedFunction function_ir, LinearInstructio
 
 string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op):
     string lhs = temp_ref(op.lhs)
+    if (op.detail == 'bool-grid-snapshot-copy'):
+        if (op.args.length() != 1 || normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0])) != 'bool[][]'):
+            throw 'invalid internal bool[][] callback snapshot copy'
+        return emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_bool_array_array_clone(ptr ' + temp_ref(op.args[0]) + ')')
     if (op.detail == 'int'):
         return '  ' + lhs + ' = add i64 0, ' + op.args[0]
     if (op.detail == 'range-step-count'):

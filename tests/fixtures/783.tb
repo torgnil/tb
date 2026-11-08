@@ -1,0 +1,58 @@
+bool[][] global_enabled = [[true], [true], [true]]
+
+bool[][] copy(const bool[][] source):
+    return [[false], [false], [false]]
+
+int flip_global(int row):
+    global_enabled[row][0] = false
+    return row
+
+bool throw_on_one(int item):
+    if (item == 1):
+        throw 'grid callback failed'
+    return true
+
+bool enabled_at(const bool[][] grid, int row, int column):
+    return grid[row][column]
+
+bool row_value(const bool[] row, int column):
+    return row[column]
+
+int main():
+    const bool[][] enabled = [[true, false], [false, true], [true]]
+    bool[][] alternate = [[false, true], [true, true], [true, false]]
+    int[] values = [0, 1, 2]
+
+    int[] mapped = values.map_to(int item -> enabled[item][item == 2 ? 0 : item] ? item + 10 : item)
+    print(mapped)
+    int[] filtered = values.filter(int item -> enabled_at(enabled, item, item == 2 ? 0 : 1) && alternate[item][1])
+    print(filtered)
+
+    int[] block_mapped = values.map_to(int item -> {
+        if (enabled[item][0]) {
+            return item + 20
+        }
+        return item
+    })
+    print(block_mapped)
+    int[] block_filtered = values.filter(int item -> {
+        bool allowed = enabled[item][0] && alternate[item][0]
+        return allowed
+    })
+    print(block_filtered)
+    int[] row_helper_filtered = values.filter(int item -> row_value(enabled[item], 0))
+    print(row_helper_filtered)
+
+    int[] snapshot = values.map_to(int item -> flip_global(item) + (global_enabled[item][0] ? 10 : 0))
+    print(snapshot)
+    print(global_enabled[0][0])
+
+    try:
+        values.filter(int item -> throw_on_one(item) && enabled[item][0])
+    catch (exception error):
+        print(error)
+    print(values)
+
+    int[] empty = []
+    print(empty.map_to(int item -> enabled[99][99] ? item : 0))
+    return 0
