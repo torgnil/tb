@@ -664,6 +664,7 @@ BlockIR apply_ownership_to_block(ParsedFunction function_ir, OwnershipTempMetaCa
             bool prepare_int_array_return = false
             bool prepare_record_array_return = false
             bool prepare_int_set_return = false
+            bool prepare_string_set_return = false
             if (!terminator.args.is_empty()):
                 string return_type = lookup_temp_result_type_cached(cache, terminator.args[0])
                 string normalized_return_type = normalize_llvm_type_name(return_type)
@@ -675,6 +676,7 @@ BlockIR apply_ownership_to_block(ParsedFunction function_ir, OwnershipTempMetaCa
                 prepare_int_array_return = normalized_return_type == 'int[]'
                 prepare_record_array_return = normalized_return_type.ends_with('[]') && record_name_from_type(array_item_type(normalized_return_type)) != ''
                 prepare_int_set_return = normalized_return_type == 'set<int>'
+                prepare_string_set_return = normalized_return_type == 'set<string>'
                 string returned_binding = identifier_target_binding_cached(identifier_target_cache, terminator.args[0])
                 if (returned_binding != ''):
                     BindingIR binding = ir_parse_binding_decl(returned_binding)
@@ -695,6 +697,8 @@ BlockIR apply_ownership_to_block(ParsedFunction function_ir, OwnershipTempMetaCa
                             prepare_string_array_array_return = false
                         if (prepare_int_set_return):
                             prepare_int_set_return = false
+                        if (prepare_string_set_return):
+                            prepare_string_set_return = false
             if (prepare_string_return):
                 instructions.push(LinearInstruction('prepare_return_string', '', '', '', '', [terminator.args[0]]))
             if (prepare_string_array_array_return):
@@ -711,6 +715,8 @@ BlockIR apply_ownership_to_block(ParsedFunction function_ir, OwnershipTempMetaCa
                 instructions.push(LinearInstruction('prepare_return_int_array', '', '', '', '', [terminator.args[0]]))
             if (prepare_int_set_return):
                 instructions.push(LinearInstruction('prepare_return_int_set', '', '', '', '', [terminator.args[0]]))
+            if (prepare_string_set_return):
+                instructions.push(LinearInstruction('prepare_return_string_set', '', '', '', '', [terminator.args[0]]))
         if (terminator.kind == 'throw' || terminator.kind == 'throw_owned'):
             if (!terminator.args.is_empty()):
                 if (normalize_llvm_type_name(lookup_temp_result_type_cached(cache, terminator.args[0])) == 'string'):

@@ -1396,7 +1396,16 @@ private void validate_native_map_contains(LinearInstruction op, string map_type,
 private void validate_native_set_contains(LinearInstruction op, string set_type, EnumTypeIR[] enum_types, string[] temp_types):
     validate_native_collection_contains_item(op, 'set', 'item', set_item_type(set_type), enum_types, temp_types)
 
-private void validate_native_record_set_remove(LinearInstruction op, string set_type, EnumTypeIR[] enum_types, string[] temp_types):
+private void validate_native_set_add(LinearInstruction op, string set_type, EnumTypeIR[] enum_types, string[] temp_types):
+    int argument_count = op.args.length() - 2
+    if (argument_count != 1):
+        throw 'set add requires exactly one item argument; got ' + argument_count.to_string()
+    string expected_type = normalize_enum_type_name(normalize_llvm_type_name(set_item_type(set_type)), enum_types)
+    string actual_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2])), enum_types)
+    if (expected_type != 'unknown' && actual_type != 'unknown' && actual_type != expected_type):
+        throw 'set add requires item type ' + expected_type + '; got ' + actual_type
+
+private void validate_native_set_remove(LinearInstruction op, string set_type, EnumTypeIR[] enum_types, string[] temp_types):
     int argument_count = op.args.length() - 2
     if (argument_count != 1):
         throw 'set remove requires exactly one item argument; got ' + argument_count.to_string()
@@ -1420,7 +1429,7 @@ bool is_native_record_array_query_type(string base_type):
     return record_name_from_type(array_item_type(base_type)) != ''
 
 bool is_native_set_query_type(string base_type):
-    if (base_type == 'set<int>'):
+    if (base_type == 'set<int>' || base_type == 'set<string>'):
         return true
     if (!base_type.starts_with('set<')):
         return false
@@ -2142,7 +2151,7 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
         string false_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2]))
         if (true_type != false_type):
             throw 'conditional expression requires matching arm types; got ' + true_type + ' and ' + false_type
-        if (!(true_type == 'int' || true_type == 'bool' || true_type == 'num' || true_type == 'string' || true_type == 'bool[]' || true_type == 'int[]' || true_type == 'string[]' || true_type == 'int[][]' || true_type == 'string[][]' || true_type == 'set<int>' || true_type.starts_with('map<') || record_type_exists(record_names, true_type))):
+        if (!(true_type == 'int' || true_type == 'bool' || true_type == 'num' || true_type == 'string' || true_type == 'bool[]' || true_type == 'int[]' || true_type == 'string[]' || true_type == 'int[][]' || true_type == 'string[][]' || true_type == 'set<int>' || true_type == 'set<string>' || true_type.starts_with('map<') || record_type_exists(record_names, true_type))):
             throw 'unsupported conditional expression result type: ' + true_type
         string ownership_mode = 'borrowed'
         if (true_type == 'int' || true_type == 'bool' || true_type == 'num'):
@@ -2578,6 +2587,18 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
                 return refined_value_op(op, 'bool', 'plain')
             string result_type = infer_method_call_type_cached(method_name, base_type, functions, TYPE_IR_FUNCTION_TYPE_CACHE_NAMES, TYPE_IR_FUNCTION_TYPE_CACHE_VALUES)
             return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
+        if (method_name == 'add' && normalize_llvm_type_name(base_type) == 'set<string>'):
+            if (has_matching_ufcs_signature(op, method_name, functions, enum_types, temp_types)):
+                FunctionSigIR add_method_sig = lookup_function_sig(functions, method_name)
+                return refined_value_op(op, add_method_sig.return_type, refine_ownership_mode(op, add_method_sig.return_type))
+            validate_native_set_add(op, normalize_llvm_type_name(base_type), enum_types, temp_types)
+            return refined_value_op(op, 'int', 'plain')
+        if (method_name == 'remove' && normalize_llvm_type_name(base_type) == 'set<string>'):
+            if (has_matching_ufcs_signature(op, method_name, functions, enum_types, temp_types)):
+                FunctionSigIR remove_method_sig = lookup_function_sig(functions, method_name)
+                return refined_value_op(op, remove_method_sig.return_type, refine_ownership_mode(op, remove_method_sig.return_type))
+            validate_native_set_remove(op, normalize_llvm_type_name(base_type), enum_types, temp_types)
+            return refined_value_op(op, 'bool', 'plain')
         if (method_name == 'remove' && normalize_llvm_type_name(base_type) == 'set<int>'):
             if (has_matching_ufcs_signature(op, method_name, functions, enum_types, temp_types)):
                 FunctionSigIR remove_method_sig = lookup_function_sig(functions, method_name)
@@ -2592,7 +2613,7 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
             if (has_matching_ufcs_signature(op, method_name, functions, enum_types, temp_types)):
                 FunctionSigIR remove_method_sig = lookup_function_sig(functions, method_name)
                 return refined_value_op(op, remove_method_sig.return_type, refine_ownership_mode(op, remove_method_sig.return_type))
-            validate_native_record_set_remove(op, normalize_llvm_type_name(base_type), enum_types, temp_types)
+            validate_native_set_remove(op, normalize_llvm_type_name(base_type), enum_types, temp_types)
             return refined_value_op(op, 'bool', 'plain')
         if (method_name == 'union' && is_native_set_query_type(normalize_llvm_type_name(base_type)) && set_item_type(normalize_llvm_type_name(base_type)) != 'int'):
             if (has_matching_ufcs_signature(op, method_name, functions, enum_types, temp_types)):
@@ -2720,6 +2741,8 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
             return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
         if (base_type.starts_with('set<')):
             string result_type = set_item_type(base_type)
+            if (normalize_llvm_type_name(base_type) == 'set<string>'):
+                return refined_value_op(op, result_type, 'managed')
             return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
         if (base_type.starts_with('map<')):
             string result_type = map_value_type(base_type)
@@ -3280,7 +3303,7 @@ ParsedFunction refine_function(ParsedFunction function_ir, BindingIR[] globals, 
                     return_instructions = set_temp_type(return_instructions, return_temp, normalized_return_type)
                     temp_types = set_temp_type_slot(temp_types, return_temp, normalized_return_type)
             refined_block = BlockIR(refined_block.label, return_instructions, refined_block.terminator)
-        if ((refined_block.terminator.kind == 'return' || refined_block.terminator.kind == 'return_owned') && refined_block.terminator.args.length() == 1 && normalized_return_type == 'set<int>'):
+        if ((refined_block.terminator.kind == 'return' || refined_block.terminator.kind == 'return_owned') && refined_block.terminator.args.length() == 1 && (normalized_return_type == 'set<int>' || normalized_return_type == 'set<string>')):
             string return_temp = refined_block.terminator.args[0]
             LinearInstruction return_op = lookup_instruction(refined_block.instructions, return_temp)
             if (return_op.lhs == return_temp && return_op.kind == 'value' && return_op.detail == 'map' && return_op.args.is_empty()):
