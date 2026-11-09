@@ -306,7 +306,7 @@ private RefineInstructionsResult contextualize_direct_user_arrays(LinearInstruct
 
 private bool is_supported_array_key_map_type(string type_name):
     string normalized = normalize_llvm_type_name(type_name)
-    return normalized == 'map<int[], int>' || normalized == 'map<int[], bool>' || normalized == 'map<int[], string>' || normalized == 'map<int[], bool[]>' || normalized == 'map<int[], int[]>' || normalized == 'map<int[], string[]>' || normalized == 'map<int[][], bool>'
+    return normalized == 'map<int[], int>' || normalized == 'map<int[], bool>' || normalized == 'map<int[], string>' || normalized == 'map<int[], bool[]>' || normalized == 'map<int[], int[]>' || normalized == 'map<int[], string[]>' || normalized == 'map<int[][], bool>' || normalized == 'map<int[][], int>'
 
 RefineInstructionsResult contextualize_array_map_key(LinearInstruction[] instructions, string[] temp_types, string map_name, string key_name):
     string map_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, map_name))
@@ -720,7 +720,8 @@ bool integer_enum_map_type_is_supported(string type_name, EnumTypeIR[] enums):
     string value_type = map_value_type(type_name)
     if (key_type == 'unknown' || value_type == 'unknown'):
         return false
-    if (integer_enum_nested_array_exists(enums, key_type) && normalize_llvm_type_name(value_type) != 'bool'):
+    string normalized_value_type = normalize_integer_enum_map_value_type(value_type, enums)
+    if (integer_enum_nested_array_exists(enums, key_type) && normalized_value_type != 'bool' && normalized_value_type != 'int'):
         return false
     return integer_enum_map_component_is_supported(key_type, enums) && integer_enum_map_value_is_supported(value_type, enums)
 
@@ -884,7 +885,7 @@ RefineInstructionsResult contextualize_map_literal_rows(LinearInstruction[] inst
     string row_type = normalize_llvm_type_name(map_value_type(normalized_expected_type))
     bool array_rows = is_supported_empty_map_array_value_type(record_names, row_type)
     bool map_rows = row_type.starts_with('map<') && row_type.ends_with('>')
-    bool array_key_map = (key_type == 'int[]' && (row_type == 'int' || row_type == 'bool' || row_type == 'string' || row_type == 'bool[]' || row_type == 'string[]')) || (key_type == 'int[][]' && row_type == 'bool')
+    bool array_key_map = (key_type == 'int[]' && (row_type == 'int' || row_type == 'bool' || row_type == 'string' || row_type == 'bool[]' || row_type == 'string[]')) || (key_type == 'int[][]' && (row_type == 'bool' || row_type == 'int'))
     if ((key_type != 'int' && key_type != 'string' && !array_key_map) || (!array_key_map && !array_rows && !map_rows)):
         return RefineInstructionsResult(instructions, temp_types)
     LinearInstruction map_op = lookup_instruction(instructions, map_name)
@@ -1509,7 +1510,7 @@ string infer_method_call_type(string method_name, string base_type, FunctionSigI
         return 'string[]'
     if (method_name == 'values' && base_type.starts_with('map<')):
         string value_type = map_value_type(base_type)
-        if (normalize_llvm_type_name(map_key_type(base_type)) == 'int[]' && normalize_llvm_type_name(value_type) == 'int'):
+        if ((normalize_llvm_type_name(map_key_type(base_type)) == 'int[]' || normalize_llvm_type_name(map_key_type(base_type)) == 'int[][]') && normalize_llvm_type_name(value_type) == 'int'):
             return 'int[]'
         if (normalize_llvm_type_name(map_key_type(base_type)) == 'int[]' && normalize_llvm_type_name(value_type) == 'string'):
             return 'string[]'

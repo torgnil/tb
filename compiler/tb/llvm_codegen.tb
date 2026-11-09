@@ -1950,8 +1950,11 @@ bool temp_is_owned_managed_method_result(ParsedFunction function_ir, LinearInstr
         return true
     if (method_name == 'keys' && result_type == 'int[][]' && receiver_type.starts_with('map<') && normalize_llvm_type_name(map_key_type(receiver_type)) == 'int[]'):
         return true
-    if (method_name == 'values' && result_type == 'int[]' && receiver_type == 'map<int[], int>'):
-        return true
+    if (method_name == 'values' && result_type == 'int[]' && receiver_type.starts_with('map<')):
+        string map_key = normalize_llvm_type_name(map_key_type(receiver_type))
+        string map_value = normalize_llvm_type_name(map_value_type(receiver_type))
+        if ((map_key == 'int[]' || map_key == 'int[][]') && map_value == 'int'):
+            return true
     if (method_name == 'values' && result_type == 'int[][]' && receiver_type == 'map<int[], int[]>'):
         return true
     if (method_name == 'values' && result_type == 'bool[][]' && (receiver_type == 'map<int[], bool[]>' || receiver_type == 'map<int, bool[]>' || receiver_type == 'map<string, bool[]>')):
@@ -2874,7 +2877,7 @@ string mangle_backend_type(string type_name):
 string llvm_map_suffix(string type_name):
     string key_type = normalize_llvm_type_name(map_key_type(type_name))
     string value_type = normalize_llvm_type_name(map_value_type(type_name))
-    if (key_type == 'int[][]' && value_type != 'bool'):
+    if (key_type == 'int[][]' && value_type != 'bool' && value_type != 'int'):
         throw 'unsupported llvm map key type: ' + key_type
     if (key_type != 'string' && key_type != 'int' && key_type != 'int[]' && key_type != 'int[][]'):
         throw 'unsupported llvm map key type: ' + key_type
@@ -6816,7 +6819,7 @@ string emit_string_byte_at_or_zero_value(ParsedFunction function_ir, string sour
 
 private bool llvm_is_supported_array_key_map_type(string type_name):
     string normalized = normalize_llvm_type_name(type_name)
-    return normalized == 'map<int[], int>' || normalized == 'map<int[], bool>' || normalized == 'map<int[], string>' || normalized == 'map<int[], bool[]>' || normalized == 'map<int[], int[]>' || normalized == 'map<int[], string[]>' || normalized == 'map<int[][], bool>'
+    return normalized == 'map<int[], int>' || normalized == 'map<int[], bool>' || normalized == 'map<int[], string>' || normalized == 'map<int[], bool[]>' || normalized == 'map<int[], int[]>' || normalized == 'map<int[], string[]>' || normalized == 'map<int[][], bool>' || normalized == 'map<int[][], int>'
 
 private string llvm_array_key_clone_name(string key_type):
     if (normalize_llvm_type_name(key_type) == 'int[][]'):
@@ -11127,7 +11130,7 @@ string[] emit_map_helpers(string type_name):
             '  ret ptr %result',
             '}'
         ]
-    else if (key_type == 'int[]' && value_type == 'int'):
+    else if ((key_type == 'int[]' || key_type == 'int[][]') && value_type == 'int'):
         values_block_lines = [
             'define private ptr ' + llvm_map_values_name(type_name) + '(ptr %map) {',
             'entry:',
