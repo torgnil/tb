@@ -558,8 +558,13 @@ SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements
                             is_array_binding = true
                             is_grid_row_binding = true
                             array_iterator_type = 'bool[]'
+                else if (statement.children[0].kind == 'Call'):
+                    string iterable_type = submit_lambda_expression_type(statement.children[0], scope, functions)
+                    if (iterable_type == 'int[]'):
+                        is_array_binding = true
+                        array_iterator_type = 'int'
                 if (!is_array_binding):
-                    throw 'thread_pool.submit lambda foreach iterable must be an int[], bool[], or string[] task parameter, an int[][] task parameter, a captured int[] binding, or a direct range call'
+                    throw 'thread_pool.submit lambda foreach iterable must be an int[], bool[], string[], int[][], or bool[][] binding, a declared int[] helper call, or a direct range call'
             BindingIR iterator = ir_parse_binding_decl(statement.value)
             string iterator_type = iterator.type_name
             bool iterator_is_const = iterator_type.starts_with('const ')
