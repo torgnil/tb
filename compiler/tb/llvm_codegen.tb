@@ -2874,10 +2874,13 @@ string mangle_backend_type(string type_name):
         return 'record_' + record_name_from_type(type_name)
     throw 'unsupported backend type mangling: ' + type_name
 
-string llvm_map_suffix(string type_name):
+private bool llvm_is_supported_deep_grid_key_map_value_type(string value_type):
+    return value_type == 'bool' || value_type == 'int' || value_type == 'bool[]' || value_type == 'int[]'
+
+private string llvm_map_suffix(string type_name):
     string key_type = normalize_llvm_type_name(map_key_type(type_name))
     string value_type = normalize_llvm_type_name(map_value_type(type_name))
-    if (key_type == 'int[][]' && value_type != 'bool' && value_type != 'int' && value_type != 'bool[]'):
+    if (key_type == 'int[][]' && !llvm_is_supported_deep_grid_key_map_value_type(value_type)):
         throw 'unsupported llvm map key type: ' + key_type
     if (key_type != 'string' && key_type != 'int' && key_type != 'int[]' && key_type != 'int[][]'):
         throw 'unsupported llvm map key type: ' + key_type
@@ -6819,7 +6822,13 @@ string emit_string_byte_at_or_zero_value(ParsedFunction function_ir, string sour
 
 private bool llvm_is_supported_array_key_map_type(string type_name):
     string normalized = normalize_llvm_type_name(type_name)
-    return normalized == 'map<int[], int>' || normalized == 'map<int[], bool>' || normalized == 'map<int[], string>' || normalized == 'map<int[], bool[]>' || normalized == 'map<int[], int[]>' || normalized == 'map<int[], string[]>' || normalized == 'map<int[][], bool>' || normalized == 'map<int[][], int>' || normalized == 'map<int[][], bool[]>'
+    string key_type = normalize_llvm_type_name(map_key_type(normalized))
+    string value_type = normalize_llvm_type_name(map_value_type(normalized))
+    if (key_type == 'int[][]'):
+        return llvm_is_supported_deep_grid_key_map_value_type(value_type)
+    if (key_type != 'int[]'):
+        return false
+    return value_type == 'int' || value_type == 'bool' || value_type == 'string' || value_type == 'bool[]' || value_type == 'int[]' || value_type == 'string[]'
 
 private string llvm_array_key_clone_name(string key_type):
     if (normalize_llvm_type_name(key_type) == 'int[][]'):

@@ -1,0 +1,69 @@
+enum Code { A = 1, B = 2 }
+
+map<Code[][], int[]> GLOBAL_GRID_PATHS = {}
+
+record GridPathStore(map<int[][], int[]> paths);
+
+map<int[][], int[]> copy_grid_paths(map<int[][], int[]> paths):
+    return paths
+
+int print_paths(int[][] paths):
+    print(paths.length())
+    int index = 0
+    while index < paths.length():
+        print(paths[index])
+        index += 1
+    return 0
+
+int main():
+    map<int[][], int[]> paths = {}
+    int[][] source_key = [[1, 2], [], [3]]
+    int[] source_path = [4, 7]
+    paths[source_key] = source_path
+    source_key[0][0] = 9
+    source_key[1] = [8]
+    source_path[0] = 99
+    int[] stored_path = paths[[[1, 2], [], [3]]]
+    print(stored_path)
+    stored_path[0] = 88
+    print(paths[[[1, 2], [], [3]]])
+    print(paths.contains(source_key))
+
+    int[] missing_path = paths[[[99]]]
+    print(missing_path.length())
+    missing_path.push(5)
+    print(paths.contains([[99]]))
+    print(paths.length())
+
+    paths[[[1, 2], [], [3]]] = [6, 8]
+    paths[[[4]]] = [9]
+    paths[[]] = []
+    const int[][] fixed_key = [[5], []]
+    paths[fixed_key] = [14]
+    int[][] snapshot = paths.values()
+    print_paths(snapshot)
+    snapshot[0][0] = 70
+    int[][] current_values = paths.values()
+    print_paths(current_values)
+
+    map<int[][], int[]> returned = copy_grid_paths(paths)
+    map<int[][], int[]> copied = returned
+    copied[[[1, 2], [], [3]]] = [5]
+    print(paths[[[1, 2], [], [3]]])
+    print(copied[[[1, 2], [], [3]]])
+
+    map<Code[][], int[]> enum_paths = {[[Code.A], []]: []}
+    int[][] same_enum_key = [[1], []]
+    print(enum_paths.contains(same_enum_key))
+    enum_paths[same_enum_key] = [11]
+    int[][] enum_values = enum_paths.values()
+    print_paths(enum_values)
+    enum_values[0][0] = 77
+    print(enum_paths[same_enum_key])
+
+    GLOBAL_GRID_PATHS[[[Code.B], []]] = [20]
+    print_paths(GLOBAL_GRID_PATHS.values())
+    GridPathStore store = GridPathStore({})
+    store.paths[[[7], []]] = [30]
+    print_paths(store.paths.values())
+    return 0

@@ -304,9 +304,18 @@ private RefineInstructionsResult contextualize_direct_user_arrays(LinearInstruct
         index += 1
     return RefineInstructionsResult(instructions, temp_types)
 
+private bool is_supported_deep_grid_key_map_value_type(string value_type):
+    return value_type == 'bool' || value_type == 'int' || value_type == 'bool[]' || value_type == 'int[]'
+
 private bool is_supported_array_key_map_type(string type_name):
     string normalized = normalize_llvm_type_name(type_name)
-    return normalized == 'map<int[], int>' || normalized == 'map<int[], bool>' || normalized == 'map<int[], string>' || normalized == 'map<int[], bool[]>' || normalized == 'map<int[], int[]>' || normalized == 'map<int[], string[]>' || normalized == 'map<int[][], bool>' || normalized == 'map<int[][], int>' || normalized == 'map<int[][], bool[]>'
+    string key_type = normalize_llvm_type_name(map_key_type(normalized))
+    string value_type = normalize_llvm_type_name(map_value_type(normalized))
+    if (key_type == 'int[][]'):
+        return is_supported_deep_grid_key_map_value_type(value_type)
+    if (key_type != 'int[]'):
+        return false
+    return value_type == 'int' || value_type == 'bool' || value_type == 'string' || value_type == 'bool[]' || value_type == 'int[]' || value_type == 'string[]'
 
 RefineInstructionsResult contextualize_array_map_key(LinearInstruction[] instructions, string[] temp_types, string map_name, string key_name):
     string map_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, map_name))
@@ -721,7 +730,7 @@ bool integer_enum_map_type_is_supported(string type_name, EnumTypeIR[] enums):
     if (key_type == 'unknown' || value_type == 'unknown'):
         return false
     string normalized_value_type = normalize_integer_enum_map_value_type(value_type, enums)
-    if (integer_enum_nested_array_exists(enums, key_type) && normalized_value_type != 'bool' && normalized_value_type != 'int' && normalized_value_type != 'bool[]'):
+    if (integer_enum_nested_array_exists(enums, key_type) && normalized_value_type != 'bool' && normalized_value_type != 'int' && normalized_value_type != 'bool[]' && normalized_value_type != 'int[]'):
         return false
     return integer_enum_map_component_is_supported(key_type, enums) && integer_enum_map_value_is_supported(value_type, enums)
 
@@ -885,7 +894,7 @@ RefineInstructionsResult contextualize_map_literal_rows(LinearInstruction[] inst
     string row_type = normalize_llvm_type_name(map_value_type(normalized_expected_type))
     bool array_rows = is_supported_empty_map_array_value_type(record_names, row_type)
     bool map_rows = row_type.starts_with('map<') && row_type.ends_with('>')
-    bool array_key_map = (key_type == 'int[]' && (row_type == 'int' || row_type == 'bool' || row_type == 'string' || row_type == 'bool[]' || row_type == 'string[]')) || (key_type == 'int[][]' && (row_type == 'bool' || row_type == 'int' || row_type == 'bool[]'))
+    bool array_key_map = (key_type == 'int[]' && (row_type == 'int' || row_type == 'bool' || row_type == 'string' || row_type == 'bool[]' || row_type == 'string[]')) || (key_type == 'int[][]' && (row_type == 'bool' || row_type == 'int' || row_type == 'bool[]' || row_type == 'int[]'))
     if ((key_type != 'int' && key_type != 'string' && !array_key_map) || (!array_key_map && !array_rows && !map_rows)):
         return RefineInstructionsResult(instructions, temp_types)
     LinearInstruction map_op = lookup_instruction(instructions, map_name)
@@ -1835,7 +1844,7 @@ LinearInstruction refine_string_method_signature(LinearInstruction op, string me
         return refined_value_op(op, 'int', 'plain')
     return op
 
-LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bindings, FunctionSigIR[] functions, RecordFieldIR[] record_fields, map<string, string> field_types, string[] record_names, EnumTypeIR[] enum_types, string[] temp_types):
+private LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bindings, FunctionSigIR[] functions, RecordFieldIR[] record_fields, map<string, string> field_types, string[] record_names, EnumTypeIR[] enum_types, string[] temp_types):
     if (op.kind != 'value'):
         return op
     if (op.detail == 'call' && !op.args.is_empty() && op.args[0] == 'sqrt'):
@@ -2694,7 +2703,8 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
                 return refined_value_op(op, result_type, 'managed')
             if (normalize_llvm_type_name(base_type) == 'map<int[], bool[]>'):
                 return refined_value_op(op, result_type, 'owned')
-            if (normalize_llvm_type_name(base_type) == 'map<int[], int[]>'):
+            string normalized_map_type = normalize_llvm_type_name(base_type)
+            if (normalized_map_type == 'map<int[], int[]>' || normalized_map_type == 'map<int[][], int[]>'):
                 return refined_value_op(op, result_type, 'owned')
             if (normalize_llvm_type_name(base_type) == 'map<int[], string[]>'):
                 return refined_value_op(op, result_type, 'owned')
