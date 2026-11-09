@@ -1395,14 +1395,14 @@ private void validate_native_record_set_remove(LinearInstruction op, string set_
     if (expected_type != 'unknown' && actual_type != 'unknown' && actual_type != expected_type):
         throw 'set remove requires item type ' + expected_type + '; got ' + actual_type
 
-private void validate_native_record_set_union(LinearInstruction op, string set_type, EnumTypeIR[] enum_types, string[] temp_types):
+private void validate_native_set_binary_method(LinearInstruction op, string method_name, string set_type, EnumTypeIR[] enum_types, string[] temp_types):
     int argument_count = op.args.length() - 2
     if (argument_count != 1):
-        throw 'set union requires exactly one matching set argument; got ' + argument_count.to_string()
+        throw 'set ' + method_name + ' requires exactly one matching set argument; got ' + argument_count.to_string()
     string expected_type = normalize_enum_type_name(normalize_llvm_type_name(set_type), enum_types)
     string actual_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2])), enum_types)
     if (expected_type != 'unknown' && actual_type != 'unknown' && actual_type != expected_type):
-        throw 'set union requires argument type ' + expected_type + '; got ' + actual_type
+        throw 'set ' + method_name + ' requires argument type ' + expected_type + '; got ' + actual_type
 
 bool is_native_record_array_query_type(string base_type):
     if (!base_type.ends_with('[]')):
@@ -1495,6 +1495,8 @@ string infer_method_call_type(string method_name, string base_type, FunctionSigI
     if (method_name == 'add' && base_type.starts_with('set<')):
         return 'int'
     if (method_name == 'union' && base_type.starts_with('set<')):
+        return base_type
+    if ((method_name == 'intersection' || method_name == 'difference') && is_native_set_query_type(normalize_llvm_type_name(base_type))):
         return base_type
     if (method_name == 'hash' && is_native_query_receiver_type(method_name, base_type)):
         return 'int'
@@ -2563,8 +2565,15 @@ LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bin
                 FunctionSigIR union_method_sig = lookup_function_sig(functions, method_name)
                 return refined_value_op(op, union_method_sig.return_type, refine_ownership_mode(op, union_method_sig.return_type))
             string union_set_type = normalize_llvm_type_name(base_type)
-            validate_native_record_set_union(op, union_set_type, enum_types, temp_types)
+            validate_native_set_binary_method(op, method_name, union_set_type, enum_types, temp_types)
             return refined_value_op(op, union_set_type, refine_ownership_mode(op, union_set_type))
+        if ((method_name == 'intersection' || method_name == 'difference') && is_native_set_query_type(normalize_llvm_type_name(base_type))):
+            if (has_matching_ufcs_signature(op, method_name, functions, enum_types, temp_types)):
+                FunctionSigIR set_method_sig = lookup_function_sig(functions, method_name)
+                return refined_value_op(op, set_method_sig.return_type, refine_ownership_mode(op, set_method_sig.return_type))
+            string set_type = normalize_llvm_type_name(base_type)
+            validate_native_set_binary_method(op, method_name, set_type, enum_types, temp_types)
+            return refined_value_op(op, set_type, refine_ownership_mode(op, set_type))
         if (method_name == 'starts_with' || method_name == 'ends_with' || method_name == 'starts_with_at' || method_name == 'is_alpha' || method_name == 'is_digit' || method_name == 'is_alnum' || method_name == 'is_space' || method_name == 'is_whitespace'):
             string predicate_receiver_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
             if (predicate_receiver_type != 'string'):

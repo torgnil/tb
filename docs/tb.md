@@ -308,6 +308,14 @@ captures resolve to the nearest binding visible when submission occurs.
 - Native `contains` builtins return `bool` for strings, `int[]`, `bool[]`, `string[]`, maps, and sets. A matching declared `contains` function takes precedence when its parameter types exactly match the arguments; otherwise, native builtin dispatch applies. UFCS is parser sugar, so it follows the same rule. Direct calls and UFCS both support set membership, including `set<int>` and `set<Record>`. For example, an `int[]` with no matching user function uses native membership for both `contains(values, item)` and `values.contains(item)`.
 - `set<int>.remove(item)` and `set<Record>.remove(item)` remove one matching value and return `true` when it was present, or `false` when it was absent. Record values use the same structural field equality as `contains`; set record fields may be `int`, `bool`, or `string`. The remaining values keep their insertion order. For example, `pending.remove(node_id)` reports whether the node was still pending. A matching user-defined `remove` method takes precedence. Const sets cannot be mutated.
 - `set<Record>.union(other)` returns a new set containing the receiver's values followed by values from `other` that are not structurally equal to an earlier value. Both operands must have the same declared record type; record fields supported by set equality are `int`, `bool`, and `string`. The result owns cloned records, so adding or removing result values does not change either input. A const receiver is allowed, and a matching user-defined `union` method takes precedence.
+- `set<int>` and `set<Record>` support `intersection(other)` and
+  `difference(other)`. Intersection keeps receiver values also present in
+  `other`; difference keeps receiver values absent from `other`. Both return a
+  new set in receiver insertion order and leave the inputs unchanged, including
+  for self-operations. Record sets use structural equality for the existing
+  supported `int`, `bool`, and `string` fields and own clones in the result.
+  Matching operands must have the same set type, const receivers are allowed,
+  and a matching user-defined UFCS method takes precedence.
 - UFCS `length`, `is_empty`, `index_of`, and `hash` calls use their native result types when builtin dispatch applies; otherwise, a same-named user function supplies the result type. Primitive-array `index_of` keeps its existing user-function and record-constructor precedence. For example, `number.is_empty()` can call an `int`-returning `is_empty(number)` helper, while `values.is_empty()` remains the native boolean query. Native `length()`, `is_empty()`, and `hash()` query calls take no explicit arguments.
 - Direct `length(value)` and `is_empty(value)` calls diagnose known unsupported receiver types before LLVM generation; exact matching user functions and record constructors keep their existing precedence.
 

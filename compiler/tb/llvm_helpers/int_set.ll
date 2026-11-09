@@ -289,6 +289,52 @@ done:
   ret ptr %result
 }
 
+define private ptr @tb_bootstrap_int_set_intersection(ptr %left, ptr %right) {
+entry:
+  %result = call ptr @tb_bootstrap_int_set_new()
+  %left.len = call i32 @tb_bootstrap_int_set_length(ptr %left)
+  br label %loop.cond
+loop.cond:
+  %index = phi i32 [0, %entry], [%next.index, %loop.step]
+  %keep.loop = icmp slt i32 %index, %left.len
+  br i1 %keep.loop, label %loop.body, label %done
+loop.body:
+  %item = call i64 @tb_bootstrap_int_set_get(ptr %left, i32 %index)
+  %present = call i1 @tb_bootstrap_int_set_contains(ptr %right, i64 %item)
+  br i1 %present, label %add.item, label %loop.step
+add.item:
+  %ignored = call i32 @tb_bootstrap_int_set_add(ptr %result, i64 %item)
+  br label %loop.step
+loop.step:
+  %next.index = add i32 %index, 1
+  br label %loop.cond
+done:
+  ret ptr %result
+}
+
+define private ptr @tb_bootstrap_int_set_difference(ptr %left, ptr %right) {
+entry:
+  %result = call ptr @tb_bootstrap_int_set_new()
+  %left.len = call i32 @tb_bootstrap_int_set_length(ptr %left)
+  br label %loop.cond
+loop.cond:
+  %index = phi i32 [0, %entry], [%next.index, %loop.step]
+  %keep.loop = icmp slt i32 %index, %left.len
+  br i1 %keep.loop, label %loop.body, label %done
+loop.body:
+  %item = call i64 @tb_bootstrap_int_set_get(ptr %left, i32 %index)
+  %present = call i1 @tb_bootstrap_int_set_contains(ptr %right, i64 %item)
+  br i1 %present, label %loop.step, label %add.item
+add.item:
+  %ignored = call i32 @tb_bootstrap_int_set_add(ptr %result, i64 %item)
+  br label %loop.step
+loop.step:
+  %next.index = add i32 %index, 1
+  br label %loop.cond
+done:
+  ret ptr %result
+}
+
 define private ptr @tb_bootstrap_to_set_int_array(ptr %array) {
 entry:
   %result = call ptr @tb_bootstrap_int_set_new()

@@ -108,6 +108,52 @@ right.loop.step:
 done:
   ret ptr %result
 }
+define private ptr @tb_bootstrap_record_set_intersection___RECORD__(ptr %left, ptr %right) {
+entry:
+  %result = call ptr @tb_bootstrap_record_set_new___RECORD__()
+  %left.len = call i32 @tb_bootstrap_record_set_length___RECORD__(ptr %left)
+  br label %loop.cond
+loop.cond:
+  %index = phi i32 [0, %entry], [%next.index, %loop.step]
+  %keep.loop = icmp slt i32 %index, %left.len
+  br i1 %keep.loop, label %loop.body, label %done
+loop.body:
+  %item = call ptr @tb_bootstrap_record_set_get___RECORD__(ptr %left, i32 %index)
+  %present = call i1 @tb_bootstrap_record_set_contains___RECORD__(ptr %right, ptr %item)
+  br i1 %present, label %add.item, label %loop.step
+add.item:
+  %copy = call ptr @tb_bootstrap_record_clone___RECORD__(ptr %item)
+  %ignored = call i32 @tb_bootstrap_record_set_add___RECORD__(ptr %result, ptr %copy, i1 true)
+  br label %loop.step
+loop.step:
+  %next.index = add i32 %index, 1
+  br label %loop.cond
+done:
+  ret ptr %result
+}
+define private ptr @tb_bootstrap_record_set_difference___RECORD__(ptr %left, ptr %right) {
+entry:
+  %result = call ptr @tb_bootstrap_record_set_new___RECORD__()
+  %left.len = call i32 @tb_bootstrap_record_set_length___RECORD__(ptr %left)
+  br label %loop.cond
+loop.cond:
+  %index = phi i32 [0, %entry], [%next.index, %loop.step]
+  %keep.loop = icmp slt i32 %index, %left.len
+  br i1 %keep.loop, label %loop.body, label %done
+loop.body:
+  %item = call ptr @tb_bootstrap_record_set_get___RECORD__(ptr %left, i32 %index)
+  %present = call i1 @tb_bootstrap_record_set_contains___RECORD__(ptr %right, ptr %item)
+  br i1 %present, label %loop.step, label %add.item
+add.item:
+  %copy = call ptr @tb_bootstrap_record_clone___RECORD__(ptr %item)
+  %ignored = call i32 @tb_bootstrap_record_set_add___RECORD__(ptr %result, ptr %copy, i1 true)
+  br label %loop.step
+loop.step:
+  %next.index = add i32 %index, 1
+  br label %loop.cond
+done:
+  ret ptr %result
+}
 define private void @tb_bootstrap_record_set_free___RECORD__(ptr %set) {
 entry:
   call void @tb_bootstrap_record_array_free___RECORD__(ptr %set)

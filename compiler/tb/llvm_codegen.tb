@@ -7029,6 +7029,12 @@ string emit_set_method_call_value_instruction(ProgramIR program, ParsedFunction 
             if (op.args.length() != 3):
                 throw 'unsupported llvm set<int> union arity'
             return '  ' + lhs + ' = call ptr @tb_bootstrap_int_set_union(ptr ' + temp_ref(op.args[1]) + ', ptr ' + temp_ref(op.args[2]) + ')'
+        if (method_name == 'intersection' || method_name == 'difference'):
+            if (op.args.length() != 3):
+                throw 'unsupported llvm set<int> ' + method_name + ' arity'
+            if (set_method_has_matching_user_call(program, function_ir, op, method_name)):
+                return ''
+            return '  ' + lhs + ' = call ptr @tb_bootstrap_int_set_' + method_name + '(ptr ' + temp_ref(op.args[1]) + ', ptr ' + temp_ref(op.args[2]) + ')'
         if (method_name == 'contains'):
             if (op.args.length() != 3):
                 throw 'unsupported llvm set<int> contains arity'
@@ -7086,6 +7092,12 @@ string emit_set_method_call_value_instruction(ProgramIR program, ParsedFunction 
         if (set_method_has_matching_user_call(program, function_ir, op, method_name)):
             return ''
         return '  ' + lhs + ' = call ptr @tb_bootstrap_record_set_union_' + record_name + '(ptr ' + temp_ref(op.args[1]) + ', ptr ' + temp_ref(op.args[2]) + ')'
+    if (method_name == 'intersection' || method_name == 'difference'):
+        if (op.args.length() != 3):
+            throw 'unsupported llvm record set ' + method_name + ' arity'
+        if (set_method_has_matching_user_call(program, function_ir, op, method_name)):
+            return ''
+        return '  ' + lhs + ' = call ptr @tb_bootstrap_record_set_' + method_name + '_' + record_name + '(ptr ' + temp_ref(op.args[1]) + ', ptr ' + temp_ref(op.args[2]) + ')'
     return ''
 
 string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction function_ir, LinearInstruction op):
