@@ -809,11 +809,17 @@ Array helpers
 - min(a: int | num, b: int | num) -> int | num
   - Return the smaller value. Runtime lowering supports same-type `int` and `num` operands; `num` keeps the selected operand's scale. Equal values select the right operand.
   - Two numeric operands use the builtin; other direct calls may use an exactly matching user-defined `min` function. Empty array arguments are inferred from that function signature.
+  - The UFCS form `a.min(b)` requires one explicit argument with the same
+    `int` or `num` type as the receiver. Known receiver, argument, and arity
+    mismatches are diagnosed before LLVM generation; an exactly matching
+    user-defined UFCS call remains available when the numeric builtin signature
+    does not match.
 
 - max(a: int | num, b: int | num) -> int | num
   - Return the larger value. Runtime lowering supports same-type `int` and `num` operands; `num` keeps the selected operand's scale. Equal values select the right operand.
   - Two numeric operands use the builtin; other direct calls may use an exactly matching user-defined `max` function. Empty array arguments are inferred from that function signature.
-  - UFCS forms `a.min(b)` and `a.max(b)` are supported for `int` and `num`.
+  - The UFCS form `a.max(b)` follows the same receiver, argument, and dispatch
+    rules as `a.min(b)`; both forms are supported for `int` and `num`.
 
 - sqrt(x: int | num) -> num
   - Return the square root as `num`. Constant inputs are folded at compile time.

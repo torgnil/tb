@@ -1844,6 +1844,31 @@ LinearInstruction refine_string_method_signature(LinearInstruction op, string me
         return refined_value_op(op, 'int', 'plain')
     return op
 
+private string refine_ufcs_minmax_result_type(LinearInstruction op, FunctionSigIR[] functions, EnumTypeIR[] enum_types, string[] temp_types):
+    string method_name = op.args[0]
+    if (method_name != 'min' && method_name != 'max'):
+        return ''
+    string receiver_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
+    if (receiver_type == 'unknown'):
+        return ''
+    string argument_type = 'unknown'
+    if (op.args.length() >= 3):
+        argument_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2])), enum_types)
+    if (op.args.length() == 3 && (receiver_type == 'int' || receiver_type == 'num') && argument_type == receiver_type):
+        return receiver_type
+    if (has_matching_ufcs_signature(op, method_name, functions, enum_types, temp_types)):
+        FunctionSigIR helper_sig = lookup_function_sig(functions, method_name)
+        return helper_sig.return_type
+    if (receiver_type != 'int' && receiver_type != 'num'):
+        if (op.args.length() >= 3 && argument_type == 'unknown'):
+            return ''
+        throw method_name + ' requires int or num receiver; got ' + receiver_type
+    if (op.args.length() != 3):
+        throw method_name + ' expects exactly one argument; got ' + (op.args.length() - 2).to_string()
+    if (argument_type == 'unknown'):
+        return ''
+    throw method_name + ' requires two int or two num operands; got ' + receiver_type + ' and ' + argument_type
+
 private LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bindings, FunctionSigIR[] functions, RecordFieldIR[] record_fields, map<string, string> field_types, string[] record_names, EnumTypeIR[] enum_types, string[] temp_types):
     if (op.kind != 'value'):
         return op
@@ -2523,11 +2548,10 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
             string canonical_base_type = normalize_llvm_type_name(base_type)
             if (canonical_base_type == 'int' || canonical_base_type == 'num'):
                 return refined_value_op(op, canonical_base_type, refine_ownership_mode(op, canonical_base_type))
-        if ((method_name == 'min' || method_name == 'max') && op.args.length() == 3):
-            string left_type = normalize_llvm_type_name(base_type)
-            string right_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2]))
-            if (left_type == right_type && (left_type == 'int' || left_type == 'num')):
-                return refined_value_op(op, left_type, refine_ownership_mode(op, left_type))
+        if (method_name == 'min' || method_name == 'max'):
+            string minmax_result_type = refine_ufcs_minmax_result_type(op, functions, enum_types, temp_types)
+            if (minmax_result_type != ''):
+                return refined_value_op(op, minmax_result_type, refine_ownership_mode(op, minmax_result_type))
         if (method_name == 'submit' && base_type == 'thread_pool' && (op.args.length() == 3 || op.args.length() == 4)):
             string future_type = thread_pool_submit_result_type(functions, op.args[2], op.args.length() - 3)
             if (op.args.length() == 4):
