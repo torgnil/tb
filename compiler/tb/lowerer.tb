@@ -381,7 +381,7 @@ private string submit_lambda_array_foreach_helper_type(Node node, SubmitLambdaSc
     if (function_node.kind == ''):
         return ''
     BindingIR signature = ir_parse_binding_decl(function_node.value)
-    if (signature.type_name != 'bool[]' && signature.type_name != 'string[]'):
+    if (signature.type_name != 'bool[]' && signature.type_name != 'string[]' && signature.type_name != 'bool[][]'):
         return ''
     int parameter_count = 0
     for (Node child : function_node.children):
@@ -597,6 +597,10 @@ SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements
                     if (helper_result_type == 'bool[]'):
                         is_array_binding = true
                         array_iterator_type = 'bool'
+                    else if (helper_result_type == 'bool[][]'):
+                        is_array_binding = true
+                        is_grid_row_binding = true
+                        array_iterator_type = 'bool[]'
                     else if (helper_result_type == 'string[]'):
                         is_array_binding = true
                         array_iterator_type = 'string'
@@ -610,7 +614,7 @@ SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements
                             is_grid_row_binding = true
                             array_iterator_type = 'int[]'
                 if (!is_array_binding):
-                    throw 'thread_pool.submit lambda foreach iterable must be an int[], bool[], string[], int[][], or bool[][] binding, a declared int[], bool[], string[], or int[][] helper call, or a direct range call'
+                    throw 'thread_pool.submit lambda foreach iterable must be an int[], bool[], string[], int[][], or bool[][] binding, a declared int[], bool[], string[], int[][], or bool[][] helper call, or a direct range call'
             BindingIR iterator = ir_parse_binding_decl(statement.value)
             string iterator_type = iterator.type_name
             bool iterator_is_const = iterator_type.starts_with('const ')
