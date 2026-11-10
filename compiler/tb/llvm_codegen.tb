@@ -11115,159 +11115,11 @@ string emit_map_type(string type_name):
         return llvm_map_type_name(type_name) + ' = type { i32, i32, ptr, ptr, ptr }'
     return llvm_map_type_name(type_name) + ' = type { i32, ptr, ptr, ptr }'
 
-string[] emit_map_helpers(string type_name):
+private string[] emit_map_values_helper_lines(string type_name):
     string key_type = normalize_llvm_type_name(map_key_type(type_name))
     string value_type = normalize_llvm_type_name(map_value_type(type_name))
-    if (key_type != 'string' && key_type != 'int' && key_type != 'int[]' && key_type != 'int[][]'):
-        throw 'unsupported llvm map key type: ' + key_type
-    require_backend_value_type(value_type, 'map value')
     string map_struct = llvm_map_type_name(type_name)
     string value_llvm_type = llvm_type(value_type)
-    string key_llvm_type = 'ptr'
-    if (key_type == 'int'):
-        key_llvm_type = 'i64'
-    if (key_type == 'int' && value_type == 'int'):
-        string[] lines = llvm_embedded_helper_text('map_int_int.ll').split_lines()
-        lines = replace_llvm_template_lines(lines, '__MAP_NEW_NAME__', llvm_map_new_name(type_name))
-        lines = replace_llvm_template_lines(lines, '__MAP_SET_NAME__', llvm_map_set_name(type_name))
-        lines = replace_llvm_template_lines(lines, '__MAP_LENGTH_NAME__', llvm_map_length_name(type_name))
-        lines = replace_llvm_template_lines(lines, '__MAP_GET_NAME__', llvm_map_get_name(type_name))
-        lines = replace_llvm_template_lines(lines, '__MAP_CONTAINS_NAME__', llvm_map_contains_name(type_name))
-        lines = replace_llvm_template_lines(lines, '__MAP_SET_BY_KEY_NAME__', llvm_map_set_by_key_name(type_name))
-        lines = replace_llvm_template_lines(lines, '__MAP_INCREMENT_BY_KEY_NAME__', llvm_map_increment_by_key_name(type_name))
-        lines = replace_llvm_template_lines(lines, '__MAP_RELEASE_BY_KEY_NAME__', llvm_map_release_by_key_name(type_name))
-        lines = replace_llvm_template_lines(lines, '__MAP_KEYS_NAME__', llvm_map_keys_name(type_name))
-        lines = replace_llvm_template_lines(lines, '__MAP_VALUES_NAME__', llvm_map_values_name(type_name))
-        lines = replace_llvm_template_lines(lines, '__MAP_CLONE_NAME__', llvm_map_clone_name(type_name))
-        lines = replace_llvm_template_lines(lines, '__MAP_FREE_NAME__', llvm_map_free_name(type_name))
-        lines = replace_llvm_template_lines(lines, '__MAP_STRUCT__', map_struct)
-        return lines
-    string[] lines = []
-    string key_hash_name = '@tb_bootstrap_hash_int_array'
-    string key_equals_name = '@tb_bootstrap_int_array_equals'
-    string key_clone_name = '@tb_bootstrap_int_array_clone'
-    string key_free_name = '@tb_bootstrap_int_array_free'
-    if (key_type == 'string' || key_type == 'int[]' || key_type == 'int[][]'):
-        if (key_type == 'int[]' || key_type == 'int[][]'):
-            lines = llvm_embedded_helper_text('map_int_array_key.ll').split_lines()
-            if (key_type == 'int[]'):
-                key_hash_name = '@' + llvm_map_suffix(type_name) + '_hash_int_array'
-                key_equals_name = '@' + llvm_map_suffix(type_name) + '_int_array_equals'
-            else:
-                key_hash_name = '@' + llvm_map_suffix(type_name) + '_hash_int_array_array'
-                key_equals_name = '@' + llvm_map_suffix(type_name) + '_int_array_array_equals'
-                key_clone_name = '@tb_bootstrap_int_array_array_clone'
-                key_free_name = '@tb_bootstrap_int_array_array_free'
-            lines = replace_llvm_template_lines(lines, '__MAP_KEY_HASH_NAME__', key_hash_name)
-            lines = replace_llvm_template_lines(lines, '__MAP_KEY_EQUALS_NAME__', key_equals_name)
-            lines = replace_llvm_template_lines(lines, '__MAP_KEY_CLONE_NAME__', key_clone_name)
-            lines = replace_llvm_template_lines(lines, '__MAP_KEY_FREE_NAME__', key_free_name)
-        else:
-            lines = llvm_embedded_helper_text('map_string_key.ll').split_lines()
-    else:
-        lines = llvm_embedded_helper_text('map_base.ll').split_lines()
-    lines = replace_llvm_template_lines(lines, '__MAP_NEW_NAME__', llvm_map_new_name(type_name))
-    lines = replace_llvm_template_lines(lines, '__MAP_SET_NAME__', llvm_map_set_name(type_name))
-    lines = replace_llvm_template_lines(lines, '__MAP_LENGTH_NAME__', llvm_map_length_name(type_name))
-    lines = replace_llvm_template_lines(lines, '__MAP_GET_NAME__', llvm_map_get_name(type_name))
-    lines = replace_llvm_template_lines(lines, '__MAP_CONTAINS_NAME__', llvm_map_contains_name(type_name))
-    lines = replace_llvm_template_lines(lines, '__MAP_GET_SLICE_NAME__', llvm_map_get_slice_name(type_name))
-    lines = replace_llvm_template_lines(lines, '__MAP_SET_BY_KEY_NAME__', llvm_map_set_by_key_name(type_name))
-    lines = replace_llvm_template_lines(lines, '__MAP_SET_BY_SLICE_NAME__', llvm_map_set_by_slice_name(type_name))
-    lines = replace_llvm_template_lines(lines, '__MAP_RELEASE_BY_KEY_NAME__', llvm_map_release_by_key_name(type_name))
-    lines = replace_llvm_template_lines(lines, '__MAP_RELEASE_BY_SLICE_NAME__', llvm_map_release_by_slice_name(type_name))
-    lines = replace_llvm_template_lines(lines, '__MAP_KEYS_NAME__', llvm_map_keys_name(type_name))
-    lines = replace_llvm_template_lines(lines, '__MAP_VALUES_NAME__', llvm_map_values_name(type_name))
-    lines = replace_llvm_template_lines(lines, '__MAP_CLONE_NAME__', llvm_map_clone_name(type_name))
-    lines = replace_llvm_template_lines(lines, '__MAP_FREE_NAME__', llvm_map_free_name(type_name))
-    lines = replace_llvm_template_lines(lines, '__MAP_STRUCT__', map_struct)
-    lines = replace_llvm_template_lines(lines, '__VALUE_LLVM_TYPE__', value_llvm_type)
-    lines = replace_llvm_template_lines(lines, '__KEY_LLVM_TYPE__', key_llvm_type)
-    lines = replace_llvm_template_lines(lines, '__ZERO_VALUE__', llvm_zero_value(value_type))
-    if (llvm_map_int_literal_uses_unique_keys(type_name)):
-        string insert_name = llvm_map_literal_insert_name(type_name)
-        string set_name = llvm_map_set_name(type_name)
-        string release_name = llvm_map_release_by_key_name(type_name)
-        lines.push('define private void ' + insert_name + '(ptr %map, i64 %key, ' + value_llvm_type + ' %value, i1 %is_owned) {')
-        lines.push('entry:')
-        lines.push('  %len = call i32 ' + llvm_map_length_name(type_name) + '(ptr %map)')
-        lines.push('  %keys.ptr = getelementptr inbounds ' + map_struct + ', ptr %map, i32 0, i32 1')
-        lines.push('  %keys = load ptr, ptr %keys.ptr')
-        lines.push('  br label %loop.cond')
-        lines.push('loop.cond:')
-        lines.push('  %index = phi i32 [0, %entry], [%next.index, %loop.step]')
-        lines.push('  %keep.loop = icmp slt i32 %index, %len')
-        lines.push('  br i1 %keep.loop, label %loop.body, label %append')
-        lines.push('loop.body:')
-        lines.push('  %key.slot = getelementptr inbounds i64, ptr %keys, i32 %index')
-        lines.push('  %key.value = load i64, ptr %key.slot')
-        lines.push('  %key.match = icmp eq i64 %key.value, %key')
-        lines.push('  br i1 %key.match, label %replace, label %loop.step')
-        lines.push('replace:')
-        lines.push('  call void ' + release_name + '(ptr %map, i64 %key)')
-        lines.push('  call void ' + set_name + '(ptr %map, i32 %index, i64 %key, ' + value_llvm_type + ' %value, i1 %is_owned)')
-        lines.push('  ret void')
-        lines.push('loop.step:')
-        lines.push('  %next.index = add i32 %index, 1')
-        lines.push('  br label %loop.cond')
-        lines.push('append:')
-        lines.push('  call void ' + set_name + '(ptr %map, i32 %len, i64 %key, ' + value_llvm_type + ' %value, i1 %is_owned)')
-        lines.push('  %next.len = add i32 %len, 1')
-        lines.push('  %len.ptr = getelementptr inbounds ' + map_struct + ', ptr %map, i32 0, i32 0')
-        lines.push('  store i32 %next.len, ptr %len.ptr')
-        lines.push('  ret void')
-        lines.push('}')
-    if (key_type == 'string' || key_type == 'int[]' || key_type == 'int[][]'):
-        lines = replace_llvm_template_lines(lines, '__MAP_REHASH_INSERT_NAME__', '@' + llvm_map_suffix(type_name) + '_rehash_insert')
-        lines = replace_llvm_template_lines(lines, '__MAP_GROW_NAME__', '@' + llvm_map_suffix(type_name) + '_grow')
-
-    string[] key_compare_lines = ['  %key.match = icmp eq i64 %key.value, %key']
-    string[] insert_key_lines = ['  store i64 %key, ptr %new.key.slot']
-    string[] keys_result_lines = [
-        '  %key.text = call ptr @tb_bootstrap_int_to_string(i64 %key.value)',
-        '  call void @tb_bootstrap_string_array_set_owned(ptr %result, i32 %index, ptr %key.text, i1 true)'
-    ]
-    string[] clone_key_copy_lines = ['  %key.copy = add i64 %key.value, 0']
-    string[] free_key_lines = []
-    if (key_type == 'string'):
-        key_compare_lines = ['  %key.match = call i1 @tb_bootstrap_managed_string_equals(ptr %key.value, ptr %key)']
-        insert_key_lines = [
-            '  %insert.key = call ptr @tb_bootstrap_string_copy(ptr %key)',
-            '  store ptr %insert.key, ptr %new.key.slot'
-        ]
-        keys_result_lines = [
-            '  %key.copy = call ptr @tb_retain(ptr %key.value)',
-            '  call void @tb_bootstrap_string_array_set_owned(ptr %result, i32 %index, ptr %key.copy, i1 true)'
-        ]
-        clone_key_copy_lines = ['  %key.copy = call ptr @tb_retain(ptr %key.value)']
-        free_key_lines = [
-            '  %key.value = load ptr, ptr %key.slot',
-            '  call void @tb_release(ptr %key.value)'
-        ]
-    else if (key_type == 'int[]' || key_type == 'int[][]'):
-        key_compare_lines = ['  %key.match = call i1 ' + key_equals_name + '(ptr %key.value, ptr %key)']
-        insert_key_lines = [
-            '  %insert.key = call ptr ' + key_clone_name + '(ptr %key)',
-            '  store ptr %insert.key, ptr %new.key.slot'
-        ]
-        keys_result_lines = [
-            '  %key.copy = call ptr ' + key_clone_name + '(ptr %key.value)',
-            '  call void @tb_bootstrap_int_array_array_set_owned(ptr %result, i32 %index, ptr %key.copy, i1 true)'
-        ]
-        clone_key_copy_lines = ['  %key.copy = call ptr ' + key_clone_name + '(ptr %key.value)']
-        free_key_lines = [
-            '  %key.value = load ptr, ptr %key.slot',
-            '  call void ' + key_free_name + '(ptr %key.value)'
-        ]
-    lines = replace_llvm_template_block_lines(lines, '__KEY_COMPARE_GET__', key_compare_lines)
-    lines = replace_llvm_template_block_lines(lines, '__KEY_COMPARE_CONTAINS__', key_compare_lines)
-    lines = replace_llvm_template_block_lines(lines, '__KEY_COMPARE_SET_BY_KEY__', key_compare_lines)
-    lines = replace_llvm_template_block_lines(lines, '__KEY_COMPARE_RELEASE_BY_KEY__', key_compare_lines)
-    lines = replace_llvm_template_block_lines(lines, '__INSERT_KEY_BLOCK__', insert_key_lines)
-    lines = replace_llvm_template_block_lines(lines, '__KEYS_RESULT_BLOCK__', keys_result_lines)
-    lines = replace_llvm_template_block_lines(lines, '__CLONE_KEY_COPY_BLOCK__', clone_key_copy_lines)
-    lines = replace_llvm_template_block_lines(lines, '__FREE_KEY_BLOCK__', free_key_lines)
-
     string[] values_block_lines = [
         'define private ptr ' + llvm_map_values_name(type_name) + '(ptr %map) {',
         'entry:',
@@ -11609,6 +11461,162 @@ string[] emit_map_helpers(string type_name):
             '  ret ptr %result',
             '}'
         ]
+    return values_block_lines
+
+private string[] emit_map_helpers(string type_name):
+    string key_type = normalize_llvm_type_name(map_key_type(type_name))
+    string value_type = normalize_llvm_type_name(map_value_type(type_name))
+    if (key_type != 'string' && key_type != 'int' && key_type != 'int[]' && key_type != 'int[][]'):
+        throw 'unsupported llvm map key type: ' + key_type
+    require_backend_value_type(value_type, 'map value')
+    string map_struct = llvm_map_type_name(type_name)
+    string value_llvm_type = llvm_type(value_type)
+    string key_llvm_type = 'ptr'
+    if (key_type == 'int'):
+        key_llvm_type = 'i64'
+    if (key_type == 'int' && value_type == 'int'):
+        string[] lines = llvm_embedded_helper_text('map_int_int.ll').split_lines()
+        lines = replace_llvm_template_lines(lines, '__MAP_NEW_NAME__', llvm_map_new_name(type_name))
+        lines = replace_llvm_template_lines(lines, '__MAP_SET_NAME__', llvm_map_set_name(type_name))
+        lines = replace_llvm_template_lines(lines, '__MAP_LENGTH_NAME__', llvm_map_length_name(type_name))
+        lines = replace_llvm_template_lines(lines, '__MAP_GET_NAME__', llvm_map_get_name(type_name))
+        lines = replace_llvm_template_lines(lines, '__MAP_CONTAINS_NAME__', llvm_map_contains_name(type_name))
+        lines = replace_llvm_template_lines(lines, '__MAP_SET_BY_KEY_NAME__', llvm_map_set_by_key_name(type_name))
+        lines = replace_llvm_template_lines(lines, '__MAP_INCREMENT_BY_KEY_NAME__', llvm_map_increment_by_key_name(type_name))
+        lines = replace_llvm_template_lines(lines, '__MAP_RELEASE_BY_KEY_NAME__', llvm_map_release_by_key_name(type_name))
+        lines = replace_llvm_template_lines(lines, '__MAP_KEYS_NAME__', llvm_map_keys_name(type_name))
+        lines = replace_llvm_template_lines(lines, '__MAP_VALUES_NAME__', llvm_map_values_name(type_name))
+        lines = replace_llvm_template_lines(lines, '__MAP_CLONE_NAME__', llvm_map_clone_name(type_name))
+        lines = replace_llvm_template_lines(lines, '__MAP_FREE_NAME__', llvm_map_free_name(type_name))
+        lines = replace_llvm_template_lines(lines, '__MAP_STRUCT__', map_struct)
+        return lines
+    string[] lines = []
+    string key_hash_name = '@tb_bootstrap_hash_int_array'
+    string key_equals_name = '@tb_bootstrap_int_array_equals'
+    string key_clone_name = '@tb_bootstrap_int_array_clone'
+    string key_free_name = '@tb_bootstrap_int_array_free'
+    if (key_type == 'string' || key_type == 'int[]' || key_type == 'int[][]'):
+        if (key_type == 'int[]' || key_type == 'int[][]'):
+            lines = llvm_embedded_helper_text('map_int_array_key.ll').split_lines()
+            if (key_type == 'int[]'):
+                key_hash_name = '@' + llvm_map_suffix(type_name) + '_hash_int_array'
+                key_equals_name = '@' + llvm_map_suffix(type_name) + '_int_array_equals'
+            else:
+                key_hash_name = '@' + llvm_map_suffix(type_name) + '_hash_int_array_array'
+                key_equals_name = '@' + llvm_map_suffix(type_name) + '_int_array_array_equals'
+                key_clone_name = '@tb_bootstrap_int_array_array_clone'
+                key_free_name = '@tb_bootstrap_int_array_array_free'
+            lines = replace_llvm_template_lines(lines, '__MAP_KEY_HASH_NAME__', key_hash_name)
+            lines = replace_llvm_template_lines(lines, '__MAP_KEY_EQUALS_NAME__', key_equals_name)
+            lines = replace_llvm_template_lines(lines, '__MAP_KEY_CLONE_NAME__', key_clone_name)
+            lines = replace_llvm_template_lines(lines, '__MAP_KEY_FREE_NAME__', key_free_name)
+        else:
+            lines = llvm_embedded_helper_text('map_string_key.ll').split_lines()
+    else:
+        lines = llvm_embedded_helper_text('map_base.ll').split_lines()
+    lines = replace_llvm_template_lines(lines, '__MAP_NEW_NAME__', llvm_map_new_name(type_name))
+    lines = replace_llvm_template_lines(lines, '__MAP_SET_NAME__', llvm_map_set_name(type_name))
+    lines = replace_llvm_template_lines(lines, '__MAP_LENGTH_NAME__', llvm_map_length_name(type_name))
+    lines = replace_llvm_template_lines(lines, '__MAP_GET_NAME__', llvm_map_get_name(type_name))
+    lines = replace_llvm_template_lines(lines, '__MAP_CONTAINS_NAME__', llvm_map_contains_name(type_name))
+    lines = replace_llvm_template_lines(lines, '__MAP_GET_SLICE_NAME__', llvm_map_get_slice_name(type_name))
+    lines = replace_llvm_template_lines(lines, '__MAP_SET_BY_KEY_NAME__', llvm_map_set_by_key_name(type_name))
+    lines = replace_llvm_template_lines(lines, '__MAP_SET_BY_SLICE_NAME__', llvm_map_set_by_slice_name(type_name))
+    lines = replace_llvm_template_lines(lines, '__MAP_RELEASE_BY_KEY_NAME__', llvm_map_release_by_key_name(type_name))
+    lines = replace_llvm_template_lines(lines, '__MAP_RELEASE_BY_SLICE_NAME__', llvm_map_release_by_slice_name(type_name))
+    lines = replace_llvm_template_lines(lines, '__MAP_KEYS_NAME__', llvm_map_keys_name(type_name))
+    lines = replace_llvm_template_lines(lines, '__MAP_VALUES_NAME__', llvm_map_values_name(type_name))
+    lines = replace_llvm_template_lines(lines, '__MAP_CLONE_NAME__', llvm_map_clone_name(type_name))
+    lines = replace_llvm_template_lines(lines, '__MAP_FREE_NAME__', llvm_map_free_name(type_name))
+    lines = replace_llvm_template_lines(lines, '__MAP_STRUCT__', map_struct)
+    lines = replace_llvm_template_lines(lines, '__VALUE_LLVM_TYPE__', value_llvm_type)
+    lines = replace_llvm_template_lines(lines, '__KEY_LLVM_TYPE__', key_llvm_type)
+    lines = replace_llvm_template_lines(lines, '__ZERO_VALUE__', llvm_zero_value(value_type))
+    if (llvm_map_int_literal_uses_unique_keys(type_name)):
+        string insert_name = llvm_map_literal_insert_name(type_name)
+        string set_name = llvm_map_set_name(type_name)
+        string release_name = llvm_map_release_by_key_name(type_name)
+        lines.push('define private void ' + insert_name + '(ptr %map, i64 %key, ' + value_llvm_type + ' %value, i1 %is_owned) {')
+        lines.push('entry:')
+        lines.push('  %len = call i32 ' + llvm_map_length_name(type_name) + '(ptr %map)')
+        lines.push('  %keys.ptr = getelementptr inbounds ' + map_struct + ', ptr %map, i32 0, i32 1')
+        lines.push('  %keys = load ptr, ptr %keys.ptr')
+        lines.push('  br label %loop.cond')
+        lines.push('loop.cond:')
+        lines.push('  %index = phi i32 [0, %entry], [%next.index, %loop.step]')
+        lines.push('  %keep.loop = icmp slt i32 %index, %len')
+        lines.push('  br i1 %keep.loop, label %loop.body, label %append')
+        lines.push('loop.body:')
+        lines.push('  %key.slot = getelementptr inbounds i64, ptr %keys, i32 %index')
+        lines.push('  %key.value = load i64, ptr %key.slot')
+        lines.push('  %key.match = icmp eq i64 %key.value, %key')
+        lines.push('  br i1 %key.match, label %replace, label %loop.step')
+        lines.push('replace:')
+        lines.push('  call void ' + release_name + '(ptr %map, i64 %key)')
+        lines.push('  call void ' + set_name + '(ptr %map, i32 %index, i64 %key, ' + value_llvm_type + ' %value, i1 %is_owned)')
+        lines.push('  ret void')
+        lines.push('loop.step:')
+        lines.push('  %next.index = add i32 %index, 1')
+        lines.push('  br label %loop.cond')
+        lines.push('append:')
+        lines.push('  call void ' + set_name + '(ptr %map, i32 %len, i64 %key, ' + value_llvm_type + ' %value, i1 %is_owned)')
+        lines.push('  %next.len = add i32 %len, 1')
+        lines.push('  %len.ptr = getelementptr inbounds ' + map_struct + ', ptr %map, i32 0, i32 0')
+        lines.push('  store i32 %next.len, ptr %len.ptr')
+        lines.push('  ret void')
+        lines.push('}')
+    if (key_type == 'string' || key_type == 'int[]' || key_type == 'int[][]'):
+        lines = replace_llvm_template_lines(lines, '__MAP_REHASH_INSERT_NAME__', '@' + llvm_map_suffix(type_name) + '_rehash_insert')
+        lines = replace_llvm_template_lines(lines, '__MAP_GROW_NAME__', '@' + llvm_map_suffix(type_name) + '_grow')
+
+    string[] key_compare_lines = ['  %key.match = icmp eq i64 %key.value, %key']
+    string[] insert_key_lines = ['  store i64 %key, ptr %new.key.slot']
+    string[] keys_result_lines = [
+        '  %key.text = call ptr @tb_bootstrap_int_to_string(i64 %key.value)',
+        '  call void @tb_bootstrap_string_array_set_owned(ptr %result, i32 %index, ptr %key.text, i1 true)'
+    ]
+    string[] clone_key_copy_lines = ['  %key.copy = add i64 %key.value, 0']
+    string[] free_key_lines = []
+    if (key_type == 'string'):
+        key_compare_lines = ['  %key.match = call i1 @tb_bootstrap_managed_string_equals(ptr %key.value, ptr %key)']
+        insert_key_lines = [
+            '  %insert.key = call ptr @tb_bootstrap_string_copy(ptr %key)',
+            '  store ptr %insert.key, ptr %new.key.slot'
+        ]
+        keys_result_lines = [
+            '  %key.copy = call ptr @tb_retain(ptr %key.value)',
+            '  call void @tb_bootstrap_string_array_set_owned(ptr %result, i32 %index, ptr %key.copy, i1 true)'
+        ]
+        clone_key_copy_lines = ['  %key.copy = call ptr @tb_retain(ptr %key.value)']
+        free_key_lines = [
+            '  %key.value = load ptr, ptr %key.slot',
+            '  call void @tb_release(ptr %key.value)'
+        ]
+    else if (key_type == 'int[]' || key_type == 'int[][]'):
+        key_compare_lines = ['  %key.match = call i1 ' + key_equals_name + '(ptr %key.value, ptr %key)']
+        insert_key_lines = [
+            '  %insert.key = call ptr ' + key_clone_name + '(ptr %key)',
+            '  store ptr %insert.key, ptr %new.key.slot'
+        ]
+        keys_result_lines = [
+            '  %key.copy = call ptr ' + key_clone_name + '(ptr %key.value)',
+            '  call void @tb_bootstrap_int_array_array_set_owned(ptr %result, i32 %index, ptr %key.copy, i1 true)'
+        ]
+        clone_key_copy_lines = ['  %key.copy = call ptr ' + key_clone_name + '(ptr %key.value)']
+        free_key_lines = [
+            '  %key.value = load ptr, ptr %key.slot',
+            '  call void ' + key_free_name + '(ptr %key.value)'
+        ]
+    lines = replace_llvm_template_block_lines(lines, '__KEY_COMPARE_GET__', key_compare_lines)
+    lines = replace_llvm_template_block_lines(lines, '__KEY_COMPARE_CONTAINS__', key_compare_lines)
+    lines = replace_llvm_template_block_lines(lines, '__KEY_COMPARE_SET_BY_KEY__', key_compare_lines)
+    lines = replace_llvm_template_block_lines(lines, '__KEY_COMPARE_RELEASE_BY_KEY__', key_compare_lines)
+    lines = replace_llvm_template_block_lines(lines, '__INSERT_KEY_BLOCK__', insert_key_lines)
+    lines = replace_llvm_template_block_lines(lines, '__KEYS_RESULT_BLOCK__', keys_result_lines)
+    lines = replace_llvm_template_block_lines(lines, '__CLONE_KEY_COPY_BLOCK__', clone_key_copy_lines)
+    lines = replace_llvm_template_block_lines(lines, '__FREE_KEY_BLOCK__', free_key_lines)
+
+    string[] values_block_lines = emit_map_values_helper_lines(type_name)
     lines = replace_llvm_template_block_lines(lines, '__VALUES_BLOCK__', values_block_lines)
 
     string[] clone_value_copy_lines = []
