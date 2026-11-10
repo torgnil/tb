@@ -374,14 +374,14 @@ string submit_lambda_expression_type_context(Node node, SubmitLambdaScope scope,
 string submit_lambda_expression_type(Node node, SubmitLambdaScope scope, Node[] functions):
     return submit_lambda_expression_type_context(node, scope, functions, false, '')
 
-private string submit_lambda_array_foreach_helper_type(Node node, SubmitLambdaScope scope, Node[] functions):
+private string submit_lambda_foreach_helper_type(Node node, SubmitLambdaScope scope, Node[] functions):
     if (node.kind != 'Call'):
         return ''
     Node function_node = submit_lambda_helper(functions, node.value)
     if (function_node.kind == ''):
         return ''
     BindingIR signature = ir_parse_binding_decl(function_node.value)
-    if (signature.type_name != 'bool[]' && signature.type_name != 'string[]' && signature.type_name != 'bool[][]'):
+    if (signature.type_name != 'bool[]' && signature.type_name != 'string[]' && signature.type_name != 'bool[][]' && signature.type_name != 'set<int>' && signature.type_name != 'set<string>'):
         return ''
     int parameter_count = 0
     for (Node child : function_node.children):
@@ -435,7 +435,103 @@ string array_callback_block_expression_type(Node node, SubmitLambdaScope scope, 
         return ''
     return submit_lambda_expression_type_context(node, scope, functions, true, callback_name)
 
-SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements, SubmitLambdaScope initial_scope, Node[] functions, int loop_depth, bool callback_context, string callback_name):
+private SubmitLambdaValidation validate_submit_lambda_foreach_statement(Node statement, SubmitLambdaScope scope, Node[] functions, int loop_depth, bool callback_context, string callback_name):
+    if (statement.children.length() < 1):
+        throw 'thread_pool.submit lambda foreach iterable must be a direct range call'
+    bool is_range = statement.children[0].kind == 'Call' && statement.children[0].value == 'range'
+    bool is_iterable = false
+    bool is_grid_row_binding = false
+    bool is_set_helper_result = false
+    string iterator_element_type = ''
+    if (is_range):
+        Node range_call = statement.children[0]
+        if (!(range_call.children.length() == 1 || range_call.children.length() == 2 || range_call.children.length() == 3)):
+            throw 'thread_pool.submit lambda range requires one, two, or three int bounds'
+        for (Node bound : range_call.children):
+            if (array_callback_block_expression_type(bound, scope, functions, callback_context, callback_name) != 'int'):
+                throw 'thread_pool.submit lambda range bounds must be int expressions using only in-scope scalar values and declared scalar helper calls'
+    else:
+        if (statement.children[0].kind == 'Identifier'):
+            int iterable_index = submit_lambda_name_index(scope.names, statement.children[0].value)
+            if (iterable_index >= 0):
+                string iterable_type = scope.types[iterable_index]
+                if (iterable_type == 'int[]'):
+                    is_iterable = true
+                    iterator_element_type = 'int'
+                else if (iterable_type == 'bool[]'):
+                    is_iterable = true
+                    iterator_element_type = 'bool'
+                else if (iterable_type == 'string[]'):
+                    is_iterable = true
+                    iterator_element_type = 'string'
+                else if (iterable_type == 'int[][]'):
+                    is_iterable = true
+                    is_grid_row_binding = true
+                    iterator_element_type = 'int[]'
+                else if (iterable_type == 'bool[][]'):
+                    is_iterable = true
+                    is_grid_row_binding = true
+                    iterator_element_type = 'bool[]'
+        else if (statement.children[0].kind == 'Call'):
+            string helper_result_type = submit_lambda_foreach_helper_type(statement.children[0], scope, functions)
+            if (helper_result_type == 'bool[]'):
+                is_iterable = true
+                iterator_element_type = 'bool'
+            else if (helper_result_type == 'bool[][]'):
+                is_iterable = true
+                is_grid_row_binding = true
+                iterator_element_type = 'bool[]'
+            else if (helper_result_type == 'string[]'):
+                is_iterable = true
+                iterator_element_type = 'string'
+            else if (helper_result_type == 'set<int>'):
+                is_iterable = true
+                is_set_helper_result = true
+                iterator_element_type = 'int'
+            else if (helper_result_type == 'set<string>'):
+                is_iterable = true
+                is_set_helper_result = true
+                iterator_element_type = 'string'
+            else:
+                helper_result_type = submit_lambda_expression_type(statement.children[0], scope, functions)
+                if (helper_result_type == 'int[]'):
+                    is_iterable = true
+                    iterator_element_type = 'int'
+                else if (helper_result_type == 'int[][]'):
+                    is_iterable = true
+                    is_grid_row_binding = true
+                    iterator_element_type = 'int[]'
+        if (!is_iterable):
+            throw 'thread_pool.submit lambda foreach iterable must be an int[], bool[], string[], int[][], or bool[][] binding, a declared int[], bool[], string[], int[][], bool[][], set<int>, or set<string> helper call, or a direct range call'
+    BindingIR iterator = ir_parse_binding_decl(statement.value)
+    string iterator_type = iterator.type_name
+    bool iterator_is_const = iterator_type.starts_with('const ')
+    if (iterator_is_const):
+        iterator_type = iterator_type.substring(6)
+    if (is_range && iterator_type != 'int'):
+        throw 'thread_pool.submit lambda range iterator must have type int'
+    if (is_set_helper_result && iterator_type != iterator_element_type):
+        throw 'thread_pool.submit lambda set iterator type must match the helper result element type'
+    if (is_iterable && !is_set_helper_result && iterator_type != iterator_element_type):
+        throw 'thread_pool.submit lambda array iterator type must match the iterable element type'
+    if (is_grid_row_binding && (!iterator_is_const || iterator_type != iterator_element_type)):
+        if (iterator_element_type == 'int[]'):
+            throw 'thread_pool.submit lambda int[][] row iterator must be const int[]'
+        throw 'thread_pool.submit lambda bool[][] row iterator must be const bool[]'
+    if (contains_name(scope.declared_names, iterator.name)):
+        throw 'thread_pool.submit lambda local names must be unique, including the parameter'
+    SubmitLambdaScope loop_scope = copy_submit_lambda_scope(scope)
+    loop_scope.names = append_lines(loop_scope.names, [iterator.name])
+    string iterator_scope_type = 'int'
+    if (is_iterable):
+        iterator_scope_type = iterator_element_type
+    loop_scope.types = append_lines(loop_scope.types, [iterator_scope_type])
+    loop_scope.declared_names = append_lines(loop_scope.declared_names, [iterator.name])
+    if (iterator_is_const):
+        loop_scope.const_names = append_lines(loop_scope.const_names, [iterator.name])
+    return validate_submit_lambda_block_statements(tail_nodes(statement.children, 1), loop_scope, functions, loop_depth + 1, callback_context, callback_name)
+
+private SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements, SubmitLambdaScope initial_scope, Node[] functions, int loop_depth, bool callback_context, string callback_name):
     SubmitLambdaScope scope = initial_scope
     string return_type = ''
     bool previous_paths_return = false
@@ -558,88 +654,7 @@ SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] statements
             scope.declared_names = body_validation.scope.declared_names
             current.return_type = body_validation.check.return_type
         else if (statement.kind == 'ForEach'):
-            if (statement.children.length() < 1):
-                throw 'thread_pool.submit lambda foreach iterable must be a direct range call'
-            bool is_range = statement.children[0].kind == 'Call' && statement.children[0].value == 'range'
-            bool is_array_binding = false
-            bool is_grid_row_binding = false
-            string array_iterator_type = ''
-            if (is_range):
-                Node range_call = statement.children[0]
-                if (!(range_call.children.length() == 1 || range_call.children.length() == 2 || range_call.children.length() == 3)):
-                    throw 'thread_pool.submit lambda range requires one, two, or three int bounds'
-                for (Node bound : range_call.children):
-                    if (array_callback_block_expression_type(bound, scope, functions, callback_context, callback_name) != 'int'):
-                        throw 'thread_pool.submit lambda range bounds must be int expressions using only in-scope scalar values and declared scalar helper calls'
-            else:
-                if (statement.children[0].kind == 'Identifier'):
-                    int iterable_index = submit_lambda_name_index(scope.names, statement.children[0].value)
-                    if (iterable_index >= 0):
-                        if (scope.types[iterable_index] == 'int[]'):
-                            is_array_binding = true
-                            array_iterator_type = 'int'
-                        else if (scope.types[iterable_index] == 'bool[]'):
-                            is_array_binding = true
-                            array_iterator_type = 'bool'
-                        else if (scope.types[iterable_index] == 'string[]'):
-                            is_array_binding = true
-                            array_iterator_type = 'string'
-                        else if (scope.types[iterable_index] == 'int[][]'):
-                            is_array_binding = true
-                            is_grid_row_binding = true
-                            array_iterator_type = 'int[]'
-                        else if (scope.types[iterable_index] == 'bool[][]'):
-                            is_array_binding = true
-                            is_grid_row_binding = true
-                            array_iterator_type = 'bool[]'
-                else if (statement.children[0].kind == 'Call'):
-                    string helper_result_type = submit_lambda_array_foreach_helper_type(statement.children[0], scope, functions)
-                    if (helper_result_type == 'bool[]'):
-                        is_array_binding = true
-                        array_iterator_type = 'bool'
-                    else if (helper_result_type == 'bool[][]'):
-                        is_array_binding = true
-                        is_grid_row_binding = true
-                        array_iterator_type = 'bool[]'
-                    else if (helper_result_type == 'string[]'):
-                        is_array_binding = true
-                        array_iterator_type = 'string'
-                    else:
-                        helper_result_type = submit_lambda_expression_type(statement.children[0], scope, functions)
-                        if (helper_result_type == 'int[]'):
-                            is_array_binding = true
-                            array_iterator_type = 'int'
-                        else if (helper_result_type == 'int[][]'):
-                            is_array_binding = true
-                            is_grid_row_binding = true
-                            array_iterator_type = 'int[]'
-                if (!is_array_binding):
-                    throw 'thread_pool.submit lambda foreach iterable must be an int[], bool[], string[], int[][], or bool[][] binding, a declared int[], bool[], string[], int[][], or bool[][] helper call, or a direct range call'
-            BindingIR iterator = ir_parse_binding_decl(statement.value)
-            string iterator_type = iterator.type_name
-            bool iterator_is_const = iterator_type.starts_with('const ')
-            if (iterator_is_const):
-                iterator_type = iterator_type.substring(6)
-            if (is_range && iterator_type != 'int'):
-                throw 'thread_pool.submit lambda range iterator must have type int'
-            if (is_array_binding && iterator_type != array_iterator_type):
-                throw 'thread_pool.submit lambda array iterator type must match the iterable element type'
-            if (is_grid_row_binding && (!iterator_is_const || iterator_type != array_iterator_type)):
-                if (array_iterator_type == 'int[]'):
-                    throw 'thread_pool.submit lambda int[][] row iterator must be const int[]'
-                throw 'thread_pool.submit lambda bool[][] row iterator must be const bool[]'
-            if (contains_name(scope.declared_names, iterator.name)):
-                throw 'thread_pool.submit lambda local names must be unique, including the parameter'
-            SubmitLambdaScope loop_scope = copy_submit_lambda_scope(scope)
-            loop_scope.names = append_lines(loop_scope.names, [iterator.name])
-            string iterator_scope_type = 'int'
-            if (is_array_binding):
-                iterator_scope_type = array_iterator_type
-            loop_scope.types = append_lines(loop_scope.types, [iterator_scope_type])
-            loop_scope.declared_names = append_lines(loop_scope.declared_names, [iterator.name])
-            if (iterator_is_const):
-                loop_scope.const_names = append_lines(loop_scope.const_names, [iterator.name])
-            SubmitLambdaValidation body_validation = validate_submit_lambda_block_statements(tail_nodes(statement.children, 1), loop_scope, functions, loop_depth + 1, callback_context, callback_name)
+            SubmitLambdaValidation body_validation = validate_submit_lambda_foreach_statement(statement, scope, functions, loop_depth, callback_context, callback_name)
             scope.declared_names = body_validation.scope.declared_names
             current.return_type = body_validation.check.return_type
         else if (statement.kind == 'Switch'):

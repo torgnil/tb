@@ -1,0 +1,140 @@
+int integer_calls = 0
+int string_calls = 0
+
+set<int> make_ids(int mode):
+    integer_calls += 1
+    if (mode == 0):
+        return {}
+    return {1, 2, 2}
+
+set<string> make_words(int mode):
+    string_calls += 1
+    if (mode == 0):
+        return {}
+    return {'ab', 'xyz', 'ab'}
+
+int main():
+    int ordinary_int_total = 0
+    for (int value : make_ids(1)) {
+        ordinary_int_total += value
+    }
+    print(ordinary_int_total)
+
+    int ordinary_string_total = 0
+    for (string word : make_words(1)) {
+        ordinary_string_total += word.length()
+    }
+    print(ordinary_string_total)
+
+    int ordinary_builtin_total = 0
+    for (int value : to_set([4, 4, 5])) {
+        ordinary_builtin_total += value
+    }
+    print(ordinary_builtin_total)
+
+    thread_pool pool = thread_pool(1)
+    future<int> int_normal = pool.submit(int mode -> {
+        int total = 0
+        for (int value : make_ids(mode)) {
+            total += value
+        }
+        return total
+    }, 1)
+    print(int_normal.await())
+
+    future<int> int_empty = pool.submit(int mode -> {
+        int visited = 0
+        for (int value : make_ids(mode)) {
+            visited += 1
+        }
+        return visited
+    }, 0)
+    print(int_empty.await())
+
+    future<int> int_break = pool.submit(int mode -> {
+        int visited = 0
+        for (int value : make_ids(mode)) {
+            visited += 1
+            break
+        }
+        return visited
+    }, 1)
+    print(int_break.await())
+
+    future<int> int_return = pool.submit(int mode -> {
+        for (int value : make_ids(mode)) {
+            return 9
+        }
+        return -1
+    }, 1)
+    print(int_return.await())
+
+    future<int> int_throw = pool.submit(int mode -> {
+        for (int value : make_ids(mode)) {
+            throw 'set-int-failure'
+        }
+        return 0
+    }, 1)
+    try:
+        print(int_throw.await())
+    catch (string error):
+        print(error)
+
+    future<int> string_normal = pool.submit(int mode -> {
+        int total = 0
+        for (const string word : make_words(mode)) {
+            total += word.length()
+        }
+        return total
+    }, 1)
+    print(string_normal.await())
+
+    future<int> string_empty = pool.submit(int mode -> {
+        int visited = 0
+        for (const string word : make_words(mode)) {
+            visited += 1
+        }
+        return visited
+    }, 0)
+    print(string_empty.await())
+
+    future<int> string_break = pool.submit(int mode -> {
+        int visited = 0
+        for (const string word : make_words(mode)) {
+            visited += 1
+            break
+        }
+        return visited
+    }, 1)
+    print(string_break.await())
+
+    future<int> string_return = pool.submit(int mode -> {
+        for (const string word : make_words(mode)) {
+            return 8
+        }
+        return -1
+    }, 1)
+    print(string_return.await())
+
+    future<int> string_throw = pool.submit(int mode -> {
+        for (const string word : make_words(mode)) {
+            throw 'set-string-failure'
+        }
+        return 0
+    }, 1)
+    try:
+        print(string_throw.await())
+    catch (string error):
+        print(error)
+
+    future<int> after_failure = pool.submit(int mode -> {
+        int total = 0
+        for (int value : make_ids(mode)) {
+            total += value
+        }
+        return total
+    }, 1)
+    print(after_failure.await())
+    print(integer_calls)
+    print(string_calls)
+    return 0
