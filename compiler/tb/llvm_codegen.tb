@@ -331,13 +331,15 @@ string[] thread_pool_submit_supported_arg_types():
     return ['int', 'bool', 'string', 'int[]', 'bool[]', 'int[][]', 'bool[][]', 'string[]']
 
 string[] thread_pool_submit_supported_future_types():
-    return ['future<int>', 'future<bool>', 'future<string>', 'future<int[]>', 'future<int[][]>', 'future<num>']
+    return ['future<int>', 'future<bool>', 'future<string>', 'future<int[]>', 'future<int[][]>', 'future<string[]>', 'future<num>']
 
 bool llvm_thread_pool_submit_signature_supported(string future_type, string arg_type):
     future_type = normalize_llvm_type_name(future_type)
     arg_type = normalize_llvm_type_name(arg_type)
     if (future_type == 'future<num>'):
         return arg_type == 'void' || arg_type == 'num' || arg_type == 'int'
+    if (future_type == 'future<string[]>'):
+        return arg_type == 'void' || arg_type == 'string[]'
     if (arg_type == 'bool[]'):
         return future_type == 'future<int>' || future_type == 'future<bool>'
     if (arg_type == 'string[]'):
@@ -363,6 +365,8 @@ string llvm_thread_pool_submit_name(string future_type, string arg_type):
         return '@tb_thread_pool_submit_int_array'
     if (future_type == 'future<int[][]>' && arg_type == 'void'):
         return '@tb_thread_pool_submit_int_array_array'
+    if (future_type == 'future<string[]>' && arg_type == 'void'):
+        return '@tb_thread_pool_submit_string_array'
     if (future_type == 'future<num>' && arg_type == 'void'):
         return '@tb_thread_pool_submit_num'
     if (future_type == 'future<num>' && arg_type == 'num'):
@@ -415,6 +419,8 @@ string llvm_thread_pool_submit_name(string future_type, string arg_type):
         return '@tb_thread_pool_submit_int_array_int_array_array'
     if (future_type == 'future<int[][]>' && arg_type == 'int[][]'):
         return '@tb_thread_pool_submit_int_array_array_int_array_array'
+    if (future_type == 'future<string[]>' && arg_type == 'string[]'):
+        return '@tb_thread_pool_submit_string_array_string_array'
     if (future_type == 'future<int>' && arg_type == 'int[]'):
         return '@tb_thread_pool_submit_i64_int_array'
     if (future_type == 'future<int>' && arg_type == 'int[][]'):
@@ -469,6 +475,13 @@ string[] emit_thread_pool_runtime_declarations():
         'declare ptr @tb_future_int_array_array_await(ptr)',
         'declare i1 @tb_future_int_array_array_is_done(ptr)',
         'declare i1 @tb_future_int_array_array_wait_for(ptr, i64)',
+        'declare ptr @tb_thread_pool_submit_string_array(ptr, ptr)',
+        'declare ptr @tb_thread_pool_submit_string_array_string_array(ptr, ptr, ptr)',
+        'declare ptr @tb_future_string_array_retain(ptr)',
+        'declare void @tb_future_string_array_release(ptr)',
+        'declare ptr @tb_future_string_array_await(ptr)',
+        'declare i1 @tb_future_string_array_is_done(ptr)',
+        'declare i1 @tb_future_string_array_wait_for(ptr, i64)',
         'declare ptr @tb_future_i64_retain(ptr)',
         'declare void @tb_future_i64_release(ptr)',
         'declare i64 @tb_future_i64_await(ptr)',
@@ -2012,7 +2025,7 @@ bool temp_needs_backend_free(ParsedFunction function_ir, string temp_name):
         return false
     if (result_type == 'thread_pool'):
         return op.detail == 'call'
-    if (result_type == 'future<int>' || result_type == 'future<num>' || result_type == 'future<bool>' || result_type == 'future<string>' || result_type == 'future<int[]>' || result_type == 'future<int[][]>'):
+    if (result_type == 'future<int>' || result_type == 'future<num>' || result_type == 'future<bool>' || result_type == 'future<string>' || result_type == 'future<int[]>' || result_type == 'future<int[][]>' || result_type == 'future<string[]>'):
         return op.detail == 'method-call'
     if (result_type == 'string[]'):
         if (op.detail == 'index' && op.ownership_mode == 'owned'):
@@ -2156,6 +2169,8 @@ string emit_backend_release_ptr(string type_name, string ptr_name):
         return '  call void @tb_future_int_array_release(ptr ' + ptr_name + ')'
     if (type_name == 'future<int[][]>'):
         return '  call void @tb_future_int_array_array_release(ptr ' + ptr_name + ')'
+    if (type_name == 'future<string[]>'):
+        return '  call void @tb_future_string_array_release(ptr ' + ptr_name + ')'
     if (type_name == 'string[]'):
         return emit_string_array_release_ptr(ptr_name)
     if (type_name == 'string[][]'):
@@ -2529,6 +2544,9 @@ bool temp_is_future_int_array(ParsedFunction function_ir, string temp_name):
 bool temp_is_future_int_array_array(ParsedFunction function_ir, string temp_name):
     return normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, temp_name)) == 'future<int[][]>'
 
+bool temp_is_future_string_array(ParsedFunction function_ir, string temp_name):
+    return normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, temp_name)) == 'future<string[]>'
+
 
 string emit_thread_pool_owned_value(ParsedFunction function_ir, string temp_name, string temp_suffix):
     if (temp_needs_backend_free(function_ir, temp_name)):
@@ -2614,9 +2632,21 @@ string[] emit_future_int_array_array_materialize_if_needed(ParsedFunction functi
         return []
     return ['  ' + emit_future_int_array_array_owned_value(function_ir, temp_name, temp_suffix) + ' = call ptr @tb_future_int_array_array_retain(ptr ' + temp_ref(temp_name) + ')']
 
+string emit_future_string_array_owned_value(ParsedFunction function_ir, string temp_name, string temp_suffix):
+    if (temp_needs_backend_free(function_ir, temp_name)):
+        return temp_ref(temp_name)
+    return '%future.copy.' + temp_suffix
+
+string[] emit_future_string_array_materialize_if_needed(ParsedFunction function_ir, string temp_name, string temp_suffix):
+    if (temp_needs_backend_free(function_ir, temp_name)):
+        return []
+    if (!temp_is_future_string_array(function_ir, temp_name)):
+        return []
+    return ['  ' + emit_future_string_array_owned_value(function_ir, temp_name, temp_suffix) + ' = call ptr @tb_future_string_array_retain(ptr ' + temp_ref(temp_name) + ')']
+
 bool is_thread_pool_or_future_type(string type_name):
     type_name = normalize_llvm_type_name(type_name)
-    return is_thread_pool_type_name(type_name) || type_name == 'future<int>' || type_name == 'future<num>' || type_name == 'future<bool>' || type_name == 'future<string>' || type_name == 'future<int[]>' || type_name == 'future<int[][]>'
+    return is_thread_pool_type_name(type_name) || type_name == 'future<int>' || type_name == 'future<num>' || type_name == 'future<bool>' || type_name == 'future<string>' || type_name == 'future<int[]>' || type_name == 'future<int[][]>' || type_name == 'future<string[]>'
 
 string[] emit_thread_pool_or_future_materialize_if_needed(ParsedFunction function_ir, string temp_name, string type_name, string temp_suffix):
     type_name = normalize_llvm_type_name(type_name)
@@ -2634,6 +2664,8 @@ string[] emit_thread_pool_or_future_materialize_if_needed(ParsedFunction functio
         return emit_future_int_array_materialize_if_needed(function_ir, temp_name, temp_suffix)
     if (type_name == 'future<int[][]>'):
         return emit_future_int_array_array_materialize_if_needed(function_ir, temp_name, temp_suffix)
+    if (type_name == 'future<string[]>'):
+        return emit_future_string_array_materialize_if_needed(function_ir, temp_name, temp_suffix)
     return []
 
 string thread_pool_or_future_owned_value(ParsedFunction function_ir, string temp_name, string type_name, string temp_suffix):
@@ -2652,6 +2684,8 @@ string thread_pool_or_future_owned_value(ParsedFunction function_ir, string temp
         return emit_future_int_array_owned_value(function_ir, temp_name, temp_suffix)
     if (type_name == 'future<int[][]>'):
         return emit_future_int_array_array_owned_value(function_ir, temp_name, temp_suffix)
+    if (type_name == 'future<string[]>'):
+        return emit_future_string_array_owned_value(function_ir, temp_name, temp_suffix)
     return temp_ref(temp_name)
 
 string emit_thread_pool_or_future_local_binding(ParsedFunction function_ir, BindingIR binding, string temp_name, string temp_suffix):
@@ -7511,6 +7545,10 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
         if (op.args.length() != 2):
             throw 'unsupported llvm future<int[][]> await arity'
         return '  ' + lhs + ' = call ptr @tb_future_int_array_array_await(ptr ' + temp_ref(op.args[1]) + ')'
+    if (method_name == 'await' && method_base_type == 'future<string[]>'):
+        if (op.args.length() != 2):
+            throw 'unsupported llvm future<string[]> await arity'
+        return '  ' + lhs + ' = call ptr @tb_future_string_array_await(ptr ' + temp_ref(op.args[1]) + ')'
     if (method_name == 'is_done' && method_base_type == 'future<int>'):
         if (op.args.length() != 2):
             throw 'unsupported llvm future<int> is_done arity'
@@ -7535,6 +7573,10 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
         if (op.args.length() != 2):
             throw 'unsupported llvm future<int[][]> is_done arity'
         return '  ' + lhs + ' = call i1 @tb_future_int_array_array_is_done(ptr ' + temp_ref(op.args[1]) + ')'
+    if (method_name == 'is_done' && method_base_type == 'future<string[]>'):
+        if (op.args.length() != 2):
+            throw 'unsupported llvm future<string[]> is_done arity'
+        return '  ' + lhs + ' = call i1 @tb_future_string_array_is_done(ptr ' + temp_ref(op.args[1]) + ')'
     if (method_name == 'wait_for' && method_base_type == 'future<int>'):
         if (op.args.length() != 3):
             throw 'unsupported llvm future<int> wait_for arity'
@@ -7559,6 +7601,10 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
         if (op.args.length() != 3):
             throw 'unsupported llvm future<int[][]> wait_for arity'
         return '  ' + lhs + ' = call i1 @tb_future_int_array_array_wait_for(ptr ' + temp_ref(op.args[1]) + ', i64 ' + temp_ref(op.args[2]) + ')'
+    if (method_name == 'wait_for' && method_base_type == 'future<string[]>'):
+        if (op.args.length() != 3):
+            throw 'unsupported llvm future<string[]> wait_for arity'
+        return '  ' + lhs + ' = call i1 @tb_future_string_array_wait_for(ptr ' + temp_ref(op.args[1]) + ', i64 ' + temp_ref(op.args[2]) + ')'
     if (method_name == 'submit' && method_base_type == 'thread_pool'):
         if (op.args.length() != 3 && op.args.length() != 4):
             throw 'unsupported llvm thread_pool submit arity'
@@ -9791,6 +9837,15 @@ string[] emit_terminator(ParsedFunction function_ir, BlockIR block, TerminatorIR
             string returned_value = temp_ref(terminator.args[0])
             if (temp_is_future_int_array_array(function_ir, terminator.args[0]) && !temp_needs_backend_free(function_ir, terminator.args[0])):
                 returned_value = emit_future_int_array_array_owned_value(function_ir, terminator.args[0], 'return.' + temp_suffix)
+            for (string restore_line in emit_try_restore_lines(try_suffix, temp_suffix)):
+                lines.push(restore_line)
+            lines.push('  ret ptr ' + returned_value)
+            return lines
+        if (normalize_llvm_type_name(result_type) == 'future<string[]>'):
+            string[] lines = emit_future_string_array_materialize_if_needed(function_ir, terminator.args[0], 'return.' + temp_suffix)
+            string returned_value = temp_ref(terminator.args[0])
+            if (temp_is_future_string_array(function_ir, terminator.args[0]) && !temp_needs_backend_free(function_ir, terminator.args[0])):
+                returned_value = emit_future_string_array_owned_value(function_ir, terminator.args[0], 'return.' + temp_suffix)
             for (string restore_line in emit_try_restore_lines(try_suffix, temp_suffix)):
                 lines.push(restore_line)
             lines.push('  ret ptr ' + returned_value)

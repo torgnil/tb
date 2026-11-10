@@ -1,0 +1,82 @@
+string[] make_pack():
+    return ['north', 'south']
+
+string[] make_empty_pack():
+    string[] empty = []
+    return empty
+
+string[] return_pack(string[] values):
+    return values
+
+string[] select_first_pack(string[] values):
+    return [values[0]]
+
+string[] fail_pack(string[] values):
+    throw 'worker failure'
+
+int count_pack(string[] values):
+    return values.length()
+
+int main(string[] args):
+    thread_pool pool = thread_pool(1)
+
+    future<string[]> named = pool.submit(make_pack)
+    print(named.wait_for(1000))
+    print(named.is_done())
+    string[] first = named.await()
+    string[] second = named.await()
+    first[0] = 'changed'
+    print(second[0])
+    print(second[1])
+
+    future<string[]> inline = pool.submit(() -> make_pack())
+    string[] inline_result = inline.await()
+    print(inline_result[0])
+
+    future<string[]> inline_block = pool.submit(() -> {
+        return make_pack()
+    })
+    string[] block_result = inline_block.await()
+    print(block_result[1])
+
+    future<string[]> inline_conditional = pool.submit(() -> true ? make_pack() : make_empty_pack())
+    string[] conditional_result = inline_conditional.await()
+    print(conditional_result.length())
+
+    future<string> indexed = pool.submit(() -> make_pack()[0])
+    print(indexed.await())
+
+    string[] source = ['before', 'kept']
+    future<string[]> identity = pool.submit(return_pack, source)
+    source[0] = 'after'
+    string[] returned = identity.await()
+    print(returned[0])
+    returned[1] = 'changed'
+    string[] repeated = identity.await()
+    print(repeated[1])
+
+    future<string[]> selected = pool.submit(select_first_pack, source)
+    string[] selected_words = selected.await()
+    print(selected_words[0])
+
+    future<string[]> inline_identity = pool.submit(string[] values -> values, source)
+    source[0] = 'late'
+    string[] inline_snapshot = inline_identity.await()
+    print(inline_snapshot[0])
+    print(inline_snapshot[1])
+
+    future<string[]> empty = pool.submit(make_empty_pack)
+    string[] empty_result = empty.await()
+    print(empty_result.length())
+    print(empty_result.is_empty())
+
+    future<string[]> failed = pool.submit(fail_pack, source)
+    try:
+        failed.await()
+        print('missing failure')
+    catch (exception error):
+        print(error)
+
+    future<int> after_failure = pool.submit(count_pack, source)
+    print(after_failure.await())
+    return 0

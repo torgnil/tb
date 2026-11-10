@@ -50,6 +50,8 @@ typedef void* (*tb_int_array_array_from_bool_task_fn)(bool);
 typedef void* (*tb_int_array_array_from_string_task_fn)(char*);
 typedef void* (*tb_int_array_array_from_int_array_task_fn)(void*);
 typedef void* (*tb_int_array_array_from_int_array_array_task_fn)(void*);
+typedef void* (*tb_string_array_task_fn)(void);
+typedef void* (*tb_string_array_from_string_array_task_fn)(void*);
 typedef tb_num (*tb_num_task_fn)(void);
 typedef tb_num (*tb_num_from_num_task_fn)(tb_num);
 typedef tb_num (*tb_num_from_i64_task_fn)(int64_t);
@@ -112,6 +114,7 @@ typedef struct tb_future_int_array {
 } tb_future_int_array;
 
 typedef tb_future_int_array tb_future_int_array_array;
+typedef tb_future_int_array tb_future_string_array;
 
 typedef enum tb_task_kind {
     TB_TASK_KIND_I64_FROM_I64 = 1,
@@ -152,7 +155,9 @@ typedef enum tb_task_kind {
     TB_TASK_KIND_I64_FROM_STRING_ARRAY = 36,
     TB_TASK_KIND_BOOL_FROM_STRING_ARRAY = 37,
     TB_TASK_KIND_I64_FROM_BOOL_ARRAY_ARRAY = 38,
-    TB_TASK_KIND_BOOL_FROM_BOOL_ARRAY_ARRAY = 39
+    TB_TASK_KIND_BOOL_FROM_BOOL_ARRAY_ARRAY = 39,
+    TB_TASK_KIND_STRING_ARRAY = 40,
+    TB_TASK_KIND_STRING_ARRAY_FROM_STRING_ARRAY = 41
 } tb_task_kind;
 
 typedef struct tb_task {
@@ -200,6 +205,8 @@ typedef struct tb_task {
         tb_int_array_array_from_string_task_fn int_array_array_from_string_fn;
         tb_int_array_array_from_int_array_task_fn int_array_array_from_int_array_fn;
         tb_int_array_array_from_int_array_array_task_fn int_array_array_from_int_array_array_fn;
+        tb_string_array_task_fn string_array_fn;
+        tb_string_array_from_string_array_task_fn string_array_from_string_array_fn;
         tb_num_task_fn num_fn;
         tb_num_from_num_task_fn num_from_num_fn;
         tb_num_from_i64_task_fn num_from_i64_fn;
@@ -211,6 +218,7 @@ typedef struct tb_task {
         tb_future_string* string_future;
         tb_future_int_array* int_array_future;
         tb_future_int_array_array* int_array_array_future;
+        tb_future_string_array* string_array_future;
     } future;
     struct tb_task* next;
 } tb_task;
@@ -676,11 +684,26 @@ static void* tb_thread_pool_worker(void* raw_pool) {
             pthread_cond_broadcast(&task->future.string_future->cond);
             pthread_mutex_unlock(&task->future.string_future->mutex);
             tb_future_string_release_internal(task->future.string_future);
+        } else if (task->kind == TB_TASK_KIND_STRING_ARRAY && caught == 0) {
+            tb_future_int_array_complete(task->future.string_array_future, task->function.string_array_fn());
+        } else if (task->kind == TB_TASK_KIND_STRING_ARRAY_FROM_STRING_ARRAY && caught == 0) {
+            void* input = task->arg.string_arg;
+            void* result = task->function.string_array_from_string_array_fn(input);
+            /* An identity result transfers the snapshot to the future. */
+            if (result != input) {
+                tb_thread_pool_string_array_snapshot_free(input);
+            }
+            tb_future_int_array_complete(task->future.string_array_future, result);
         } else if (caught != 0) {
             /* The throw transfers an owned message; task argument cleanup is independent. */
             char* error = __tb_exception_message;
             __tb_exception_message = NULL;
-            if (task->kind == TB_TASK_KIND_INT_ARRAY_ARRAY || task->kind == TB_TASK_KIND_INT_ARRAY_ARRAY_FROM_I64 || task->kind == TB_TASK_KIND_INT_ARRAY_ARRAY_FROM_BOOL || task->kind == TB_TASK_KIND_INT_ARRAY_ARRAY_FROM_STRING || task->kind == TB_TASK_KIND_INT_ARRAY_ARRAY_FROM_INT_ARRAY || task->kind == TB_TASK_KIND_INT_ARRAY_ARRAY_FROM_INT_ARRAY_ARRAY) {
+            if (task->kind == TB_TASK_KIND_STRING_ARRAY || task->kind == TB_TASK_KIND_STRING_ARRAY_FROM_STRING_ARRAY) {
+                if (task->kind == TB_TASK_KIND_STRING_ARRAY_FROM_STRING_ARRAY) {
+                    tb_thread_pool_string_array_snapshot_free(task->arg.string_arg);
+                }
+                tb_future_int_array_fail(task->future.string_array_future, error);
+            } else if (task->kind == TB_TASK_KIND_INT_ARRAY_ARRAY || task->kind == TB_TASK_KIND_INT_ARRAY_ARRAY_FROM_I64 || task->kind == TB_TASK_KIND_INT_ARRAY_ARRAY_FROM_BOOL || task->kind == TB_TASK_KIND_INT_ARRAY_ARRAY_FROM_STRING || task->kind == TB_TASK_KIND_INT_ARRAY_ARRAY_FROM_INT_ARRAY || task->kind == TB_TASK_KIND_INT_ARRAY_ARRAY_FROM_INT_ARRAY_ARRAY) {
                 if (task->kind == TB_TASK_KIND_INT_ARRAY_ARRAY_FROM_STRING) {
                     tb_runtime_release(task->arg.string_arg);
                 }
@@ -1216,6 +1239,29 @@ tb_future_int_array_array* tb_thread_pool_submit_int_array_array_int_array_array
     task->arg.string_arg = tb_thread_pool_int_array_array_snapshot(arg);
     task->function.int_array_array_from_int_array_array_fn = function;
     task->future.int_array_array_future = future;
+    task->next = NULL;
+    tb_thread_pool_enqueue(pool, task);
+    return future;
+}
+
+tb_future_string_array* tb_thread_pool_submit_string_array(tb_thread_pool* pool, tb_string_array_task_fn function) {
+    tb_future_string_array* future = tb_future_int_array_new(tb_thread_pool_string_array_snapshot_free);
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
+    task->kind = TB_TASK_KIND_STRING_ARRAY;
+    task->function.string_array_fn = function;
+    task->future.string_array_future = future;
+    task->next = NULL;
+    tb_thread_pool_enqueue(pool, task);
+    return future;
+}
+
+tb_future_string_array* tb_thread_pool_submit_string_array_string_array(tb_thread_pool* pool, tb_string_array_from_string_array_task_fn function, void* arg) {
+    tb_future_string_array* future = tb_future_int_array_new(tb_thread_pool_string_array_snapshot_free);
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
+    task->kind = TB_TASK_KIND_STRING_ARRAY_FROM_STRING_ARRAY;
+    task->arg.string_arg = tb_thread_pool_string_array_snapshot(arg);
+    task->function.string_array_from_string_array_fn = function;
+    task->future.string_array_future = future;
     task->next = NULL;
     tb_thread_pool_enqueue(pool, task);
     return future;
@@ -2021,5 +2067,41 @@ bool tb_future_int_array_array_is_done(tb_future_int_array_array* future) {
 }
 
 bool tb_future_int_array_array_wait_for(tb_future_int_array_array* future, int64_t timeout_ms) {
+    return tb_future_int_array_wait_for(future, timeout_ms);
+}
+
+tb_future_string_array* tb_future_string_array_retain(tb_future_string_array* future) {
+    return tb_future_int_array_retain(future);
+}
+
+void tb_future_string_array_release(tb_future_string_array* future) {
+    tb_future_int_array_release(future);
+}
+
+void* tb_future_string_array_await(tb_future_string_array* future) {
+    void* result = NULL;
+    bool failed = false;
+    char* error = NULL;
+    pthread_mutex_lock(&future->mutex);
+    while (!future->done) {
+        pthread_cond_wait(&future->cond, &future->mutex);
+    }
+    failed = future->failed;
+    error = future->error;
+    if (!failed) {
+        result = tb_thread_pool_string_array_snapshot(future->result);
+    }
+    pthread_mutex_unlock(&future->mutex);
+    if (failed) {
+        tb_rethrow_async_error(error);
+    }
+    return result;
+}
+
+bool tb_future_string_array_is_done(tb_future_string_array* future) {
+    return tb_future_int_array_is_done(future);
+}
+
+bool tb_future_string_array_wait_for(tb_future_string_array* future, int64_t timeout_ms) {
     return tb_future_int_array_wait_for(future, timeout_ms);
 }
