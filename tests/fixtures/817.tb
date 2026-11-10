@@ -1,0 +1,35 @@
+int calls = 0
+
+bool[] make_flags(int count):
+    calls += 1
+    if (count == 0) {
+        return []
+    }
+    return [true, false]
+
+int main():
+    thread_pool pool = thread_pool(1)
+    future<int> stopped = pool.submit(int count -> {
+        int total = 0
+        for (bool flag : make_flags(count)) {
+            if (flag) {
+                total += 1
+                break
+            }
+        }
+        return total
+    }, 2)
+    print(stopped.await())
+
+    future<int> empty = pool.submit(int count -> {
+        int total = 0
+        for (bool flag : make_flags(count)) {
+            if (flag) {
+                total += 1
+            }
+        }
+        return total
+    }, 0)
+    print(empty.await())
+    print(calls)
+    return 0

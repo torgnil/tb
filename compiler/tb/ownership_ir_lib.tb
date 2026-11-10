@@ -445,10 +445,11 @@ ParsedFunction materialize_owned_foreach_iterables(ParsedFunction function_ir):
                 string source_name = op.args[0].substring(0)
                 LinearInstruction source = ownership_lookup_temp_instruction(function_ir, source_name)
                 string declaration = ''
-                if (normalize_llvm_type_name(op.result_type) == 'int[]' && source.kind == 'value' && normalize_llvm_type_name(source.result_type) == 'int[]' && ownership_is_owned_mode(source.ownership_mode)):
+                string iterable_type = normalize_llvm_type_name(op.result_type)
+                if ((iterable_type == 'int[]' || iterable_type == 'bool[]') && source.kind == 'value' && normalize_llvm_type_name(source.result_type) == iterable_type && ownership_is_owned_mode(source.ownership_mode)):
                     string local_name = 'foreach.' + marker_name
-                    declaration = 'int[] ' + local_name
-                    locals.push(BindingIR('int[]', local_name))
+                    declaration = iterable_type + ' ' + local_name
+                    locals.push(BindingIR(iterable_type, local_name))
                 marker_names.push(marker_name)
                 source_names.push(source_name)
                 owned_declarations.push(declaration)
@@ -467,7 +468,8 @@ ParsedFunction materialize_owned_foreach_iterables(ParsedFunction function_ir):
                 if (declaration != ''):
                     string local_name = ir_parse_binding_decl(declaration).name
                     instructions.push(LinearInstruction('set', '', '', '', declaration, [source_names[marker_index]]))
-                    instructions.push(LinearInstruction('value', op.lhs, 'int[]', 'borrowed', 'identifier', [local_name]))
+                    string iterable_type = ir_parse_binding_decl(declaration).type_name
+                    instructions.push(LinearInstruction('value', op.lhs, iterable_type, 'borrowed', 'identifier', [local_name]))
                 continue
             if (op.kind == 'foreach_end'):
                 int marker_index = ownership_foreach_marker_index(marker_names, op.detail)
