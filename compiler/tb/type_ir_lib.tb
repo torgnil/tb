@@ -305,7 +305,7 @@ private RefineInstructionsResult contextualize_direct_user_arrays(LinearInstruct
     return RefineInstructionsResult(instructions, temp_types)
 
 private bool is_supported_deep_grid_key_map_value_type(string value_type):
-    return value_type == 'bool' || value_type == 'int' || value_type == 'bool[]' || value_type == 'int[]'
+    return value_type == 'bool' || value_type == 'int' || value_type == 'string' || value_type == 'bool[]' || value_type == 'int[]'
 
 private bool is_supported_array_key_map_type(string type_name):
     string normalized = normalize_llvm_type_name(type_name)
@@ -316,6 +316,12 @@ private bool is_supported_array_key_map_type(string type_name):
     if (key_type != 'int[]'):
         return false
     return value_type == 'int' || value_type == 'bool' || value_type == 'string' || value_type == 'bool[]' || value_type == 'int[]' || value_type == 'string[]'
+
+private bool is_array_key_string_map_type(string type_name):
+    string normalized = normalize_llvm_type_name(type_name)
+    string key_type = normalize_llvm_type_name(map_key_type(normalized))
+    string value_type = normalize_llvm_type_name(map_value_type(normalized))
+    return (key_type == 'int[]' || key_type == 'int[][]') && value_type == 'string'
 
 RefineInstructionsResult contextualize_array_map_key(LinearInstruction[] instructions, string[] temp_types, string map_name, string key_name):
     string map_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, map_name))
@@ -730,7 +736,7 @@ bool integer_enum_map_type_is_supported(string type_name, EnumTypeIR[] enums):
     if (key_type == 'unknown' || value_type == 'unknown'):
         return false
     string normalized_value_type = normalize_integer_enum_map_value_type(value_type, enums)
-    if (integer_enum_nested_array_exists(enums, key_type) && normalized_value_type != 'bool' && normalized_value_type != 'int' && normalized_value_type != 'bool[]' && normalized_value_type != 'int[]'):
+    if (integer_enum_nested_array_exists(enums, key_type) && !is_supported_deep_grid_key_map_value_type(normalized_value_type)):
         return false
     return integer_enum_map_component_is_supported(key_type, enums) && integer_enum_map_value_is_supported(value_type, enums)
 
@@ -894,7 +900,7 @@ RefineInstructionsResult contextualize_map_literal_rows(LinearInstruction[] inst
     string row_type = normalize_llvm_type_name(map_value_type(normalized_expected_type))
     bool array_rows = is_supported_empty_map_array_value_type(record_names, row_type)
     bool map_rows = row_type.starts_with('map<') && row_type.ends_with('>')
-    bool array_key_map = (key_type == 'int[]' && (row_type == 'int' || row_type == 'bool' || row_type == 'string' || row_type == 'bool[]' || row_type == 'string[]')) || (key_type == 'int[][]' && (row_type == 'bool' || row_type == 'int' || row_type == 'bool[]' || row_type == 'int[]'))
+    bool array_key_map = (key_type == 'int[]' && (row_type == 'int' || row_type == 'bool' || row_type == 'string' || row_type == 'bool[]' || row_type == 'string[]')) || (key_type == 'int[][]' && (row_type == 'bool' || row_type == 'int' || row_type == 'string' || row_type == 'bool[]' || row_type == 'int[]'))
     if ((key_type != 'int' && key_type != 'string' && !array_key_map) || (!array_key_map && !array_rows && !map_rows)):
         return RefineInstructionsResult(instructions, temp_types)
     LinearInstruction map_op = lookup_instruction(instructions, map_name)
@@ -1684,7 +1690,7 @@ private bool is_map_string_compound_add_value(LinearInstruction op, LinearInstru
     for (LinearInstruction assignment in instructions):
         if (assignment.kind != 'assign_index' || assignment.args.length() != 3 || assignment.args[2] != op.lhs):
             continue
-        if (normalize_llvm_type_name(lookup_temp_type_slot(temp_types, assignment.args[0])) != 'map<int[], string>'):
+        if (!is_array_key_string_map_type(lookup_temp_type_slot(temp_types, assignment.args[0]))):
             continue
         LinearInstruction old_value = lookup_instruction_pair(earlier_block_instructions, prior_instructions, op.args[1])
         if (old_value.kind != 'value' || old_value.detail != 'index' || old_value.args.length() != 2):
@@ -2746,7 +2752,7 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
             return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
         if (base_type.starts_with('map<')):
             string result_type = map_value_type(base_type)
-            if (normalize_llvm_type_name(base_type) == 'map<int[], string>'):
+            if (is_array_key_string_map_type(base_type)):
                 return refined_value_op(op, result_type, 'managed')
             if (normalize_llvm_type_name(base_type) == 'map<int[], bool[]>'):
                 return refined_value_op(op, result_type, 'owned')
@@ -3151,7 +3157,7 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                         throw 'map element assignment requires ' + expected_value_type + '; got ' + actual_value_type
         if (current.kind == 'assign_index_add' && current.args.length() >= 3):
             string compound_base_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[0]))
-            if (compound_base_type == 'map<int[], string>'):
+            if (is_array_key_string_map_type(compound_base_type)):
                 string compound_value_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[2]))
                 if (compound_value_type != 'string' && compound_value_type != 'int'):
                     throw 'map string += requires string or int value; got ' + compound_value_type
@@ -3424,7 +3430,7 @@ ParsedFunction normalize_array_string_compound_assignments(ParsedFunction functi
         if (op.kind != 'assign_index' || op.args.length() != 3):
             continue
         string map_type = normalize_llvm_type_name(lookup_temp_type(all_instructions, op.args[0]))
-        if (map_type != 'map<int[], string>'):
+        if (!is_array_key_string_map_type(map_type)):
             continue
         LinearInstruction add_op = lookup_instruction(all_instructions, op.args[2])
         if (add_op.kind != 'value' || add_op.detail != 'binary' || add_op.args.length() != 3):
@@ -3489,8 +3495,8 @@ ParsedFunction guard_array_key_map_assignments(ParsedFunction function_ir):
         string base_type = normalize_llvm_type_name(lookup_temp_type(all_instructions, op.args[0]))
         if (!is_supported_array_key_map_type(base_type)):
             continue
-        bool preserve_old_string = op.kind == 'assign_index_add' && base_type == 'map<int[], string>'
-        if (op.kind == 'assign_index_add' && base_type != 'map<int[], string>' && base_type != 'map<int[], int>'):
+        bool preserve_old_string = op.kind == 'assign_index_add' && is_array_key_string_map_type(base_type)
+        if (op.kind == 'assign_index_add' && !preserve_old_string && base_type != 'map<int[], int>'):
             continue
         bool found_key = false
         for (LinearInstruction key_op in all_instructions):

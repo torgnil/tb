@@ -1964,7 +1964,7 @@ bool temp_is_owned_managed_method_result(ParsedFunction function_ir, LinearInstr
         return true
     if (method_name == 'values' && result_type == 'bool[][]' && (receiver_type == 'map<int[], bool[]>' || receiver_type == 'map<int, bool[]>' || receiver_type == 'map<string, bool[]>' || receiver_type == 'map<int[][], bool[]>')):
         return true
-    if (method_name == 'values' && result_type == 'string[]' && receiver_type == 'map<int[], string>'):
+    if (method_name == 'values' && result_type == 'string[]' && llvm_is_array_key_string_map_type(receiver_type)):
         return true
     if (method_name == 'values' && result_type == 'string[][]' && receiver_type.starts_with('map<') && normalize_llvm_type_name(map_value_type(receiver_type)) == 'string[]'):
         return true
@@ -2005,7 +2005,7 @@ bool temp_needs_backend_free(ParsedFunction function_ir, string temp_name):
                 return temp_is_owned_string_array_index_result(function_ir, temp_name)
             if (index_base_type == 'set<string>'):
                 return true
-            if (index_base_type == 'map<int[], string>'):
+            if (llvm_is_array_key_string_map_type(index_base_type)):
                 return true
         return false
     if (op.kind != 'value'):
@@ -2925,7 +2925,13 @@ string mangle_backend_type(string type_name):
     throw 'unsupported backend type mangling: ' + type_name
 
 private bool llvm_is_supported_deep_grid_key_map_value_type(string value_type):
-    return value_type == 'bool' || value_type == 'int' || value_type == 'bool[]' || value_type == 'int[]'
+    return value_type == 'bool' || value_type == 'int' || value_type == 'string' || value_type == 'bool[]' || value_type == 'int[]'
+
+private bool llvm_is_array_key_string_map_type(string type_name):
+    string normalized = normalize_llvm_type_name(type_name)
+    string key_type = normalize_llvm_type_name(map_key_type(normalized))
+    string value_type = normalize_llvm_type_name(map_value_type(normalized))
+    return (key_type == 'int[]' || key_type == 'int[][]') && value_type == 'string'
 
 private string llvm_map_suffix(string type_name):
     string key_type = normalize_llvm_type_name(map_key_type(type_name))
@@ -3860,7 +3866,7 @@ void analyze_program_features(ProgramIR program, string[] map_types):
                 if (op.kind == 'assign_index_add' && op.args.length() >= 3):
                     string add_base_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0]))
                     string add_value_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[2]))
-                    if (add_base_type == 'map<int[], string>' && add_value_type == 'int'):
+                    if (llvm_is_array_key_string_map_type(add_base_type) && add_value_type == 'int'):
                         needs_int_to_string = true
                 if (op.kind == 'release_local'):
                     BindingIR binding = ir_parse_binding_decl(op.detail)
@@ -4369,7 +4375,7 @@ bool program_uses_int_to_string(ProgramIR program):
                 if (op.kind == 'assign_index_add' && op.args.length() >= 3):
                     string add_base_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0]))
                     string add_value_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[2]))
-                    if (add_base_type == 'map<int[], string>' && add_value_type == 'int'):
+                    if (llvm_is_array_key_string_map_type(add_base_type) && add_value_type == 'int'):
                         return true
                 if (op.kind == 'value' && op.detail == 'binary'):
                     if (!op.args.is_empty() && op.args[0] == '+'):
@@ -8999,7 +9005,7 @@ string emit_assign_index_add_instruction(ProgramIR program, ParsedFunction funct
         if (key_release != ''):
             lines.push(key_release)
         return join_llvm_strings(lines, '\n')
-    if (base_type == 'map<int[], string>'):
+    if (llvm_is_array_key_string_map_type(base_type)):
         string snapshot_slot = map_key_guard_value_slot_ref(map_key_guard_try_suffix_for_key(function_ir, op.args[1]))
         string old_name = '%assign.add.old.' + temp_suffix
         string new_name = '%assign.add.new.' + temp_suffix
@@ -9350,6 +9356,7 @@ string emit_instruction(ProgramIR program, ParsedFunction function_ir, string bl
         string try_suffix = catch_try_suffix(function_ir, op.detail)
         if (try_suffix == '' || op.args.length() != 2):
             throw 'map string compound assignment guard is missing its try site'
+        string base_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0]))
         string old_name = '%tb.map.key.guard.value.old.' + temp_suffix
         string is_missing_name = '%tb.map.key.guard.value.missing.' + temp_suffix
         string empty_label = 'tb.map.key.guard.value.empty.' + temp_suffix
@@ -9359,7 +9366,7 @@ string emit_instruction(ProgramIR program, ParsedFunction function_ir, string bl
         string retained_name = '%tb.map.key.guard.value.retained.' + temp_suffix
         string result_name = '%tb.map.key.guard.value.snapshot.' + temp_suffix
         return join_llvm_strings([
-            '  ' + old_name + ' = call ptr ' + llvm_map_get_name('map<int[], string>') + '(ptr ' + temp_ref(op.args[0]) + ', ptr ' + temp_ref(op.args[1]) + ')',
+            '  ' + old_name + ' = call ptr ' + llvm_map_get_name(base_type) + '(ptr ' + temp_ref(op.args[0]) + ', ptr ' + temp_ref(op.args[1]) + ')',
             '  ' + is_missing_name + ' = icmp eq ptr ' + old_name + ', null',
             '  br i1 ' + is_missing_name + ', label %' + empty_label + ', label %' + retain_label,
             empty_label + ':',

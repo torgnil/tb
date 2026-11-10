@@ -1,0 +1,72 @@
+enum Code { HOME = 1, WORK = 2 }
+
+map<Code[][], string> GLOBAL_GRID_LABELS = {}
+
+record GridLabelStore(map<int[][], string> labels);
+
+string owned_label(int token):
+    return 'owned-' + token.to_string()
+
+map<int[][], string> make_grid_labels():
+    return {[[3], []]: owned_label(3), [[4]]: 'temporary'}
+
+map<int[][], string> return_grid_labels(map<int[][], string> labels):
+    return labels
+
+string replace_grid_label(map<int[][], string> labels, int[][] key, bool should_throw):
+    labels[key] = 'RHS replacement'
+    if (should_throw):
+        throw 'grid string RHS failed'
+    return '!'
+
+int main():
+    map<int[][], string> labels = {}
+    int[][] source_key = [[1, 2], [], [3]]
+    string borrowed_label = 'borrowed'
+    labels[source_key] = borrowed_label
+    labels[[[4], []]] = owned_label(4)
+    source_key[0][0] = 9
+    source_key[1] = [8]
+    print(labels[[[1, 2], [], [3]]])
+    print(labels.contains(source_key))
+    print(labels.contains([[1, 2], [], [3]]))
+
+    labels[[[1, 2], [], [3]]] = labels[[[1, 2], [], [3]]]
+    labels[[[1, 2], [], [3]]] += '-home'
+    labels[[[4], []]] += 7
+    labels[[[4], []]] += replace_grid_label(labels, [[4], []], false)
+    print(labels[[[4], []]])
+    try:
+        labels[[[4], []]] += replace_grid_label(labels, [[4], []], true)
+    catch (exception error):
+        print(error)
+    print(labels[[[4], []]])
+    labels[[[8]]] += 5
+    print(labels.values())
+    string[] snapshot = labels.values()
+    snapshot[0] = 'snapshot only'
+    labels[[[1, 2], [], [3]]] = owned_label(9)
+    print(snapshot)
+    print(labels.values())
+
+    map<int[][], string> returned = return_grid_labels(labels)
+    map<int[][], string> copied = returned
+    copied[[[1, 2], [], [3]]] = 'copy replacement'
+    print(copied[[[1, 2], [], [3]]])
+    print(returned[[[1, 2], [], [3]]])
+    print(labels[[[1, 2], [], [3]]])
+
+    map<Code[][], string> enum_labels = {[[Code.HOME], []]: owned_label(10)}
+    int[][] integer_key = [[1], []]
+    print(enum_labels[integer_key])
+    enum_labels[integer_key] = 'enum replacement'
+    print(enum_labels.values())
+
+    GLOBAL_GRID_LABELS[[[Code.WORK], []]] = owned_label(11)
+    print(GLOBAL_GRID_LABELS[[[2], []]])
+    GridLabelStore store = GridLabelStore({[[7], []]: 'record field'})
+    print(store.labels[[[7], []]])
+
+    map<int[][], string> temporary = make_grid_labels()
+    print(temporary.values())
+    return 0
