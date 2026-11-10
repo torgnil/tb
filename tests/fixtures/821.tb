@@ -1,0 +1,71 @@
+int calls = 0
+
+string[] make_words(int mode):
+    calls += 1
+    if (mode == 1) {
+        string[] empty = []
+        return empty
+    }
+    if (mode == 2) {
+        return ['boom']
+    }
+    return ['one', 'two']
+
+int text_length(string text):
+    return text.length()
+
+int main():
+    thread_pool pool = thread_pool(1)
+    future<int> sum = pool.submit(int mode -> {
+        int total = 0
+        for (const string word : make_words(mode)) {
+            total += text_length(word)
+        }
+        return total
+    }, 0)
+    print(sum.await())
+
+    future<int> empty = pool.submit(int mode -> {
+        int total = 0
+        for (string word : make_words(mode)) {
+            total += text_length(word)
+        }
+        return total
+    }, 1)
+    print(empty.await())
+
+    future<int> stopped = pool.submit(int mode -> {
+        int total = 0
+        for (string word : make_words(mode)) {
+            word = word + '!'
+            total += text_length(word)
+            break
+        }
+        return total
+    }, 0)
+    print(stopped.await())
+
+    future<int> early = pool.submit(int mode -> {
+        for (const string word : make_words(mode)) {
+            return word.length()
+        }
+        return -1
+    }, 0)
+    print(early.await())
+
+    future<int> failure = pool.submit(int mode -> {
+        int total = 0
+        for (const string word : make_words(mode)) {
+            if (word == 'boom') {
+                throw 'words-failure'
+            }
+            total += text_length(word)
+        }
+        return total
+    }, 2)
+    try:
+        print(failure.await())
+    catch (string error):
+        print(error)
+    print(calls)
+    return 0
