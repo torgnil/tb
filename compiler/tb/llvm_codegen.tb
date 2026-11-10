@@ -2959,13 +2959,19 @@ string mangle_backend_type(string type_name):
     throw 'unsupported backend type mangling: ' + type_name
 
 private bool llvm_is_supported_deep_grid_key_map_value_type(string value_type):
-    return value_type == 'bool' || value_type == 'int' || value_type == 'string' || value_type == 'bool[]' || value_type == 'int[]'
+    return value_type == 'bool' || value_type == 'int' || value_type == 'string' || value_type == 'bool[]' || value_type == 'int[]' || value_type == 'string[]'
 
 private bool llvm_is_array_key_string_map_type(string type_name):
     string normalized = normalize_llvm_type_name(type_name)
     string key_type = normalize_llvm_type_name(map_key_type(normalized))
     string value_type = normalize_llvm_type_name(map_value_type(normalized))
     return (key_type == 'int[]' || key_type == 'int[][]') && value_type == 'string'
+
+private bool llvm_is_array_key_string_array_map_type(string type_name):
+    string normalized = normalize_llvm_type_name(type_name)
+    string key_type = normalize_llvm_type_name(map_key_type(normalized))
+    string value_type = normalize_llvm_type_name(map_value_type(normalized))
+    return (key_type == 'int[]' || key_type == 'int[][]') && value_type == 'string[]'
 
 private string llvm_map_suffix(string type_name):
     string key_type = normalize_llvm_type_name(map_key_type(type_name))
@@ -9211,7 +9217,7 @@ string emit_assign_index_instruction(ProgramIR program, ParsedFunction function_
                 stored_value = emit_record_owned_value(function_ir, op.args[2], 'index.' + temp_suffix)
             stored_owned = 'true'
         if (normalize_llvm_type_name(map_key_type(base_type)) == 'int[]' || normalize_llvm_type_name(map_key_type(base_type)) == 'int[][]'):
-            if (value_type == 'string'):
+            if (value_type == 'string' || value_type == 'string[]'):
                 lines.push(emit_release_index_instruction(program, function_ir, LinearInstruction('release_index', '', '', '', '', [op.args[0], map_key_temp]), 'map.replace.' + temp_suffix))
             lines.push('  call void ' + llvm_map_set_by_key_name(base_type) + '(ptr ' + temp_ref(op.args[0]) + ', ptr ' + temp_ref(map_key_temp) + ', ' + llvm_type(value_type) + ' ' + stored_value + ', i1 ' + stored_owned + ')')
             string key_release = emit_owned_map_target_key_release(function_ir, op.args[1])
@@ -9533,7 +9539,7 @@ string emit_instruction(ProgramIR program, ParsedFunction function_ir, string bl
             return '  ; defer release_index ' + temp_ref(op.args[0]) + ' ' + temp_ref(op.args[1]) + ' until assign_index materializes the replacement'
         if (base_type.starts_with('map<')):
             string map_value = normalize_llvm_type_name(map_value_type(base_type))
-            if (map_value == 'int[]' || map_value == 'bool[]' || llvm_map_value_is_grid_or_record_array(map_value)):
+            if (map_value == 'int[]' || map_value == 'bool[]' || llvm_map_value_is_grid_or_record_array(map_value) || llvm_is_array_key_string_array_map_type(base_type)):
                 return '  ; defer release_index ' + temp_ref(op.args[0]) + ' ' + temp_ref(op.args[1]) + ' until assign_index prepares the replacement'
         return emit_release_index_instruction(program, function_ir, op, temp_suffix)
     if (op.kind == 'assign_index'):

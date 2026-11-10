@@ -305,7 +305,7 @@ private RefineInstructionsResult contextualize_direct_user_arrays(LinearInstruct
     return RefineInstructionsResult(instructions, temp_types)
 
 private bool is_supported_deep_grid_key_map_value_type(string value_type):
-    return value_type == 'bool' || value_type == 'int' || value_type == 'string' || value_type == 'bool[]' || value_type == 'int[]'
+    return value_type == 'bool' || value_type == 'int' || value_type == 'string' || value_type == 'bool[]' || value_type == 'int[]' || value_type == 'string[]'
 
 private bool is_supported_array_key_map_type(string type_name):
     string normalized = normalize_llvm_type_name(type_name)
@@ -322,6 +322,12 @@ private bool is_array_key_string_map_type(string type_name):
     string key_type = normalize_llvm_type_name(map_key_type(normalized))
     string value_type = normalize_llvm_type_name(map_value_type(normalized))
     return (key_type == 'int[]' || key_type == 'int[][]') && value_type == 'string'
+
+private bool is_array_key_string_array_map_type(string type_name):
+    string normalized = normalize_llvm_type_name(type_name)
+    string key_type = normalize_llvm_type_name(map_key_type(normalized))
+    string value_type = normalize_llvm_type_name(map_value_type(normalized))
+    return (key_type == 'int[]' || key_type == 'int[][]') && value_type == 'string[]'
 
 RefineInstructionsResult contextualize_array_map_key(LinearInstruction[] instructions, string[] temp_types, string map_name, string key_name):
     string map_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, map_name))
@@ -906,7 +912,7 @@ RefineInstructionsResult contextualize_map_literal_rows(LinearInstruction[] inst
     string row_type = normalize_llvm_type_name(map_value_type(normalized_expected_type))
     bool array_rows = is_supported_empty_map_array_value_type(record_names, row_type)
     bool map_rows = row_type.starts_with('map<') && row_type.ends_with('>')
-    bool array_key_map = (key_type == 'int[]' && (row_type == 'int' || row_type == 'bool' || row_type == 'string' || row_type == 'bool[]' || row_type == 'string[]')) || (key_type == 'int[][]' && (row_type == 'bool' || row_type == 'int' || row_type == 'string' || row_type == 'bool[]' || row_type == 'int[]'))
+    bool array_key_map = (key_type == 'int[]' && (row_type == 'int' || row_type == 'bool' || row_type == 'string' || row_type == 'bool[]' || row_type == 'string[]')) || (key_type == 'int[][]' && is_supported_deep_grid_key_map_value_type(row_type))
     if ((key_type != 'int' && key_type != 'string' && !array_key_map) || (!array_key_map && !array_rows && !map_rows)):
         return RefineInstructionsResult(instructions, temp_types)
     LinearInstruction map_op = lookup_instruction(instructions, map_name)
@@ -2765,7 +2771,7 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
             string normalized_map_type = normalize_llvm_type_name(base_type)
             if (normalized_map_type == 'map<int[], int[]>' || normalized_map_type == 'map<int[][], int[]>'):
                 return refined_value_op(op, result_type, 'owned')
-            if (normalize_llvm_type_name(base_type) == 'map<int[], string[]>'):
+            if (is_array_key_string_array_map_type(base_type)):
                 return refined_value_op(op, result_type, 'owned')
             return refined_value_op(op, result_type, refine_ownership_mode(op, result_type))
         return op

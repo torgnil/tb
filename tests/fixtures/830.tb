@@ -1,0 +1,89 @@
+enum Direction { NORTH = 1, EAST = 2 }
+
+map<Direction[][], string[]> GLOBAL_GRID_LABELS = {}
+
+record GridLabelStore(map<int[][], string[]> labels);
+
+map<int[][], string[]> copy_grid_labels(map<int[][], string[]> labels):
+    return labels
+
+string[] owned_labels(int token):
+    return ['owned-' + token.to_string(), 'second']
+
+int main():
+    map<int[][], string[]> churn = {[[7], []]: ['seed']}
+    int[][] churn_key = [[7], []]
+    int replacement_count = 0
+    while replacement_count < 32:
+        churn[churn_key] = churn[churn_key]
+        churn[churn_key] = owned_labels(replacement_count)
+        replacement_count += 1
+
+    map<int[], string[]> flat_labels = {[7]: ['flat seed']}
+    int[] flat_key = [7]
+    flat_labels[flat_key] = flat_labels[flat_key]
+    string[] flat_snapshot = flat_labels[flat_key]
+    flat_snapshot[0] = 'detached flat'
+    print(flat_labels[flat_key][0])
+    flat_labels[flat_key] = ['flat replacement']
+    print(flat_snapshot[0])
+    print(flat_labels[flat_key][0])
+
+    map<int[][], string[]> labels = {}
+    int[][] source_key = [[1, 2], [], [3]]
+    string[] source_row = ['north', 'south']
+    labels[source_key] = source_row
+    source_key[0][0] = 9
+    source_key[1] = [8]
+    source_row[0] = 'changed source'
+    print(labels[[[1, 2], [], [3]]][0])
+    print(labels.contains(source_key))
+
+    string[] read = labels[[[1, 2], [], [3]]]
+    read[0] = 'changed read'
+    print(labels[[[1, 2], [], [3]]][0])
+    labels[[[1, 2], [], [3]]] = labels[[[1, 2], [], [3]]]
+    print(labels[[[1, 2], [], [3]]][0])
+
+    labels[[[4], []]] = ['east', 'west']
+    labels[[[5]]] = []
+    string[][] snapshot = labels.values()
+    print(snapshot.length())
+    print(snapshot[0][0])
+    print(snapshot[1][0])
+    print(snapshot[2].length())
+    snapshot[0][0] = 'snapshot only'
+    print(labels[[[1, 2], [], [3]]][0])
+
+    labels[[[1, 2], [], [3]]] = owned_labels(9)
+    string[][] after_replace = labels.values()
+    print(after_replace[0][0])
+    print(after_replace[1][0])
+    print(after_replace[2].length())
+
+    map<int[][], string[]> returned = copy_grid_labels(labels)
+    map<int[][], string[]> copied = returned
+    copied[[[1, 2], [], [3]]] = ['copy']
+    print(labels[[[1, 2], [], [3]]][0])
+    print(copied[[[1, 2], [], [3]]][0])
+
+    string[] missing = labels[[[404]]]
+    print(missing.length())
+    missing.push('missing')
+    print(labels.contains([[404]]))
+    map<int[][], string[]> empty = {}
+    string[][] empty_values = empty.values()
+    print(empty_values.length())
+
+    map<Direction[][], string[]> enum_labels = {[[Direction.NORTH], []]: ['enum']}
+    int[][] integer_key = [[1], []]
+    print(enum_labels[integer_key][0])
+    enum_labels[integer_key] = ['enum replacement']
+    string[][] enum_values = enum_labels.values()
+    print(enum_values[0][0])
+
+    GLOBAL_GRID_LABELS[[[Direction.EAST], []]] = ['global']
+    print(GLOBAL_GRID_LABELS[[[2], []]][0])
+    GridLabelStore store = GridLabelStore({[[7], []]: ['record']})
+    print(store.labels[[[7], []]][0])
+    return 0
