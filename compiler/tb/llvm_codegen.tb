@@ -314,10 +314,10 @@ string normalize_llvm_type_name(string type_name):
         return 'string'
     return type_name
 
-bool is_thread_pool_type_name(string type_name):
+private bool is_thread_pool_type_name(string type_name):
     return normalize_llvm_type_name(type_name) == 'thread_pool'
 
-bool is_future_type_name(string type_name):
+private bool is_future_type_name(string type_name):
     type_name = normalize_llvm_type_name(type_name)
     return type_name.starts_with('future<') && type_name.ends_with('>')
 
@@ -327,13 +327,13 @@ string future_value_type_name(string type_name):
         return type_name.substring(7, type_name.length() - 1)
     return 'unknown'
 
-string[] thread_pool_submit_supported_arg_types():
+private string[] thread_pool_submit_supported_arg_types():
     return ['int', 'bool', 'string', 'int[]', 'bool[]', 'int[][]', 'bool[][]', 'string[]']
 
-string[] thread_pool_submit_supported_future_types():
+private string[] thread_pool_submit_supported_future_types():
     return ['future<int>', 'future<bool>', 'future<string>', 'future<int[]>', 'future<int[][]>', 'future<string[]>', 'future<num>']
 
-bool llvm_thread_pool_submit_signature_supported(string future_type, string arg_type):
+private bool llvm_thread_pool_submit_signature_supported(string future_type, string arg_type):
     future_type = normalize_llvm_type_name(future_type)
     arg_type = normalize_llvm_type_name(arg_type)
     if (future_type == 'future<num>'):
@@ -350,7 +350,7 @@ bool llvm_thread_pool_submit_signature_supported(string future_type, string arg_
         return future_type in thread_pool_submit_supported_future_types()
     return future_type in thread_pool_submit_supported_future_types() && arg_type in thread_pool_submit_supported_arg_types()
 
-string llvm_thread_pool_submit_name(string future_type, string arg_type):
+private string llvm_thread_pool_submit_name(string future_type, string arg_type):
     future_type = normalize_llvm_type_name(future_type)
     arg_type = normalize_llvm_type_name(arg_type)
     if (!llvm_thread_pool_submit_signature_supported(future_type, arg_type)):
@@ -439,7 +439,7 @@ string llvm_thread_pool_submit_name(string future_type, string arg_type):
         return '@tb_thread_pool_submit_bool_string_array'
     return ''
 
-string[] emit_thread_pool_runtime_declarations():
+private string[] emit_thread_pool_runtime_declarations():
     return [
         'declare ptr @tb_thread_pool_new(i64)',
         'declare ptr @tb_thread_pool_retain(ptr)',
