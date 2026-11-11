@@ -450,6 +450,14 @@ string array_callback_block_expression_type(Node node, SubmitLambdaScope scope, 
         return ''
     return submit_lambda_expression_type_context(node, scope, functions, true, callback_name)
 
+private string submit_lambda_indexed_grid_row_type(Node iterable, SubmitLambdaScope scope, Node[] functions):
+    if (iterable.kind != 'Index' || iterable.children.length() != 2 || iterable.children[0].kind != 'Identifier'):
+        return ''
+    int grid_index = submit_lambda_name_index(scope.names, iterable.children[0].value)
+    if (grid_index < 0 || (scope.types[grid_index] != 'int[][]' && scope.types[grid_index] != 'bool[][]')):
+        return ''
+    return submit_lambda_expression_type(iterable, scope, functions)
+
 private SubmitLambdaValidation validate_submit_lambda_foreach_statement(Node statement, SubmitLambdaScope scope, Node[] functions, int loop_depth, bool callback_context, string callback_name):
     if (statement.children.length() < 1):
         throw 'thread_pool.submit lambda foreach iterable must be a direct range call'
@@ -516,6 +524,14 @@ private SubmitLambdaValidation validate_submit_lambda_foreach_statement(Node sta
                     is_iterable = true
                     is_grid_row_binding = true
                     iterator_element_type = 'int[]'
+        else if (statement.children[0].kind == 'Index' && !callback_context):
+            string indexed_row_type = submit_lambda_indexed_grid_row_type(statement.children[0], scope, functions)
+            if (indexed_row_type == 'int[]'):
+                is_iterable = true
+                iterator_element_type = 'int'
+            else if (indexed_row_type == 'bool[]'):
+                is_iterable = true
+                iterator_element_type = 'bool'
         if (!is_iterable):
             throw 'thread_pool.submit lambda foreach iterable must be an int[], bool[], string[], int[][], or bool[][] binding, a declared int[], bool[], string[], int[][], bool[][], set<int>, or set<string> helper call, or a direct range call'
     BindingIR iterator = ir_parse_binding_decl(statement.value)
@@ -1370,6 +1386,8 @@ SubmitRangeListRewrite rewrite_submit_range_foreach_list(Node[] statements, stri
         if (statement.kind == 'ForEach'):
             Node iterable = statement.children[0]
             if (iterable.kind != 'Call' || iterable.value != 'range'):
+                if (iterable.kind == 'Index' && iterable.children.length() == 2 && iterable.children[0].kind == 'Identifier'):
+                    iterable = Node('IndexedRowSnapshotCopy', '', [iterable])
                 SubmitRangeListRewrite body = rewrite_submit_range_foreach_list(tail_nodes(statement.children, 1), current_names, current_index)
                 Node[] children = [iterable]
                 children = append_nodes(children, body.nodes)
@@ -2618,6 +2636,13 @@ TempIRResult lower_linear_value_ir(Node node, int next_temp):
         TempIRResult source = lower_linear_value_ir(node.children[0], next_temp)
         string name = temp_name(source.next_temp)
         LinearInstruction[] instructions = append_instructions(source.instructions, [LinearInstruction('value', name, 'unknown', 'unknown', 'bool-grid-snapshot-copy', [source.name])])
+        return TempIRResult(name, instructions, source.next_temp + 1)
+    if (node.kind == 'IndexedRowSnapshotCopy'):
+        if (node.children.length() != 1):
+            throw 'indexed row snapshot copy expects one value'
+        TempIRResult source = lower_linear_value_ir(node.children[0], next_temp)
+        string name = temp_name(source.next_temp)
+        LinearInstruction[] instructions = append_instructions(source.instructions, [LinearInstruction('value', name, 'unknown', 'unknown', 'indexed-row-snapshot-copy', [source.name])])
         return TempIRResult(name, instructions, source.next_temp + 1)
     if (node.kind == 'Array'):
         TempIRListResult items = lower_linear_values_ir(node.children, next_temp)

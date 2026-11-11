@@ -1,0 +1,79 @@
+bool replace_int_row(int[][] grid, int row_index):
+    grid[row_index] = []
+    return true
+
+bool clear_bool_row(bool[] row):
+    row.fill(false)
+    return true
+
+int main():
+    thread_pool pool = thread_pool(1)
+    int[][] rows = [[1, 2], [], [4, 5, 6]]
+
+    future<int> total = pool.submit(() -> {
+        int row_index = rows.length() - 1
+        int value_sum = 0
+        for (int value : rows[row_index]) {
+            if (replace_int_row(rows, row_index)) {
+                value_sum += value
+            }
+        }
+        return value_sum
+    })
+    print(total.await())
+    print(rows[2][0])
+
+    future<int> stopped = pool.submit(() -> {
+        int first = 0
+        for (int value : rows[0]) {
+            first = value
+            break
+        }
+        return first
+    })
+    print(stopped.await())
+
+    future<int> early = pool.submit(() -> {
+        for (int value : rows[2]) {
+            return value
+        }
+        return 0
+    })
+    print(early.await())
+
+    future<int> failure = pool.submit(() -> {
+        for (int value : rows[0]) {
+            throw 'row-snapshot-failure'
+        }
+        return 0
+    })
+    try:
+        print(failure.await())
+    catch (string error):
+        print(error)
+
+    bool[][] flags = [[true, false], [], [true, false, true]]
+    future<int> flag_total = pool.submit(bool[][] grid -> {
+        int row_index = grid.length() - 1
+        int true_count = 0
+        for (bool flag : grid[row_index]) {
+            if (clear_bool_row(grid[row_index])) {
+                if (flag) {
+                    true_count += 1
+                }
+            }
+        }
+        return true_count
+    }, flags)
+    print(flag_total.await())
+    print(flags[2][0] ? 1 : 0)
+
+    future<int> empty = pool.submit(bool[][] grid -> {
+        int count = 0
+        for (const bool flag : grid[1]) {
+            count += 1
+        }
+        return count
+    }, flags)
+    print(empty.await())
+    return 0

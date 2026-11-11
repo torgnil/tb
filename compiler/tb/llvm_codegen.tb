@@ -7915,6 +7915,15 @@ string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, Lin
         if (op.args.length() != 1 || normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0])) != 'bool[][]'):
             throw 'invalid internal bool[][] callback snapshot copy'
         return emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_bool_array_array_clone(ptr ' + temp_ref(op.args[0]) + ')')
+    if (op.detail == 'indexed-row-snapshot-copy'):
+        if (op.args.length() != 1):
+            throw 'indexed row snapshot copy expects one value'
+        string row_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0]))
+        if (row_type == 'int[]'):
+            return emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_int_array_clone(ptr ' + temp_ref(op.args[0]) + ')')
+        if (row_type == 'bool[]'):
+            return emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_bool_array_clone(ptr ' + temp_ref(op.args[0]) + ')')
+        throw 'invalid internal indexed row snapshot copy: ' + row_type
     if (op.detail == 'int'):
         return '  ' + lhs + ' = add i64 0, ' + op.args[0]
     if (op.detail == 'range-step-count'):

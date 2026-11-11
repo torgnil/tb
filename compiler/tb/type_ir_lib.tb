@@ -2184,6 +2184,13 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
         if (op.args.length() != 1 || normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[0])) != 'bool[][]'):
             throw 'invalid internal bool[][] callback snapshot copy'
         return refined_value_op(op, 'bool[][]', 'owned')
+    if (op.detail == 'indexed-row-snapshot-copy'):
+        if (op.args.length() != 1):
+            throw 'indexed row snapshot copy expects one value'
+        string row_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[0]))
+        if (row_type != 'int[]' && row_type != 'bool[]'):
+            throw 'invalid internal indexed row snapshot copy: ' + row_type
+        return refined_value_op(op, row_type, 'owned')
     if (op.detail == 'call'):
         if (op.args.is_empty()):
             return op
