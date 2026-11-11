@@ -515,11 +515,14 @@ string thread_pool_submit_result_type(FunctionSigIR[] functions, string function
     if (function_sig.name == ''):
         throw 'thread_pool.submit currently requires a top-level named function'
     if (function_sig.return_type == 'num'):
+        string parameter_type = ''
+        if (function_sig.param_types.length() == 1):
+            parameter_type = normalize_llvm_type_name(function_sig.param_types[0])
         if (argument_count == 0 && function_sig.param_types.is_empty()):
             return 'future<num>'
-        if (argument_count == 1 && function_sig.param_types.length() == 1 && function_sig.param_types[0] == 'num'):
+        if (argument_count == 1 && function_sig.param_types.length() == 1 && parameter_type == 'num'):
             return 'future<num>'
-        if (argument_count == 1 && function_sig.param_types.length() == 1 && function_sig.param_types[0] == 'int'):
+        if (argument_count == 1 && function_sig.param_types.length() == 1 && parameter_type == 'int'):
             return 'future<num>'
         throw 'thread_pool.submit currently supports num functions with signature num fn(), num fn(num), or num fn(int)'
     if (function_sig.return_type == 'string[]'):

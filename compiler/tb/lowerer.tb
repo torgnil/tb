@@ -48,7 +48,15 @@ bool submit_lambda_capture_type(string type_name):
     return submit_lambda_managed_type(type_name) || type_name == 'bool[][]'
 
 bool submit_lambda_result_type(string type_name):
-    return type_name == 'int' || type_name == 'bool' || type_name == 'string[]' || submit_lambda_managed_type(type_name)
+    return type_name == 'int' || type_name == 'bool' || type_name == 'num' || type_name == 'string[]' || submit_lambda_managed_type(type_name)
+
+private bool submit_lambda_numeric_type(string type_name):
+    return type_name == 'int' || type_name == 'num'
+
+private string submit_lambda_numeric_result_type(string left_type, string right_type):
+    if (left_type == 'num' || right_type == 'num'):
+        return 'num'
+    return 'int'
 
 int submit_lambda_array_capture_index(BindingIR[] captured):
     for (int index = 0; index < captured.length(); index += 1):
@@ -202,6 +210,8 @@ Node[] program_visible_function_nodes(Node[] declarations, string module_id):
 string submit_lambda_expression_type_context(Node node, SubmitLambdaScope scope, Node[] functions, bool array_callback_context, string callback_name):
     if (node.kind == 'Int'):
         return 'int'
+    if (node.kind == 'Num'):
+        return 'num'
     if (node.kind == 'Bool'):
         return 'bool'
     if (node.kind == 'String'):
@@ -269,8 +279,9 @@ string submit_lambda_expression_type_context(Node node, SubmitLambdaScope scope,
         if (node.children.length() != 1):
             return ''
         if (node.value == '-'):
-            if (submit_lambda_expression_type_context(node.children[0], scope, functions, array_callback_context, callback_name) == 'int'):
-                return 'int'
+            string operand_type = submit_lambda_expression_type_context(node.children[0], scope, functions, array_callback_context, callback_name)
+            if (submit_lambda_numeric_type(operand_type)):
+                return operand_type
             return ''
         if (node.value == '!' || node.value == 'not'):
             if (submit_lambda_expression_type_context(node.children[0], scope, functions, array_callback_context, callback_name) == 'bool'):
@@ -286,25 +297,29 @@ string submit_lambda_expression_type_context(Node node, SubmitLambdaScope scope,
         if (right_type == ''):
             return ''
         if (node.value == '+'):
-            if (left_type == 'int' && right_type == 'int'):
-                return 'int'
+            if (submit_lambda_numeric_type(left_type) && submit_lambda_numeric_type(right_type)):
+                return submit_lambda_numeric_result_type(left_type, right_type)
             if (left_type == 'string' && (right_type == 'string' || right_type == 'int')):
                 return 'string'
             if (left_type == 'int' && right_type == 'string'):
                 return 'string'
             return ''
-        if (node.value == '-' || node.value == '*' || node.value == '/' || node.value == '%' || node.value == '&' || node.value == '|' || node.value == '^' || node.value == '<<' || node.value == '>>'):
+        if (node.value == '-' || node.value == '*' || node.value == '/'):
+            if (submit_lambda_numeric_type(left_type) && submit_lambda_numeric_type(right_type)):
+                return submit_lambda_numeric_result_type(left_type, right_type)
+            return ''
+        if (node.value == '%' || node.value == '&' || node.value == '|' || node.value == '^' || node.value == '<<' || node.value == '>>'):
             if (left_type == 'int' && right_type == 'int'):
                 return 'int'
             return ''
         if (node.value == '<' || node.value == '<=' || node.value == '>' || node.value == '>='):
             if (left_type == 'string' && right_type == 'string'):
                 return 'bool'
-            if (left_type == 'int' && right_type == 'int'):
+            if (submit_lambda_numeric_type(left_type) && submit_lambda_numeric_type(right_type)):
                 return 'bool'
             return ''
         if (node.value == '==' || node.value == '!='):
-            if (left_type == right_type && (left_type == 'int' || left_type == 'bool' || left_type == 'string')):
+            if ((submit_lambda_numeric_type(left_type) && submit_lambda_numeric_type(right_type)) || (left_type == right_type && (left_type == 'bool' || left_type == 'string'))):
                 return 'bool'
             return ''
         if (node.value == '&&' || node.value == '||' || node.value == 'and' || node.value == 'or'):
@@ -341,7 +356,7 @@ string submit_lambda_expression_type_context(Node node, SubmitLambdaScope scope,
             if (array_callback_context):
                 if (!int_array_callback_helper_parameter(parameter)):
                     invalid_callback_parameter = true
-            else if (!(helper_decl_type == 'int' || helper_decl_type == 'bool' || helper_decl_type == 'bool[]' || helper_decl_type == 'string[]' || submit_lambda_managed_type(helper_decl_type))):
+            else if (!(helper_decl_type == 'int' || helper_decl_type == 'bool' || helper_decl_type == 'num' || helper_decl_type == 'bool[]' || helper_decl_type == 'string[]' || submit_lambda_managed_type(helper_decl_type))):
                 return ''
             parameter_count += 1
             index += 1
@@ -723,11 +738,12 @@ string validate_submit_lambda(Node lambda_node, Node[] functions, BindingIR[] ca
     if (lambda_node.children.length() != 1):
         throw 'thread_pool.submit lambda must have one supported parameter and a scalar body'
     SubmitLambdaScope initial_scope = SubmitLambdaScope([], [], [], [], '')
+    string parameter_type = ''
     if (lambda_node.kind == 'Lambda'):
         BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
-        string parameter_type = parameter.type_name
-        if (!(parameter_type == 'int' || parameter_type == 'bool' || submit_lambda_managed_task_parameter_type(parameter_type))):
-            throw 'thread_pool.submit lambda parameter must have type int, bool, string, int[], bool[], int[][], bool[][], or string[]'
+        parameter_type = parameter.type_name
+        if (!(parameter_type == 'int' || parameter_type == 'bool' || parameter_type == 'num' || submit_lambda_managed_task_parameter_type(parameter_type))):
+            throw 'thread_pool.submit lambda parameter must have type int, bool, num, string, int[], bool[], int[][], bool[][], or string[]'
         string[] const_names = []
         if (submit_lambda_managed_task_parameter_type(parameter_type)):
             const_names.push(parameter.name)
@@ -757,10 +773,18 @@ string validate_submit_lambda(Node lambda_node, Node[] functions, BindingIR[] ca
         SubmitLambdaBlockCheck block_check = validation.check
         if (!submit_lambda_result_type(block_check.return_type) || !block_check.returns_all_paths):
             throw 'thread_pool.submit lambda block must return a value on every path'
+        if (parameter_type == 'num' && block_check.return_type != 'num'):
+            throw 'thread_pool.submit lambda with a num parameter must return num'
+        if (block_check.return_type == 'num' && parameter_type != '' && parameter_type != 'int' && parameter_type != 'num'):
+            throw 'thread_pool.submit lambda returning num requires an int or num task parameter'
         return block_check.return_type
     string result_type = submit_lambda_expression_type(body, initial_scope, functions)
     if (!submit_lambda_result_type(result_type)):
-        throw 'thread_pool.submit lambda body must be an int, bool, string, int[], int[][], or string[] expression using only in-scope values and declared helper calls'
+        throw 'thread_pool.submit lambda body must be an int, bool, num, string, int[], int[][], or string[] expression using only in-scope values and declared helper calls'
+    if (parameter_type == 'num' && result_type != 'num'):
+        throw 'thread_pool.submit lambda with a num parameter must return num'
+    if (result_type == 'num' && parameter_type != '' && parameter_type != 'int' && parameter_type != 'num'):
+        throw 'thread_pool.submit lambda returning num requires an int or num task parameter'
     return result_type
 
 string[] submit_lambda_local_names(Node node, string[] names):
@@ -1473,6 +1497,19 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
                     throw 'thread_pool.submit lambda with a managed task parameter cannot capture values'
             worker_return_type = validate_submit_lambda(lambda_node, functions, captured)
             rewrite_worker = lambda_node.kind == 'Lambda'
+
+    if (rewrite_worker && worker_return_type == 'num'):
+        Node lambda_node = node.children[1]
+        if (lambda_node.kind == 'Lambda' && !captured.is_empty()):
+            throw 'thread_pool.submit lambda returning num cannot capture values with an explicit task parameter'
+        if (lambda_node.kind == 'Lambda0' && captured.length() > 1):
+            throw 'thread_pool.submit zero-argument lambda returning num may capture at most one int value'
+        if (lambda_node.kind == 'Lambda0' && captured.length() == 1):
+            string capture_type = captured[0].type_name
+            if (capture_type.starts_with('const ')):
+                capture_type = capture_type.substring(6)
+            if (capture_type != 'int'):
+                throw 'thread_pool.submit zero-argument lambda returning num may capture at most one int value'
 
     Node[] rewritten_children = []
     Node[] generated = []
