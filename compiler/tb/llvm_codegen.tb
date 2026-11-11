@@ -6130,6 +6130,10 @@ string emit_call_value_instruction_core(ProgramIR program, ParsedFunction functi
                 clone_name = '@tb_bootstrap_bool_array_array_clone'
             else if (call_arg1_type == 'string[][]'):
                 clone_name = '@tb_bootstrap_string_array_array_clone'
+            else if (call_arg1_type.ends_with('[]')):
+                string copy_record_name = record_name_from_type(array_item_type(call_arg1_type))
+                if (copy_record_name != '' && lookup_record_decl(program, copy_record_name).header != ''):
+                    clone_name = '@tb_bootstrap_record_array_clone_' + copy_record_name
             if (clone_name == ''):
                 throw 'unsupported llvm copy arg type: ' + call_arg1_type
             string[] copy_lines = ['  ' + lhs + ' = call ptr ' + clone_name + '(ptr ' + temp_ref(op.args[1]) + ')']

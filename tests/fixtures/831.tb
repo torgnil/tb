@@ -1,0 +1,49 @@
+record Entry(int value, int[] scores, string label);
+record Empty();
+
+Entry[] make_entries(int seed):
+    return [Entry(seed + 5, [seed + 50], 'temporary')]
+
+int main(string[] args):
+    int seed = args.length()
+    Entry[] source = [Entry(seed + 1, [seed + 10], 'owned')]
+    Entry[] direct = copy(source)
+    direct[0].value = seed + 2
+    direct[0].scores[0] = seed + 20
+    print(source[0].value - seed)
+    print(source[0].scores[0] - seed)
+    print(direct[0].value - seed)
+    print(direct[0].scores[0] - seed)
+
+    const Entry[] fixed = [Entry(seed + 3, [seed + 30], 'const')]
+    Entry[] method = fixed.copy()
+    method[0].value = seed + 4
+    method[0].scores[0] = seed + 40
+    print(fixed[0].value - seed)
+    print(fixed[0].scores[0] - seed)
+    print(method[0].value - seed)
+    print(method[0].scores[0] - seed)
+
+    Entry[] owned_direct = copy(make_entries(seed))
+    Entry[] owned_method = make_entries(seed).copy()
+    owned_direct[0].value = seed + 6
+    owned_method[0].scores[0] = seed + 70
+    print(owned_direct[0].value - seed)
+    print(owned_method[0].scores[0] - seed)
+
+    Entry original = Entry(seed + 7, [seed + 70], 'original')
+    Entry[] source_from_local = [original]
+    Entry[] local_copy = source_from_local.copy()
+    local_copy[0].value = seed + 8
+    print(original.value - seed)
+    print(source_from_local[0].value - seed)
+    print(local_copy[0].value - seed)
+
+    Entry[] empty = []
+    Entry[] empty_direct = copy(empty)
+    Entry[] empty_method = empty.copy()
+    print(empty_direct.length())
+    print(empty_method.length())
+    Empty[] empty_records = [Empty()]
+    print(copy(empty_records).length())
+    return 0

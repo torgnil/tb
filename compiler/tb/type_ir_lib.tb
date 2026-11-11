@@ -1646,9 +1646,11 @@ bool is_managed_ir_type(string type_name):
 bool ownership_is_owned_mode(string ownership_mode):
     return ownership_mode == 'owned' || ownership_mode == 'managed'
 
-bool is_array_copy_type(string type_name):
+private bool is_array_copy_type(string type_name, string[] record_names):
     type_name = normalize_llvm_type_name(type_name)
-    return type_name == 'int[]' || type_name == 'bool[]' || type_name == 'string[]' || type_name == 'int[][]' || type_name == 'bool[][]' || type_name == 'string[][]'
+    if (type_name == 'int[]' || type_name == 'bool[]' || type_name == 'string[]' || type_name == 'int[][]' || type_name == 'bool[][]' || type_name == 'string[][]'):
+        return true
+    return type_name.ends_with('[]') && record_type_exists(record_names, array_item_type(type_name))
 
 string refine_ownership_mode(LinearInstruction op, string result_type):
     if (result_type == 'int' || result_type == 'bool' || result_type == 'num'):
@@ -2339,8 +2341,8 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
                 if (op.args.length() != 2):
                     throw 'copy requires exactly one array argument'
                 string copy_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
-                if (!is_array_copy_type(copy_type)):
-                    throw 'copy requires int[], bool[], string[], int[][], bool[][], or string[][]; got ' + copy_type
+                if (!is_array_copy_type(copy_type, record_names)):
+                    throw 'copy requires int[], bool[], string[], int[][], bool[][], string[][], or a declared Record[]; got ' + copy_type
                 result_type = copy_type
         if (op.args[0] == 'fill'):
             if (lookup_function_return_type(functions, 'fill') == 'unknown' && !record_type_exists(record_names, 'fill')):
@@ -2564,8 +2566,8 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
                 if (op.args.length() != 2):
                     throw 'copy requires exactly one array argument'
                 string copy_type = normalize_llvm_type_name(base_type)
-                if (!is_array_copy_type(copy_type)):
-                    throw 'copy requires int[], bool[], string[], int[][], bool[][], or string[][]; got ' + copy_type
+                if (!is_array_copy_type(copy_type, record_names)):
+                    throw 'copy requires int[], bool[], string[], int[][], bool[][], string[][], or a declared Record[]; got ' + copy_type
                 return LinearInstruction(op.kind.substring(0), op.lhs.substring(0), copy_type.substring(0), 'owned', 'call', ['copy', op.args[1]])
         if (base_type.starts_with('const ')):
             string canonical_base_type = normalize_llvm_type_name(base_type)
