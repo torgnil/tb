@@ -44,15 +44,15 @@ tb-ir path/to/program.tb output.ll
 
 ## Build from source
 
-Build the self-hosted compiler using the native compiler from the historical
-`v0.2.2` release:
+Build the self-hosted compiler using the native compiler from the `v0.3.0`
+release:
 
 ```bash
 ./build_tb.sh
 ```
 
-The default seed is the LLVM compiler binary in Homebrew's versioned tb 0.2.2
-Cellar directory. The `v0.2.2` tag and release provide the historical bootstrap
+The default seed is the LLVM compiler binary in Homebrew's versioned tb 0.3.0
+Cellar directory. The `v0.3.0` tag and release provide the pinned bootstrap
 compiler; this checkout does not include or require the Python compiler. The
 build checks the seed version, records its SHA-256 in
 `.build/stage2/bootstrap.json`, and uses a private copy for stage 1. It then
@@ -61,7 +61,7 @@ It never selects the active `bin/tb` or an arbitrary `tb` command from PATH.
 Python 3.8+ is still required for build utilities, and `clang` is required
 for linking.
 
-For another installation, set `TB_BOOTSTRAP_COMPILER` to the actual tb 0.2.2
+For another installation, set `TB_BOOTSTRAP_COMPILER` to the actual tb 0.3.0
 LLVM compiler binary, rather than the executable-building `tb` shell wrapper.
 Set `TB_BOOTSTRAP_SHA256` as well to require an exact seed artifact:
 
@@ -73,6 +73,9 @@ TB_BOOTSTRAP_SHA256='<expected-sha256>' ./build_tb.sh
 Check the compiler version with `bin/tb --version`. Builds embed the version
 and default to `dev`. For a release or Homebrew source build, specify the
 version once at build time, for example `TB_VERSION=0.3.0 ./build_tb.sh`.
+`TB_VERSION` sets the version reported by the compiler being built; it does not
+select the bootstrap seed. A release build uses the previously pinned seed.
+After publishing a release, advance the seed pin on the next development branch.
 
 Compile a tb program with the self-hosted compiler:
 

@@ -6,7 +6,7 @@ if [ "$#" -gt 0 ]; then
     case "$1" in
         --help|-h)
             echo "Usage: ./build_tb.sh"
-            echo "Build with the released tb 0.2.2 compiler (TB_BOOTSTRAP_COMPILER overrides its path)."
+            echo "Build with the released tb 0.3.0 compiler (TB_BOOTSTRAP_COMPILER overrides its path)."
             exit 0 ;;
         *) echo "Usage: ./build_tb.sh" >&2; exit 2 ;;
     esac
@@ -19,10 +19,10 @@ build_root="$repo_root/.build/stage2"
 seed_compiler="${TB_BOOTSTRAP_COMPILER:-}"
 if [ -z "$seed_compiler" ]; then
     if ! command -v brew >/dev/null 2>&1; then
-        echo "Set TB_BOOTSTRAP_COMPILER to a tb 0.2.2 LLVM compiler." >&2
+        echo "Set TB_BOOTSTRAP_COMPILER to a tb 0.3.0 LLVM compiler." >&2
         exit 1
     fi
-    seed_compiler="$(brew --cellar)/tb/0.2.2/libexec/libexec/tb"
+    seed_compiler="$(brew --cellar)/tb/0.3.0/libexec/libexec/tb"
 fi
 stage1_ll="$build_root/tb_stage1.ll"
 stage1_bin="$build_root/tb_stage1"
@@ -58,7 +58,7 @@ def sha256(path):
 seed = Path(seed_compiler).resolve()
 if not seed.is_file() or not os.access(seed, os.X_OK):
     raise SystemExit(f'Missing bootstrap compiler: {seed}\n'
-                     'Set TB_BOOTSTRAP_COMPILER to the tb 0.2.2 LLVM compiler binary.')
+                     'Set TB_BOOTSTRAP_COMPILER to the tb 0.3.0 LLVM compiler binary.')
 # Invoke a private copy, never the moving Homebrew link or active bin/tb.
 frozen_seed = build_root / 'bootstrap_seed'
 if seed == frozen_seed.resolve():
@@ -74,12 +74,12 @@ if expected_hash is not None:
     if seed_hash != expected_hash.lower():
         raise SystemExit('Bootstrap compiler SHA-256 does not match TB_BOOTSTRAP_SHA256')
 result = subprocess.run([str(frozen_seed), '--version'], capture_output=True, text=True)
-if result.returncode != 0 or result.stdout.strip() != 'tb 0.2.2' or result.stderr:
-    raise SystemExit('Bootstrap compiler must be the tb 0.2.2 LLVM compiler binary')
+if result.returncode != 0 or result.stdout.strip() != 'tb 0.3.0' or result.stderr:
+    raise SystemExit('Bootstrap compiler must be the tb 0.3.0 LLVM compiler binary')
 metadata = {'mode': 'native', 'python': sys.executable, 'python_version': sys.version,
             'seed_source': str(seed), 'seed_copy': str(frozen_seed),
-            'seed_version': '0.2.2', 'seed_sha256': seed_hash}
-print(f'Bootstrap seed: {seed} (tb 0.2.2)\nSHA-256: {seed_hash}', flush=True)
+            'seed_version': '0.3.0', 'seed_sha256': seed_hash}
+print(f'Bootstrap seed: {seed} (tb 0.3.0)\nSHA-256: {seed_hash}', flush=True)
 (build_root / 'bootstrap.json').write_text(json.dumps(metadata, indent=2) + '\n')
 
 helpers = sorted((repo_root / 'compiler/tb/llvm_helpers').glob('*.ll'))
