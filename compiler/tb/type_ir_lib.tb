@@ -304,6 +304,12 @@ private RefineInstructionsResult contextualize_direct_user_arrays(LinearInstruct
         index += 1
     return RefineInstructionsResult(instructions, temp_types)
 
+private bool is_direct_user_array_context_call(LinearInstruction op):
+    if (op.kind != 'value' || op.detail != 'call' || op.args.is_empty()):
+        return false
+    string name = op.args[0]
+    return name == 'split' || name == 'join' || name == 'sqrt' || name == 'min' || name == 'max' || name == 'length' || name == 'is_empty'
+
 private bool is_supported_deep_grid_key_map_value_type(string value_type):
     return value_type == 'bool' || value_type == 'int' || value_type == 'string' || value_type == 'bool[]' || value_type == 'int[]' || value_type == 'string[]'
 
@@ -2245,6 +2251,10 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
         string result_type = infer_call_type_cached(op.args[0], functions, TYPE_IR_FUNCTION_TYPE_CACHE_NAMES, TYPE_IR_FUNCTION_TYPE_CACHE_VALUES)
         if (split_calls_user_function):
             result_type = lookup_function_return_type(functions, op.args[0])
+        if (op.args[0] == 'length'):
+            FunctionSigIR length_function = lookup_function_sig(functions, 'length')
+            if (has_matching_direct_signature(op, length_function, enum_types, temp_types)):
+                result_type = length_function.return_type
         if (is_direct_string_predicate(op.args[0]) && result_type == 'unknown' && lookup_function_return_type(functions, op.args[0]) == 'unknown' && !record_type_exists(record_names, op.args[0])):
             int argument_count = op.args.length() - 1
             if (argument_count != 1):
@@ -2916,7 +2926,7 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
         if (op.kind == 'range_guard'):
             for (string bound in op.args):
                 validate_range_bound_type(bound, temp_types, enum_types)
-        if (op.kind == 'value' && op.detail == 'call' && !op.args.is_empty() && (op.args[0] == 'split' || op.args[0] == 'join' || op.args[0] == 'sqrt' || op.args[0] == 'min' || op.args[0] == 'max')):
+        if (is_direct_user_array_context_call(op)):
             RefineInstructionsResult contextual_call = contextualize_direct_user_arrays(op, block_refined, temp_types, functions, enum_types)
             block_refined = contextual_call.instructions
             temp_types = contextual_call.temp_types
