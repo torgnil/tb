@@ -1346,6 +1346,14 @@ Node rewrite_submit_array_parameter_reads(Node node, string parameter_name, stri
         children.push(rewrite_submit_array_parameter_reads(child, parameter_name, environment_name))
     return Node(node.kind, node.value, children)
 
+private Node rewrite_submit_num_bool_capture(Node node, string capture_name, string task_parameter_name):
+    if (node.kind == 'Identifier' && node.value == capture_name):
+        return Node('Binary', '!=', [Node('Identifier', task_parameter_name, []), Node('Int', '0', [])])
+    Node[] children = []
+    for (Node child : node.children):
+        children.push(rewrite_submit_num_bool_capture(child, capture_name, task_parameter_name))
+    return Node(node.kind, node.value, children)
+
 Node submit_packed_capture_read(BindingIR binding, string environment_name, int array_row, int scalar_row, int scalar_index):
     string capture_type = binding.type_name
     if (capture_type.starts_with('const ')):
@@ -1521,13 +1529,13 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
         if (lambda_node.kind == 'Lambda' && !captured.is_empty()):
             throw 'thread_pool.submit lambda returning num cannot capture values with an explicit task parameter'
         if (lambda_node.kind == 'Lambda0' && captured.length() > 1):
-            throw 'thread_pool.submit zero-argument lambda returning num may capture at most one int value'
+            throw 'thread_pool.submit zero-argument lambda returning num may capture at most one int or bool value'
         if (lambda_node.kind == 'Lambda0' && captured.length() == 1):
             string capture_type = captured[0].type_name
             if (capture_type.starts_with('const ')):
                 capture_type = capture_type.substring(6)
-            if (capture_type != 'int'):
-                throw 'thread_pool.submit zero-argument lambda returning num may capture at most one int value'
+            if (capture_type != 'int' && capture_type != 'bool'):
+                throw 'thread_pool.submit zero-argument lambda returning num may capture at most one int or bool value'
 
     Node[] rewritten_children = []
     Node[] generated = []
@@ -1590,6 +1598,20 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
             rewritten = Node(node.kind, node.value, rewritten_children)
     if (rewrite_worker):
         Node lambda_node = node.children[1]
+        if (worker_return_type == 'num' && lambda_node.kind == 'Lambda0' && captured.length() == 1):
+            BindingIR capture = captured[0]
+            string capture_type = capture.type_name
+            if (capture_type.starts_with('const ')):
+                capture_type = capture_type.substring(6)
+            if (capture_type == 'bool'):
+                string task_parameter_name = submit_capture_name(current_names, '__tb_num_bool_capture_', current_index)
+                current_names = add_unique_name(current_names, task_parameter_name)
+                current_index += 1
+                Node lambda_body = rewrite_submit_num_bool_capture(lambda_node.children[0], capture.name, task_parameter_name)
+                lambda_node = Node('Lambda', 'int ' + task_parameter_name, [lambda_body])
+                rewritten_children[1] = lambda_node
+                rewritten_children.push(Node('Ternary', '', [Node('Identifier', capture.name, []), Node('Int', '1', []), Node('Int', '0', [])]))
+                captured = []
         if (lambda_node.kind == 'Lambda0' && captured.length() > 1):
             int int_array_capture_count = 0
             for (BindingIR binding : captured):
