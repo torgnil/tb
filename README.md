@@ -72,7 +72,7 @@ TB_BOOTSTRAP_SHA256='<expected-sha256>' ./build_tb.sh
 
 Check the compiler version with `bin/tb --version`. Builds embed the version
 and default to `dev`. For a release or Homebrew source build, specify the
-version once at build time, for example `TB_VERSION=0.2.2 ./build_tb.sh`.
+version once at build time, for example `TB_VERSION=0.3.0 ./build_tb.sh`.
 
 Compile a tb program with the self-hosted compiler:
 
