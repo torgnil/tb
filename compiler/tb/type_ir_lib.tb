@@ -372,9 +372,8 @@ string lookup_function_return_type(FunctionSigIR[] functions, string name):
     while (index >= 0):
         if (TYPE_IR_PROFILE_ACTIVE != 0):
             TYPE_IR_LOOKUP_FUNCTION_SCAN_TOTAL += 1
-        FunctionSigIR function_sig = functions[index]
-        if (function_sig.name.length() == name_length && function_sig.name == name):
-            return function_sig.return_type.substring(0)
+        if (functions[index].name.length() == name_length && functions[index].name == name):
+            return functions[index].return_type.substring(0)
         index -= 1
     return 'unknown'
 
@@ -382,9 +381,8 @@ FunctionSigIR lookup_function_sig(FunctionSigIR[] functions, string name):
     int name_length = name.length()
     int index = functions.length() - 1
     while (index >= 0):
-        FunctionSigIR function_sig = functions[index]
-        if (function_sig.name.length() == name_length && function_sig.name == name):
-            return FunctionSigIR(function_sig.name.substring(0), function_sig.source_name.substring(0), function_sig.return_type.substring(0), clone_string_array(function_sig.param_types))
+        if (functions[index].name.length() == name_length && functions[index].name == name):
+            return FunctionSigIR(functions[index].name.substring(0), functions[index].source_name.substring(0), functions[index].return_type.substring(0), clone_string_array(functions[index].param_types))
         index -= 1
     return FunctionSigIR('', '', 'unknown', [])
 
@@ -1028,9 +1026,8 @@ string lookup_temp_type(LinearInstruction[] instructions, string name):
     while (index >= 0):
         if (TYPE_IR_PROFILE_ACTIVE != 0):
             TYPE_IR_LOOKUP_TEMP_TYPE_SCAN_TOTAL += 1
-        LinearInstruction op = instructions[index]
-        if (op.lhs == name):
-            return op.result_type.substring(0)
+        if (instructions[index].lhs == name):
+            return instructions[index].result_type.substring(0)
         index -= 1
     return 'unknown'
 
@@ -3586,15 +3583,14 @@ string resolve_module_function_reference(string module_id, string source_name, P
     bool private_exists = false
     int index = functions.length() - 1
     while (index >= 0):
-        ParsedFunction candidate = functions[index]
-        string candidate_source_name = candidate.source_name
+        string candidate_source_name = functions[index].source_name
         if (candidate_source_name == ''):
-            candidate_source_name = candidate.name
+            candidate_source_name = functions[index].name
         if (candidate_source_name == source_name):
-            if (candidate.is_private):
+            if (functions[index].is_private):
                 private_exists = true
-                if (candidate.module_id == module_id && private_identity == ''):
-                    private_identity = candidate.name
+                if (functions[index].module_id == module_id && private_identity == ''):
+                    private_identity = functions[index].name
             else:
                 public_visible = true
         index -= 1
@@ -3685,15 +3681,17 @@ ParsedFunction[] bind_program_private_functions(ParsedFunction[] input_functions
         if (original.is_private):
             int matching_private_count = 0
             bool matching_public = false
-            for (ParsedFunction existing in input_functions):
-                string existing_source_name = existing.source_name
+            int matching_index = 0
+            while (matching_index < input_functions.length()):
+                string existing_source_name = input_functions[matching_index].source_name
                 if (existing_source_name == ''):
-                    existing_source_name = existing.name
-                if (existing.module_id == original.module_id && existing_source_name == source_name):
-                    if (existing.is_private):
+                    existing_source_name = input_functions[matching_index].name
+                if (input_functions[matching_index].module_id == original.module_id && existing_source_name == source_name):
+                    if (input_functions[matching_index].is_private):
                         matching_private_count += 1
                     else:
                         matching_public = true
+                matching_index += 1
             if (matching_public):
                 throw 'private function conflicts with public function in module: ' + source_name
             if (matching_private_count > 1):
