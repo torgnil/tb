@@ -76,6 +76,8 @@ version once at build time, for example `TB_VERSION=0.3.0 ./build_tb.sh`.
 `TB_VERSION` sets the version reported by the compiler being built; it does not
 select the bootstrap seed. A release build uses the previously pinned seed.
 After publishing a release, advance the seed pin on the next development branch.
+See [the bootstrap guide](docs/bootstrap.md) for the build stages and the
+requirements for adding another host platform.
 
 Compile a tb program with the self-hosted compiler:
 
