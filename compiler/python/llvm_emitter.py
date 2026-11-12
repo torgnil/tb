@@ -6693,7 +6693,7 @@ class LLVMEmitter:
     def _is_boolean_ir_expression(self, expression) -> bool:
         return (
             isinstance(expression, IRBoolean)
-            or (isinstance(expression, IRVariable) and self.variable_types.get(expression.name) == "bool")
+            or (isinstance(expression, IRVariable) and self.variable_types.get(expression.name, self.global_variable_types.get(expression.name)) == "bool")
             or (isinstance(expression, IRArrayIndex) and expression.item_type == "bool")
             or (isinstance(expression, IRArrayPop) and expression.item_type == "bool")
             or (isinstance(expression, IRArrayRemove) and expression.item_type == "bool")

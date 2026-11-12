@@ -158,13 +158,39 @@ SubmitLambdaScope copy_submit_lambda_scope(SubmitLambdaScope scope):
         declared_names.push(name)
     return SubmitLambdaScope(names, types, const_names, declared_names, scope.parameter_name)
 
-string[] collect_submit_unavailable_names(Node node, string[] names):
-    names = add_unique_name(names, node.value)
+void collect_submit_unavailable_names_into(Node node, string[] names, map<string, int> seen):
+    if (!seen.contains(node.value)):
+        seen[node.value] = 1
+        names.push(node.value)
     if (node.kind == 'Param' || node.kind == 'VarDecl' || node.kind == 'ForEach' || node.kind == 'Catch' || node.kind == 'Function' || node.kind == 'CachedFunction' || node.kind == 'PrivateFunction'):
-        names = add_unique_name(names, binding_name(node.value))
-    for (Node child : node.children):
-        names = collect_submit_unavailable_names(child, names)
+        string name = binding_name(node.value)
+        if (!seen.contains(name)):
+            seen[name] = 1
+            names.push(name)
+    int index = 0
+    while (index < node.children.length()):
+        collect_submit_unavailable_names_into(node.children[index], names, seen)
+        index += 1
+
+string[] collect_submit_unavailable_names(Node node, string[] names):
+    map<string, int> seen = {}
+    for (string name : names):
+        seen[name] = 1
+    collect_submit_unavailable_names_into(node, names, seen)
     return names
+
+bool program_needs_callback_rewrite(Node node, bool include_submit):
+    if (node.kind == 'Lambda' || node.kind == 'Lambda0' || node.kind == 'Lambda2'):
+        return true
+    if (node.kind == 'MethodCall'):
+        if (node.value == 'map_to' || node.value == 'filter' || (include_submit && node.value == 'submit')):
+            return true
+    int index = 0
+    while (index < node.children.length()):
+        if (program_needs_callback_rewrite(node.children[index], include_submit)):
+            return true
+        index += 1
+    return false
 
 Node submit_lambda_helper(Node[] functions, string name):
     int index = functions.length() - 1
@@ -813,6 +839,8 @@ SubmitLambdaRewrite rewrite_int_array_expression(Node node, string[] used_names,
     return SubmitLambdaRewrite(rewritten, generated, current_names, current_index)
 
 SubmitLambdaRewrite rewrite_int_array_expressions_in_program(Node program):
+    if (!program_needs_callback_rewrite(program, false)):
+        return SubmitLambdaRewrite(program, [], [], 0)
     string[] used_names = collect_submit_unavailable_names(program, [])
     Node[] children = []
     Node[] generated = []
@@ -833,10 +861,13 @@ SubmitLambdaRewrite rewrite_int_array_expressions_in_program(Node program):
     return SubmitLambdaRewrite(Node('Program', program.value, children), generated, used_names, next_index)
 
 Node[] append_generated_nodes_for_module(Node[] target, Node[] generated, string module_id):
+    Node[] result = []
+    for (Node node : target):
+        result.push(node)
     for (Node node : generated):
-        target.push(Node('ModuleMarker', module_id.substring(0), []))
-        target.push(node)
-    return target
+        result.push(Node('ModuleMarker', module_id.substring(0), []))
+        result.push(node)
+    return result
 
 int submit_name_occurrence_count(string[] names, string name):
     int count = 0
@@ -1616,6 +1647,8 @@ bool global_array_callback_has_unsupported_capture(Node node, BindingIR[] global
     return false
 
 SubmitLambdaRewrite rewrite_submit_lambdas_in_program(Node program, bool include_submit):
+    if (!program_needs_callback_rewrite(program, include_submit)):
+        return SubmitLambdaRewrite(program, [], [], 0)
     string[] unavailable_names = collect_submit_unavailable_names(program, [])
     BindingIR[] global_bindings = submit_unique_global_bindings(program.children)
     Node[] rewritten_children = []

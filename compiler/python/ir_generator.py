@@ -183,6 +183,7 @@ class IRGenerator:
         self._register_named_types(program)
         self._register_global_declarations(program)
         self._register_functions(program)
+        self.runtime_bound_variables = self.mutable_global_variables.copy()
         for statement in program.statements:
             lowered = self._lower_statement(statement)
             if isinstance(statement, FunctionDeclaration):

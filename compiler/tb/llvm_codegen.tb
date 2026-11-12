@@ -3015,30 +3015,31 @@ StringConstIR encode_tb_string_literal(string symbol, string literal):
     LLVM_ENCODE_STRING_LITERAL_CALLS += 1
     LLVM_ENCODE_STRING_LITERAL_INPUT_BYTES += literal.length()
     string inner = literal.substring(1, literal.length() - 1)
-    string encoded = ''
+    string[] encoded_parts = []
     int index = 0
     int count = 0
     while (index < inner.length()):
         string ch = inner[index]
         if (ch == '\n'):
             LLVM_ENCODE_STRING_LITERAL_ESCAPE_COUNT += 1
-            encoded += '\\0A'
+            encoded_parts.push('\\0A')
         else if (ch == '\r'):
             LLVM_ENCODE_STRING_LITERAL_ESCAPE_COUNT += 1
-            encoded += '\\0D'
+            encoded_parts.push('\\0D')
         else if (ch == '\t'):
             LLVM_ENCODE_STRING_LITERAL_ESCAPE_COUNT += 1
-            encoded += '\\09'
+            encoded_parts.push('\\09')
         else if (ch == '\\'):
             LLVM_ENCODE_STRING_LITERAL_ESCAPE_COUNT += 1
-            encoded += '\\5C'
+            encoded_parts.push('\\5C')
         else if (ch == '"'):
             LLVM_ENCODE_STRING_LITERAL_ESCAPE_COUNT += 1
-            encoded += '\\22'
+            encoded_parts.push('\\22')
         else:
-            encoded += ch
+            encoded_parts.push(ch)
         index += 1
         count += 1
+    string encoded = encoded_parts.join('')
     string output = encoded + '\\00'
     LLVM_ENCODE_STRING_LITERAL_OUTPUT_BYTES += output.length()
     return StringConstIR(symbol, output, count + 1)
