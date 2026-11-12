@@ -774,36 +774,73 @@ done:
   ret ptr %array
 }
 define private ptr @tb_bootstrap_join_strings(ptr %array, ptr %delimiter) {
+  ; Measure the final size and copy each input once, avoiding growing-prefix copies.
 entry:
-  %result.slot = alloca ptr
-  %empty = call ptr @tb_string_new(i64 0)
-  store ptr %empty, ptr %result.slot
   %len = call i32 @tb_bootstrap_string_array_length(ptr %array)
-  br label %loop.cond
-loop.cond:
-  %index = phi i32 [0, %entry], [%next.index, %loop.step.item]
-  %keep.loop = icmp slt i32 %index, %len
-  br i1 %keep.loop, label %loop.body, label %done
-loop.body:
-  %current = load ptr, ptr %result.slot
-  %item = call ptr @tb_bootstrap_string_array_get(ptr %array, i32 %index)
-  %has.delim = icmp sgt i32 %index, 0
-  br i1 %has.delim, label %loop.delim, label %loop.item
-loop.delim:
-  %with.delim = call ptr @tb_bootstrap_string_concat(ptr %current, ptr %delimiter)
-  call void @tb_release(ptr %current)
-  store ptr %with.delim, ptr %result.slot
-  br label %loop.item
-loop.item:
-  %current.item = load ptr, ptr %result.slot
-  %next.value = call ptr @tb_bootstrap_string_concat(ptr %current.item, ptr %item)
-  call void @tb_release(ptr %current.item)
-  store ptr %next.value, ptr %result.slot
-  br label %loop.step.item
-loop.step.item:
-  %next.index = add i32 %index, 1
-  br label %loop.cond
+  %needs.delimiter = icmp sgt i32 %len, 1
+  br i1 %needs.delimiter, label %measure.delimiter.len, label %measure.start
+measure.delimiter.len:
+  %delimiter.len.found = call i64 @strlen(ptr %delimiter)
+  br label %measure.start
+measure.start:
+  %delimiter.len = phi i64 [0, %entry], [%delimiter.len.found, %measure.delimiter.len]
+  br label %measure.cond
+measure.cond:
+  %measure.index = phi i32 [0, %measure.start], [%measure.next.index, %measure.step]
+  %measure.total = phi i64 [0, %measure.start], [%measure.next.total, %measure.step]
+  %measure.keep.loop = icmp slt i32 %measure.index, %len
+  br i1 %measure.keep.loop, label %measure.body, label %measure.done
+measure.body:
+  %measure.item = call ptr @tb_bootstrap_string_array_get(ptr %array, i32 %measure.index)
+  %measure.item.len = call i64 @strlen(ptr %measure.item)
+  %measure.has.delimiter = icmp sgt i32 %measure.index, 0
+  %measure.delimiter.add = select i1 %measure.has.delimiter, i64 %delimiter.len, i64 0
+  %measure.with.delimiter = add i64 %measure.total, %measure.delimiter.add
+  %measure.delimiter.overflow = icmp ult i64 %measure.with.delimiter, %measure.total
+  %measure.delimiter.too.large = icmp ugt i64 %measure.with.delimiter, 9223372036854775782
+  %measure.delimiter.invalid = or i1 %measure.delimiter.overflow, %measure.delimiter.too.large
+  br i1 %measure.delimiter.invalid, label %invalid, label %measure.item.length
+measure.item.length:
+  %measure.next.total = add i64 %measure.with.delimiter, %measure.item.len
+  %measure.item.overflow = icmp ult i64 %measure.next.total, %measure.with.delimiter
+  %measure.item.too.large = icmp ugt i64 %measure.next.total, 9223372036854775782
+  %measure.item.invalid = or i1 %measure.item.overflow, %measure.item.too.large
+  br i1 %measure.item.invalid, label %invalid, label %measure.step
+measure.step:
+  %measure.next.index = add i32 %measure.index, 1
+  br label %measure.cond
+measure.done:
+  %result = call ptr @tb_string_new(i64 %measure.total)
+  br label %copy.cond
+copy.cond:
+  %copy.index = phi i32 [0, %measure.done], [%copy.next.index, %copy.step]
+  %copy.offset = phi i64 [0, %measure.done], [%copy.after.item, %copy.step]
+  %copy.keep.loop = icmp slt i32 %copy.index, %len
+  br i1 %copy.keep.loop, label %copy.body, label %done
+copy.body:
+  %copy.item = call ptr @tb_bootstrap_string_array_get(ptr %array, i32 %copy.index)
+  %copy.item.len = call i64 @strlen(ptr %copy.item)
+  %copy.has.delimiter = icmp sgt i32 %copy.index, 0
+  br i1 %copy.has.delimiter, label %copy.delimiter, label %copy.no.delimiter
+copy.delimiter:
+  %copy.delimiter.dest = getelementptr inbounds i8, ptr %result, i64 %copy.offset
+  call void @llvm.memcpy.p0.p0.i64(ptr %copy.delimiter.dest, ptr %delimiter, i64 %delimiter.len, i1 false)
+  %copy.after.delimiter = add i64 %copy.offset, %delimiter.len
+  br label %copy.item.body
+copy.no.delimiter:
+  br label %copy.item.body
+copy.item.body:
+  %copy.item.offset = phi i64 [%copy.after.delimiter, %copy.delimiter], [%copy.offset, %copy.no.delimiter]
+  %copy.item.dest = getelementptr inbounds i8, ptr %result, i64 %copy.item.offset
+  call void @llvm.memcpy.p0.p0.i64(ptr %copy.item.dest, ptr %copy.item, i64 %copy.item.len, i1 false)
+  %copy.after.item = add i64 %copy.item.offset, %copy.item.len
+  br label %copy.step
+copy.step:
+  %copy.next.index = add i32 %copy.index, 1
+  br label %copy.cond
+invalid:
+  call void @abort()
+  unreachable
 done:
-  %result = load ptr, ptr %result.slot
   ret ptr %result
 }

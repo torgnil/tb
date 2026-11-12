@@ -1249,12 +1249,14 @@ void ensure_function_lookup_cache(ParsedFunction function_ir):
         LLVM_LOOKUP_CACHE_LOCAL_BINDING_NAMES.push(local_decl.name.substring(0))
         LLVM_LOOKUP_CACHE_LOCAL_BINDING_TYPES.push(local_decl.type_name.substring(0))
     int block_index = 0
-    for (BlockIR block in function_ir.blocks):
+    while (block_index < function_ir.blocks.length()):
         int instruction_index = 0
-        for (LinearInstruction op in block.instructions):
-            if (op.lhs != ''):
-                LLVM_LOOKUP_CACHE_TEMP_TYPE_SLOTS = set_temp_type_slot(LLVM_LOOKUP_CACHE_TEMP_TYPE_SLOTS, op.lhs, op.result_type)
-                int slot_index = temp_slot_index(op.lhs)
+        while (instruction_index < function_ir.blocks[block_index].instructions.length()):
+            if (function_ir.blocks[block_index].instructions[instruction_index].lhs != ''):
+                string name = function_ir.blocks[block_index].instructions[instruction_index].lhs
+                string result_type = function_ir.blocks[block_index].instructions[instruction_index].result_type
+                LLVM_LOOKUP_CACHE_TEMP_TYPE_SLOTS = set_temp_type_slot(LLVM_LOOKUP_CACHE_TEMP_TYPE_SLOTS, name, result_type)
+                int slot_index = temp_slot_index(name)
                 if (slot_index >= 0):
                     while (LLVM_LOOKUP_CACHE_INSTRUCTION_BLOCKS.length() <= slot_index):
                         LLVM_LOOKUP_CACHE_INSTRUCTION_BLOCKS.push(-1)
@@ -1370,12 +1372,16 @@ string map_key_guard_value_slot_ref(string try_suffix):
     return '%tb.map.key.guard.value.' + try_suffix
 
 string map_key_guard_try_suffix_for_key(ParsedFunction function_ir, string key_temp):
-    for (BlockIR block in function_ir.blocks):
-        for (LinearInstruction op in block.instructions):
-            if (op.kind == 'map_key_guard_snapshot'):
-                if (!op.args.is_empty()):
-                    if (op.args[0] == key_temp):
-                        return catch_try_suffix(function_ir, op.detail)
+    int block_index = 0
+    while (block_index < function_ir.blocks.length()):
+        int instruction_index = 0
+        while (instruction_index < function_ir.blocks[block_index].instructions.length()):
+            if (function_ir.blocks[block_index].instructions[instruction_index].kind == 'map_key_guard_snapshot'):
+                if (!function_ir.blocks[block_index].instructions[instruction_index].args.is_empty()):
+                    if (function_ir.blocks[block_index].instructions[instruction_index].args[0] == key_temp):
+                        return catch_try_suffix(function_ir, function_ir.blocks[block_index].instructions[instruction_index].detail)
+            instruction_index += 1
+        block_index += 1
     return ''
 
 string exception_handler_symbol():
@@ -1384,21 +1390,23 @@ string exception_handler_symbol():
 string exception_message_symbol():
     return '@__tb_exception_message'
 
-string block_try_suffix(BlockIR block):
+string block_try_suffix(string block_label, LinearInstruction[] instructions):
     int instruction_index = 0
-    for (LinearInstruction op in block.instructions):
-        if (op.kind == 'try'):
-            return block.label + '.' + instruction_index
+    while (instruction_index < instructions.length()):
+        if (instructions[instruction_index].kind == 'try'):
+            return block_label + '.' + instruction_index
         instruction_index += 1
     return ''
 
 string catch_try_suffix(ParsedFunction function_ir, string catch_label):
-    for (BlockIR block in function_ir.blocks):
+    int block_index = 0
+    while (block_index < function_ir.blocks.length()):
         int instruction_index = 0
-        for (LinearInstruction op in block.instructions):
-            if (op.kind == 'try' && op.detail == catch_label):
-                return block.label + '.' + instruction_index
+        while (instruction_index < function_ir.blocks[block_index].instructions.length()):
+            if (function_ir.blocks[block_index].instructions[instruction_index].kind == 'try' && function_ir.blocks[block_index].instructions[instruction_index].detail == catch_label):
+                return function_ir.blocks[block_index].label + '.' + instruction_index
             instruction_index += 1
+        block_index += 1
     return ''
 
 string[] emit_try_restore_lines(string try_suffix, string temp_suffix):
@@ -1420,68 +1428,83 @@ string lookup_temp_llvm_type_uncached(ParsedFunction function_ir, string lookup_
     if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
         LLVM_LOOKUP_TEMP_TYPE_UNCACHED_CALLS += 1
     string result_type = 'unknown'
-    for (BlockIR block in function_ir.blocks):
-        for (LinearInstruction op in block.instructions):
+    int block_index = 0
+    while (block_index < function_ir.blocks.length()):
+        int instruction_index = 0
+        while (instruction_index < function_ir.blocks[block_index].instructions.length()):
             if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
                 LLVM_LOOKUP_TEMP_TYPE_UNCACHED_SCAN_TOTAL += 1
-            if (result_type == 'unknown' && op.lhs == lookup_name):
-                result_type = op.result_type
+            if (result_type == 'unknown' && function_ir.blocks[block_index].instructions[instruction_index].lhs == lookup_name):
+                result_type = function_ir.blocks[block_index].instructions[instruction_index].result_type
+            instruction_index += 1
+        block_index += 1
     if (result_type == '[]'):
         # An empty child literal has no item type of its own. Its enclosing
         # array literal does, and is the most specific source of that type.
-        for (BlockIR block in function_ir.blocks):
-            for (LinearInstruction op in block.instructions):
-                string enclosing_type = normalize_llvm_type_name(op.result_type)
-                if (op.kind == 'value' && op.detail == 'array' && enclosing_type.ends_with('[][]') && !is_untyped_array_shape(enclosing_type)):
-                    for (string arg in op.args):
-                        if (arg == lookup_name):
+        block_index = 0
+        while (block_index < function_ir.blocks.length()):
+            int instruction_index = 0
+            while (instruction_index < function_ir.blocks[block_index].instructions.length()):
+                string enclosing_type = normalize_llvm_type_name(function_ir.blocks[block_index].instructions[instruction_index].result_type)
+                if (function_ir.blocks[block_index].instructions[instruction_index].kind == 'value' && function_ir.blocks[block_index].instructions[instruction_index].detail == 'array' && enclosing_type.ends_with('[][]') && !is_untyped_array_shape(enclosing_type)):
+                    int arg_index = 0
+                    while (arg_index < function_ir.blocks[block_index].instructions[instruction_index].args.length()):
+                        if (function_ir.blocks[block_index].instructions[instruction_index].args[arg_index] == lookup_name):
                             return array_item_type(enclosing_type)
+                        arg_index += 1
+                instruction_index += 1
+            block_index += 1
         if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
             LLVM_LOOKUP_TEMP_TYPE_ARRAY_FALLBACK_CALLS += 1
         bool found_def = false
-        for (BlockIR block in function_ir.blocks):
+        block_index = 0
+        while (block_index < function_ir.blocks.length()):
             int index = 0
-            while (index < block.instructions.length()):
-                LinearInstruction op = block.instructions[index]
+            while (index < function_ir.blocks[block_index].instructions.length()):
                 if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
                     LLVM_LOOKUP_TEMP_TYPE_UNCACHED_SCAN_TOTAL += 1
                 if (!found_def):
-                    if (op.lhs == lookup_name):
+                    if (function_ir.blocks[block_index].instructions[index].lhs == lookup_name):
                         found_def = true
                     index += 1
                     continue
-                if (op.kind == 'move_temp' && op.detail.ends_with('[]')):
-                    return op.detail
-                if (op.kind == 'set'):
-                    BindingIR binding = ir_parse_binding_decl(op.detail)
+                if (function_ir.blocks[block_index].instructions[index].kind == 'move_temp' && function_ir.blocks[block_index].instructions[index].detail.ends_with('[]')):
+                    return function_ir.blocks[block_index].instructions[index].detail
+                if (function_ir.blocks[block_index].instructions[index].kind == 'set'):
+                    BindingIR binding = ir_parse_binding_decl(function_ir.blocks[block_index].instructions[index].detail)
                     if (binding.type_name.ends_with('[]')):
                         return binding.type_name
-                if (op.kind == 'assign_local'):
-                    BindingIR binding = lookup_named_binding(function_ir, op.detail)
+                if (function_ir.blocks[block_index].instructions[index].kind == 'assign_local'):
+                    BindingIR binding = lookup_named_binding(function_ir, function_ir.blocks[block_index].instructions[index].detail)
                     if (binding.type_name.ends_with('[]')):
                         return binding.type_name
-                if (op.kind == 'return' || op.kind == 'return_owned'):
+                if (function_ir.blocks[block_index].instructions[index].kind == 'return' || function_ir.blocks[block_index].instructions[index].kind == 'return_owned'):
                     return result_type
                 index += 1
-        for (BlockIR block in function_ir.blocks):
-            for (LinearInstruction op in block.instructions):
+            block_index += 1
+        block_index = 0
+        while (block_index < function_ir.blocks.length()):
+            int instruction_index = 0
+            while (instruction_index < function_ir.blocks[block_index].instructions.length()):
                 if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
                     LLVM_LOOKUP_TEMP_TYPE_UNCACHED_SCAN_TOTAL += 1
-                if (op.args.length() == 1):
-                    if (op.args[0] == lookup_name):
-                        if (op.kind == 'move_temp'):
-                            if (op.detail.ends_with('[]')):
-                                return op.detail
-                        if (op.kind == 'set'):
-                            BindingIR binding = ir_parse_binding_decl(op.detail)
+                if (function_ir.blocks[block_index].instructions[instruction_index].args.length() == 1):
+                    if (function_ir.blocks[block_index].instructions[instruction_index].args[0] == lookup_name):
+                        if (function_ir.blocks[block_index].instructions[instruction_index].kind == 'move_temp'):
+                            if (function_ir.blocks[block_index].instructions[instruction_index].detail.ends_with('[]')):
+                                return function_ir.blocks[block_index].instructions[instruction_index].detail
+                        if (function_ir.blocks[block_index].instructions[instruction_index].kind == 'set'):
+                            BindingIR binding = ir_parse_binding_decl(function_ir.blocks[block_index].instructions[instruction_index].detail)
                             if (binding.type_name.ends_with('[]')):
                                 return binding.type_name
-                        if (op.kind == 'assign_local'):
-                            BindingIR binding = lookup_named_binding(function_ir, op.detail)
+                        if (function_ir.blocks[block_index].instructions[instruction_index].kind == 'assign_local'):
+                            BindingIR binding = lookup_named_binding(function_ir, function_ir.blocks[block_index].instructions[instruction_index].detail)
                             if (binding.type_name.ends_with('[]')):
                                 return binding.type_name
-                        if (op.kind == 'return' || op.kind == 'return_owned'):
+                        if (function_ir.blocks[block_index].instructions[instruction_index].kind == 'return' || function_ir.blocks[block_index].instructions[instruction_index].kind == 'return_owned'):
                             return result_type
+                instruction_index += 1
+            block_index += 1
     return result_type
 
 string lookup_temp_llvm_type(ParsedFunction function_ir, string temp_name):
@@ -1508,17 +1531,20 @@ LinearInstruction lookup_temp_instruction(ParsedFunction function_ir, string tem
         int block_index = LLVM_LOOKUP_CACHE_INSTRUCTION_BLOCKS[slot_index]
         int instruction_index = LLVM_LOOKUP_CACHE_INSTRUCTION_OFFSETS[slot_index]
         if (block_index >= 0 && block_index < function_ir.blocks.length()):
-            BlockIR block = function_ir.blocks[block_index]
-            if (instruction_index >= 0 && instruction_index < block.instructions.length()):
+            if (instruction_index >= 0 && instruction_index < function_ir.blocks[block_index].instructions.length()):
                 if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
                     LLVM_LOOKUP_TEMP_INSTRUCTION_SLOT_HITS += 1
-                return copy_instruction(block.instructions[instruction_index])
+                return copy_instruction(function_ir.blocks[block_index].instructions[instruction_index])
     if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
         LLVM_LOOKUP_TEMP_INSTRUCTION_FALLBACK_SCANS += 1
-    for (BlockIR block in function_ir.blocks):
-        for (LinearInstruction op in block.instructions):
-            if (op.lhs == lookup_name):
-                return copy_instruction(op)
+    int block_index = 0
+    while (block_index < function_ir.blocks.length()):
+        int instruction_index = 0
+        while (instruction_index < function_ir.blocks[block_index].instructions.length()):
+            if (function_ir.blocks[block_index].instructions[instruction_index].lhs == lookup_name):
+                return copy_instruction(function_ir.blocks[block_index].instructions[instruction_index])
+            instruction_index += 1
+        block_index += 1
     if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
         LLVM_LOOKUP_TEMP_INSTRUCTION_MISSES += 1
     return LinearInstruction('', '', '', '', '', [])
@@ -1537,10 +1563,9 @@ ParsedFunction lookup_named_function_decl(ProgramIR program, string name):
     while (index < program.functions.length()):
         if (LLVM_BACKEND_PROFILE_ACTIVE != 0):
             LLVM_LOOKUP_NAMED_FUNCTION_SCAN_TOTAL += 1
-        ParsedFunction function_ir = program.functions[index]
-        if (function_ir.name == name):
+        if (program.functions[index].name == name):
             LLVM_PROGRAM_FUNCTION_INDEX[name] = index
-            return function_ir
+            return program.functions[index]
         index += 1
     LLVM_PROGRAM_FUNCTION_INDEX[name] = -1
     return ParsedFunction('', '', '', '', false, '', [], [], [])
@@ -1594,30 +1619,30 @@ string source_function_display_name(ParsedFunction function_ir):
         return function_ir.source_name
     return function_ir.name
 
-bool instruction_uses_temp(LinearInstruction op, string temp_name):
-    if (op.args.is_empty()):
+bool instruction_uses_temp_at(LinearInstruction[] instructions, int instruction_index, string temp_name):
+    if (instructions[instruction_index].args.is_empty()):
         return false
     int first_operand = 0
-    int operand_limit = op.args.length()
-    if (op.kind == 'value'):
-        if (op.detail == 'int' || op.detail == 'num' || op.detail == 'string' || op.detail == 'bool' || op.detail == 'identifier' || op.detail == 'unsupported'):
+    int operand_limit = instructions[instruction_index].args.length()
+    if (instructions[instruction_index].kind == 'value'):
+        if (instructions[instruction_index].detail == 'int' || instructions[instruction_index].detail == 'num' || instructions[instruction_index].detail == 'string' || instructions[instruction_index].detail == 'bool' || instructions[instruction_index].detail == 'identifier' || instructions[instruction_index].detail == 'unsupported'):
             return false
-        if (op.detail == 'call' || op.detail == 'method-call' || op.detail == 'field' || op.detail == 'binary'):
+        if (instructions[instruction_index].detail == 'call' || instructions[instruction_index].detail == 'method-call' || instructions[instruction_index].detail == 'field' || instructions[instruction_index].detail == 'binary'):
             first_operand = 1
-        if (op.detail == 'unary'):
+        if (instructions[instruction_index].detail == 'unary'):
             first_operand = 1
-        if (op.detail == 'method-call'):
+        if (instructions[instruction_index].detail == 'method-call'):
             first_operand = 1
             int index = first_operand
             while (index < operand_limit):
-                if (!(op.args[0] == 'submit' && index == 2) && temp_name == op.args[index]):
+                if (!(instructions[instruction_index].args[0] == 'submit' && index == 2) && temp_name == instructions[instruction_index].args[index]):
                     return true
                 index += 1
             return false
-        if (op.detail == 'method-call-lambda'):
-            if (op.args[0] == 'create_prio_q_int_desc' || op.args[0] == 'sort_int_desc' || op.args[0] == 'sort_int_asc' || op.args[0] == 'create_prio_q_record_field_desc' || op.args[0] == 'sort_record_field_asc'):
+        if (instructions[instruction_index].detail == 'method-call-lambda'):
+            if (instructions[instruction_index].args[0] == 'create_prio_q_int_desc' || instructions[instruction_index].args[0] == 'sort_int_desc' || instructions[instruction_index].args[0] == 'sort_int_asc' || instructions[instruction_index].args[0] == 'create_prio_q_record_field_desc' || instructions[instruction_index].args[0] == 'sort_record_field_asc'):
                 if (operand_limit > 1):
-                    if (temp_name == op.args[1]):
+                    if (temp_name == instructions[instruction_index].args[1]):
                         return true
                 return false
             first_operand = 1
@@ -1626,24 +1651,24 @@ bool instruction_uses_temp(LinearInstruction op, string temp_name):
                 if (index != 2):
                     bool metadata_operand = false
                     if (index == 3):
-                        if (op.args[0] == 'map_to' || op.args[0] == 'map_to_self' || op.args[0] == 'map_to_expr' || op.args[0] == 'filter_int_expr'):
+                        if (instructions[instruction_index].args[0] == 'map_to' || instructions[instruction_index].args[0] == 'map_to_self' || instructions[instruction_index].args[0] == 'map_to_expr' || instructions[instruction_index].args[0] == 'filter_int_expr'):
                             metadata_operand = true
-                    if (!metadata_operand && temp_name == op.args[index]):
+                    if (!metadata_operand && temp_name == instructions[instruction_index].args[index]):
                         return true
                 index += 1
             return false
         while (first_operand < operand_limit):
-            if (temp_name == op.args[first_operand]):
+            if (temp_name == instructions[instruction_index].args[first_operand]):
                 return true
             first_operand += 1
         return false
-    if (op.kind == 'drop' || op.kind == 'release_local' || op.kind == 'release_temp' || op.kind == 'release_field' || op.kind == 'release_index' || op.kind == 'try' || op.kind == 'catch' || op.kind == 'label' || op.kind == 'jump'):
+    if (instructions[instruction_index].kind == 'drop' || instructions[instruction_index].kind == 'release_local' || instructions[instruction_index].kind == 'release_temp' || instructions[instruction_index].kind == 'release_field' || instructions[instruction_index].kind == 'release_index' || instructions[instruction_index].kind == 'try' || instructions[instruction_index].kind == 'catch' || instructions[instruction_index].kind == 'label' || instructions[instruction_index].kind == 'jump'):
         return false
-    if (op.kind == 'branch_if'):
+    if (instructions[instruction_index].kind == 'branch_if'):
         operand_limit = 1
     first_operand = 0
     while (first_operand < operand_limit):
-        if (temp_name == op.args[first_operand]):
+        if (temp_name == instructions[instruction_index].args[first_operand]):
             return true
         first_operand += 1
     return false
@@ -1702,13 +1727,13 @@ bool temp_is_query_only_use_in_producing_block(ParsedFunction function_ir, strin
     int query_block_index = -1
     int query_instruction_index = -1
     int block_index = 0
-    for (BlockIR block in function_ir.blocks):
+    while (block_index < function_ir.blocks.length()):
         int instruction_index = 0
-        for (LinearInstruction op in block.instructions):
-            if (op.lhs == temp_name):
+        while (instruction_index < function_ir.blocks[block_index].instructions.length()):
+            if (function_ir.blocks[block_index].instructions[instruction_index].lhs == temp_name):
                 producer_block_index = block_index
                 producer_instruction_index = instruction_index
-            if (op.lhs == query_temp_name):
+            if (function_ir.blocks[block_index].instructions[instruction_index].lhs == query_temp_name):
                 query_block_index = block_index
                 query_instruction_index = instruction_index
             instruction_index += 1
@@ -1720,50 +1745,60 @@ bool temp_is_query_only_use_in_producing_block(ParsedFunction function_ir, strin
         return false
     int use_count = 0
     bool query_is_use = false
-    for (BlockIR block in function_ir.blocks):
-        for (LinearInstruction op in block.instructions):
+    block_index = 0
+    while (block_index < function_ir.blocks.length()):
+        int instruction_index = 0
+        while (instruction_index < function_ir.blocks[block_index].instructions.length()):
             int operand_index = 0
-            while (operand_index < op.args.length()):
-                if (op.args[operand_index] == temp_name):
+            while (operand_index < function_ir.blocks[block_index].instructions[instruction_index].args.length()):
+                if (function_ir.blocks[block_index].instructions[instruction_index].args[operand_index] == temp_name):
                     use_count += 1
-                    if (op.lhs == query_temp_name):
+                    if (function_ir.blocks[block_index].instructions[instruction_index].lhs == query_temp_name):
                         query_is_use = true
                 operand_index += 1
+            instruction_index += 1
         int term_index = 0
-        while (term_index < block.terminator.args.length()):
-            if (block.terminator.args[term_index] == temp_name):
+        while (term_index < function_ir.blocks[block_index].terminator.args.length()):
+            if (function_ir.blocks[block_index].terminator.args[term_index] == temp_name):
                 use_count += 1
             term_index += 1
+        block_index += 1
     return use_count == 1 && query_is_use
 
 bool function_uses_temp(ParsedFunction function_ir, string temp_name):
-    for (BlockIR block in function_ir.blocks):
-        for (LinearInstruction op in block.instructions):
-            if (op.lhs != temp_name):
-                if (instruction_uses_temp(op, temp_name)):
+    int block_index = 0
+    while (block_index < function_ir.blocks.length()):
+        int instruction_index = 0
+        while (instruction_index < function_ir.blocks[block_index].instructions.length()):
+            if (function_ir.blocks[block_index].instructions[instruction_index].lhs != temp_name):
+                if (instruction_uses_temp_at(function_ir.blocks[block_index].instructions, instruction_index, temp_name)):
                     return true
-        int term_operand_limit = block.terminator.args.length()
-        if (block.terminator.kind == 'branch_if'):
+            instruction_index += 1
+        int term_operand_limit = function_ir.blocks[block_index].terminator.args.length()
+        if (function_ir.blocks[block_index].terminator.kind == 'branch_if'):
             if (term_operand_limit > 1):
                 term_operand_limit = 1
-        if (block.terminator.kind == 'return' || block.terminator.kind == 'throw' || block.terminator.kind == 'branch_if'):
+        if (function_ir.blocks[block_index].terminator.kind == 'return' || function_ir.blocks[block_index].terminator.kind == 'throw' || function_ir.blocks[block_index].terminator.kind == 'branch_if'):
             int term_index = 0
             while (term_index < term_operand_limit):
-                if (temp_name == block.terminator.args[term_index]):
+                if (temp_name == function_ir.blocks[block_index].terminator.args[term_index]):
                     return true
                 term_index += 1
+        block_index += 1
     return false
 
-LinearInstruction lookup_block_instruction(BlockIR block, string temp_name):
-    for (LinearInstruction op in block.instructions):
-        if (op.lhs == temp_name):
-            return op
+LinearInstruction lookup_block_instruction(LinearInstruction[] instructions, string temp_name):
+    int index = 0
+    while (index < instructions.length()):
+        if (instructions[index].lhs == temp_name):
+            return instructions[index]
+        index += 1
     return LinearInstruction('', '', '', '', '', [])
 
-string resolve_block_identifier_alias_name(BlockIR block, string temp_name):
+string resolve_block_identifier_alias_name(LinearInstruction[] instructions, string temp_name):
     if (temp_name == ''):
         return ''
-    LinearInstruction op = lookup_block_instruction(block, temp_name)
+    LinearInstruction op = lookup_block_instruction(instructions, temp_name)
     if (op.kind == 'value' && op.detail == 'identifier' && op.args.length() == 1):
         return op.args[0]
     return temp_name
@@ -1776,16 +1811,15 @@ bool is_named_int_order_comparator(ProgramIR program, string comparator_name, bo
         return false
     if (function_ir.blocks.length() != 1):
         return false
-    BlockIR block = function_ir.blocks[0]
-    if (block.terminator.kind != 'return' || block.terminator.args.length() != 1):
+    if (function_ir.blocks[0].terminator.kind != 'return' || function_ir.blocks[0].terminator.args.length() != 1):
         return false
-    LinearInstruction return_op = lookup_block_instruction(block, block.terminator.args[0])
+    LinearInstruction return_op = lookup_block_instruction(function_ir.blocks[0].instructions, function_ir.blocks[0].terminator.args[0])
     if (return_op.kind != 'value' || return_op.detail != 'binary' || return_op.args.length() != 3 || return_op.args[0] != '-'):
         return false
     string left_name = function_ir.params[0].name
     string right_name = function_ir.params[1].name
-    string return_left = resolve_block_identifier_alias_name(block, return_op.args[1])
-    string return_right = resolve_block_identifier_alias_name(block, return_op.args[2])
+    string return_left = resolve_block_identifier_alias_name(function_ir.blocks[0].instructions, return_op.args[1])
+    string return_right = resolve_block_identifier_alias_name(function_ir.blocks[0].instructions, return_op.args[2])
     if (ascending):
         return return_left == left_name && return_right == right_name
     return return_left == right_name && return_right == left_name
@@ -2365,7 +2399,7 @@ bool record_array_producer_literal_is_owned(ProgramIR program, ParsedFunction ca
     if (block.terminator.kind != 'return_owned' || block.terminator.args.length() != 1):
         return false
     string return_temp = block.terminator.args[0]
-    LinearInstruction array = lookup_block_instruction(block, return_temp)
+    LinearInstruction array = lookup_block_instruction(block.instructions, return_temp)
     if (array.kind != 'value' || array.detail != 'array' || normalize_llvm_type_name(array.result_type) != normalize_llvm_type_name(expected_array_type) || array.ownership_mode != 'owned' || array.args.is_empty()):
         return false
     string record_name = record_name_from_type(array_item_type(expected_array_type))
@@ -2423,7 +2457,7 @@ bool record_array_producer_literal_is_owned(ProgramIR program, ParsedFunction ca
                     if (repeated_element):
                         return false
                     seen_elements.push(item_name)
-                    LinearInstruction element = lookup_block_instruction(block, item_name)
+                    LinearInstruction element = lookup_block_instruction(block.instructions, item_name)
                     if (element.kind != 'value' || element.detail != 'call' || element.args.is_empty()):
                         return false
                     if (lookup_named_function_decl(program, element.args[0]).header != '' || lookup_record_decl(program, element.args[0]).header == '' || record_name_from_type(element.result_type) != record_name || !temp_needs_backend_free(producer, item_name) || record_array_producer_semantic_use_count(producer, item_name) != 1):
@@ -9598,7 +9632,7 @@ string[] emit_terminator(ParsedFunction function_ir, BlockIR block, TerminatorIR
     if (terminator.kind == 'return'):
         string result_type = function_ir.return_type
         require_backend_value_type(result_type, 'return')
-        string try_suffix = block_try_suffix(block)
+        string try_suffix = block_try_suffix(block.label, block.instructions)
         if (try_suffix == ''):
             try_suffix = enclosing_try_suffix(function_ir, block.label)
         if (normalize_llvm_type_name(result_type) == 'void'):
@@ -9617,7 +9651,7 @@ string[] emit_terminator(ParsedFunction function_ir, BlockIR block, TerminatorIR
     if (terminator.kind == 'return_owned'):
         string result_type = function_ir.return_type
         require_backend_value_type(result_type, 'return_owned')
-        string try_suffix = block_try_suffix(block)
+        string try_suffix = block_try_suffix(block.label, block.instructions)
         if (try_suffix == ''):
             try_suffix = enclosing_try_suffix(function_ir, block.label)
         if (normalize_llvm_type_name(result_type) == 'void'):
@@ -11839,7 +11873,17 @@ private string[] emit_map_helpers(string type_name):
             lines.push(helper_line)
     return lines
 
+# Detach output so callers may discard program IR before consuming the lines.
 string[] llvm_codegen_ir(ProgramIR program):
+    string[] borrowed_lines = llvm_codegen_ir_borrowed(program)
+    string[] detached = []
+    for (string line in borrowed_lines):
+        detached.push(line.substring(0))
+    return detached
+
+# Keep program alive until borrowed lines are consumed; strings that reference
+# program IR are intentionally not detached on this path.
+string[] llvm_codegen_ir_borrowed(ProgramIR program):
     if (!program.imports.is_empty()):
         throw 'llvm bootstrap backend only supports modules without imports'
     LLVM_PROGRAM_FUNCTION_INDEX = {}
@@ -12199,16 +12243,10 @@ string[] llvm_codegen_ir(ProgramIR program):
         for (string helper in emit_inline_record_field_comparator_helper(record_name, field_name, field_index, direction)):
             lines.push(helper)
         lines.push('')
-    string[] detached = []
-    for (string line in lines):
-        detached.push(line.substring(0))
-    return detached
+    return lines
 
 void print_llvm_lines(string[] lines):
-    string[] copied = []
     for (string line in lines):
-        copied.push(line)
-    for (string line in copied):
         print(line)
 
 void llvm_print_ir(ProgramIR program):
@@ -12591,25 +12629,13 @@ void llvm_print_ir(ProgramIR program):
 
 string[] llvm_codegen_source(string source):
     ProgramIR program = owned_source_ir(source)
-    string[] lines = llvm_codegen_ir(program)
-    string[] detached = []
-    for (string line in lines):
-        detached.push(line.substring(0))
-    return detached
+    return llvm_codegen_ir(program)
 
 string[] llvm_codegen_source_with_regex(string source, bool regex_imported):
     ProgramIR program = owned_program_ir(refine_program_ir_with_regex(lower_source_ir(source), regex_imported))
-    string[] lines = llvm_codegen_ir(program)
-    string[] detached = []
-    for (string line in lines):
-        detached.push(line.substring(0))
-    return detached
+    return llvm_codegen_ir(program)
 
 string[] llvm_codegen_source_with_modules(string source, string[] module_ids, bool regex_imported):
     ProgramIR lowered = lower_source_ir_with_module_ids(source, module_ids)
     ProgramIR program = owned_program_ir(refine_program_ir_with_regex(lowered, regex_imported))
-    string[] lines = llvm_codegen_ir(program)
-    string[] detached = []
-    for (string line in lines):
-        detached.push(line.substring(0))
-    return detached
+    return llvm_codegen_ir(program)

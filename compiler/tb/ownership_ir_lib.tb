@@ -337,10 +337,14 @@ string index_target_type(OwnershipTempMetaCache cache, LinearInstruction op):
     return 'unknown'
 
 LinearInstruction ownership_lookup_temp_instruction(ParsedFunction function_ir, string temp_name):
-    for (BlockIR block in function_ir.blocks):
-        for (LinearInstruction op in block.instructions):
-            if (op.lhs == temp_name):
-                return op
+    int block_index = 0
+    while (block_index < function_ir.blocks.length()):
+        int instruction_index = 0
+        while (instruction_index < function_ir.blocks[block_index].instructions.length()):
+            if (function_ir.blocks[block_index].instructions[instruction_index].lhs == temp_name):
+                return function_ir.blocks[block_index].instructions[instruction_index]
+            instruction_index += 1
+        block_index += 1
     return LinearInstruction('', '', '', '', '', [])
 
 bool owned_int_grid_index_sole_use_in_block(ParsedFunction function_ir, string source_name, string index_name):
