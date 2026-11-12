@@ -322,7 +322,8 @@ Depths update_depths(Depths depths, Token token):
 
 LexResult lex_string(string line, int index, int line_number):
     int column = index + 1
-    string value = ''
+    string[] parts = []
+    int chunk_start = index + 1
     int current = index + 1
 
     while (current < line.length()):
@@ -332,15 +333,19 @@ LexResult lex_string(string line, int index, int line_number):
             if (current + 1 >= line.length()):
                 throw lexer_error(line_number, current + 1, 'unterminated string escape', '')
             string escaped = lexer_char_at(line, current + 1)
-            value = value + decode_escape(line_number, current + 1, escaped)
+            if (chunk_start < current):
+                parts.push(lexer_substring(line, chunk_start, current))
+            parts.push(decode_escape(line_number, current + 1, escaped))
             lexer_stat_append(1)
             current += 2
+            chunk_start = current
             continue
 
         if (ch == '\''):
-            return LexResult(Token('STRING', value, line_number, column), current + 1)
+            if (chunk_start < current):
+                parts.push(lexer_substring(line, chunk_start, current))
+            return LexResult(Token('STRING', parts.join(''), line_number, column), current + 1)
 
-        value = value + ch
         lexer_stat_append(1)
         current += 1
 
@@ -420,7 +425,7 @@ StripLineResult strip_block_comments_from_line(string line, bool in_block_commen
     if (!in_block_comment && !in_string && !line.contains('/*') && !line.contains('*/')):
         return StripLineResult(line, false, false)
 
-    string result = ''
+    string[] parts = []
     int index = 0
     while (index < line.length()):
         if (in_block_comment):
@@ -433,11 +438,11 @@ StripLineResult strip_block_comments_from_line(string line, bool in_block_commen
 
         string ch = lexer_char_at(line, index)
         if (in_string):
-            result += ch
+            parts.push(ch)
             lexer_stat_append(ch.length())
             if (ch == '\\' && index + 1 < line.length()):
                 string escaped = lexer_char_at(line, index + 1)
-                result += escaped
+                parts.push(escaped)
                 lexer_stat_append(escaped.length())
                 index += 2
                 continue
@@ -448,22 +453,22 @@ StripLineResult strip_block_comments_from_line(string line, bool in_block_commen
 
         if (ch == '#'):
             string comment_text = lexer_substring(line, index, line.length())
-            result += comment_text
+            parts.push(comment_text)
             lexer_stat_append(comment_text.length())
-            return StripLineResult(result, false, false)
+            return StripLineResult(parts.join(''), false, false)
 
         if (line.starts_with_at('/*', index)):
             in_block_comment = true
             index += 2
             continue
 
-        result += ch
+        parts.push(ch)
         lexer_stat_append(ch.length())
         if (ch == '\''):
             in_string = true
         index += 1
 
-    return StripLineResult(result, in_block_comment, in_string)
+    return StripLineResult(parts.join(''), in_block_comment, in_string)
 
 Token[] lex_source_lines(string[] lines):
     Token[] tokens = []
