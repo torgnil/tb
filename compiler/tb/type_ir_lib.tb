@@ -1901,6 +1901,24 @@ private string refine_ufcs_minmax_result_type(LinearInstruction op, FunctionSigI
         return ''
     throw method_name + ' requires two int or two num operands; got ' + receiver_type + ' and ' + argument_type
 
+private string validate_native_abs_value_type(string value_name, string value_role, string[] temp_types, EnumTypeIR[] enum_types):
+    string value_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, value_name)), enum_types)
+    if (value_type != '' && value_type != 'unknown' && value_type != 'int' && value_type != 'num'):
+        if (value_role == 'argument'):
+            throw 'abs requires int or num; got ' + value_type
+        throw 'abs requires int or num receiver; got ' + value_type
+    return value_type
+
+private void validate_native_abs_call(LinearInstruction op, string[] temp_types, EnumTypeIR[] enum_types):
+    if (op.args.length() != 2):
+        throw 'abs requires exactly one int or num argument'
+    validate_native_abs_value_type(op.args[1], 'argument', temp_types, enum_types)
+
+private string validate_native_abs_method_call(LinearInstruction op, string[] temp_types, EnumTypeIR[] enum_types):
+    if (op.args.length() != 2):
+        throw 'abs method accepts no explicit arguments'
+    return validate_native_abs_value_type(op.args[1], 'receiver', temp_types, enum_types)
+
 private LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bindings, FunctionSigIR[] functions, RecordFieldIR[] record_fields, map<string, string> field_types, string[] record_names, EnumTypeIR[] enum_types, string[] temp_types):
     if (op.kind != 'value'):
         return op
@@ -2584,7 +2602,7 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
             if (is_thread_pool_type(canonical_base_type) || is_future_type(canonical_base_type) || canonical_base_type.starts_with('map<') || ((method_name == 'sum') && (canonical_base_type == 'int[]' || canonical_base_type == 'bool[]'))):
                 base_type = canonical_base_type
         if (method_name == 'abs'):
-            string canonical_base_type = normalize_llvm_type_name(base_type)
+            string canonical_base_type = validate_native_abs_method_call(op, temp_types, enum_types)
             if (canonical_base_type == 'int' || canonical_base_type == 'num'):
                 return refined_value_op(op, canonical_base_type, refine_ownership_mode(op, canonical_base_type))
         if (method_name == 'min' || method_name == 'max'):
@@ -2916,6 +2934,8 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                     string sqrt_arg_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
                     if (sqrt_arg_type != '' && sqrt_arg_type != 'unknown' && sqrt_arg_type != 'int' && sqrt_arg_type != 'num'):
                         throw 'sqrt requires int or num; got ' + sqrt_arg_type
+            if (!op.args.is_empty() && op.args[0] == 'abs'):
+                validate_native_abs_call(op, temp_types, enum_types)
             if (op.args.length() >= 2):
                 if (op.args[0] == 'range'):
                     if (op.args.length() >= 2 && op.args.length() <= 4):
