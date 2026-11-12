@@ -1,0 +1,16 @@
+int main():
+    thread_pool pool = thread_pool(1)
+    bool[][] grid = [[true, false], [], [false, true]]
+    future<int> count = pool.submit(bool[][] task -> {
+        int total = 0
+        for (const bool[] row : task) {
+            for (const bool value : row) {
+                if (value) { total += 1; }
+            }
+        }
+        return total
+    }, grid)
+    grid[0][0] = false
+    grid[2][1] = false
+    print(count.await())
+    return 0

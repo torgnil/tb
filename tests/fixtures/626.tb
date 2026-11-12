@@ -1,0 +1,43 @@
+int[] weights = [2]
+const int[] weight_slots = [0, 0]
+int weight_step = 0
+int[] minimum_lengths = [1]
+const int[] length_slots = [0, 0, 0]
+int length_step = 0
+
+string[] load_words():
+    weights[0] = 4
+    return ['oak', 'pine']
+
+string[] load_filter_words():
+    minimum_lengths[0] = 4
+    return ['oak', 'pine', 'willow']
+
+string format_word(string word, const int[] captured_weights, const int[] slots, int suffix):
+    int index = slots[weight_step]
+    weight_step += 1
+    int value = captured_weights[index]
+    weights[0] = 99
+    return word + ':' + (value + suffix).to_string()
+
+bool long_enough(string word, const int[] limits, const int[] slots):
+    int index = slots[length_step]
+    length_step += 1
+    int limit = limits[index]
+    minimum_lengths[0] = 0
+    return word.length() >= limit
+
+int main():
+    int suffix = 3
+    string[] mapped = load_words().map_to(string word -> format_word(word, weights, weight_slots, suffix))
+    print(mapped)
+    print(weights[0])
+
+    string[] selected = load_filter_words().filter(string word -> long_enough(word, minimum_lengths, length_slots))
+    print(selected)
+    print(minimum_lengths[0])
+
+    string[] empty = []
+    print(empty.map_to(string word -> format_word(word, weights, weight_slots, suffix)))
+    print(empty.filter(string word -> long_enough(word, minimum_lengths, length_slots)))
+    return 0

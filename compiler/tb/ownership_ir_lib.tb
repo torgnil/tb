@@ -285,8 +285,9 @@ string identifier_target_binding_cached(OwnershipIdentifierTargetCache cache, st
         index -= 1
     return ''
 
-string borrowed_int_array_named_sort_receiver_binding(ParsedFunction function_ir, OwnershipTempMetaCache cache, OwnershipIdentifierTargetCache identifier_target_cache, string temp_name):
-    if (normalize_llvm_type_name(lookup_temp_result_type_cached(cache, temp_name)) != 'int[]'):
+string borrowed_primitive_array_named_sort_receiver_binding(ParsedFunction function_ir, OwnershipTempMetaCache cache, OwnershipIdentifierTargetCache identifier_target_cache, string temp_name):
+    string result_type = normalize_llvm_type_name(lookup_temp_result_type_cached(cache, temp_name))
+    if (result_type != 'int[]' && result_type != 'bool[]' && result_type != 'string[]'):
         return ''
     if (lookup_temp_ownership_mode_cached(cache, temp_name) != 'borrowed'):
         return ''
@@ -295,12 +296,13 @@ string borrowed_int_array_named_sort_receiver_binding(ParsedFunction function_ir
             if (op.lhs == temp_name && op.kind == 'value' && op.detail == 'method-call'):
                 if (op.args.length() >= 2):
                     if (op.args[0] == 'sort'):
-                        if (op.args.length() == 3):
-                            if (normalize_llvm_type_name(lookup_temp_result_type_cached(cache, op.args[1])) == 'int[]'):
-                                string receiver_binding = identifier_target_binding_cached(identifier_target_cache, op.args[1])
-                                if (receiver_binding != ''):
-                                    return receiver_binding
-                                return borrowed_int_array_named_sort_receiver_binding(function_ir, cache, identifier_target_cache, op.args[1])
+                        string receiver_type = normalize_llvm_type_name(lookup_temp_result_type_cached(cache, op.args[1]))
+                        bool sort_arity_supported = op.args.length() == 2 || (receiver_type == 'int[]' && op.args.length() == 3)
+                        if (sort_arity_supported && (receiver_type == 'int[]' || receiver_type == 'bool[]' || receiver_type == 'string[]')):
+                            string receiver_binding = identifier_target_binding_cached(identifier_target_cache, op.args[1])
+                            if (receiver_binding != ''):
+                                return receiver_binding
+                            return borrowed_primitive_array_named_sort_receiver_binding(function_ir, cache, identifier_target_cache, op.args[1])
     return ''
 
 string named_binding_decl(ParsedFunction function_ir, string name):
@@ -335,10 +337,14 @@ string index_target_type(OwnershipTempMetaCache cache, LinearInstruction op):
     return 'unknown'
 
 LinearInstruction ownership_lookup_temp_instruction(ParsedFunction function_ir, string temp_name):
-    for (BlockIR block in function_ir.blocks):
-        for (LinearInstruction op in block.instructions):
-            if (op.lhs == temp_name):
-                return op
+    int block_index = 0
+    while (block_index < function_ir.blocks.length()):
+        int instruction_index = 0
+        while (instruction_index < function_ir.blocks[block_index].instructions.length()):
+            if (function_ir.blocks[block_index].instructions[instruction_index].lhs == temp_name):
+                return function_ir.blocks[block_index].instructions[instruction_index]
+            instruction_index += 1
+        block_index += 1
     return LinearInstruction('', '', '', '', '', [])
 
 bool owned_int_grid_index_sole_use_in_block(ParsedFunction function_ir, string source_name, string index_name):
@@ -443,10 +449,13 @@ ParsedFunction materialize_owned_foreach_iterables(ParsedFunction function_ir):
                 string source_name = op.args[0].substring(0)
                 LinearInstruction source = ownership_lookup_temp_instruction(function_ir, source_name)
                 string declaration = ''
-                if (normalize_llvm_type_name(op.result_type) == 'int[]' && source.kind == 'value' && normalize_llvm_type_name(source.result_type) == 'int[]' && ownership_is_owned_mode(source.ownership_mode)):
+                string iterable_type = normalize_llvm_type_name(op.result_type)
+                bool supported_iterable_type = iterable_type == 'int[]' || iterable_type == 'bool[]' || iterable_type == 'string[]' || iterable_type == 'int[][]' || iterable_type == 'bool[][]' || iterable_type == 'set<int>' || iterable_type == 'set<string>'
+                bool owned_source = source.kind == 'value' && normalize_llvm_type_name(source.result_type) == iterable_type && ownership_is_owned_mode(source.ownership_mode)
+                if (supported_iterable_type && owned_source):
                     string local_name = 'foreach.' + marker_name
-                    declaration = 'int[] ' + local_name
-                    locals.push(BindingIR('int[]', local_name))
+                    declaration = iterable_type + ' ' + local_name
+                    locals.push(BindingIR(iterable_type, local_name))
                 marker_names.push(marker_name)
                 source_names.push(source_name)
                 owned_declarations.push(declaration)
@@ -465,7 +474,8 @@ ParsedFunction materialize_owned_foreach_iterables(ParsedFunction function_ir):
                 if (declaration != ''):
                     string local_name = ir_parse_binding_decl(declaration).name
                     instructions.push(LinearInstruction('set', '', '', '', declaration, [source_names[marker_index]]))
-                    instructions.push(LinearInstruction('value', op.lhs, 'int[]', 'borrowed', 'identifier', [local_name]))
+                    string iterable_type = ir_parse_binding_decl(declaration).type_name
+                    instructions.push(LinearInstruction('value', op.lhs, iterable_type, 'borrowed', 'identifier', [local_name]))
                 continue
             if (op.kind == 'foreach_end'):
                 int marker_index = ownership_foreach_marker_index(marker_names, op.detail)
@@ -563,7 +573,7 @@ LinearInstruction[] apply_ownership_to_instructions(ParsedFunction function_ir, 
                 if (binding_decl != '' && binding_is_managed_cached(binding_decl, record_names, enum_names)):
                     if (source_binding_decl == binding_decl):
                         continue
-                    string sort_receiver_binding_decl = borrowed_int_array_named_sort_receiver_binding(function_ir, cache, identifier_target_cache, op.args[0])
+                    string sort_receiver_binding_decl = borrowed_primitive_array_named_sort_receiver_binding(function_ir, cache, identifier_target_cache, op.args[0])
                     if (sort_receiver_binding_decl == binding_decl):
                         continue
             if (binding_decl != '' && binding_is_managed_cached(binding_decl, record_names, enum_names)):
@@ -657,20 +667,24 @@ BlockIR apply_ownership_to_block(ParsedFunction function_ir, OwnershipTempMetaCa
             bool prepare_string_return = false
             bool prepare_string_array_array_return = false
             bool prepare_int_array_array_return = false
+            bool prepare_bool_array_array_return = false
             bool prepare_bool_array_return = false
             bool prepare_int_array_return = false
             bool prepare_record_array_return = false
             bool prepare_int_set_return = false
+            bool prepare_string_set_return = false
             if (!terminator.args.is_empty()):
                 string return_type = lookup_temp_result_type_cached(cache, terminator.args[0])
                 string normalized_return_type = normalize_llvm_type_name(return_type)
                 prepare_string_return = normalized_return_type == 'string'
                 prepare_string_array_array_return = normalized_return_type == 'string[][]'
                 prepare_int_array_array_return = normalized_return_type == 'int[][]'
+                prepare_bool_array_array_return = normalized_return_type == 'bool[][]'
                 prepare_bool_array_return = normalized_return_type == 'bool[]'
                 prepare_int_array_return = normalized_return_type == 'int[]'
                 prepare_record_array_return = normalized_return_type.ends_with('[]') && record_name_from_type(array_item_type(normalized_return_type)) != ''
                 prepare_int_set_return = normalized_return_type == 'set<int>'
+                prepare_string_set_return = normalized_return_type == 'set<string>'
                 string returned_binding = identifier_target_binding_cached(identifier_target_cache, terminator.args[0])
                 if (returned_binding != ''):
                     BindingIR binding = ir_parse_binding_decl(returned_binding)
@@ -685,16 +699,22 @@ BlockIR apply_ownership_to_block(ParsedFunction function_ir, OwnershipTempMetaCa
                             prepare_bool_array_return = false
                         if (normalized_return_type == 'int[][]'):
                             prepare_int_array_array_return = false
+                        if (normalized_return_type == 'bool[][]'):
+                            prepare_bool_array_array_return = false
                         if (normalized_return_type == 'string[][]'):
                             prepare_string_array_array_return = false
                         if (prepare_int_set_return):
                             prepare_int_set_return = false
+                        if (prepare_string_set_return):
+                            prepare_string_set_return = false
             if (prepare_string_return):
                 instructions.push(LinearInstruction('prepare_return_string', '', '', '', '', [terminator.args[0]]))
             if (prepare_string_array_array_return):
                 instructions.push(LinearInstruction('prepare_return_string_array_array', '', '', '', '', [terminator.args[0]]))
             if (prepare_int_array_array_return):
                 instructions.push(LinearInstruction('prepare_return_int_array_array', '', '', '', '', [terminator.args[0]]))
+            if (prepare_bool_array_array_return):
+                instructions.push(LinearInstruction('prepare_return_bool_array_array', '', '', '', '', [terminator.args[0]]))
             if (prepare_record_array_return):
                 instructions.push(LinearInstruction('prepare_return_record_array', '', '', '', '', [terminator.args[0]]))
             if (prepare_bool_array_return):
@@ -703,6 +723,8 @@ BlockIR apply_ownership_to_block(ParsedFunction function_ir, OwnershipTempMetaCa
                 instructions.push(LinearInstruction('prepare_return_int_array', '', '', '', '', [terminator.args[0]]))
             if (prepare_int_set_return):
                 instructions.push(LinearInstruction('prepare_return_int_set', '', '', '', '', [terminator.args[0]]))
+            if (prepare_string_set_return):
+                instructions.push(LinearInstruction('prepare_return_string_set', '', '', '', '', [terminator.args[0]]))
         if (terminator.kind == 'throw' || terminator.kind == 'throw_owned'):
             if (!terminator.args.is_empty()):
                 if (normalize_llvm_type_name(lookup_temp_result_type_cached(cache, terminator.args[0])) == 'string'):

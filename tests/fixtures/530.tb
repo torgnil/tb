@@ -1,0 +1,44 @@
+string[] LABELS = ['global', '', 'tail']
+
+bool has_label(string label):
+    return label.length() > 0
+
+int label_length(string label):
+    return label.length()
+
+int erase_first_label(int index):
+    LABELS[0] = ''
+    return index
+
+int fail_on_two(int index):
+    if (index == 2):
+        throw 'array callback failed'
+    return index
+
+int main(string[] args):
+    int[] indices = [0, 1, 2]
+    const string[] labels = ['red', '', 'blue']
+    const string[] expected_labels = ['red', '', 'blue']
+
+    int[] lengths = indices.map_to(int index -> label_length(labels[index]))
+    print(lengths)
+    int[] selected = indices.filter(int index -> has_label(labels[index]))
+    print(selected)
+    int[] exact_labels = indices.filter(int index -> labels[index] == expected_labels[index])
+    print(exact_labels)
+
+    int[] global_snapshot = indices.filter(int index -> {
+        int changed = erase_first_label(index)
+        return has_label(LABELS[index])
+    })
+    print(global_snapshot)
+    print(LABELS[0].is_empty())
+
+    try:
+        indices.filter(int index -> {
+            int checked = fail_on_two(index)
+            return has_label(labels[index])
+        })
+    catch (exception error):
+        print(error)
+    return 0

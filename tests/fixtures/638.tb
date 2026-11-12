@@ -1,0 +1,64 @@
+enum Op { START = 1, NEXT = 2 }
+
+map<int[], string[]> global_labels = {[5]: ['global']}
+
+record LabelBox(map<int[], string[]> labels);
+
+map<int[], string[]> copy_labels(map<int[], string[]> labels):
+    return labels
+
+int main():
+    int[] source_key = [1, 2]
+    string[] source_labels = ['north', 'south']
+    map<int[], string[]> labels = {}
+    labels[source_key] = source_labels
+    source_key[0] = 9
+    source_labels[0] = 'changed source'
+
+    labels[[3]] = ['east', 'west']
+    labels[[1, 2]] = ['one', 'two']
+    labels[[4]] = []
+    print(labels.length())
+    print(labels.contains([1, 2]))
+    print(labels.contains(source_key))
+    print(labels[[1, 2]][0])
+    print(labels[[4]].length())
+
+    string[] retrieved = labels[[1, 2]]
+    retrieved[0] = 'changed read'
+    print(labels[[1, 2]][0])
+
+    string[][] ordered = labels.values()
+    print(ordered.length())
+    print(ordered[0][0])
+    print(ordered[1][0])
+    print(ordered[2].length())
+    ordered[0][0] = 'changed snapshot'
+    print(labels[[1, 2]][0])
+
+    map<int[], string[]> copied = labels
+    copied[[1, 2]] = ['copy']
+    print(labels[[1, 2]][0])
+    print(copied[[1, 2]][0])
+
+    string[] missing = labels[[404]]
+    print(missing.length())
+    missing.push('missing')
+    print(labels.contains([404]))
+
+    map<int[], string[]> empty = {}
+    string[][] empty_values = empty.values()
+    print(empty_values.length())
+
+    map<int[], string[]> returned = copy_labels(labels)
+    print(returned[[3]][0])
+
+    LabelBox box = LabelBox(labels)
+    print(box.labels[[1, 2]][0])
+    print(global_labels[[5]][0])
+
+    map<Op[], string[]> enum_labels = {}
+    Op[] enum_key = [Op.START, Op.NEXT]
+    enum_labels[enum_key] = ['enum key']
+    print(enum_labels[[Op.START, Op.NEXT]][0])
+    return 0

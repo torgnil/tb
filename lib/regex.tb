@@ -1,34 +1,34 @@
 # A byte-oriented Thompson NFA. Instructions use parallel arrays.
 # Outgoing patch-list nodes encode the instruction and slot as 2 * pc + slot.
 record Regex(bool valid, int start, int[] operations, int[] out1, int[] out2, string[] characters);
-record RegexPostfix(bool valid, int[] kinds, string[] characters);
-record RegexRepeat(bool valid, int minimum, int maximum, int end);
+private record RegexPostfix(bool valid, int[] kinds, string[] characters);
+private record RegexRepeat(bool valid, int minimum, int maximum, int end);
 record RegexMatch(bool matched, int start, int end);
 record RegexCapture(bool matched, int[] starts, int[] ends);
 
 # The operator stack, postfix stream, and NFA use separate integer codes.
-const int REGEX_OPERATOR_OPEN = 1
-const int REGEX_OPERATOR_ALTERNATE = 2
-const int REGEX_OPERATOR_CONCAT = 3
+private const int REGEX_OPERATOR_OPEN = 1
+private const int REGEX_OPERATOR_ALTERNATE = 2
+private const int REGEX_OPERATOR_CONCAT = 3
 
-const int REGEX_POSTFIX_CHAR = 1
-const int REGEX_POSTFIX_ANY = 2
-const int REGEX_POSTFIX_CONCAT = 3
-const int REGEX_POSTFIX_ALTERNATE = 4
-const int REGEX_POSTFIX_STAR = 5
-const int REGEX_POSTFIX_PLUS = 6
-const int REGEX_POSTFIX_OPTIONAL = 7
-const int REGEX_POSTFIX_CLASS = 8
-const int REGEX_POSTFIX_BRACKET = 9
-const int REGEX_POSTFIX_REPEAT = 10
-const int REGEX_POSTFIX_EMPTY = 11
-const int REGEX_POSTFIX_START = 12
-const int REGEX_POSTFIX_END = 13
-const int REGEX_POSTFIX_REPEAT_OPEN = 14
-const int REGEX_POSTFIX_REPEAT_CLOSE = 15
-const int REGEX_POSTFIX_REPEAT_OPTIONAL = 16
-const int REGEX_POSTFIX_GROUP = 17
-const int REGEX_POSTFIX_GROUP_COUNT = 18
+private const int REGEX_POSTFIX_CHAR = 1
+private const int REGEX_POSTFIX_ANY = 2
+private const int REGEX_POSTFIX_CONCAT = 3
+private const int REGEX_POSTFIX_ALTERNATE = 4
+private const int REGEX_POSTFIX_STAR = 5
+private const int REGEX_POSTFIX_PLUS = 6
+private const int REGEX_POSTFIX_OPTIONAL = 7
+private const int REGEX_POSTFIX_CLASS = 8
+private const int REGEX_POSTFIX_BRACKET = 9
+private const int REGEX_POSTFIX_REPEAT = 10
+private const int REGEX_POSTFIX_EMPTY = 11
+private const int REGEX_POSTFIX_START = 12
+private const int REGEX_POSTFIX_END = 13
+private const int REGEX_POSTFIX_REPEAT_OPEN = 14
+private const int REGEX_POSTFIX_REPEAT_CLOSE = 15
+private const int REGEX_POSTFIX_REPEAT_OPTIONAL = 16
+private const int REGEX_POSTFIX_GROUP = 17
+private const int REGEX_POSTFIX_GROUP_COUNT = 18
 
 const int REGEX_NFA_CHAR = 1
 const int REGEX_NFA_ANY = 2
@@ -44,9 +44,15 @@ const int REGEX_NFA_REPEAT_END = 11
 const int REGEX_NFA_SAVE = 12
 const int REGEX_NFA_REPEAT_FIRST = 13
 
-const int REGEX_CLASS_INVALID = 0
-const int REGEX_CLASS_NO_MATCH = 1
-const int REGEX_CLASS_MATCH = 2
+private const int REGEX_CLASS_INVALID = 0
+private const int REGEX_CLASS_NO_MATCH = 1
+private const int REGEX_CLASS_MATCH = 2
+
+# Capture frames contain state, depth, progress, origin, flags, then positions.
+private const int REGEX_CAPTURE_FRAME_HEADER = 5
+private const int REGEX_CAPTURE_REPEAT_DEPTH = 12
+private const int REGEX_CAPTURE_FLAG_COUNT = 4096
+private const int REGEX_CAPTURE_FLAG_MASK = 4095
 
 private void regex_postfix_add(int[] kinds, string[] characters, int kind, string character):
     kinds.push(kind)
@@ -207,6 +213,32 @@ private RegexRepeat regex_repeat_parse(string pattern, int start):
         return RegexRepeat(false, 0, 0, index)
     return RegexRepeat(true, minimum, maximum, index)
 
+# Append one validated counted repeat, preserving postfix priority markers.
+private void regex_emit_repeat(int[] kinds, string[] characters, int[] fragment_kinds, string[] fragment_chars, RegexRepeat repeat, int copies):
+    bool emitted = false
+    int copy = 0
+    bool has_optional = repeat.maximum < 0 || repeat.maximum > repeat.minimum
+    if (has_optional):
+        regex_postfix_add(kinds, characters, REGEX_POSTFIX_REPEAT_OPEN, '')
+    while (copy < copies):
+        int cursor = 0
+        while (cursor < fragment_kinds.length()):
+            regex_postfix_add(kinds, characters, fragment_kinds[cursor], fragment_chars[cursor])
+            cursor += 1
+        if (copy >= repeat.minimum):
+            if (repeat.maximum < 0):
+                regex_postfix_add(kinds, characters, REGEX_POSTFIX_STAR, '')
+            else:
+                regex_postfix_add(kinds, characters, REGEX_POSTFIX_REPEAT_OPTIONAL, '')
+        if (emitted):
+            regex_postfix_add(kinds, characters, REGEX_POSTFIX_CONCAT, '')
+        emitted = true
+        copy += 1
+    if (!emitted):
+        regex_postfix_add(kinds, characters, REGEX_POSTFIX_EMPTY, '')
+    if (has_optional):
+        regex_postfix_add(kinds, characters, REGEX_POSTFIX_REPEAT_CLOSE, '')
+
 # Expand counted postfix expressions inside out. The stack records the first
 # token of each complete operand, so a group can be copied without cloning an NFA.
 private RegexPostfix regex_expand_counts(RegexPostfix postfix):
@@ -252,29 +284,7 @@ private RegexPostfix regex_expand_counts(RegexPostfix postfix):
             while (kinds.length() > start):
                 kinds.pop()
                 characters.pop()
-            bool emitted = false
-            int copy = 0
-            bool has_optional = repeat.maximum < 0 || repeat.maximum > repeat.minimum
-            if (has_optional):
-                regex_postfix_add(kinds, characters, REGEX_POSTFIX_REPEAT_OPEN, '')
-            while (copy < copies):
-                cursor = 0
-                while (cursor < fragment_kinds.length()):
-                    regex_postfix_add(kinds, characters, fragment_kinds[cursor], fragment_chars[cursor])
-                    cursor += 1
-                if (copy >= repeat.minimum):
-                    if (repeat.maximum < 0):
-                        regex_postfix_add(kinds, characters, REGEX_POSTFIX_STAR, '')
-                    else:
-                        regex_postfix_add(kinds, characters, REGEX_POSTFIX_REPEAT_OPTIONAL, '')
-                if (emitted):
-                    regex_postfix_add(kinds, characters, REGEX_POSTFIX_CONCAT, '')
-                emitted = true
-                copy += 1
-            if (!emitted):
-                regex_postfix_add(kinds, characters, REGEX_POSTFIX_EMPTY, '')
-            if (has_optional):
-                regex_postfix_add(kinds, characters, REGEX_POSTFIX_REPEAT_CLOSE, '')
+            regex_emit_repeat(kinds, characters, fragment_kinds, fragment_chars, repeat, copies)
             starts.push(start)
         else:
             if (kind == REGEX_POSTFIX_CONCAT || kind == REGEX_POSTFIX_ALTERNATE):
@@ -745,7 +755,13 @@ private bool regex_queue_epsilon(Regex program, int state, int[] pending, bool a
 # Add an epsilon closure once per input position. A state is visited at most
 # once even if repetition creates epsilon cycles. Invalid mutated programs
 # fail rather than indexing outside their instruction arrays.
-private bool regex_add_state(Regex program, int state, int[] seen, int[] pending, int[] active, bool at_start, bool at_end, bool fast_saves):
+private int regex_next_seen_generation(int[] seen, int generation):
+    if (generation == 9223372036854775807):
+        seen.fill(0)
+        return 1
+    return generation + 1
+
+private bool regex_add_state(Regex program, int state, int[] seen, int generation, int[] pending, int[] active, bool at_start, bool at_end, bool fast_saves):
     pending.push(state)
     while (!pending.is_empty()):
         int current = pending.pop()
@@ -755,8 +771,8 @@ private bool regex_add_state(Regex program, int state, int[] seen, int[] pending
             return false
         if (fast_saves && program.operations[current] == REGEX_NFA_SAVE):
             current = program.out2[current] / (program.operations.length() + 1)
-        if (seen[current] == 0):
-            seen[current] = 1
+        if (seen[current] != generation):
+            seen[current] = generation
             int operation = program.operations[current]
             if (regex_queue_epsilon(program, current, pending, at_start, at_end)):
                 continue
@@ -808,6 +824,7 @@ bool regex_match(Regex program, string text):
     bool fast_saves = regex_save_cache_valid(program)
     int[] seen = range(count)
     seen.fill(0)
+    int generation = 1
     int[] pending = []
     int[] current = []
     int[] next = []
@@ -816,7 +833,7 @@ bool regex_match(Regex program, string text):
     if (text_length > 0):
         final_lf = text[text_length - 1] == '\n'
     bool initial_end = text_length == 0 || (text_length == 1 && final_lf)
-    if (!regex_add_state(program, program.start, seen, pending, current, true, initial_end, fast_saves)):
+    if (!regex_add_state(program, program.start, seen, generation, pending, current, true, initial_end, fast_saves)):
         return false
     # Copy once into a managed string so indexed byte reads use its cached
     # length instead of rescanning the borrowed input with strlen each time.
@@ -824,7 +841,7 @@ bool regex_match(Regex program, string text):
     int text_index = 0
     while (text_index < text_length):
         string character = scan_text[text_index]
-        seen.fill(0)
+        generation = regex_next_seen_generation(seen, generation)
         next.clear()
         int index = 0
         while (index < current.length()):
@@ -832,7 +849,7 @@ bool regex_match(Regex program, string text):
             if (regex_state_match(program, state, character) == REGEX_CLASS_MATCH):
                 int boundary = text_index + 1
                 bool at_end = boundary == text_length || (final_lf && boundary == text_length - 1)
-                if (!regex_add_state(program, program.out1[state], seen, pending, next, false, at_end, fast_saves)):
+                if (!regex_add_state(program, program.out1[state], seen, generation, pending, next, false, at_end, fast_saves)):
                     return false
             index += 1
         current.clear()
@@ -866,25 +883,25 @@ bool regex_contains(Regex program, string text):
         final_lf = text_bytes[text_length - 1] == '\n'
     int[] seen = range(count)
     seen.fill(0)
+    int generation = 1
     int[] pending = []
     int[] current = []
     int[] next = []
     int text_index = 0
     while (text_index <= text_length):
-        seen.fill(0)
         for (int state : current):
             if (state < 0 || state >= count):
                 return false
-            seen[state] = 1
+            seen[state] = generation
         bool at_end = text_index == text_length || (final_lf && text_index == text_length - 1)
-        if (!regex_add_state(program, program.start, seen, pending, current, text_index == 0, at_end, fast_saves)):
+        if (!regex_add_state(program, program.start, seen, generation, pending, current, text_index == 0, at_end, fast_saves)):
             return false
         for (int state : current):
             if (program.operations[state] == REGEX_NFA_MATCH):
                 return true
         if (text_index == text_length):
             return false
-        seen.fill(0)
+        generation = regex_next_seen_generation(seen, generation)
         next.clear()
         string character = text_bytes[text_index]
         int index = 0
@@ -893,7 +910,7 @@ bool regex_contains(Regex program, string text):
             if (regex_state_match(program, state, character) == REGEX_CLASS_MATCH):
                 int boundary = text_index + 1
                 bool next_end = boundary == text_length || (final_lf && boundary == text_length - 1)
-                if (!regex_add_state(program, program.out1[state], seen, pending, next, false, next_end, fast_saves)):
+                if (!regex_add_state(program, program.out1[state], seen, generation, pending, next, false, next_end, fast_saves)):
                     return false
             index += 1
         current.clear()
@@ -1066,12 +1083,11 @@ private bool regex_search_program_valid(Regex program):
 # instructions are rejected when the search visits them.
 # Keep priority and repeat handling aligned with regex_capture_search; this
 # span-only path intentionally avoids allocating per-thread capture vectors.
-RegexMatch regex_find_from(Regex program, string text, int start):
+private RegexMatch regex_find_prepared(Regex program, string[] text_bytes, int start):
     if (!regex_search_program_valid(program)):
         return RegexMatch(false, -1, -1)
     int count = program.operations.length()
     bool fast_saves = regex_save_cache_valid(program)
-    string[] text_bytes = text.split('')
     int text_length = text_bytes.length()
     if (start < 0 || start > text_length):
         return RegexMatch(false, -1, -1)
@@ -1173,26 +1189,35 @@ RegexMatch regex_find_from(Regex program, string text, int start):
         return RegexMatch(true, best_start, best_end)
     return RegexMatch(false, -1, -1)
 
+RegexMatch regex_find_from(Regex program, string text, int start):
+    return regex_find_prepared(program, text.split(''), start)
+
 RegexMatch regex_find(Regex program, string text):
     return regex_find_from(program, text, 0)
+
+# Return -1 after an empty match at the final boundary; otherwise advance.
+private int regex_next_match_start(int match_start, int match_end, int text_length):
+    if (match_start != match_end):
+        return match_end
+    if (match_start == text_length):
+        return -1
+    return match_start + 1
 
 RegexMatch[] regex_find_all_from(Regex program, string text, int start):
     RegexMatch[] matches = []
     int text_length = text.length()
     if (start < 0 || start > text_length):
         return matches
+    string[] text_bytes = text.split('')
     int search_start = start
     while (search_start <= text_length):
-        RegexMatch match = regex_find_from(program, text, search_start)
+        RegexMatch match = regex_find_prepared(program, text_bytes, search_start)
         if (!match.matched):
             break
         matches.push(match)
-        if (match.start == match.end):
-            if (match.start == text_length):
-                break
-            search_start = match.start + 1
-        else:
-            search_start = match.end
+        search_start = regex_next_match_start(match.start, match.end, text_length)
+        if (search_start < 0):
+            break
     return matches
 
 RegexMatch[] regex_find_all(Regex program, string text):
@@ -1225,6 +1250,32 @@ private string __tb_regex_replacement_literal(string replacement):
 
 string regex_replace(Regex program, string text, string replacement):
     return regex_replace_from(program, text, replacement, 0)
+
+string regex_replace_first(Regex program, string text, string replacement):
+    return regex_replace_first_from(program, text, replacement, 0)
+
+string regex_replace_first_from(Regex program, string text, string replacement, int start):
+    if (start < 0 || start > text.length()):
+        return text
+    int match_start = -1
+    int match_end = -1
+    string expanded = ''
+    if (__tb_regex_replacement_uses_captures(replacement)):
+        RegexCapture capture = regex_find_captures_from(program, text, start)
+        if (!capture.matched):
+            return text
+        match_start = capture.starts[0]
+        match_end = capture.ends[0]
+        expanded = __tb_regex_replacement_expand(replacement, capture, text)
+    else:
+        RegexMatch match = regex_find_from(program, text, start)
+        if (!match.matched):
+            return text
+        match_start = match.start
+        match_end = match.end
+        expanded = __tb_regex_replacement_literal(replacement)
+    string[] parts = [text.substring(0, match_start), expanded, text.substring(match_end)]
+    return parts.join('')
 
 string regex_replace_from(Regex program, string text, string replacement, int start):
     if (start < 0 || start > text.length()):
@@ -1278,7 +1329,7 @@ private int regex_capture_group_count(Regex program):
     return count
 
 private void regex_capture_push(int[] threads, int state, int depth, int progress, int start, int first_flags, int[] positions):
-    if (threads.length() > 2147483647 - positions.length() - 5):
+    if (threads.length() > 2147483647 - positions.length() - REGEX_CAPTURE_FRAME_HEADER):
         throw 'regex captures: thread buffer too large'
     threads.push(state)
     threads.push(depth)
@@ -1312,7 +1363,7 @@ private bool regex_capture_is_depth_limit(RegexCapture result):
 # empty first iteration may be followed by another; later empty iterations
 # stop. Each queued frame owns a copy of its capture positions. Keep ordering
 # and repeat-progress handling aligned with regex_find_from above.
-private RegexCapture regex_capture_search(Regex program, string text, int start, bool full):
+private RegexCapture regex_capture_search(Regex program, string[] text_bytes, int start, bool full):
     if (!regex_search_program_valid(program)):
         return RegexCapture(false, [], [])
     int count = program.operations.length()
@@ -1324,7 +1375,7 @@ private RegexCapture regex_capture_search(Regex program, string text, int start,
     if (groups < 0):
         return RegexCapture(false, [], [])
     int slots = (groups + 1) * 2
-    int frame_size = slots + 5
+    int frame_size = slots + REGEX_CAPTURE_FRAME_HEADER
     int[] save_slots = range(program.operations.length())
     save_slots.fill(-1)
     for (int state = 0; state < program.operations.length(); state += 1):
@@ -1333,7 +1384,6 @@ private RegexCapture regex_capture_search(Regex program, string text, int start,
             if (slot < 2):
                 return RegexCapture(false, [], [])
             save_slots[state] = slot
-    string[] text_bytes = text.split('')
     int text_length = text_bytes.length()
     if (start < 0 || start > text_length):
         return RegexCapture(false, [], [])
@@ -1360,7 +1410,7 @@ private RegexCapture regex_capture_search(Regex program, string text, int start,
         while (index >= 0):
             int[] saved = []
             for (int item = 0; item < slots; item += 1):
-                saved.push(active[index + 5 + item])
+                saved.push(active[index + REGEX_CAPTURE_FRAME_HEADER + item])
             regex_capture_push(pending, active[index], active[index + 1], active[index + 2], active[index + 3], active[index + 4], saved)
             index -= frame_size
         while (!pending.is_empty()):
@@ -1380,7 +1430,7 @@ private RegexCapture regex_capture_search(Regex program, string text, int start,
                 state_depth[state] = depth
             else if (state_depth[state] != depth):
                 return RegexCapture(false, [], [])
-            int key = (state * (count + 1) + progress) * 4096 + first_flags
+            int key = (state * (count + 1) + progress) * REGEX_CAPTURE_FLAG_COUNT + first_flags
             if (seen.contains(key)):
                 if (seen[key] == position):
                     continue
@@ -1420,16 +1470,16 @@ private RegexCapture regex_capture_search(Regex program, string text, int start,
                         regex_capture_push(pending, program.out2[state], depth, progress, origin, first_flags, positions)
                         regex_capture_push(pending, program.out1[state], depth, progress, origin, first_flags, positions)
                     case REGEX_NFA_REPEAT_ENTER:
-                        if (depth >= 12):
+                        if (depth >= REGEX_CAPTURE_REPEAT_DEPTH):
                             return regex_capture_depth_limit()
                         int enter_flag = 1 << depth
-                        int entered_flags = first_flags & (4095 ^ enter_flag)
+                        int entered_flags = first_flags & (REGEX_CAPTURE_FLAG_MASK ^ enter_flag)
                         regex_capture_push(pending, program.out1[state], depth + 1, progress, origin, entered_flags, positions)
                     case REGEX_NFA_REPEAT_FIRST:
-                        if (depth >= 12):
+                        if (depth >= REGEX_CAPTURE_REPEAT_DEPTH):
                             return regex_capture_depth_limit()
                         int first_flag = 1 << depth
-                        int first_entered_flags = (first_flags & (4095 ^ first_flag)) | first_flag
+                        int first_entered_flags = (first_flags & (REGEX_CAPTURE_FLAG_MASK ^ first_flag)) | first_flag
                         regex_capture_push(pending, program.out1[state], depth + 1, progress, origin, first_entered_flags, positions)
                     case REGEX_NFA_REPEAT_END:
                         if (depth == 0):
@@ -1440,7 +1490,7 @@ private RegexCapture regex_capture_search(Regex program, string text, int start,
                             outer_progress = outer_depth
                         int flag = 1 << outer_depth
                         bool first = (first_flags & flag) != 0
-                        int outer_flags = first_flags & (4095 ^ flag)
+                        int outer_flags = first_flags & (REGEX_CAPTURE_FLAG_MASK ^ flag)
                         regex_capture_push(pending, program.out2[state], outer_depth, outer_progress, origin, outer_flags, positions)
                         if (progress == depth || first):
                             regex_capture_push(pending, program.out1[state], outer_depth, outer_progress, origin, outer_flags, positions)
@@ -1457,19 +1507,43 @@ private RegexCapture regex_capture_search(Regex program, string text, int start,
     return RegexCapture(false, [], [])
 
 RegexCapture regex_find_captures_from(Regex program, string text, int start):
-    RegexCapture result = regex_capture_search(program, text, start, false)
+    RegexCapture result = regex_capture_search(program, text.split(''), start, false)
     if (regex_capture_is_depth_limit(result)):
         throw 'regex captures: repeat nesting exceeds 12'
     return result
 
 RegexCapture regex_find_captures(Regex program, string text):
-    RegexCapture result = regex_capture_search(program, text, 0, false)
+    RegexCapture result = regex_capture_search(program, text.split(''), 0, false)
     if (regex_capture_is_depth_limit(result)):
         throw 'regex captures: repeat nesting exceeds 12'
     return result
 
+RegexCapture[] regex_find_all_captures_from(Regex program, string text, int start):
+    RegexCapture[] matches = []
+    int text_length = text.length()
+    if (start < 0 || start > text_length):
+        return matches
+    string[] text_bytes = text.split('')
+    int search_start = start
+    while (search_start <= text_length):
+        RegexCapture match = regex_capture_search(program, text_bytes, search_start, false)
+        if (regex_capture_is_depth_limit(match)):
+            throw 'regex captures: repeat nesting exceeds 12'
+        if (!match.matched):
+            break
+        matches.push(match)
+        int match_start = match.starts[0]
+        int match_end = match.ends[0]
+        search_start = regex_next_match_start(match_start, match_end, text_length)
+        if (search_start < 0):
+            break
+    return matches
+
+RegexCapture[] regex_find_all_captures(Regex program, string text):
+    return regex_find_all_captures_from(program, text, 0)
+
 RegexCapture regex_match_captures(Regex program, string text):
-    RegexCapture result = regex_capture_search(program, text, 0, true)
+    RegexCapture result = regex_capture_search(program, text.split(''), 0, true)
     if (regex_capture_is_depth_limit(result)):
         throw 'regex captures: repeat nesting exceeds 12'
     return result
@@ -1520,11 +1594,14 @@ private string __tb_regex_replacement_expand(string replacement, RegexCapture ca
 private string __tb_regex_replace_captures(Regex program, string text, string replacement, int start):
     string[] parts = []
     int text_length = text.length()
+    string[] text_bytes = text.split('')
     int search_start = start
     int copied_until = 0
     bool found = false
     while (search_start <= text_length):
-        RegexCapture capture = regex_find_captures_from(program, text, search_start)
+        RegexCapture capture = regex_capture_search(program, text_bytes, search_start, false)
+        if (regex_capture_is_depth_limit(capture)):
+            throw 'regex captures: repeat nesting exceeds 12'
         if (!capture.matched):
             break
         found = true
@@ -1533,34 +1610,50 @@ private string __tb_regex_replace_captures(Regex program, string text, string re
         parts.push(text.substring(copied_until, match_start))
         parts.push(__tb_regex_replacement_expand(replacement, capture, text))
         copied_until = match_end
-        if (match_start == match_end):
-            if (match_start == text_length):
-                break
-            search_start = match_start + 1
-        else:
-            search_start = match_end
+        search_start = regex_next_match_start(match_start, match_end, text_length)
+        if (search_start < 0):
+            break
     if (!found):
         return text
     parts.push(text.substring(copied_until))
     return parts.join('')
 
 # Called by the compiler's split overload after evaluating both arguments.
+private void __tb_regex_split_append_captures(string[] parts, RegexCapture capture, string text):
+    for (int group = 1; group < capture.starts.length(); group += 1):
+        parts.push(regex_group(capture, text, group))
+
 string[] __tb_regex_split(string text, Regex program):
     string[] parts = []
     int length = text.length()
+    string[] text_bytes = text.split('')
     int field_start = 0
     int search_start = 0
+    int group_count = regex_capture_group_count(program)
     while (search_start <= length):
-        RegexMatch match = regex_find_from(program, text, search_start)
-        if (!match.matched):
-            break
-        parts.push(text.substring(field_start, match.start))
-        field_start = match.end
-        if (match.start == match.end):
-            if (match.end == length):
+        int match_start = -1
+        int match_end = -1
+        RegexCapture captures = RegexCapture(false, [], [])
+        if (group_count > 0):
+            captures = regex_capture_search(program, text_bytes, search_start, false)
+            if (regex_capture_is_depth_limit(captures)):
+                throw 'regex captures: repeat nesting exceeds 12'
+            if (!captures.matched):
                 break
-            search_start = match.end + 1
+            match_start = captures.starts[0]
+            match_end = captures.ends[0]
         else:
-            search_start = match.end
+            RegexMatch match = regex_find_prepared(program, text_bytes, search_start)
+            if (!match.matched):
+                break
+            match_start = match.start
+            match_end = match.end
+        parts.push(text.substring(field_start, match_start))
+        if (group_count > 0):
+            __tb_regex_split_append_captures(parts, captures, text)
+        field_start = match_end
+        search_start = regex_next_match_start(match_start, match_end, length)
+        if (search_start < 0):
+            break
     parts.push(text.substring(field_start, length))
     return parts

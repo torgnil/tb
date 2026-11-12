@@ -23,19 +23,51 @@ int random_between(int lower, int upper):
 
 # A deterministic xorshift64 generator. State is stored as a signed int, but
 # every operation is defined on its 64-bit two's-complement bit pattern.
+private const int RANDOM_DEFAULT_SEED = -7046029254386353131
+# Clear the seven sign-extension bits after the signed right shift.
+private const int RANDOM_SHIFT_7_MASK = 144115188075855871
+
 record RandomGenerator(int state);
 
 RandomGenerator seeded_random(int seed):
     if (seed == 0):
-        seed = -7046029254386353131
+        seed = RANDOM_DEFAULT_SEED
     return RandomGenerator(seed)
 
 int random_next(RandomGenerator generator):
     int value = generator.state
     if (value == 0):
-        value = -7046029254386353131
+        value = RANDOM_DEFAULT_SEED
     value ^= value << 13
-    value ^= (value >> 7) & 144115188075855871
+    value ^= (value >> 7) & RANDOM_SHIFT_7_MASK
     value ^= value << 17
     generator.state = value
     return value
+
+# Draw uniformly over [0, upper) across the nonzero generator state cycle.
+int random_next_below(RandomGenerator generator, int upper):
+    if (upper <= 0):
+        throw 'random: invalid range'
+    int threshold = 9223372036854775807 % upper
+    while (true):
+        int value = random_next(generator) & 9223372036854775807
+        if (value > 0):
+            value -= 1
+            if (value >= threshold):
+                return value % upper
+    return 0
+
+# Draw uniformly over [lower, upper), including intervals wider than INT64_MAX.
+int random_next_between(RandomGenerator generator, int lower, int upper):
+    if (lower >= upper):
+        throw 'random: invalid range'
+    if (lower < 0):
+        if (upper > 9223372036854775807 + lower):
+            while (true):
+                int value = random_next(generator)
+                # The nonzero cycle omits zero; substitute it for the excluded upper endpoint.
+                if (value == upper):
+                    value = 0
+                if (value >= lower && value < upper):
+                    return value
+    return lower + random_next_below(generator, upper - lower)

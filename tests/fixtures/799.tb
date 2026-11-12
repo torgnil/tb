@@ -1,0 +1,81 @@
+enum Code { A = 1, B = 2 }
+
+map<int[][], bool[]> return_grid_flags(map<int[][], bool[]> flags):
+    return flags
+
+map<Code[][], bool[]> GLOBAL_GRID_FLAGS = {}
+
+record GridFlagStore(map<int[][], bool[]> flags);
+
+int print_bool_row(bool[] values):
+    print(values.length())
+    int index = 0
+    while index < values.length():
+        print(values[index])
+        index += 1
+    return 0
+
+int print_bool_rows(bool[][] rows):
+    print(rows.length())
+    int index = 0
+    while index < rows.length():
+        print_bool_row(rows[index])
+        index += 1
+    return 0
+
+int main():
+    map<int[][], bool[]> flags = {}
+    int[][] source_key = [[1, 2], [], [3]]
+    bool[] source_row = [true, false]
+    flags[source_key] = source_row
+    source_key[0][0] = 9
+    source_key[1] = [8]
+    source_row[0] = false
+    print_bool_row(flags[[[1, 2], [], [3]]])
+    print(flags.contains(source_key))
+
+    bool[] indexed = flags[[[1, 2], [], [3]]]
+    indexed[0] = false
+    print_bool_row(flags[[[1, 2], [], [3]]])
+
+    bool[] missing = flags[[[99]]]
+    print_bool_row(missing)
+    missing.push(true)
+    print(flags.contains([[99]]))
+    print(flags.length())
+
+    flags[[[1, 2], [], [3]]] = [false, true, true]
+    flags[[[4]]] = [true]
+    bool[][] snapshot = flags.values()
+    snapshot[0][0] = true
+    print_bool_rows(flags.values())
+
+    map<int[][], bool[]> returned = return_grid_flags(flags)
+    map<int[][], bool[]> copied = returned
+    copied[[[1, 2], [], [3]]] = [true]
+    print_bool_rows(copied.values())
+    print_bool_rows(returned.values())
+    print_bool_rows(flags.values())
+
+    const int[][] fixed_key = [[5], []]
+    const bool[] fixed_row = [true, false]
+    flags[fixed_key] = fixed_row
+    print_bool_row(flags[[[5], []]])
+
+    map<int[][], bool[]> literal_flags = {[[6], []]: [false, true]}
+    print_bool_rows(literal_flags.values())
+
+    map<Code[][], bool[]> enum_flags = {[[Code.A], []]: [true, false]}
+    int[][] integer_enum_key = [[1], []]
+    print_bool_row(enum_flags[integer_enum_key])
+    bool[][] enum_snapshot = enum_flags.values()
+    enum_snapshot[0][1] = true
+    print_bool_rows(enum_flags.values())
+
+    GLOBAL_GRID_FLAGS[[[Code.B], []]] = [false, true]
+    print_bool_row(GLOBAL_GRID_FLAGS[[[2], []]])
+
+    GridFlagStore store = GridFlagStore({})
+    store.flags[[[7], []]] = [true]
+    print_bool_rows(store.flags.values())
+    return 0

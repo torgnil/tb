@@ -2,6 +2,30 @@
 
 All notable changes to tb will be documented in this file.
 
+## [0.3.0] - 2026-11-12
+
+### Added
+- Boolean grids and broader nested-array support across arrays, records,
+  callbacks, maps, and supported worker inputs and results.
+- Deep array-key maps, more array-valued map snapshots, and native string and
+  record sets with additional set operations.
+- Expanded submitted-worker and array-callback captures, including array and
+  grid snapshots, string arrays, and numeric results.
+- Embedded `strings` and `union_find` modules, byte-sequence search and count,
+  seeded bounded integers, and expanded regex capture and replacement APIs.
+
+### Changed
+- Source builds now use the released native 0.2.2 compiler seed; the Python
+  compiler bootstrap has been removed.
+- String-array `join` uses a single allocation and copy pass after measuring
+  the output. Compiler lookup and LLVM emission paths avoid redundant copies.
+
+### Fixed
+- Invalid native builtin calls receive compiler diagnostics before LLVM
+  generation.
+- Thread-pool startup and submission failures clean up safely, with broader
+  cleanup for managed arrays and callback snapshots.
+
 ## [0.2.1] - 2026-10-11
 
 ### Added

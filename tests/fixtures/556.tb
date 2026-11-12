@@ -1,0 +1,50 @@
+int[] global_lookup = [4, 5, 6]
+
+int update_global_lookup(int index):
+    int original = global_lookup[index]
+    global_lookup[index] = original + 100
+    return original
+
+int fail_on_two(int index):
+    if (index == 2):
+        throw 'array callback failed'
+    return index
+
+int main(string[] args):
+    int[] values = [0, 1, 2]
+    const int[] lookup = [10, 20, 30]
+    int[] offsets = [1, 2, 3]
+
+    int[] mapped = values.map_to(int item -> lookup[item] + offsets[item])
+    print(mapped)
+    int[] filtered = values.filter(int item -> lookup[item] > 10 && offsets[item] > 1)
+    print(filtered)
+
+    int[] block_mapped = values.map_to(int item -> {
+        int adjusted = offsets[item]
+        return lookup[item] + adjusted
+    })
+    print(block_mapped)
+    int[] block_filtered = values.filter(int item -> {
+        int original = item
+        item = item + 1
+        return lookup[original] >= 20
+    })
+    print(block_filtered)
+
+    int[] snapshot = values.map_to(int item -> global_lookup[item] + update_global_lookup(item))
+    print(snapshot)
+    print(global_lookup)
+
+    try:
+        values.filter(int item -> {
+            int checked = fail_on_two(item)
+            return lookup[checked] > 0
+        })
+    catch (exception error):
+        print(error)
+
+    print(values.map_to(int item -> lookup[item]))
+    int[] empty = []
+    print(empty.map_to(int item -> lookup[item]))
+    return 0

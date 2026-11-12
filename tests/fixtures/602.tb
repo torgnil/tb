@@ -1,0 +1,59 @@
+int callback_calls = 0
+
+string numbered(string value):
+    callback_calls += 1
+    return callback_calls.to_string() + ':' + value
+
+string fail_on_stop(string value):
+    if (value == 'stop'):
+        throw 'string map callback failed'
+    return value.replace('o', 'O')
+
+int main(string[] args):
+    string[] source = ['  alpha  ', '', '  alpha  ']
+    string[] normalized = source.map_to(string word -> word.trim().replace('a', 'A') + '!')
+    print(normalized)
+    normalized[0] = 'changed'
+    print(source)
+
+    string[] suffixed = source.map_to(string word -> word + '!')
+    print(suffixed)
+
+    const string[] fixed_source = ['left', 'right']
+    string[] fixed_mapped = fixed_source.map_to(string word -> word + '?')
+    print(fixed_source)
+    print(fixed_mapped)
+
+    string[] copied = source.map_to(string word -> word)
+    copied[0] = 'copy changed'
+    print(source[0].length())
+
+    string[] repeated = ['left', 'right'].map_to(string word -> 'same')
+    print(repeated)
+    repeated[0] = 'changed'
+    print(repeated[1])
+
+    string[] ordered = ['a', 'b', 'c'].map_to(string value -> numbered(value))
+    print(ordered)
+    print(callback_calls)
+
+    string[] empty_source = []
+    string[] empty_result = empty_source.map_to(string value -> numbered(value))
+    print(empty_result.length())
+    print(callback_calls)
+
+    try:
+        ['first', 'stop', 'unused'].map_to(string value -> fail_on_stop(value))
+    catch (exception error):
+        print(error)
+
+    string[] borrowed_source = ['stop']
+    try:
+        borrowed_source.map_to(string value -> fail_on_stop(value))
+    catch (exception error):
+        print(error)
+    print(borrowed_source)
+
+    string[] after_failure = ['ok'].map_to(string value -> value.replace('o', 'O'))
+    print(after_failure)
+    return 0

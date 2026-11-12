@@ -2,28 +2,20 @@ import random;
 
 record Uuid(int high, int low);
 
+# Masks and values for the UUID version nibble and variant bits.
+private const int UUID_VERSION_MASK = -61441
+private const int UUID_VERSION_4 = 16384
+private const int UUID_VARIANT_MASK = 4611686018427387903
+private const int UUID_VARIANT_RFC = -9223372036854775808
+
 # Generate a UUID v4 from two independent random 64-bit values.
 string uuid():
     int first = random()
     int second = random()
-    string digits = '0123456789abcdef'
-    string[] parts = []
-    const int[] hyphen_positions = [8, 12, 16, 20]
-    for (int index = 0; index < 32; index++):
-        if (index in hyphen_positions):
-            parts.push('-')
-        int value = first
-        int digit_index = index
-        if (index >= 16):
-            value = second
-            digit_index = index - 16
-        int nibble = (value >> ((15 - digit_index) * 4)) & 15
-        if (index == 12):
-            nibble = 4
-        else if (index == 16):
-            nibble = (nibble & 3) | 8
-        parts.push(digits[nibble])
-    return parts.join('')
+    # Set the version nibble and the two variant bits in network order.
+    first = (first & UUID_VERSION_MASK) | UUID_VERSION_4
+    second = (second & UUID_VARIANT_MASK) | UUID_VARIANT_RFC
+    return uuid_format(Uuid(first, second))
 
 # Validate the canonical 8-4-4-4-12 hexadecimal UUID text representation.
 # Version and variant bits are intentionally unrestricted.

@@ -1,0 +1,41 @@
+num helper_scale(num value):
+    return value * 1.5 + 0.125
+
+num const_parameter_worker(const int value):
+    return value * 1.25
+
+int main(string[] args):
+    thread_pool pool = thread_pool(2)
+    int arg_count = args.length()
+    num amount = arg_count + 2.5
+    future<num> decimal_result = pool.submit(num value -> value * 1.25 + 0.125, amount)
+    print(decimal_result.await())
+    print(decimal_result.await())
+
+    future<num> integer_result = pool.submit(int value -> value * 1.5 + 0.25, arg_count + 3)
+    print(integer_result.await())
+
+    future<num> const_parameter_result = pool.submit(const_parameter_worker, arg_count + 5)
+    print(const_parameter_result.await())
+
+    future<num> helper_result = pool.submit(num value -> helper_scale(value), amount)
+    print(helper_result.await())
+
+    future<num> block_result = pool.submit(int value -> {
+        if (value >= 2.00) {
+            return value * 1.25
+        }
+        return 0.5
+    }, arg_count + 4)
+    print(block_result.await())
+
+    int captured_units = arg_count + 6
+    future<num> captured_result = pool.submit(() -> captured_units * 1.25)
+    print(captured_result.await())
+
+    future<num> literal_result = pool.submit(() -> 2.750)
+    print(literal_result.await())
+
+    future<bool> comparison_result = pool.submit(int value -> value > 3.5, arg_count + 3)
+    print(comparison_result.await())
+    return 0

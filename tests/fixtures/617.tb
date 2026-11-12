@@ -1,0 +1,22 @@
+int callback_count = 0
+
+string maybe_fail(string value, string suffix):
+    callback_count += 1
+    if (value == 'stop'):
+        throw 'captured map failed'
+    return value + suffix
+
+int main():
+    string suffix = '!'
+    try:
+        ['first', 'stop', 'unused'].map_to(string item -> maybe_fail(item, suffix))
+    catch (exception error):
+        print(error)
+    print(callback_count)
+
+    callback_count = 0
+    string[] empty = []
+    string[] result = empty.map_to(string item -> maybe_fail(item, suffix))
+    print(result.length())
+    print(callback_count)
+    return 0

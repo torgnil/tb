@@ -1,0 +1,45 @@
+import random;
+
+int main(string[] args):
+    RandomGenerator generator = seeded_random(42)
+    print(random_next_below(generator, 10))
+    print(generator.random_next_below(1))
+    print(random_next_between(generator, -9, -8))
+    print(generator.random_next_between(-20, 20))
+    print(random_next_between(generator, -9223372036854775807 - 1, 9223372036854775807))
+    print(random_next_below(generator, 9223372036854775807))
+    print(random_next_between(generator, -9223372036854775807 - 1, 0))
+    print(random_next_between(generator, -9223372036854775807 - 1, -1))
+
+    RandomGenerator copy = generator
+    print(random_next_between(generator, 7, 20) == random_next_between(copy, 7, 20))
+    print(generator.state == copy.state)
+    RandomGenerator zero = seeded_random(0)
+    RandomGenerator default_seed = seeded_random(-7046029254386353131)
+    print(random_next_below(zero, 100) == random_next_below(default_seed, 100))
+
+    int before = generator.state
+    try:
+        random_next_below(generator, 0)
+    catch (exception error):
+        print(error)
+    print(generator.state == before)
+    try:
+        random_next_between(generator, 3, 3)
+    catch (exception error):
+        print(error)
+    print(generator.state == before)
+    try:
+        random_next_between(generator, 8, -3)
+    catch (exception error):
+        print(error)
+    print(generator.state == before)
+
+    int upper = args.length() + 3
+    bool valid = true
+    for (int index = 0; index < 100; index++):
+        int value = random_next_below(generator, upper)
+        if (value < 0 || value >= upper):
+            valid = false
+    print(valid)
+    return 0

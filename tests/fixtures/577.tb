@@ -1,0 +1,40 @@
+bool[] enabled = [true, true, false, true]
+const bool[] required = [true, false, true, true]
+int[] values = [0, 1, 0, 3]
+
+int disable_zero(int value):
+    enabled[0] = false
+    return value + 10
+
+bool continue_after_item(int item):
+    if (item == 1):
+        throw 'bool capture failed'
+    return true
+
+int main(string[] args):
+    int[] mapped = values.map_to(int item -> enabled[item] && required[item] ? disable_zero(item) : -item)
+    print(mapped)
+    print(enabled[0])
+    print(enabled[1])
+    print(enabled[2])
+    print(enabled[3])
+
+    int[] selected = values.filter(int item -> {
+        bool accepted = enabled[item] || required[item]
+        return accepted
+    })
+    print(selected)
+
+    int[] empty = []
+    print(empty.filter(int item -> enabled[item]))
+
+    try:
+        values.filter(int item -> {
+            bool accepted = continue_after_item(item)
+            return accepted
+        })
+    catch (exception error):
+        print(error)
+
+    print(values.filter(int item -> required[item]))
+    return 0

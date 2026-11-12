@@ -1,0 +1,49 @@
+int count_true(bool[] flags):
+    return flags.sum()
+
+bool has_true(bool[] flags):
+    return flags.contains(true)
+
+int fail_count(bool[] flags):
+    flags[0] = false
+    throw 'count task failed'
+
+bool fail_check(bool[] flags):
+    flags[0] = false
+    throw 'check task failed'
+
+int main(string[] args):
+    thread_pool pool = thread_pool(1)
+    bool[] mutable_flags = [true, false, true]
+    bool[] empty_flags = []
+    const bool[] fixed_flags = [false, true]
+    future<int> count = pool.submit(count_true, mutable_flags)
+    future<bool> found = pool.submit(has_true, fixed_flags)
+    future<int> empty_count = pool.submit(count_true, empty_flags)
+    future<bool> empty_found = pool.submit(has_true, empty_flags)
+    mutable_flags[0] = false
+    mutable_flags[2] = false
+    print(mutable_flags[0])
+    print(mutable_flags[2])
+    print(count.await())
+    print(count.await())
+    print(found.await())
+    print(empty_count.await())
+    print(empty_found.await())
+
+    bool[] failure_input = [true]
+    future<int> failed_count = pool.submit(fail_count, failure_input)
+    future<bool> failed_check = pool.submit(fail_check, failure_input)
+    failure_input[0] = false
+    try:
+        print(failed_count.await())
+    catch (exception error):
+        print(error)
+    try:
+        print(failed_check.await())
+    catch (exception error):
+        print(error)
+
+    future<int> after_failure = pool.submit(count_true, [true, true])
+    print(after_failure.await())
+    return 0

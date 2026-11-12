@@ -1,0 +1,35 @@
+enum Code { FIRST = 10, SECOND = 20, THIRD = 30 }
+
+record Codebook(map<int, Code[][]> grids);
+
+map<int, Code[][]> extend_grids(map<int, Code[][]> grids):
+    grids[2] = [[Code.THIRD]]
+    return grids
+
+map<int, Code[][]> GLOBAL_GRIDS = {7: [[Code.FIRST, Code.SECOND]]}
+
+int main():
+    map<int, Code[][]> grids = {1: [[Code.FIRST, Code.SECOND], [Code.THIRD]], 2: []}
+    print(grids.length())
+    print(grids[1][0][1])
+    print(grids[2].length())
+    grids[1][0][1] = Code.THIRD
+    map<int, Code[][]> copied = grids
+    copied[1][0][0] = Code.SECOND
+    print(grids[1][0][0])
+    print(copied[1][0][0])
+
+    int[][] snapshot = grids[1]
+    snapshot[0][0][0] = 99
+    print(grids[1][0][0])
+
+    map<int, Code[][]> returned = extend_grids(grids)
+    print(returned[2][0][0])
+    print(GLOBAL_GRIDS[7][0][1])
+
+    Codebook book = Codebook(grids)
+    print(book.grids[1][1][0])
+
+    map<int, map<string, Code[][]>> nested = {3: {'alpha': [[Code.SECOND]]}}
+    print(nested[3]['alpha'][0][0])
+    return 0

@@ -1,0 +1,23 @@
+num choose_amount(bool choose_large):
+    return choose_large ? 4.5 : 0.75
+
+int main(string[] args):
+    thread_pool pool = thread_pool(1)
+    bool choose_large = args.length() == 1
+    future<num> first = pool.submit(() -> choose_amount(choose_large))
+    choose_large = !choose_large
+    const bool choose_small = false
+    future<num> second = pool.submit(() -> choose_amount(choose_small))
+    bool block_choice = args.length() == 1
+    future<num> block = pool.submit(() -> {
+        if (block_choice) {
+            return choose_amount(block_choice)
+        }
+        return choose_amount(block_choice)
+    })
+    block_choice = !block_choice
+    print(first.await())
+    print(second.await())
+    print(block.await())
+    print(first.await())
+    return 0

@@ -251,7 +251,7 @@ for source in "${benchmarks[@]}"; do
         exit 1
     fi
 
-    if ! clang -Wno-override-module "$llvm_output" -o "$executable"; then
+    if ! clang -O3 -Wno-override-module "$llvm_output" -o "$executable"; then
         echo "Link failed for $name" >&2
         exit 1
     fi

@@ -1,0 +1,45 @@
+record Item(int id, string label, bool active)
+record Token(int value)
+
+set<Token> union(set<Token> left, set<Token> right):
+    return {Token(99)}
+
+int main():
+    set<Item> left = {Item(1, 'one', true), Item(2, 'two', false)}
+    set<Item> right = {Item(2, 'two', false), Item(3, 'three', true)}
+    const set<Item> read_only_left = {Item(5, 'five', true)}
+    set<Item> empty = {}
+    set<Item> const_combined = read_only_left.union(empty)
+    print(const_combined.length())
+    set<Item> combined = left.union(right)
+    print(combined.length())
+    for (Item item in combined):
+        print(item.id)
+        print(item.label)
+        print(item.active)
+
+    combined.remove(Item(2, 'two', false))
+    combined.add(Item(4, 'four', true))
+    print(left.length())
+    print(left.contains(Item(2, 'two', false)))
+    print(right.length())
+    print(combined.length())
+    print(combined.contains(Item(4, 'four', true)))
+
+    print(empty.union(left).length())
+    print(left.union(empty).length())
+    print(left.union(left).length())
+
+    left = {}
+    right = {}
+    print(combined.length())
+    for (Item item in combined):
+        print(item.id)
+        print(item.label)
+        print(item.active)
+
+    set<Token> tokens = {Token(1)}
+    set<Token> overridden = tokens.union(tokens)
+    print(overridden.length())
+    print(overridden.contains(Token(99)))
+    return 0

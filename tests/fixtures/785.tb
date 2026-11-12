@@ -1,0 +1,44 @@
+future<int> submit_grid_after_scope(thread_pool pool):
+    bool[][] local_grid = [[false, true], [true]]
+    return pool.submit(() -> local_grid[0][1] ? 22 : 0)
+
+int named_grid_score(const bool[][] grid):
+    return grid[2][1] ? 31 : 0
+
+int main():
+    thread_pool pool = thread_pool(1)
+    bool[][] grid = [[true, false], [], [false, true]]
+    future<int> first = pool.submit(() -> grid[0][0] ? 10 : 0)
+    grid[0][0] = false
+    print(first.await())
+    print(first.await())
+
+    future<int> named = pool.submit(named_grid_score, grid)
+    grid[2][1] = false
+    print(named.await())
+
+    const bool[][] fixed_grid = [[true], [false, true]]
+    future<bool> fixed = pool.submit(() -> fixed_grid[1][1] && fixed_grid.length() == 2)
+    print(fixed.await())
+
+    bool[][] empty_grid = []
+    future<bool> empty = pool.submit(() -> empty_grid.is_empty())
+    print(empty.await())
+
+    future<int> scoped = submit_grid_after_scope(pool)
+    print(scoped.await())
+
+    future<int> failure = pool.submit(() -> {
+        if (grid.length() == 3) {
+            throw 'captured grid worker failed'
+        }
+        return 0
+    })
+    try:
+        failure.await()
+    catch (exception error):
+        print(error)
+
+    future<bool> after_failure = pool.submit(() -> grid[0][0])
+    print(after_failure.await())
+    return 0

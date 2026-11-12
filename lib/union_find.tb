@@ -1,0 +1,50 @@
+# Mutable disjoint sets over dense integer IDs in [0, count).
+# Each root stores the negative component size; each other entry stores its parent.
+
+private void union_find_check_index(int[] parents, int item):
+    if (item < 0 || item >= parents.length()):
+        throw 'union_find: index out of range'
+
+private int union_find_root(int[] parents, int item):
+    union_find_check_index(parents, item)
+    int root = item
+    while (parents[root] >= 0):
+        root = parents[root]
+    while (item != root):
+        int next = parents[item]
+        parents[item] = root
+        item = next
+    return root
+
+int[] union_find_new(int count):
+    if (count < 0):
+        throw 'union_find: count must be non-negative'
+    int[] parents = []
+    int item = 0
+    while (item < count):
+        parents.push(-1)
+        item += 1
+    return parents
+
+int union_find_find(int[] parents, int item):
+    return union_find_root(parents, item)
+
+bool union_find_union(int[] parents, int left, int right):
+    int left_root = union_find_root(parents, left)
+    int right_root = union_find_root(parents, right)
+    if (left_root == right_root):
+        return false
+    if (parents[left_root] > parents[right_root]):
+        int swap_root = left_root
+        left_root = right_root
+        right_root = swap_root
+    parents[left_root] += parents[right_root]
+    parents[right_root] = left_root
+    return true
+
+bool union_find_connected(int[] parents, int left, int right):
+    return union_find_root(parents, left) == union_find_root(parents, right)
+
+int union_find_component_size(int[] parents, int item):
+    int root = union_find_root(parents, item)
+    return 0 - parents[root]

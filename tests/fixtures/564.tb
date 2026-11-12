@@ -1,0 +1,41 @@
+int matrix_score(const int[][] matrix, int row):
+    return matrix[row][1]
+
+int row_score(const int[] row):
+    return row[0]
+
+bool row_meets(const int[] row, int threshold):
+    return row[1] >= threshold
+
+int label_length(const string[] labels, int row):
+    return labels[row].length()
+
+int failing_score(const int[][] matrix, int row):
+    int score = matrix[row][1]
+    if (row == 2):
+        throw 'array helper failed'
+    return score
+
+int main():
+    const int[][] matrix = [[3, 4], [7, 8], [2, 9]]
+    const int[] limits = [10, 8, 10]
+    const string[] labels = ['alpha', 'xy', 'z']
+    int[] rows = [1, 0, 2]
+
+    int[] mapped = rows.map_to(int row -> matrix_score(matrix, row) + row_score(matrix[row]) + label_length(labels, row))
+    print(mapped)
+    int[] filtered = rows.filter(int row -> row_meets(matrix[row], limits[row]))
+    print(filtered)
+
+    int[] block_mapped = rows.map_to(int row -> {
+        int base = matrix_score(matrix, row)
+        return base + row_score(matrix[row])
+    })
+    print(block_mapped)
+
+    try:
+        rows.map_to(int row -> failing_score(matrix, row))
+    catch (exception error):
+        print(error)
+    print(rows.map_to(int row -> matrix_score(matrix, row)))
+    return 0

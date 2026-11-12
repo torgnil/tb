@@ -1007,15 +1007,11 @@ ParseResult parse_switch_statement(Token[] tokens, int index):
     return ParseResult(Node('Switch', '', children), current)
 
 FunctionDeclParseResult parse_function_declaration_parts(Token[] tokens, int index, bool is_cached, bool is_private):
-    if (is_private && token_is(token_at(tokens, index), 'KEYWORD', 'cached')):
-        throw parser_error(token_at(tokens, index), 'private cached functions are not supported')
     string return_type = parse_type(tokens, index)
     int current = type_end(tokens, index)
     Token name_token = token_at(tokens, current)
     if (name_token.kind != 'IDENTIFIER'):
         throw parser_error(name_token, 'expected function name')
-    if (is_private && is_cached):
-        throw parser_error(name_token, 'private cached functions are not supported')
     if (is_private && name_token.value == 'main'):
         throw parser_error(name_token, 'private main functions are not supported')
     current += 1
@@ -1060,6 +1056,8 @@ ParseResult parse_function_declaration(Token[] tokens, int index, bool is_cached
     string kind = 'Function'
     if (function_decl.is_cached):
         kind = 'CachedFunction'
+        if (function_decl.is_private):
+            kind = 'PrivateCachedFunction'
     else if (function_decl.is_private):
         kind = 'PrivateFunction'
     return ParseResult(Node(kind, function_decl.return_type + ' ' + function_decl.name, children), function_decl.next_index)
@@ -1160,8 +1158,21 @@ Node parse_program(Token[] tokens):
         if (token_is(token_at(tokens, current), 'KEYWORD', 'private')):
             int function_start = current + 1
             if (token_is(token_at(tokens, function_start), 'KEYWORD', 'cached')):
-                throw parser_error(token_at(tokens, function_start), 'private cached functions are not supported')
-            if (token_is(token_at(tokens, function_start), 'KEYWORD', 'record') || token_is(token_at(tokens, function_start), 'KEYWORD', 'enum') || token_is(token_at(tokens, function_start), 'KEYWORD', 'const')):
+                ParseResult private_cached_function = parse_function_declaration(tokens, function_start + 1, true, true)
+                statements.push(private_cached_function.node)
+                current = skip_statement_separators(tokens, private_cached_function.next_index)
+                continue
+            if (token_is(token_at(tokens, function_start), 'KEYWORD', 'record')):
+                ParseResult private_record = parse_record_declaration(tokens, function_start)
+                statements.push(Node('PrivateRecordDecl', private_record.node.value, private_record.node.children))
+                current = skip_statement_separators(tokens, private_record.next_index)
+                continue
+            if (token_is(token_at(tokens, function_start), 'KEYWORD', 'enum')):
+                ParseResult private_enum = parse_enum_declaration(tokens, function_start)
+                statements.push(Node('PrivateEnumDecl', private_enum.node.value, private_enum.node.children))
+                current = skip_statement_separators(tokens, private_enum.next_index)
+                continue
+            if (token_is(token_at(tokens, function_start), 'KEYWORD', 'const')):
                 if (token_is(token_at(tokens, function_start), 'KEYWORD', 'const')):
                     int private_const_start = function_start + 1
                     if (could_start_type(tokens, private_const_start)):

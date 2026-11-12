@@ -1,0 +1,84 @@
+set<string> global_names = {'global'}
+
+record StringSetBox(set<string> values);
+
+set<string> copy_string_set(set<string> source):
+    return source
+
+set<string> choose_string_set(bool choose_owned, set<string> source):
+    set<string> local = {'owned', 'value'}
+    return choose_owned ? local : source
+
+set<string> empty_string_set():
+    return {}
+
+void save_global_names(set<string> source):
+    global_names = source
+    return
+
+int main(string[] args):
+    set<string> left = {'pear', 'apple', 'plum', 'apple'}
+    string equal_text = 'ap' + 'ple'
+    print(left.length())
+    print(left.contains(equal_text))
+    print(contains(left, equal_text))
+    print(left[0])
+    print(left[1])
+    print(left[2])
+    print(left.add('apple'))
+
+    set<string> right = {'plum', 'orange'}
+    set<string> combined = left.union(right)
+    set<string> shared = left.intersection(right)
+    set<string> remaining = left.difference(right)
+    print(combined.length())
+    print(combined[0])
+    print(combined[1])
+    print(combined[2])
+    print(combined[3])
+    print(shared.length())
+    print(shared[0])
+    print(remaining.length())
+    print(remaining[0])
+    print(remaining[1])
+
+    left.add('banana')
+    print(combined.contains('banana'))
+    print(combined.remove('pear'))
+    print(left.contains('pear'))
+    print(left.remove('apple'))
+    print(left[0])
+    print(left[1])
+    print(left[2])
+    print(left.remove('missing'))
+
+    set<string> empty = {}
+    print(empty.is_empty())
+    print(empty.add('now'))
+    print(empty[0])
+    const set<string> fixed = {'fixed'}
+    print(fixed.contains('fixed'))
+
+    set<string> copied = copy_string_set(left)
+    copied.add('copy-only')
+    print(left.contains('copy-only'))
+    set<string> borrowed_choice = choose_string_set(false, left)
+    borrowed_choice.add('branch-only')
+    print(left.contains('branch-only'))
+    set<string> owned_choice = choose_string_set(true, left)
+    print(owned_choice[0])
+    print(empty_string_set().length())
+
+    save_global_names(left)
+    left.add('later')
+    print(global_names.contains('later'))
+
+    StringSetBox box = StringSetBox(left)
+    left.add('after-box')
+    print(box.values.contains('after-box'))
+    StringSetBox box_copy = box
+    box.values.add('field-only')
+    print(box_copy.values.contains('field-only'))
+    box.values = box.values
+    print(box.values.contains('pear'))
+    return 0

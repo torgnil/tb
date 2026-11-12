@@ -1,0 +1,18 @@
+import random;
+
+int main():
+    # The next output is 1, whose small sample must be rejected for this bound.
+    RandomGenerator reject_low = seeded_random(-4724853050444183987)
+    print(random_next_below(reject_low, 4611686018427387905))
+    print(reject_low.state)
+
+    # The next output has only its sign bit set; masking produces a rejected zero.
+    RandomGenerator reject_zero = seeded_random(-435785325752590207)
+    print(random_next_below(reject_zero, 10))
+    print(reject_zero.state)
+
+    # The next output is the excluded upper endpoint, which maps to zero.
+    RandomGenerator remap_upper = seeded_random(-4724853050444183987)
+    print(random_next_between(remap_upper, -9223372036854775807 - 1, 1))
+    print(remap_upper.state)
+    return 0

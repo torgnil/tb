@@ -1,0 +1,55 @@
+string[] MAP_TAGS = ['uninitialized']
+string[] MAP_SUFFIXES = ['!']
+string[] BLOCKED_WORDS = ['skip']
+string[] MAP_FAILURE_MARKERS = ['map-marker']
+string[] FILTER_FAILURE_MARKERS = ['filter-marker']
+
+string[] load_words():
+    MAP_TAGS[0] = 'loaded'
+    return ['oak', 'pine']
+
+string format_word(string word, const string[] tags, const string[] suffixes, int number):
+    MAP_TAGS[0] = 'changed-by-map'
+    return word + ':' + tags[0] + suffixes[0] + number.to_string()
+
+bool is_allowed(string word, const string[] blocked):
+    BLOCKED_WORDS[0] = 'changed-by-filter'
+    return !blocked.contains(word)
+
+string map_or_throw(string word, const string[] markers):
+    if (word == 'stop'):
+        throw 'string map callback failed'
+    return word + markers[0]
+
+bool filter_or_throw(string word, const string[] markers):
+    if (word == 'stop'):
+        throw 'string filter callback failed'
+    return true
+
+int main():
+    int number = 3
+    string[] mapped = load_words().map_to(string word -> format_word(word, MAP_TAGS, MAP_SUFFIXES, number))
+    print(mapped)
+    print(MAP_TAGS[0])
+
+    string[] words = ['oak', 'skip', 'pine']
+    print(words.filter(string word -> is_allowed(word, BLOCKED_WORDS)))
+    print(BLOCKED_WORDS[0])
+
+    string[] empty = []
+    print(empty.map_to(string word -> format_word(word, MAP_TAGS, MAP_SUFFIXES, number)).length())
+    print(empty.filter(string word -> is_allowed(word, BLOCKED_WORDS)).length())
+
+    try:
+        ['first', 'stop', 'last'].map_to(string word -> map_or_throw(word, MAP_FAILURE_MARKERS))
+    catch (exception error):
+        print(error)
+    print(MAP_FAILURE_MARKERS[0])
+
+    try:
+        ['first', 'stop', 'last'].filter(string word -> filter_or_throw(word, FILTER_FAILURE_MARKERS))
+    catch (exception error):
+        print(error)
+    print(FILTER_FAILURE_MARKERS[0])
+    print('continued')
+    return 0
