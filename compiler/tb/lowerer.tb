@@ -38,16 +38,16 @@ record ArrayScalarCallbackRewrite(BindingIR[] captures, bool recognized);
 # Set once per program after checking for declarations named `range`.
 bool LOWER_DIRECT_RANGE_FOREACH = false;
 
-bool submit_lambda_managed_type(string type_name):
+private bool submit_lambda_managed_type(string type_name):
     return type_name == 'string' || type_name == 'int[]' || type_name == 'int[][]'
 
 private bool submit_lambda_managed_task_parameter_type(string type_name):
-    return type_name == 'bool[]' || type_name == 'string[]' || submit_lambda_managed_type(type_name) || type_name == 'bool[][]'
+    return type_name == 'bool[]' || type_name == 'string[]' || submit_lambda_managed_type(type_name) || type_name == 'bool[][]' || type_name == 'string[][]'
 
-bool submit_lambda_capture_type(string type_name):
-    return submit_lambda_managed_type(type_name) || type_name == 'bool[][]'
+private bool submit_lambda_capture_type(string type_name):
+    return submit_lambda_managed_type(type_name) || type_name == 'bool[][]' || type_name == 'string[][]'
 
-bool submit_lambda_result_type(string type_name):
+private bool submit_lambda_result_type(string type_name):
     return type_name == 'int' || type_name == 'bool' || type_name == 'num' || type_name == 'string[]' || submit_lambda_managed_type(type_name)
 
 private bool submit_lambda_numeric_type(string type_name):
@@ -385,7 +385,7 @@ private string submit_lambda_expression_type_context(Node node, SubmitLambdaScop
             if (array_callback_context):
                 if (!int_array_callback_helper_parameter(parameter)):
                     invalid_callback_parameter = true
-            else if (!(helper_decl_type == 'int' || helper_decl_type == 'bool' || helper_decl_type == 'num' || helper_decl_type == 'bool[]' || helper_decl_type == 'string[]' || submit_lambda_managed_type(helper_decl_type))):
+            else if (!(helper_decl_type == 'int' || helper_decl_type == 'bool' || helper_decl_type == 'num' || helper_decl_type == 'bool[]' || helper_decl_type == 'string[]' || helper_decl_type == 'string[][]' || submit_lambda_managed_type(helper_decl_type))):
                 return ''
             parameter_count += 1
             index += 1
@@ -788,7 +788,7 @@ private string validate_submit_lambda(Node lambda_node, Node[] functions, Bindin
         BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
         parameter_type = parameter.type_name
         if (!(parameter_type == 'int' || parameter_type == 'bool' || parameter_type == 'num' || submit_lambda_managed_task_parameter_type(parameter_type))):
-            throw 'thread_pool.submit lambda parameter must have type int, bool, num, string, int[], bool[], int[][], bool[][], or string[]'
+            throw 'thread_pool.submit lambda parameter must have type int, bool, num, string, int[], bool[], int[][], bool[][], string[], or string[][]'
         string[] const_names = []
         if (submit_lambda_managed_task_parameter_type(parameter_type)):
             const_names.push(parameter.name)
@@ -1204,7 +1204,7 @@ BindingIR[] submit_lambda_captures(Node lambda_node, BindingIR[] bindings):
                 captured.push(binding)
             else:
                 if (lambda_node.kind == 'Lambda0'):
-                    throw 'thread_pool.submit zero-argument lambda can capture int or bool values, or one string, int[], int[][], or bool[][] value; unsupported capture ' + name
+                    throw 'thread_pool.submit zero-argument lambda can capture int or bool values, or one string, int[], int[][], bool[][], or string[][] value; unsupported capture ' + name
                 throw 'thread_pool.submit lambda can capture only int or bool values; unsupported capture ' + name
     int bool_array_capture_count = 0
     int string_array_capture_count = 0
@@ -1232,7 +1232,7 @@ BindingIR[] submit_lambda_captures(Node lambda_node, BindingIR[] bindings):
         bool multiple_array_captures = lambda_node.kind == 'Lambda0' && int_array_capture_count >= 2 && managed_capture_count == int_array_capture_count
         bool explicit_array_task_captures = lambda_node.kind == 'Lambda' && int_array_task && managed_capture_count == int_array_capture_count
         if ((lambda_node.kind != 'Lambda0' && !explicit_array_task_captures) || (lambda_node.kind == 'Lambda0' && !supported_single_managed_capture && !multiple_array_captures)):
-            throw 'thread_pool.submit lambda managed captures require a zero-argument lambda with only int[] and scalar captures, or one string, int[][], or bool[][] capture'
+            throw 'thread_pool.submit lambda managed captures require a zero-argument lambda with only int[] and scalar captures, or one string, int[][], bool[][], or string[][] capture'
     return captured
 
 private bool int_array_callback_snapshot_type(string type_name):
