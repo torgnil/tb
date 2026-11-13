@@ -236,7 +236,7 @@ Node[] program_visible_function_nodes(Node[] declarations, string module_id):
             visible.push(child)
     return visible
 
-string submit_lambda_expression_type_context(Node node, SubmitLambdaScope scope, Node[] functions, bool array_callback_context, string callback_name):
+private string submit_lambda_expression_type_context(Node node, SubmitLambdaScope scope, Node[] functions, bool array_callback_context, string callback_name):
     if (node.kind == 'Int'):
         return 'int'
     if (node.kind == 'Num'):
@@ -284,13 +284,13 @@ string submit_lambda_expression_type_context(Node node, SubmitLambdaScope scope,
             return 'int[]'
         if (base_type == 'bool[][]'):
             return 'bool[]'
+        if (base_type == 'string[][]'):
+            return 'string[]'
         if (base_type == 'string'):
             return 'string'
         if (base_type == 'string[]'):
             return 'string'
-        if (base_type == 'string[][]'):
-            throw 'thread_pool.submit lambda string indexing is not supported'
-        throw 'thread_pool.submit lambda indexing requires string, int[], bool[], int[][], bool[][], or string[]'
+        throw 'thread_pool.submit lambda indexing requires string, int[], bool[], int[][], bool[][], string[], or string[][]'
     if (node.kind == 'MethodCall'):
         if (node.children.length() < 1):
             return ''
@@ -299,8 +299,8 @@ string submit_lambda_expression_type_context(Node node, SubmitLambdaScope scope,
         if (node.children.length() != 1):
             throw 'thread_pool.submit lambda ' + node.value + ' query takes no arguments'
         string receiver_type = submit_lambda_expression_type_context(node.children[0], scope, functions, array_callback_context, callback_name)
-        if (!(receiver_type == 'string' || receiver_type == 'int[]' || receiver_type == 'bool[]' || receiver_type == 'int[][]' || receiver_type == 'bool[][]' || receiver_type == 'string[]')):
-            throw 'thread_pool.submit lambda ' + node.value + ' query requires string, int[], bool[], int[][], bool[][], or string[]'
+        if (!(receiver_type == 'string' || receiver_type == 'int[]' || receiver_type == 'bool[]' || receiver_type == 'int[][]' || receiver_type == 'bool[][]' || receiver_type == 'string[]' || receiver_type == 'string[][]')):
+            throw 'thread_pool.submit lambda ' + node.value + ' query requires string, int[], bool[], int[][], bool[][], string[], or string[][]'
         if (node.value == 'length'):
             return 'int'
         return 'bool'
@@ -397,7 +397,7 @@ string submit_lambda_expression_type_context(Node node, SubmitLambdaScope scope,
             if (!(signature.type_name == 'int' || signature.type_name == 'bool')):
                 throw 'int[] ' + callback_name + ' callback helper ' + node.value + ' must return int or bool; got ' + signature.type_name
             if (invalid_callback_parameter):
-                throw 'int[] ' + callback_name + ' callback helper ' + node.value + ' parameters must use int, bool, string, or const int[], const bool[], const string[], const int[][], or const bool[][]'
+                throw 'int[] ' + callback_name + ' callback helper ' + node.value + ' parameters must use int, bool, string, or const int[], const bool[], const string[], const int[][], const bool[][], or const string[][]'
         index = 0
         while (index < parameter_count):
             BindingIR parameter = ir_parse_binding_decl(function_node.children[index].value)
@@ -452,7 +452,7 @@ private string submit_lambda_foreach_helper_type(Node node, SubmitLambdaScope sc
             throw 'thread_pool.submit lambda helper ' + node.value + ' argument ' + (index + 1).to_string() + ' must have type ' + parameter_type + '; got ' + argument_type
     return signature.type_name
 
-bool int_array_callback_helper_parameter(BindingIR parameter):
+private bool int_array_callback_helper_parameter(BindingIR parameter):
     string parameter_type = parameter.type_name
     bool is_const = parameter_type.starts_with('const ')
     if (is_const):
@@ -461,7 +461,7 @@ bool int_array_callback_helper_parameter(BindingIR parameter):
         return true
     if (!is_const):
         return false
-    return parameter_type == 'int[]' || parameter_type == 'bool[]' || parameter_type == 'string[]' || parameter_type == 'int[][]' || parameter_type == 'bool[][]'
+    return parameter_type == 'int[]' || parameter_type == 'bool[]' || parameter_type == 'string[]' || parameter_type == 'int[][]' || parameter_type == 'bool[][]' || parameter_type == 'string[][]'
 
 string merge_submit_return_types(string left, string right):
     if (left == ''):
@@ -1236,7 +1236,7 @@ BindingIR[] submit_lambda_captures(Node lambda_node, BindingIR[] bindings):
     return captured
 
 private bool int_array_callback_snapshot_type(string type_name):
-    return type_name == 'int[]' || type_name == 'bool[]' || type_name == 'string[]' || type_name == 'int[][]' || type_name == 'bool[][]'
+    return type_name == 'int[]' || type_name == 'bool[]' || type_name == 'string[]' || type_name == 'int[][]' || type_name == 'bool[][]' || type_name == 'string[][]'
 
 ArrayScalarCaptureResult int_array_scalar_captures(Node lambda_node, BindingIR[] bindings):
     if (lambda_node.kind != 'Lambda' || lambda_node.children.length() != 1):

@@ -1,0 +1,46 @@
+string[][] live_names = [['a'], ['long'], []]
+string[][] live_codes = [['bb'], ['c'], []]
+int[] item_ids = [0, 1, 2]
+
+int observe_rows(const string[][] names, const string[][] codes, int row):
+    if (row == 0):
+        live_names[1][0] = 'x'
+        live_codes[1][0] = 'zzzz'
+    if (names[row].is_empty()):
+        return 0
+    if (codes[row].is_empty()):
+        return 0
+    return names[row][0].length() + codes[row][0].length()
+
+int fail_on_row_one(const string[][] names, const string[][] codes, int row):
+    if (row == 1):
+        throw 'captured string grid failed'
+    return names[row].length() + codes[row].length()
+
+int first_row_word_length(const string[] row):
+    if (row.is_empty()):
+        return 0
+    return row[0].length()
+
+int main():
+    int[] mapped = item_ids.map_to(int row -> observe_rows(live_names, live_codes, row))
+    print(mapped)
+
+    live_names[1][0] = 'long'
+    live_codes[1][0] = 'c'
+    int[] long_rows = item_ids.filter(int row -> {
+        if (live_names[row].is_empty()) {
+            return false
+        }
+        return first_row_word_length(live_names[row]) > 2
+    })
+    print(long_rows)
+
+    try:
+        item_ids.map_to(int row -> fail_on_row_one(live_names, live_codes, row))
+    catch (exception error):
+        print(error)
+
+    int[] after_error = item_ids.map_to(int row -> live_names[row].length() + live_codes[row].length())
+    print(after_error)
+    return 0
