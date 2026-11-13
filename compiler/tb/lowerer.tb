@@ -53,6 +53,9 @@ bool submit_lambda_result_type(string type_name):
 private bool submit_lambda_numeric_type(string type_name):
     return type_name == 'int' || type_name == 'num'
 
+private bool submit_lambda_num_result_parameter_supported(string parameter_type):
+    return parameter_type == '' || submit_lambda_numeric_type(parameter_type) || parameter_type == 'int[]'
+
 private string submit_lambda_numeric_result_type(string left_type, string right_type):
     if (left_type == 'num' || right_type == 'num'):
         return 'num'
@@ -776,7 +779,7 @@ private SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] st
             previous_paths_return = current.returns_all_paths
     return SubmitLambdaValidation(SubmitLambdaBlockCheck(return_type, previous_paths_return), scope)
 
-string validate_submit_lambda(Node lambda_node, Node[] functions, BindingIR[] captured):
+private string validate_submit_lambda(Node lambda_node, Node[] functions, BindingIR[] captured):
     if (lambda_node.children.length() != 1):
         throw 'thread_pool.submit lambda must have one supported parameter and a scalar body'
     SubmitLambdaScope initial_scope = SubmitLambdaScope([], [], [], [], '')
@@ -817,16 +820,16 @@ string validate_submit_lambda(Node lambda_node, Node[] functions, BindingIR[] ca
             throw 'thread_pool.submit lambda block must return a value on every path'
         if (parameter_type == 'num' && block_check.return_type != 'num'):
             throw 'thread_pool.submit lambda with a num parameter must return num'
-        if (block_check.return_type == 'num' && parameter_type != '' && parameter_type != 'int' && parameter_type != 'num'):
-            throw 'thread_pool.submit lambda returning num requires an int or num task parameter'
+        if (block_check.return_type == 'num' && !submit_lambda_num_result_parameter_supported(parameter_type)):
+            throw 'thread_pool.submit lambda returning num requires an int, num, or int[] task parameter'
         return block_check.return_type
     string result_type = submit_lambda_expression_type(body, initial_scope, functions)
     if (!submit_lambda_result_type(result_type)):
         throw 'thread_pool.submit lambda body must be an int, bool, num, string, int[], int[][], or string[] expression using only in-scope values and declared helper calls'
     if (parameter_type == 'num' && result_type != 'num'):
         throw 'thread_pool.submit lambda with a num parameter must return num'
-    if (result_type == 'num' && parameter_type != '' && parameter_type != 'int' && parameter_type != 'num'):
-        throw 'thread_pool.submit lambda returning num requires an int or num task parameter'
+    if (result_type == 'num' && !submit_lambda_num_result_parameter_supported(parameter_type)):
+        throw 'thread_pool.submit lambda returning num requires an int, num, or int[] task parameter'
     return result_type
 
 string[] submit_lambda_local_names(Node node, string[] names):
