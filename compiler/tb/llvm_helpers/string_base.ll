@@ -647,6 +647,7 @@ define private ptr @tb_bootstrap_string_append_consume(ptr %left, ptr %right) {
 entry:
   %left.len = call i64 @tb_managed_string_length(ptr %left)
   %right.len = call i64 @strlen(ptr %right)
+  %same.string = icmp eq ptr %left, %right
   %total.len = add i64 %left.len, %right.len
   %total.bytes = add i64 %total.len, 1
   %xc.old = atomicrmw add ptr @tb_rt_xc, i64 1 seq_cst, align 8
@@ -660,10 +661,11 @@ reuse:
   %total.size = add i64 %total.len, 25
   %realloced = call ptr @realloc(ptr %header, i64 %total.size)
   %data.reuse = getelementptr inbounds i8, ptr %realloced, i64 24
+  %right.source.reuse = select i1 %same.string, ptr %data.reuse, ptr %right
   %length.ptr.reuse = getelementptr inbounds %tb_bootstrap_rc_header, ptr %realloced, i32 0, i32 2
   store i64 %total.len, ptr %length.ptr.reuse
   %right.dst.reuse = getelementptr inbounds i8, ptr %data.reuse, i64 %left.len
-  call void @llvm.memcpy.p0.p0.i64(ptr %right.dst.reuse, ptr %right, i64 %right.len, i1 false)
+  call void @llvm.memcpy.p0.p0.i64(ptr %right.dst.reuse, ptr %right.source.reuse, i64 %right.len, i1 false)
   %term.reuse = getelementptr inbounds i8, ptr %data.reuse, i64 %total.len
   store i8 0, ptr %term.reuse
   ret ptr %data.reuse
