@@ -55,6 +55,7 @@ typedef void* (*tb_string_array_from_string_array_task_fn)(void*);
 typedef tb_num (*tb_num_task_fn)(void);
 typedef tb_num (*tb_num_from_num_task_fn)(tb_num);
 typedef tb_num (*tb_num_from_i64_task_fn)(int64_t);
+typedef tb_num (*tb_num_from_int_array_task_fn)(void*);
 
 extern void* tb_runtime_retain(void* value);
 extern void tb_runtime_release(void* value);
@@ -157,7 +158,8 @@ typedef enum tb_task_kind {
     TB_TASK_KIND_I64_FROM_BOOL_ARRAY_ARRAY = 38,
     TB_TASK_KIND_BOOL_FROM_BOOL_ARRAY_ARRAY = 39,
     TB_TASK_KIND_STRING_ARRAY = 40,
-    TB_TASK_KIND_STRING_ARRAY_FROM_STRING_ARRAY = 41
+    TB_TASK_KIND_STRING_ARRAY_FROM_STRING_ARRAY = 41,
+    TB_TASK_KIND_NUM_FROM_INT_ARRAY = 42
 } tb_task_kind;
 
 typedef struct tb_task {
@@ -210,6 +212,7 @@ typedef struct tb_task {
         tb_num_task_fn num_fn;
         tb_num_from_num_task_fn num_from_num_fn;
         tb_num_from_i64_task_fn num_from_i64_fn;
+        tb_num_from_int_array_task_fn num_from_int_array_fn;
     } function;
     union {
         tb_future_i64* i64_future;
@@ -582,6 +585,10 @@ static void* tb_thread_pool_worker(void* raw_pool) {
             tb_future_num_complete(task->future.num_future, task->function.num_from_num_fn(task->arg.num_arg));
         } else if (task->kind == TB_TASK_KIND_NUM_FROM_I64 && caught == 0) {
             tb_future_num_complete(task->future.num_future, task->function.num_from_i64_fn(task->arg.i64_arg));
+        } else if (task->kind == TB_TASK_KIND_NUM_FROM_INT_ARRAY && caught == 0) {
+            tb_num result = task->function.num_from_int_array_fn(task->arg.string_arg);
+            tb_thread_pool_int_array_snapshot_free(task->arg.string_arg);
+            tb_future_num_complete(task->future.num_future, result);
         } else if (task->kind == TB_TASK_KIND_BOOL && caught == 0) {
             bool result = task->function.bool_fn();
             pthread_mutex_lock(&task->future.bool_future->mutex);
@@ -725,7 +732,10 @@ static void* tb_thread_pool_worker(void* raw_pool) {
                     tb_thread_pool_int_array_array_snapshot_free(task->arg.string_arg);
                 }
                 tb_future_int_array_fail(task->future.int_array_future, error);
-            } else if (task->kind == TB_TASK_KIND_NUM || task->kind == TB_TASK_KIND_NUM_FROM_NUM || task->kind == TB_TASK_KIND_NUM_FROM_I64) {
+            } else if (task->kind == TB_TASK_KIND_NUM || task->kind == TB_TASK_KIND_NUM_FROM_NUM || task->kind == TB_TASK_KIND_NUM_FROM_I64 || task->kind == TB_TASK_KIND_NUM_FROM_INT_ARRAY) {
+                if (task->kind == TB_TASK_KIND_NUM_FROM_INT_ARRAY) {
+                    tb_thread_pool_int_array_snapshot_free(task->arg.string_arg);
+                }
                 tb_future_num_fail(task->future.num_future, error);
             } else if (task->kind == TB_TASK_KIND_I64 || task->kind == TB_TASK_KIND_I64_FROM_I64 || task->kind == TB_TASK_KIND_I64_FROM_BOOL || task->kind == TB_TASK_KIND_I64_FROM_STRING || task->kind == TB_TASK_KIND_I64_FROM_INT_ARRAY || task->kind == TB_TASK_KIND_I64_FROM_INT_ARRAY_ARRAY || task->kind == TB_TASK_KIND_I64_FROM_BOOL_ARRAY || task->kind == TB_TASK_KIND_I64_FROM_STRING_ARRAY || task->kind == TB_TASK_KIND_I64_FROM_BOOL_ARRAY_ARRAY) {
                 if (task->kind == TB_TASK_KIND_I64_FROM_STRING) {
@@ -977,6 +987,36 @@ tb_future_num* tb_thread_pool_submit_num_i64(tb_thread_pool* pool, tb_num_from_i
     task->kind = TB_TASK_KIND_NUM_FROM_I64;
     task->arg.i64_arg = arg;
     task->function.num_from_i64_fn = function;
+    task->future.num_future = future;
+    task->next = NULL;
+
+    pthread_mutex_lock(&pool->mutex);
+    if (pool->tail == NULL) {
+        pool->head = task;
+        pool->tail = task;
+    } else {
+        pool->tail->next = task;
+        pool->tail = task;
+    }
+    pthread_cond_signal(&pool->cond);
+    pthread_mutex_unlock(&pool->mutex);
+    return future;
+}
+
+tb_future_num* tb_thread_pool_submit_num_int_array(tb_thread_pool* pool, tb_num_from_int_array_task_fn function, void* arg) {
+    tb_future_num* future = (tb_future_num*)tb_thread_pool_checked_malloc(sizeof(tb_future_num));
+    pthread_mutex_init(&future->mutex, NULL);
+    pthread_cond_init(&future->cond, NULL);
+    future->refcount = 2;
+    future->done = false;
+    future->failed = false;
+    future->error = NULL;
+    future->result = (tb_num){0, 0};
+
+    tb_task* task = (tb_task*)tb_thread_pool_checked_malloc(sizeof(tb_task));
+    task->kind = TB_TASK_KIND_NUM_FROM_INT_ARRAY;
+    task->arg.string_arg = tb_thread_pool_int_array_snapshot(arg);
+    task->function.num_from_int_array_fn = function;
     task->future.num_future = future;
     task->next = NULL;
 

@@ -528,7 +528,9 @@ string thread_pool_submit_result_type(FunctionSigIR[] functions, string function
             return 'future<num>'
         if (argument_count == 1 && function_sig.param_types.length() == 1 && parameter_type == 'int'):
             return 'future<num>'
-        throw 'thread_pool.submit currently supports num functions with signature num fn(), num fn(num), or num fn(int)'
+        if (argument_count == 1 && function_sig.param_types.length() == 1 && parameter_type == 'int[]'):
+            return 'future<num>'
+        throw 'thread_pool.submit currently supports num functions with signature num fn(), num fn(num), num fn(int), or num fn(int[])'
     if (function_sig.return_type == 'string[]'):
         if (argument_count == 0 && function_sig.param_types.is_empty()):
             return 'future<string[]>'

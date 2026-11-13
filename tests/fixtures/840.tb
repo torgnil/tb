@@ -1,10 +1,14 @@
-num choose_amount(bool choose_large, int amount):
-    return choose_large ? amount + 0.25 : amount * 0.5
+num choose_amount(bool choose_large, int amount, int adjustment):
+    return choose_large ? amount + adjustment + 0.25 : amount * adjustment * 0.25
 
 int main():
     thread_pool pool = thread_pool(1)
     bool choose_large = true
     int amount = 3
-    future<num> result = pool.submit(() -> choose_amount(choose_large, amount))
+    const int adjustment = 2
+    future<num> result = pool.submit(() -> choose_amount(choose_large, amount, adjustment))
+    choose_large = false
+    amount = 99
+    print(result.await())
     print(result.await())
     return 0

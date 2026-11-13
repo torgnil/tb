@@ -337,7 +337,7 @@ private bool llvm_thread_pool_submit_signature_supported(string future_type, str
     future_type = normalize_llvm_type_name(future_type)
     arg_type = normalize_llvm_type_name(arg_type)
     if (future_type == 'future<num>'):
-        return arg_type == 'void' || arg_type == 'num' || arg_type == 'int'
+        return arg_type == 'void' || arg_type == 'num' || arg_type == 'int' || arg_type == 'int[]'
     if (future_type == 'future<string[]>'):
         return arg_type == 'void' || arg_type == 'string[]'
     if (arg_type == 'bool[]'):
@@ -373,6 +373,8 @@ private string llvm_thread_pool_submit_name(string future_type, string arg_type)
         return '@tb_thread_pool_submit_num_num'
     if (future_type == 'future<num>' && arg_type == 'int'):
         return '@tb_thread_pool_submit_num_i64'
+    if (future_type == 'future<num>' && arg_type == 'int[]'):
+        return '@tb_thread_pool_submit_num_int_array'
     if (future_type == 'future<int>' && arg_type == 'int'):
         return '@tb_thread_pool_submit_i64_i64'
     if (future_type == 'future<int>' && arg_type == 'bool'):
@@ -490,6 +492,7 @@ private string[] emit_thread_pool_runtime_declarations():
         'declare ptr @tb_thread_pool_submit_num(ptr, ptr)',
         'declare ptr @tb_thread_pool_submit_num_num(ptr, ptr, %tb_bootstrap_num)',
         'declare ptr @tb_thread_pool_submit_num_i64(ptr, ptr, i64)',
+        'declare ptr @tb_thread_pool_submit_num_int_array(ptr, ptr, ptr)',
         'declare ptr @tb_future_num_retain(ptr)',
         'declare void @tb_future_num_release(ptr)',
         'declare %tb_bootstrap_num @tb_future_num_await(ptr)',

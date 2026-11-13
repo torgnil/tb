@@ -1556,14 +1556,13 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
         Node lambda_node = node.children[1]
         if (lambda_node.kind == 'Lambda' && !captured.is_empty()):
             throw 'thread_pool.submit lambda returning num cannot capture values with an explicit task parameter'
-        if (lambda_node.kind == 'Lambda0' && captured.length() > 1):
-            throw 'thread_pool.submit zero-argument lambda returning num may capture at most one int or bool value'
-        if (lambda_node.kind == 'Lambda0' && captured.length() == 1):
-            string capture_type = captured[0].type_name
-            if (capture_type.starts_with('const ')):
-                capture_type = capture_type.substring(6)
-            if (capture_type != 'int' && capture_type != 'bool'):
-                throw 'thread_pool.submit zero-argument lambda returning num may capture at most one int or bool value'
+        if (lambda_node.kind == 'Lambda0'):
+            for (BindingIR capture in captured):
+                string capture_type = capture.type_name
+                if (capture_type.starts_with('const ')):
+                    capture_type = capture_type.substring(6)
+                if (capture_type != 'int' && capture_type != 'bool'):
+                    throw 'thread_pool.submit zero-argument lambda returning num may capture only int or bool values'
 
     Node[] rewritten_children = []
     Node[] generated = []
