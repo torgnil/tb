@@ -8504,6 +8504,25 @@ bool conditional_carrier_can_own(ProgramIR program, string type_name, int record
             return false
     return true
 
+# Boolean-grid bindings snapshot borrowed sources and transfer owned results.
+private bool bool_grid_binding_transfers(ParsedFunction function_ir, string source_temp):
+    if (temp_can_transfer_to_local(function_ir, source_temp)):
+        return true
+    LinearInstruction source = lookup_temp_instruction(function_ir, source_temp)
+    if (ownership_is_owned_mode(source.ownership_mode) && source.kind == 'value'):
+        return source.detail == 'array' || source.detail == 'call' || source.detail == 'bool-grid-snapshot-copy'
+    return false
+
+private string[] emit_bool_grid_local_binding(ParsedFunction function_ir, BindingIR binding, string source_temp, string temp_suffix):
+    string[] lines = []
+    string stored_value = temp_ref(source_temp)
+    if (!bool_grid_binding_transfers(function_ir, source_temp)):
+        stored_value = '%bool_array_array.clone.' + binding.name + '.' + temp_suffix
+        lines.push('  ' + stored_value + ' = call ptr @tb_bootstrap_bool_array_array_clone(ptr ' + temp_ref(source_temp) + ')')
+    lines.push('  store ptr ' + stored_value + ', ptr ' + slot_ref(binding.name))
+    lines.push('  store i1 true, ptr ' + owned_slot_ref(binding.name))
+    return lines
+
 string emit_set_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op, string temp_suffix):
     BindingIR binding = ir_parse_binding_decl(op.detail)
     require_backend_value_type(binding.type_name, 'set')
@@ -8598,6 +8617,8 @@ string emit_set_instruction(ProgramIR program, ParsedFunction function_ir, Linea
         lines.push('  store ptr ' + stored_value + ', ptr ' + slot_ref(binding.name))
         lines.push('  store i1 ' + owned_flag + ', ptr ' + owned_slot_ref(binding.name))
         return join_llvm_strings(lines, '\n')
+    if (normalize_llvm_type_name(binding.type_name) == 'bool[][]'):
+        return join_llvm_strings(emit_bool_grid_local_binding(function_ir, binding, op.args[0], temp_suffix), '\n')
     if (normalize_llvm_type_name(binding.type_name) == 'int[][]'):
         string[] lines = []
         string stored_value = temp_ref(op.args[0]).substring(0)
@@ -8687,7 +8708,7 @@ string emit_assign_local_instruction(ProgramIR program, ParsedFunction function_
         require_global_scalar_assignment_type(program, global_binding, lookup_temp_llvm_type(function_ir, op.args[0]))
         string global_type = normalize_llvm_type_name(normalize_enum_type_name(global_binding.type_name, collect_enum_types(program.enums)))
         string source_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0]))
-        bool native_global_array = global_type == 'int[]' || global_type == 'bool[]' || global_type == 'string[]' || global_type == 'int[][]' || global_type == 'string[][]'
+        bool native_global_array = global_type == 'int[]' || global_type == 'bool[]' || global_type == 'string[]' || global_type == 'int[][]' || global_type == 'bool[][]' || global_type == 'string[][]'
         bool global_record_array = temp_is_record_array(function_ir, op.args[0])
         bool global_string = global_type == 'string' && temp_is_string(function_ir, op.args[0])
         bool global_map = global_type.starts_with('map<') && temp_is_map(function_ir, op.args[0])
@@ -8718,6 +8739,10 @@ string emit_assign_local_instruction(ProgramIR program, ParsedFunction function_
                 else if (global_type == 'int[][]'):
                     lines = emit_int_array_array_materialize_if_needed(function_ir, op.args[0], store_suffix)
                     stored_value = emit_int_array_array_owned_value(function_ir, op.args[0], store_suffix)
+                else if (global_type == 'bool[][]'):
+                    if (!bool_grid_binding_transfers(function_ir, op.args[0])):
+                        stored_value = '%bool_array_array.clone.' + store_suffix
+                        lines.push('  ' + stored_value + ' = call ptr @tb_bootstrap_bool_array_array_clone(ptr ' + temp_ref(op.args[0]) + ')')
                 else:
                     lines = emit_string_array_array_materialize_if_needed(function_ir, op.args[0], store_suffix)
                     stored_value = emit_string_array_array_owned_value(function_ir, op.args[0], store_suffix)
@@ -8836,6 +8861,8 @@ string emit_assign_local_instruction(ProgramIR program, ParsedFunction function_
         return join_llvm_strings(lines, '\n')
     if (normalize_llvm_type_name(binding.type_name) == 'string[][]'):
         return '  store ptr ' + temp_ref(op.args[0]) + ', ptr ' + slot_ref(binding.name)
+    if (normalize_llvm_type_name(binding.type_name) == 'bool[][]'):
+        return join_llvm_strings(emit_bool_grid_local_binding(function_ir, binding, op.args[0], temp_suffix), '\n')
     if (normalize_llvm_type_name(binding.type_name) == 'int[][]'):
         string[] lines = []
         string stored_value = temp_ref(op.args[0]).substring(0)
@@ -9455,7 +9482,9 @@ string emit_instruction(ProgramIR program, ParsedFunction function_ir, string bl
             return '  ; return int[][] local transfers directly'
         return join_llvm_strings(emit_int_array_array_materialize_if_needed(function_ir, op.args[0], 'return.' + block_label), '\n')
     if (op.kind == 'prepare_return_bool_array_array'):
-        return '  ; return bool[][] owned value transfers directly or borrowed value is cloned at return'
+        if (bool_grid_binding_transfers(function_ir, op.args[0])):
+            return '  ; return owned bool[][] directly'
+        return '  %return.bool_array_array.copy.' + block_label + ' = call ptr @tb_bootstrap_bool_array_array_clone(ptr ' + temp_ref(op.args[0]) + ')'
     if (op.kind == 'prepare_return_record_array'):
         string return_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[0]))
         string record_name = record_name_from_type(array_item_type(return_type))
@@ -9802,7 +9831,7 @@ string[] emit_terminator(ParsedFunction function_ir, BlockIR block, TerminatorIR
                     return lines
                 if (normalize_llvm_type_name(local_binding.type_name) == 'int[]' || normalize_llvm_type_name(local_binding.type_name) == 'bool[]' || normalize_llvm_type_name(local_binding.type_name) == 'string[]' || normalize_llvm_type_name(local_binding.type_name) == 'int[][]' || normalize_llvm_type_name(local_binding.type_name) == 'string[][]' || local_binding.type_name.starts_with('const ')):
                     string local_type = normalize_llvm_type_name(local_binding.type_name)
-                    if (local_type != 'string'):
+                    if (local_type != 'string' && local_type != 'bool[][]'):
                         string[] lines = emit_try_restore_lines(try_suffix, temp_suffix)
                         lines.push('  ret ' + llvm_type(result_type) + ' ' + temp_ref(terminator.args[0]))
                         return lines
@@ -9901,13 +9930,10 @@ string[] emit_terminator(ParsedFunction function_ir, BlockIR block, TerminatorIR
             lines.push('  ret ptr ' + returned_value)
             return lines
         if (normalize_llvm_type_name(result_type) == 'bool[][]'):
-            string[] lines = []
             string returned_value = temp_ref(terminator.args[0])
-            if (!temp_needs_backend_free(function_ir, terminator.args[0])):
-                returned_value = '%return.bool_array_array.copy.' + temp_suffix
-                lines.push('  ' + returned_value + ' = call ptr @tb_bootstrap_bool_array_array_clone(ptr ' + temp_ref(terminator.args[0]) + ')')
-            for (string restore_line in emit_try_restore_lines(try_suffix, temp_suffix)):
-                lines.push(restore_line)
+            if (!bool_grid_binding_transfers(function_ir, terminator.args[0])):
+                returned_value = '%return.bool_array_array.copy.' + block.label
+            string[] lines = emit_try_restore_lines(try_suffix, temp_suffix)
             lines.push('  ret ptr ' + returned_value)
             return lines
         if (normalize_llvm_type_name(result_type).starts_with('map<')):
