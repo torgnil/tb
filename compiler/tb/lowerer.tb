@@ -33,7 +33,7 @@ record SubmitLambdaScope(string[] names, string[] types, string[] const_names, s
 record SubmitLambdaValidation(SubmitLambdaBlockCheck check, SubmitLambdaScope scope);
 record SubmitRangeListRewrite(Node[] nodes, string[] used_names, int next_index);
 record ArrayScalarCaptureResult(BindingIR[] captures, bool complete);
-record ArrayScalarCallbackRewrite(BindingIR[] captures, bool recognized);
+record ArrayScalarCallbackRewrite(BindingIR[] captures, string result_type, bool recognized);
 
 # Set once per program after checking for declarations named `range`.
 bool LOWER_DIRECT_RANGE_FOREACH = false;
@@ -368,7 +368,10 @@ private string submit_lambda_expression_type_context(Node node, SubmitLambdaScop
             return ''
         string true_type = submit_lambda_expression_type_context(node.children[1], scope, functions, array_callback_context, callback_name)
         string false_type = submit_lambda_expression_type_context(node.children[2], scope, functions, array_callback_context, callback_name)
-        if (true_type == false_type && submit_lambda_result_type(true_type)):
+        bool supported_result = submit_lambda_result_type(true_type)
+        if (array_callback_context && callback_name == 'map_to' && true_type == 'string'):
+            supported_result = true
+        if (true_type == false_type && supported_result):
             return true_type
         return ''
     if (node.kind == 'Call'):
@@ -400,7 +403,10 @@ private string submit_lambda_expression_type_context(Node node, SubmitLambdaScop
                 throw 'int[] ' + callback_name + ' callback helper ' + node.value + ' expects ' + parameter_count.to_string() + ' arguments but received ' + node.children.length().to_string()
             throw 'thread_pool.submit lambda helper ' + node.value + ' expects ' + parameter_count.to_string() + ' arguments but received ' + node.children.length().to_string()
         if (array_callback_context):
-            if (!(signature.type_name == 'int' || signature.type_name == 'bool')):
+            bool supported_return = signature.type_name == 'int' || signature.type_name == 'bool'
+            if (callback_name == 'map_to' && signature.type_name == 'string'):
+                supported_return = true
+            if (!supported_return):
                 throw 'int[] ' + callback_name + ' callback helper ' + node.value + ' must return int or bool; got ' + signature.type_name
             if (invalid_callback_parameter):
                 throw 'int[] ' + callback_name + ' callback helper ' + node.value + ' parameters must use int, bool, string, or const int[], const bool[], const string[], const int[][], const bool[][], or const string[][]'
@@ -1332,27 +1338,28 @@ string validate_int_array_scalar_block_callback(Node lambda_node, BindingIR[] ca
 
 ArrayScalarCallbackRewrite int_array_scalar_callback_rewrite(Node node, BindingIR[] bindings, Node[] functions):
     if (node.kind != 'MethodCall' || !(node.value == 'map_to' || node.value == 'filter') || node.children.length() != 2):
-        return ArrayScalarCallbackRewrite([], false)
+        return ArrayScalarCallbackRewrite([], '', false)
     Node lambda_node = node.children[1]
     if (lambda_node.kind != 'Lambda' || lambda_node.children.length() != 1):
-        return ArrayScalarCallbackRewrite([], false)
-    if (node.value == 'map_to' && legacy_int_map_lambda(lambda_node)):
-        return ArrayScalarCallbackRewrite([], false)
+        return ArrayScalarCallbackRewrite([], '', false)
+    bool legacy_map_form = node.value == 'map_to' && legacy_int_map_lambda(lambda_node)
+    if (legacy_map_form && (is_parse_binding_call_lambda(lambda_node) || is_string_length_map_lambda(lambda_node) || is_edge_distance_map_lambda(lambda_node))):
+        return ArrayScalarCallbackRewrite([], '', false)
     ArrayScalarCaptureResult capture_result = int_array_scalar_captures(lambda_node, bindings)
     bool block_callback = lambda_node.children[0].kind == 'Block'
-    if (!capture_result.complete || (capture_result.captures.is_empty() && !block_callback)):
-        return ArrayScalarCallbackRewrite([], false)
+    if (!capture_result.complete):
+        return ArrayScalarCallbackRewrite([], '', false)
     BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
     string parameter_type = parameter.type_name
     if (parameter_type.starts_with('const ')):
         parameter_type = parameter_type.substring(6)
     if (parameter_type != 'int'):
-        return ArrayScalarCallbackRewrite([], false)
+        return ArrayScalarCallbackRewrite([], '', false)
     string result_type = ''
     if (block_callback):
         result_type = validate_int_array_scalar_block_callback(lambda_node, capture_result.captures, functions, node.value)
         if (result_type == ''):
-            return ArrayScalarCallbackRewrite([], false)
+            return ArrayScalarCallbackRewrite([], '', false)
     else:
         string[] capture_names = []
         for (BindingIR binding : capture_result.captures):
@@ -1360,9 +1367,13 @@ ArrayScalarCallbackRewrite int_array_scalar_callback_rewrite(Node node, BindingI
         string[] allowed_names = [parameter.name]
         allowed_names = append_lines(allowed_names, capture_names)
         if (!int_array_scalar_expression(lambda_node.children[0], allowed_names, functions)):
-            return ArrayScalarCallbackRewrite([], false)
+            return ArrayScalarCallbackRewrite([], '', false)
         SubmitLambdaScope scope = int_array_scalar_capture_scope(lambda_node, capture_result.captures)
         result_type = submit_lambda_expression_type_context(lambda_node.children[0], scope, functions, true, node.value)
+    if (!block_callback && node.value == 'map_to' && result_type == 'string'):
+        return ArrayScalarCallbackRewrite(capture_result.captures, 'string', true)
+    if (legacy_map_form || (capture_result.captures.is_empty() && !block_callback)):
+        return ArrayScalarCallbackRewrite([], '', false)
     string required_result = 'int'
     if (node.value == 'filter'):
         required_result = 'bool'
@@ -1374,7 +1385,7 @@ ArrayScalarCallbackRewrite int_array_scalar_callback_rewrite(Node node, BindingI
         if (block_callback):
             throw 'int[] ' + node.value + ' block must return ' + required_result + '; got ' + result_type
         throw 'int[] ' + node.value + ' captured expression must return ' + required_result + '; got ' + result_type
-    return ArrayScalarCallbackRewrite(capture_result.captures, true)
+    return ArrayScalarCallbackRewrite(capture_result.captures, result_type, true)
 
 string submit_worker_name(string[] used_names, int start_index):
     int index = start_index
@@ -1556,6 +1567,13 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
     bool rewrite_worker = false
     ArrayScalarCallbackRewrite callback_rewrite = int_array_scalar_callback_rewrite(node, bindings, functions)
     BindingIR[] array_callback_captures = callback_rewrite.captures
+    if (top_level_global_initializer && callback_rewrite.recognized && callback_rewrite.result_type == 'string'):
+        for (BindingIR binding in callback_rewrite.captures):
+            string capture_type = binding.type_name
+            if (capture_type.starts_with('const ')):
+                capture_type = capture_type.substring(6)
+            if (!(capture_type == 'int' || capture_type == 'bool')):
+                throw 'int[] map_to callback global initializer captures must be int or bool; got ' + capture_type
     BindingIR[] submit_bindings = bindings
     if (top_level_global_initializer):
         # Global map/filter captures do not expand worker capture behavior.
@@ -1902,7 +1920,7 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
             call_arguments.push(Node('Identifier', binding.name, []))
         helper_children = append_nodes(helper_children, capture_snapshot_nodes)
         Node callback_value = lambda_node.children[0]
-        if (block_callback):
+        if (block_callback || callback_rewrite.result_type == 'string'):
             BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
             string callback_helper_name = submit_capture_name(current_names, '__tb_array_scalar_callback_', current_index)
             current_names = add_unique_name(current_names, callback_helper_name)
@@ -1915,16 +1933,23 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
                     capture_type = capture_type.substring(6)
                 callback_children.push(Node('Param', 'const ' + capture_type + ' ' + binding.name, []))
                 callback_arguments.push(Node('Identifier', binding.name, []))
-            SubmitRangeListRewrite normalized_callback = rewrite_submit_range_foreach_list(lambda_node.children[0].children, current_names, current_index)
-            callback_children = append_nodes(callback_children, normalized_callback.nodes)
-            current_names = normalized_callback.used_names
-            current_index = normalized_callback.next_index
             string callback_return_type = 'int'
             if (node.value == 'filter'):
                 callback_return_type = 'bool'
+            if (callback_rewrite.result_type == 'string'):
+                callback_return_type = 'string'
+                callback_children.push(Node('Return', '', [lambda_node.children[0]]))
+            else:
+                SubmitRangeListRewrite normalized_callback = rewrite_submit_range_foreach_list(lambda_node.children[0].children, current_names, current_index)
+                callback_children = append_nodes(callback_children, normalized_callback.nodes)
+                current_names = normalized_callback.used_names
+                current_index = normalized_callback.next_index
             generated.push(Node('Function', callback_return_type + ' ' + callback_helper_name, callback_children))
             callback_value = Node('Call', callback_helper_name, callback_arguments)
-        helper_children.push(Node('VarDecl', 'int[] ' + output_name, [Node('Array', '', [])]))
+        string output_type = 'int[]'
+        if (callback_rewrite.result_type == 'string'):
+            output_type = 'string[]'
+        helper_children.push(Node('VarDecl', output_type + ' ' + output_name, [Node('Array', '', [])]))
         Node output_ref = Node('Identifier', output_name, [])
         Node append_item = callback_value
         if (node.value == 'filter'):
@@ -1955,7 +1980,7 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
         else:
             helper_children.push(callback_loop)
         helper_children.push(Node('Return', '', [Node('Identifier', output_name, [])]))
-        generated.push(Node('Function', 'int[] ' + helper_name, helper_children))
+        generated.push(Node('Function', output_type + ' ' + helper_name, helper_children))
         rewritten = Node('Call', helper_name, call_arguments)
     return SubmitScopedRewrite(rewritten, generated, current_names, current_index, bindings)
 
