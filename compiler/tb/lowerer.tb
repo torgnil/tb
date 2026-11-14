@@ -636,7 +636,12 @@ private SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] st
             if (statement.children.length() != 1):
                 throw 'thread_pool.submit lambda block requires value returns'
             current.return_type = array_callback_block_expression_type(statement.children[0], scope, functions, callback_context, callback_name)
-            if (callback_context && !(current.return_type == 'int' || current.return_type == 'bool')):
+            bool callback_return_supported = current.return_type == 'int' || current.return_type == 'bool'
+            if (callback_name == 'map_to' && current.return_type == 'string'):
+                callback_return_supported = true
+            if (callback_context && !callback_return_supported):
+                if (callback_name == 'map_to'):
+                    throw 'int[] map_to callback return must use scalar int, bool, or string expressions and declared helper calls'
                 throw 'int[] ' + callback_name + ' callback return must use scalar int or bool expressions and declared scalar helper calls'
             if (!submit_lambda_result_type(current.return_type)):
                 throw 'thread_pool.submit lambda return must be an int, bool, string, int[], or int[][] expression using only in-scope values and declared helper calls'
@@ -1329,11 +1334,13 @@ string validate_int_array_scalar_block_callback(Node lambda_node, BindingIR[] ca
     SubmitLambdaBlockCheck check = validation.check
     if (!submit_lambda_result_type(check.return_type) || !check.returns_all_paths):
         throw 'int[] ' + callback_name + ' block must return a value on every path'
-    string required_type = 'int'
-    if (callback_name == 'filter'):
-        required_type = 'bool'
-    if (check.return_type != required_type):
-        throw 'int[] ' + callback_name + ' block must return ' + required_type + '; got ' + check.return_type
+    if (callback_name == 'map_to'):
+        if (check.return_type != 'int' && check.return_type != 'string'):
+            if (check.return_type == 'bool'):
+                throw 'int[] map_to block must return int; got bool'
+            throw 'int[] map_to block must return int or string; got ' + check.return_type
+    else if (check.return_type != 'bool'):
+        throw 'int[] filter block must return bool; got ' + check.return_type
     return check.return_type
 
 ArrayScalarCallbackRewrite int_array_scalar_callback_rewrite(Node node, BindingIR[] bindings, Node[] functions):
@@ -1370,7 +1377,7 @@ ArrayScalarCallbackRewrite int_array_scalar_callback_rewrite(Node node, BindingI
             return ArrayScalarCallbackRewrite([], '', false)
         SubmitLambdaScope scope = int_array_scalar_capture_scope(lambda_node, capture_result.captures)
         result_type = submit_lambda_expression_type_context(lambda_node.children[0], scope, functions, true, node.value)
-    if (!block_callback && node.value == 'map_to' && result_type == 'string'):
+    if (node.value == 'map_to' && result_type == 'string'):
         return ArrayScalarCallbackRewrite(capture_result.captures, 'string', true)
     if (legacy_map_form || (capture_result.captures.is_empty() && !block_callback)):
         return ArrayScalarCallbackRewrite([], '', false)
@@ -1938,6 +1945,7 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
                 callback_return_type = 'bool'
             if (callback_rewrite.result_type == 'string'):
                 callback_return_type = 'string'
+            if (callback_rewrite.result_type == 'string' && !block_callback):
                 callback_children.push(Node('Return', '', [lambda_node.children[0]]))
             else:
                 SubmitRangeListRewrite normalized_callback = rewrite_submit_range_foreach_list(lambda_node.children[0].children, current_names, current_index)
