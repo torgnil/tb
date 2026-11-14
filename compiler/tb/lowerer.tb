@@ -29,7 +29,7 @@ record SubmitLambdaRewrite(Node node, Node[] generated, string[] used_names, int
 record SubmitScopedRewrite(Node node, Node[] generated, string[] used_names, int next_index, BindingIR[] bindings);
 record SubmitScopedListRewrite(Node[] nodes, Node[] generated, string[] used_names, int next_index, BindingIR[] bindings);
 record SubmitLambdaBlockCheck(string return_type, bool returns_all_paths);
-record SubmitLambdaScope(string[] names, string[] types, string[] const_names, string[] declared_names, string parameter_name);
+record SubmitLambdaScope(string[] names, string[] types, string[] const_names, string[] declared_names, string[] input_names, string[] managed_local_names, string parameter_name);
 record SubmitLambdaValidation(SubmitLambdaBlockCheck check, SubmitLambdaScope scope);
 record SubmitRangeListRewrite(Node[] nodes, string[] used_names, int next_index);
 record ArrayScalarCaptureResult(BindingIR[] captures, bool complete);
@@ -152,7 +152,7 @@ string[] add_unique_name(string[] names, string name):
 string binding_name(string value):
     return ir_parse_binding_decl(value).name
 
-int submit_lambda_name_index(string[] names, string name):
+private int submit_lambda_name_index(string[] names, string name):
     int index = names.length() - 1
     while (index >= 0):
         if (names[index] == name):
@@ -160,11 +160,13 @@ int submit_lambda_name_index(string[] names, string name):
         index -= 1
     return -1
 
-SubmitLambdaScope copy_submit_lambda_scope(SubmitLambdaScope scope):
+private SubmitLambdaScope copy_submit_lambda_scope(SubmitLambdaScope scope):
     string[] names = []
     string[] types = []
     string[] const_names = []
     string[] declared_names = []
+    string[] input_names = []
+    string[] managed_local_names = []
     for (string name : scope.names):
         names.push(name)
     for (string type_name : scope.types):
@@ -173,9 +175,13 @@ SubmitLambdaScope copy_submit_lambda_scope(SubmitLambdaScope scope):
         const_names.push(name)
     for (string name : scope.declared_names):
         declared_names.push(name)
-    return SubmitLambdaScope(names, types, const_names, declared_names, scope.parameter_name)
+    for (string name : scope.input_names):
+        input_names.push(name)
+    for (string name : scope.managed_local_names):
+        managed_local_names.push(name)
+    return SubmitLambdaScope(names, types, const_names, declared_names, input_names, managed_local_names, scope.parameter_name)
 
-void collect_submit_unavailable_names_into(Node node, string[] names, map<string, int> seen):
+private void collect_submit_unavailable_names_into(Node node, string[] names, map<string, int> seen):
     if (!seen.contains(node.value)):
         seen[node.value] = 1
         names.push(node.value)
@@ -598,27 +604,7 @@ private SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] st
     for (Node statement : statements):
         SubmitLambdaBlockCheck current = SubmitLambdaBlockCheck('', false)
         if (statement.kind == 'VarDecl'):
-            if (statement.children.length() != 1):
-                throw 'thread_pool.submit lambda local declaration requires an initializer'
-            BindingIR binding = ir_parse_binding_decl(statement.value)
-            string local_type = binding.type_name
-            bool is_const = local_type.starts_with('const ')
-            if (is_const):
-                local_type = local_type.substring(6)
-            if (!(local_type == 'int' || local_type == 'bool')):
-                throw 'thread_pool.submit lambda locals must have type int or bool'
-            if (contains_name(scope.declared_names, binding.name)):
-                throw 'thread_pool.submit lambda local names must be unique, including the parameter'
-            string initializer_type = array_callback_block_expression_type(statement.children[0], scope, functions, callback_context, callback_name)
-            if (initializer_type == ''):
-                throw 'thread_pool.submit lambda local initializer must use only in-scope scalar values and declared scalar helper calls'
-            if (initializer_type != local_type):
-                throw 'thread_pool.submit lambda local initializer must have type ' + local_type + '; got ' + initializer_type
-            scope.declared_names = append_lines(scope.declared_names, [binding.name])
-            scope.names = append_lines(scope.names, [binding.name])
-            scope.types = append_lines(scope.types, [local_type])
-            if (is_const):
-                scope.const_names = append_lines(scope.const_names, [binding.name])
+            scope = validate_submit_lambda_local_declaration(statement, scope, functions, callback_context, callback_name, true)
         else if (statement.kind == 'Assign'):
             if (statement.children.length() != 2):
                 throw 'thread_pool.submit lambda assignments must target a mutable scalar local'
@@ -629,9 +615,11 @@ private SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] st
             if (target_index < 0):
                 throw 'thread_pool.submit lambda assignment target must be an in-scope scalar local'
             if (contains_name(scope.const_names, target_name)):
-                if (submit_lambda_managed_type(scope.types[target_index])):
+                if (contains_name(scope.input_names, target_name) && submit_lambda_managed_type(scope.types[target_index])):
                     throw 'thread_pool.submit lambda cannot assign to managed task parameter ' + target_name
                 throw 'thread_pool.submit lambda cannot assign to const local ' + target_name
+            if (contains_name(scope.managed_local_names, target_name)):
+                throw 'thread_pool.submit lambda cannot reassign managed local ' + target_name
             string value_type = array_callback_block_expression_type(statement.children[1], scope, functions, callback_context, callback_name)
             if (value_type == ''):
                 throw 'thread_pool.submit lambda assignment value must use only in-scope scalar values and declared scalar helper calls'
@@ -701,8 +689,12 @@ private SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] st
             Node init_statement = statement.children[0]
             if (!(init_statement.kind == 'VarDecl' || init_statement.kind == 'Assign')):
                 throw 'thread_pool.submit lambda for initializer must be an initialized scalar declaration or assignment'
-            SubmitLambdaValidation init_validation = validate_submit_lambda_block_statements([init_statement], copy_submit_lambda_scope(scope), functions, loop_depth, callback_context, callback_name)
-            SubmitLambdaScope loop_scope = init_validation.scope
+            SubmitLambdaScope loop_scope = copy_submit_lambda_scope(scope)
+            if (init_statement.kind == 'VarDecl'):
+                loop_scope = validate_submit_lambda_local_declaration(init_statement, loop_scope, functions, callback_context, callback_name, false)
+            else:
+                SubmitLambdaValidation init_validation = validate_submit_lambda_block_statements([init_statement], loop_scope, functions, loop_depth, callback_context, callback_name)
+                loop_scope = init_validation.scope
             if (array_callback_block_expression_type(statement.children[1], loop_scope, functions, callback_context, callback_name) != 'bool'):
                 throw 'thread_pool.submit lambda for condition must be a bool expression using only in-scope scalar values and declared scalar helper calls'
             Node update_statement = statement.children[2]
@@ -779,10 +771,41 @@ private SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] st
             previous_paths_return = current.returns_all_paths
     return SubmitLambdaValidation(SubmitLambdaBlockCheck(return_type, previous_paths_return), scope)
 
+private SubmitLambdaScope validate_submit_lambda_local_declaration(Node statement, SubmitLambdaScope scope, Node[] functions, bool callback_context, string callback_name, bool allow_managed_worker_local):
+    if (statement.children.length() != 1):
+        throw 'thread_pool.submit lambda local declaration requires an initializer'
+    BindingIR binding = ir_parse_binding_decl(statement.value)
+    string local_type = binding.type_name
+    bool is_const = local_type.starts_with('const ')
+    if (is_const):
+        local_type = local_type.substring(6)
+    bool is_scalar_local = local_type == 'int' || local_type == 'bool'
+    # Match managed worker locals to existing task/capture value types.
+    bool is_managed_worker_local = allow_managed_worker_local && !callback_context && submit_lambda_managed_task_parameter_type(local_type)
+    if (!is_scalar_local && !is_managed_worker_local):
+        throw 'thread_pool.submit lambda locals must have type int or bool'
+    if (contains_name(scope.declared_names, binding.name)):
+        throw 'thread_pool.submit lambda local names must be unique, including the parameter'
+    string initializer_type = array_callback_block_expression_type(statement.children[0], scope, functions, callback_context, callback_name)
+    if (initializer_type == ''):
+        if (is_scalar_local):
+            throw 'thread_pool.submit lambda local initializer must use only in-scope scalar values and declared scalar helper calls'
+        throw 'thread_pool.submit lambda managed local initializer must be a supported expression with a known type'
+    if (initializer_type != local_type):
+        throw 'thread_pool.submit lambda local initializer must have type ' + local_type + '; got ' + initializer_type
+    scope.declared_names = append_lines(scope.declared_names, [binding.name])
+    scope.names = append_lines(scope.names, [binding.name])
+    scope.types = append_lines(scope.types, [local_type])
+    if (!is_scalar_local):
+        scope.managed_local_names = append_lines(scope.managed_local_names, [binding.name])
+    if (is_const):
+        scope.const_names = append_lines(scope.const_names, [binding.name])
+    return scope
+
 private string validate_submit_lambda(Node lambda_node, Node[] functions, BindingIR[] captured):
     if (lambda_node.children.length() != 1):
         throw 'thread_pool.submit lambda must have one supported parameter and a scalar body'
-    SubmitLambdaScope initial_scope = SubmitLambdaScope([], [], [], [], '')
+    SubmitLambdaScope initial_scope = SubmitLambdaScope([], [], [], [], [], [], '')
     string parameter_type = ''
     if (lambda_node.kind == 'Lambda'):
         BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
@@ -792,7 +815,7 @@ private string validate_submit_lambda(Node lambda_node, Node[] functions, Bindin
         string[] const_names = []
         if (submit_lambda_managed_task_parameter_type(parameter_type)):
             const_names.push(parameter.name)
-        initial_scope = SubmitLambdaScope([parameter.name], [parameter_type], const_names, [parameter.name], parameter.name)
+        initial_scope = SubmitLambdaScope([parameter.name], [parameter_type], const_names, [parameter.name], [parameter.name], [], parameter.name)
     else if (lambda_node.kind != 'Lambda0' || lambda_node.value != ''):
         throw 'thread_pool.submit lambda must have one supported parameter and a scalar body'
     if (lambda_node.kind == 'Lambda0'):
@@ -812,6 +835,7 @@ private string validate_submit_lambda(Node lambda_node, Node[] functions, Bindin
         initial_scope.types = append_lines(initial_scope.types, [captured_type])
         initial_scope.const_names = append_lines(initial_scope.const_names, [binding.name])
         initial_scope.declared_names = append_lines(initial_scope.declared_names, [binding.name])
+        initial_scope.input_names = append_lines(initial_scope.input_names, [binding.name])
     Node body = lambda_node.children[0]
     if (body.kind == 'Block'):
         SubmitLambdaValidation validation = validate_submit_lambda_block_statements(body.children, initial_scope, functions, 0, false, '')
@@ -1079,7 +1103,7 @@ SubmitLambdaRewrite rewrite_array_map_expression(Node node, string[] used_names,
                         if (parameter_type.starts_with('const ')):
                             parameter_type = parameter_type.substring(6)
                         if (parameter_type == 'int' && int_array_scalar_expression(lambda_node.children[0], [parameter.name], functions)):
-                            SubmitLambdaScope scope = SubmitLambdaScope([parameter.name], ['int'], [], [parameter.name], parameter.name)
+                            SubmitLambdaScope scope = SubmitLambdaScope([parameter.name], ['int'], [], [parameter.name], [parameter.name], [], parameter.name)
                             string callback_return_type = submit_lambda_expression_type_context(lambda_node.children[0], scope, functions, true, 'map_to')
                             if (callback_return_type == ''):
                                 throw 'int[] map_to expression has invalid scalar operand types'
@@ -1110,7 +1134,7 @@ SubmitLambdaRewrite rewrite_array_map_expression(Node node, string[] used_names,
                     if (int_array_scalar_expression(lambda_node.children[0], [parameter.name], functions)):
                         if (parameter_type != 'int'):
                             throw 'int[] filter expression requires int parameter; got ' + parameter_type
-                        SubmitLambdaScope scope = SubmitLambdaScope([parameter.name], ['int'], [], [parameter.name], parameter.name)
+                        SubmitLambdaScope scope = SubmitLambdaScope([parameter.name], ['int'], [], [parameter.name], [parameter.name], [], parameter.name)
                         string callback_return_type = submit_lambda_expression_type_context(lambda_node.children[0], scope, functions, true, 'filter')
                         if (callback_return_type == ''):
                             throw 'int[] filter expression has invalid scalar operand types'
@@ -1238,7 +1262,7 @@ BindingIR[] submit_lambda_captures(Node lambda_node, BindingIR[] bindings):
 private bool int_array_callback_snapshot_type(string type_name):
     return type_name == 'int[]' || type_name == 'bool[]' || type_name == 'string[]' || type_name == 'int[][]' || type_name == 'bool[][]' || type_name == 'string[][]'
 
-ArrayScalarCaptureResult int_array_scalar_captures(Node lambda_node, BindingIR[] bindings):
+private ArrayScalarCaptureResult int_array_scalar_captures(Node lambda_node, BindingIR[] bindings):
     if (lambda_node.kind != 'Lambda' || lambda_node.children.length() != 1):
         return ArrayScalarCaptureResult([], false)
     string[] locals = submit_lambda_local_names(lambda_node.children[0], [])
@@ -1258,7 +1282,7 @@ ArrayScalarCaptureResult int_array_scalar_captures(Node lambda_node, BindingIR[]
         captured.push(binding)
     return ArrayScalarCaptureResult(captured, true)
 
-SubmitLambdaScope int_array_scalar_capture_scope(Node lambda_node, BindingIR[] captured):
+private SubmitLambdaScope int_array_scalar_capture_scope(Node lambda_node, BindingIR[] captured):
     BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
     string parameter_type = parameter.type_name
     if (parameter_type.starts_with('const ')):
@@ -1273,9 +1297,9 @@ SubmitLambdaScope int_array_scalar_capture_scope(Node lambda_node, BindingIR[] c
         names.push(binding.name)
         types.push(capture_type)
         const_names.push(binding.name)
-    return SubmitLambdaScope(names, types, const_names, names, parameter.name)
+    return SubmitLambdaScope(names, types, const_names, names, names, [], parameter.name)
 
-SubmitLambdaValidation validate_int_array_callback_block_statements(Node[] statements, SubmitLambdaScope scope, Node[] functions, string callback_name):
+private SubmitLambdaValidation validate_int_array_callback_block_statements(Node[] statements, SubmitLambdaScope scope, Node[] functions, string callback_name):
     try:
         return validate_submit_lambda_block_statements(statements, scope, functions, 0, true, callback_name)
     catch (string error):
