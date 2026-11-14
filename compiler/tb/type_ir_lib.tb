@@ -1320,7 +1320,7 @@ string lookup_cached_field_type(string[] keys, string[] types, string record_nam
     return lookup_cached_name_type(keys, types, record_name + '.' + field_name)
 
 string infer_call_type_cached(string name, FunctionSigIR[] functions, string[] cache_names, string[] cache_types):
-    if (is_direct_trim_builtin(name) || name == 'substring' || name == 'random_bits' || name == 'to_num'):
+    if (is_direct_trim_builtin(name) || name == 'substring' || name == 'random_bits' || name == 'to_num' || name == 'to_int'):
         string user_result_type = lookup_function_return_type(functions, name)
         if (user_result_type != 'unknown'):
             return user_result_type
@@ -2226,7 +2226,9 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
                 throw 'sort is an array method; use array.sort(...)'
         if (op.args[0] == 'length' || op.args[0] == 'is_empty'):
             validate_direct_native_query_receiver(op, op.args[0], functions, record_fields, enum_types, temp_types, record_names)
-        if (op.args[0] == 'to_int'):
+        if (op.args[0] == 'to_int' && lookup_function_return_type(functions, 'to_int') == 'unknown' && record_type_exists(record_names, 'to_int')):
+            return refined_value_op(op, 'to_int', refine_ownership_mode(op, 'to_int'))
+        if (op.args[0] == 'to_int' && lookup_function_return_type(functions, 'to_int') == 'unknown' && !record_type_exists(record_names, 'to_int')):
             if (op.args.length() == 2):
                 string to_int_argument_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
                 if (to_int_argument_type != '' && to_int_argument_type != 'unknown' && to_int_argument_type != 'string'):
