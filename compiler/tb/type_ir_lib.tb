@@ -2893,6 +2893,19 @@ void validate_map_binding_type(string binding_name, string expected_type, string
             if (normalized_actual_type != normalized_expected_type):
                 throw 'map binding ' + ir_source_binding_name(binding_name) + ' requires ' + normalized_expected_type + '; got ' + normalized_actual_type
 
+# Native arrays have different element layouts; never reinterpret known values.
+private void validate_native_array_binding_type(string binding_name, string expected_type, string actual_type, EnumTypeIR[] enum_types):
+    string expected = normalize_enum_type_name(normalize_llvm_type_name(expected_type), enum_types)
+    string actual = normalize_enum_type_name(normalize_llvm_type_name(actual_type), enum_types)
+    if (expected == '' || expected == 'unknown' || actual == '' || actual == 'unknown' || is_untyped_array_shape(actual)):
+        return
+    # Scalar destinations retain their existing scalar-binding diagnostics.
+    if (expected == 'int' || expected == 'bool' || expected == 'num' || expected == 'string'):
+        return
+    if (is_supported_call_array_type(expected) || is_supported_call_array_type(actual)):
+        if (actual != expected):
+            throw 'array binding ' + ir_source_binding_name(binding_name) + ' requires ' + expected + '; got ' + actual
+
 private BindingIR[] combined_refine_bindings(BindingIR[] globals, BindingIR[] params, BindingIR[] locals):
     BindingIR[] bindings = []
     for (BindingIR binding in globals):
@@ -3132,6 +3145,7 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                             if (lookup_temp_type_slot(temp_types, arg_name) == '[]' && item_type.ends_with('[]')):
                                 block_refined = set_temp_type(block_refined, arg_name, item_type)
                                 temp_types = set_temp_type_slot(temp_types, arg_name, item_type)
+                validate_native_array_binding_type(binding.name, binding.type_name, lookup_temp_type_slot(temp_types, current.args[0]), enum_types)
         if (current.kind == 'assign_field'):
             if (current.args.length() >= 2):
                 string base_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[0]))
@@ -3256,6 +3270,7 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                             if (lookup_temp_type_slot(temp_types, arg_name) == '[]' && item_type.ends_with('[]')):
                                 block_refined = set_temp_type(block_refined, arg_name, item_type)
                                 temp_types = set_temp_type_slot(temp_types, arg_name, item_type)
+                validate_native_array_binding_type(current.detail, binding_type, lookup_temp_type_slot(temp_types, current.args[0]), enum_types)
         if (current.lhs != ''):
             temp_types = set_temp_type_slot(temp_types, current.lhs, current.result_type)
         block_refined.push(current)
@@ -3307,6 +3322,7 @@ GlobalDeclIR refine_global(GlobalDeclIR global_decl, BindingIR[] globals, Functi
         refined = set_temp_type(refined, global_decl.value_name, binding.type_name)
     else if (is_untyped_array_shape(value_type) && binding.type_name.ends_with('[]')):
         refined = set_temp_type(refined, global_decl.value_name, binding.type_name)
+    validate_native_array_binding_type(binding.name, binding.type_name, lookup_temp_type(refined, global_decl.value_name), enum_types)
     return GlobalDeclIR(global_decl.header.substring(0), refined, global_decl.value_name.substring(0), global_decl.module_id.substring(0))
 
 # Arm stores precede the merge's type metadata. Resolve them only after all
@@ -3797,6 +3813,7 @@ ProgramIR refine_program_ir_with_regex(ProgramIR program, bool regex_imported):
             refined_global = GlobalDeclIR(refined_global.header, set_temp_type(refined_global.instructions, global_decl.value_name, normalized_global_type), refined_global.value_name, refined_global.module_id)
         else if (is_untyped_array_shape(value_type) && normalized_global_type.ends_with('[]')):
             refined_global = GlobalDeclIR(refined_global.header, set_temp_type(refined_global.instructions, global_decl.value_name, normalized_global_type), refined_global.value_name, refined_global.module_id)
+        validate_native_array_binding_type(binding.name, binding.type_name, lookup_temp_type(refined_global.instructions, global_decl.value_name), enum_types)
         refined_globals.push(refined_global)
         int global_op_index = 0
         while (global_op_index < refined_global.instructions.length()):
