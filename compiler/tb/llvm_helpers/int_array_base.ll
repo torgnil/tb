@@ -355,15 +355,39 @@ entry:
   %empty = icmp eq i32 %len, 0
   ret i1 %empty
 }
+; Keep the queue sorted by inserting after existing equal values.
 define private i32 @tb_bootstrap_prio_q_int_push(ptr %pq, i64 %value) {
 entry:
+  %value.slot = alloca i64
+  store i64 %value, ptr %value.slot
   %array.ptr = getelementptr inbounds %tb_bootstrap_prio_q_int, ptr %pq, i32 0, i32 0
   %array = load ptr, ptr %array.ptr
   %cmp.ptr = getelementptr inbounds %tb_bootstrap_prio_q_int, ptr %pq, i32 0, i32 1
   %cmp = load ptr, ptr %cmp.ptr
-  %len = call i32 @tb_bootstrap_int_array_push(ptr %array, i64 %value)
-  %sorted = call ptr @tb_bootstrap_int_array_sort_by(ptr %array, ptr %cmp)
-  ret i32 %len
+  %len = call i32 @tb_bootstrap_int_array_length(ptr %array)
+  %data.ptr = getelementptr inbounds %tb_bootstrap_int_array, ptr %array, i32 0, i32 2
+  %data = load ptr, ptr %data.ptr
+  br label %search
+search:
+  %low = phi i32 [ 0, %entry ], [ %low.next, %probe ]
+  %high = phi i32 [ %len, %entry ], [ %high.next, %probe ]
+  %remaining = icmp slt i32 %low, %high
+  br i1 %remaining, label %probe, label %insert
+probe:
+  %distance = sub i32 %high, %low
+  %half = lshr i32 %distance, 1
+  %middle = add i32 %low, %half
+  %item.ptr = getelementptr inbounds i64, ptr %data, i32 %middle
+  %order = call i32 %cmp(ptr %item.ptr, ptr %value.slot)
+  %after = icmp sle i32 %order, 0
+  %past.middle = add i32 %middle, 1
+  %low.next = select i1 %after, i32 %past.middle, i32 %low
+  %high.next = select i1 %after, i32 %high, i32 %middle
+  br label %search
+insert:
+  %index64 = zext i32 %low to i64
+  %new.len = call i32 @tb_bootstrap_int_array_insert(ptr %array, i64 %index64, i64 %value)
+  ret i32 %new.len
 }
 define private i64 @tb_bootstrap_prio_q_int_pop(ptr %pq) {
 entry:
