@@ -223,6 +223,10 @@ bool is_supported_call_array_type(string type_name):
     string normalized_type = normalize_llvm_type_name(type_name)
     return normalized_type == 'int[]' || normalized_type == 'bool[]' || normalized_type == 'string[]' || normalized_type == 'int[][]' || normalized_type == 'bool[][]' || normalized_type == 'string[][]'
 
+bool is_supported_call_array_context_type(string type_name):
+    string normalized_type = normalize_llvm_type_name(type_name)
+    return is_supported_call_array_type(normalized_type) || (normalized_type.ends_with('[]') && record_name_from_type(array_item_type(normalized_type)) != '')
+
 private RefineInstructionsResult contextualize_bool_grid_literal(LinearInstruction[] instructions, string[] temp_types, string array_name):
     string actual_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, array_name))
     if (!is_untyped_array_shape(actual_type)):
@@ -238,7 +242,7 @@ private RefineInstructionsResult contextualize_bool_grid_literal(LinearInstructi
 
 bool can_contextualize_call_array_literal(LinearInstruction[] instructions, string[] temp_types, string array_name, string expected_type):
     string normalized_expected_type = normalize_llvm_type_name(expected_type)
-    if (!is_supported_call_array_type(normalized_expected_type)):
+    if (!is_supported_call_array_context_type(normalized_expected_type)):
         return false
     string actual_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, array_name))
     if (actual_type == normalized_expected_type):
@@ -290,7 +294,7 @@ private RefineInstructionsResult contextualize_direct_user_arrays(LinearInstruct
     while (index < call_sig.param_types.length()):
         string expected_type = normalize_enum_type_name(normalize_llvm_type_name(call_sig.param_types[index]), enum_types)
         string actual_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[index + 1])), enum_types)
-        if (actual_type != expected_type && (!is_untyped_array_shape(actual_type) || !is_supported_call_array_type(expected_type) || !can_contextualize_call_array_literal(instructions, temp_types, op.args[index + 1], expected_type))):
+        if (actual_type != expected_type && (!is_untyped_array_shape(actual_type) || !is_supported_call_array_context_type(expected_type) || !can_contextualize_call_array_literal(instructions, temp_types, op.args[index + 1], expected_type))):
             return RefineInstructionsResult(instructions, temp_types)
         index += 1
     index = 0
@@ -3080,7 +3084,7 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                                     block_refined = contextual_map.instructions
                                     temp_types = contextual_map.temp_types
                                     actual_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[index]))
-                                if (is_untyped_array_shape(actual_type) && is_supported_call_array_type(expected_type)):
+                                if (is_untyped_array_shape(actual_type) && is_supported_call_array_context_type(expected_type)):
                                     RefineInstructionsResult contextual_array = contextualize_call_array_literal(block_refined, temp_types, current.args[index], expected_type)
                                     block_refined = contextual_array.instructions
                                     temp_types = contextual_array.temp_types
@@ -3099,7 +3103,7 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                             block_refined = contextual_map.instructions
                             temp_types = contextual_map.temp_types
                             actual_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[index]))
-                        if (is_untyped_array_shape(actual_type) && is_supported_call_array_type(expected_type)):
+                        if (is_untyped_array_shape(actual_type) && is_supported_call_array_context_type(expected_type)):
                             RefineInstructionsResult contextual_array = contextualize_call_array_literal(block_refined, temp_types, current.args[index], expected_type)
                             block_refined = contextual_array.instructions
                             temp_types = contextual_array.temp_types

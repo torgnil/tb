@@ -260,15 +260,17 @@ captures resolve to the nearest binding visible when submission occurs.
   array variable is checked like any other array. In a direct named call, a
   bare empty array literal such as `count_words([])` gets its type from a
   declared `int[]`, `bool[]`, `string[]`, `int[][]`, or `string[][]` parameter,
-  including nested empty rows such as `count_rows([[]])`. Populated literals
-  still need matching element types and nesting depth. The same empty-literal
-  context is available for unambiguous UFCS calls to named tb functions, with
-  the receiver checked as the first parameter. For UFCS calls named `copy` or
+  including nested empty rows such as `count_rows([[]])`. A one-dimensional
+  array of a declared record type also gets context from a matching named
+  parameter. Populated literals still need matching element types and nesting
+  depth. The same empty-literal context is available for unambiguous UFCS calls
+  to named tb functions, with the receiver checked as the first parameter,
+  including one-dimensional record arrays. For UFCS calls named `copy` or
   `fill`, this context applies when a declared user function is selected and no
   same-named record is declared. Other UFCS names that collide with builtins
-  remain excluded. Record-array arguments still do not receive empty-literal
-  context; builtin and record-constructor dispatch retain their existing
-  behavior.
+  remain excluded. Nested record-array ranks still do not receive
+  empty-literal argument context; builtin and record-constructor dispatch
+  retain their existing behavior.
 
   Resolved direct and UFCS calls to named tb functions require exactly the
   declared number of arguments. A UFCS receiver counts as the first argument.
