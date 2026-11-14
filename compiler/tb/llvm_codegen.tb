@@ -3344,6 +3344,95 @@ string emit_backend_release_binding(BindingIR binding, string temp_suffix):
     line += '\n  store ptr null, ptr ' + slot_ref(binding.name)
     return line
 
+private string function_exception_env_ref():
+    return '%tb.fn.exc.env'
+
+private string function_exception_prev_slot_ref():
+    return '%tb.fn.exc.prev.slot'
+
+private string function_exception_unwind_label():
+    return 'tb.fn.exc.unwind'
+
+private bool function_has_managed_bindings(ParsedFunction function_ir):
+    for (BindingIR param_decl in function_ir.params):
+        if (is_backend_managed_type(param_decl.type_name)):
+            return true
+    for (BindingIR local_decl in function_ir.locals):
+        if (is_backend_managed_type(local_decl.type_name)):
+            return true
+    return false
+
+private bool program_has_managed_bindings(ProgramIR program):
+    for (ParsedFunction function_ir in program.functions):
+        if (function_has_managed_bindings(function_ir)):
+            return true
+    return false
+
+private bool function_exception_runtime_enabled():
+    return LLVM_SCAN_NEEDS_THROW != 0 || LLVM_SCAN_NEEDS_TRY_CATCH != 0 || LLVM_SCAN_NEEDS_THREAD_POOL != 0 || LLVM_SCAN_NEEDS_READ_LINES != 0 || LLVM_SCAN_NEEDS_READ_FILE != 0 || LLVM_SCAN_NEEDS_WRITE_ALL != 0 || LLVM_SCAN_NEEDS_APPEND_ALL != 0 || LLVM_SCAN_NEEDS_INT_ARRAY != 0
+
+private string[] emit_function_exception_frame_allocas(ParsedFunction function_ir, bool bootstrap_main_args):
+    string[] lines = emit_allocas(function_ir, bootstrap_main_args)
+    lines.push('  ' + function_exception_env_ref() + ' = alloca [192 x i8]')
+    lines.push('  ' + function_exception_prev_slot_ref() + ' = alloca ptr')
+    return lines
+
+private string[] emit_function_exception_frame_setup(ParsedFunction function_ir):
+    string[] lines = []
+    string state_ref = '%tb.fn.exc.state'
+    string is_initial_ref = '%tb.fn.exc.initial'
+    lines.push('  %tb.fn.exc.previous = load ptr, ptr ' + exception_handler_symbol())
+    lines.push('  store ptr %tb.fn.exc.previous, ptr ' + function_exception_prev_slot_ref())
+    lines.push('  store ptr ' + function_exception_env_ref() + ', ptr ' + exception_handler_symbol())
+    lines.push('  ' + state_ref + ' = call i32 @setjmp(ptr ' + function_exception_env_ref() + ')')
+    lines.push('  ' + is_initial_ref + ' = icmp eq i32 ' + state_ref + ', 0')
+    lines.push('  br i1 ' + is_initial_ref + ', label %' + function_ir.blocks[0].label + ', label %' + function_exception_unwind_label())
+    return lines
+
+private string[] emit_function_exception_unwind_lines(ParsedFunction function_ir):
+    # The exception message already owns its own reference; release bindings
+    # before restoring the caller's handler and propagating it.
+    string[] lines = [function_exception_unwind_label() + ':']
+    int local_index = function_ir.locals.length() - 1
+    while (local_index >= 0):
+        BindingIR local_decl = function_ir.locals[local_index]
+        if (is_backend_managed_type(local_decl.type_name)):
+            lines.push(emit_backend_release_binding(local_decl, 'fn.exc.local.' + local_decl.name))
+        local_index -= 1
+    int param_index = function_ir.params.length() - 1
+    while (param_index >= 0):
+        BindingIR param_decl = function_ir.params[param_index]
+        if (is_backend_managed_type(param_decl.type_name)):
+            lines.push(emit_backend_release_binding(param_decl, 'fn.exc.param.' + param_decl.name))
+        param_index -= 1
+    lines.push('  %tb.fn.exc.previous.unwind = load ptr, ptr ' + function_exception_prev_slot_ref())
+    lines.push('  store ptr %tb.fn.exc.previous.unwind, ptr ' + exception_handler_symbol())
+    lines.push('  %tb.fn.exc.has.previous = icmp ne ptr %tb.fn.exc.previous.unwind, null')
+    lines.push('  br i1 %tb.fn.exc.has.previous, label %tb.fn.exc.rethrow, label %tb.fn.exc.uncaught')
+    lines.push('tb.fn.exc.rethrow:')
+    lines.push('  call void @longjmp(ptr %tb.fn.exc.previous.unwind, i32 1)')
+    lines.push('  unreachable')
+    lines.push('tb.fn.exc.uncaught:')
+    lines.push('  %tb.fn.exc.message.uncaught = load ptr, ptr ' + exception_message_symbol())
+    lines.push('  call i32 @puts(ptr %tb.fn.exc.message.uncaught)')
+    lines.push('  call void @exit(i32 1)')
+    lines.push('  unreachable')
+    return lines
+
+private string[] emit_function_exception_restore_lines(string temp_suffix):
+    return [
+        '  %tb.fn.exc.previous.restore.' + temp_suffix + ' = load ptr, ptr ' + function_exception_prev_slot_ref(),
+        '  store ptr %tb.fn.exc.previous.restore.' + temp_suffix + ', ptr ' + exception_handler_symbol()
+    ]
+
+private void append_function_terminator_lines(string[] lines, ParsedFunction function_ir, BlockIR block, bool has_exception_frame):
+    string[] terminator_lines = emit_terminator(function_ir, block, block.terminator, block.label)
+    for (string line in terminator_lines):
+        if (has_exception_frame && line.starts_with('  ret ')):
+            for (string restore_line in emit_function_exception_restore_lines(block.label)):
+                lines.push(restore_line)
+        lines.push(line)
+
 string llvm_bool_literal(string value):
     if (value == 'true'):
         return 'true'
@@ -10085,15 +10174,27 @@ void append_plain_function_lines(string[] lines, ProgramIR program, ParsedFuncti
     if (is_bootstrap_c_main(function_ir) && normalize_llvm_type_name(result_type) == 'int'):
         function_llvm_type = 'i32'.substring(0)
     lines.push('define ' + function_llvm_type + ' @' + function_name + '(' + join_llvm_strings(params, ', ') + ') {')
+    # Slot flags are initialized before the frame can receive an exception.
+    bool has_exception_frame = function_has_managed_bindings(function_ir) && function_exception_runtime_enabled()
+    if (has_exception_frame):
+        lines.push('tb.fn.exc.entry:')
+        string[] frame_allocas = emit_function_exception_frame_allocas(function_ir, bootstrap_main_args)
+        for (string line in frame_allocas):
+            lines.push(line)
+        for (string line in emit_function_exception_frame_setup(function_ir)):
+            lines.push(line)
+        for (string line in emit_function_exception_unwind_lines(function_ir)):
+            lines.push(line)
     bool first = true
     int block_index = 0
     while (block_index < function_ir.blocks.length()):
         BlockIR block = function_ir.blocks[block_index]
         lines.push(block.label + ':')
         if (first):
-            string[] allocas = emit_allocas(function_ir, bootstrap_main_args)
-            for (string line in allocas):
-                lines.push(line)
+            if (!has_exception_frame):
+                string[] allocas = emit_allocas(function_ir, bootstrap_main_args)
+                for (string line in allocas):
+                    lines.push(line)
             if (needs_runtime_global_init && is_bootstrap_c_main(function_ir)):
                 lines.push('  call void ' + globals_init_function_symbol() + '()')
             first = false
@@ -10103,8 +10204,14 @@ void append_plain_function_lines(string[] lines, ProgramIR program, ParsedFuncti
             instruction_index += 1
         if (block.terminator.kind == ''):
             if (block_index == function_ir.blocks.length() - 1 && normalize_llvm_type_name(result_type) == 'void'):
+                if (has_exception_frame):
+                    for (string line in emit_function_exception_restore_lines('implicit.' + block.label)):
+                        lines.push(line)
                 lines.push('  ret void')
             else if (block_index == function_ir.blocks.length() - 1 && is_bootstrap_c_main(function_ir) && normalize_llvm_type_name(result_type) == 'int'):
+                if (has_exception_frame):
+                    for (string line in emit_function_exception_restore_lines('implicit.' + block.label)):
+                        lines.push(line)
                 lines.push('  ret i32 0')
             else if (block_index + 1 < function_ir.blocks.length()):
                 lines.push('  br label %' + function_ir.blocks[block_index + 1].label)
@@ -10121,8 +10228,7 @@ void append_plain_function_lines(string[] lines, ProgramIR program, ParsedFuncti
                 else:
                     throw 'unsupported llvm terminator kind: '
         else:
-            for (string line in emit_terminator(function_ir, block, block.terminator, block.label)):
-                lines.push(line)
+            append_function_terminator_lines(lines, function_ir, block, has_exception_frame)
         block_index += 1
     lines.push('}')
 string cached_len_symbol(string function_name):
@@ -11968,6 +12074,7 @@ string[] llvm_codegen_ir_borrowed(ProgramIR program):
     bool needs_hash = LLVM_SCAN_NEEDS_HASH != 0
     bool needs_num_hash = LLVM_SCAN_NEEDS_NUM_HASH != 0
     bool needs_thread_pool = LLVM_SCAN_NEEDS_THREAD_POOL != 0
+    bool needs_function_exception_frames = (needs_thread_pool || needs_throw || needs_try_catch || needs_read_lines || needs_read_file || needs_path_write || needs_int_array) && program_has_managed_bindings(program)
     LLVM_PHASE_FEATURE_SCAN_MS += time_ms() - feature_scan_start_ms
     reset_function_lookup_cache()
     int record_decls_start_ms = time_ms()
@@ -12011,7 +12118,7 @@ string[] llvm_codegen_ir_borrowed(ProgramIR program):
     if (!string_constants.is_empty()):
         for (StringConstIR constant in string_constants):
             lines.push(emit_string_constant(constant))
-    if (needs_thread_pool || needs_throw || needs_try_catch || needs_read_lines || needs_read_file || needs_path_write || needs_int_array):
+    if (needs_thread_pool || needs_throw || needs_try_catch || needs_function_exception_frames || needs_read_lines || needs_read_file || needs_path_write || needs_int_array):
         lines.push(exception_handler_symbol() + ' = thread_local global ptr null')
         lines.push(exception_message_symbol() + ' = thread_local global ptr null')
     for (string map_type in map_types):
@@ -12027,9 +12134,9 @@ string[] llvm_codegen_ir_borrowed(ProgramIR program):
     if (needs_thread_pool):
         for (string declaration in emit_thread_pool_runtime_declarations()):
             lines.push(declaration)
-    if (needs_string_helpers || needs_thread_pool || needs_try_catch || needs_path_write || needs_int_array || needs_string_array_map_expression || needs_string_array_filter_expression):
+    if (needs_string_helpers || needs_thread_pool || needs_try_catch || needs_function_exception_frames || needs_path_write || needs_int_array || needs_string_array_map_expression || needs_string_array_filter_expression):
         lines.push('declare i32 @setjmp(ptr) returns_twice')
-    if (needs_string_helpers || needs_thread_pool || needs_throw || needs_try_catch || needs_read_lines || needs_read_file || needs_path_write || needs_int_array || needs_string_array_map_expression || needs_string_array_filter_expression):
+    if (needs_string_helpers || needs_thread_pool || needs_throw || needs_try_catch || needs_function_exception_frames || needs_read_lines || needs_read_file || needs_path_write || needs_int_array || needs_string_array_map_expression || needs_string_array_filter_expression):
         lines.push('declare void @longjmp(ptr, i32) noreturn')
     if (needs_string_array_helpers || needs_string_array_array || needs_bool_array || needs_int_array || needs_int_array_array || needs_record_array || needs_backend_free || needs_records || needs_maps || needs_read_lines || needs_read_file):
         lines.push('declare void @free(ptr)')
@@ -12037,9 +12144,9 @@ string[] llvm_codegen_ir_borrowed(ProgramIR program):
         lines.push('declare i32 @printf(ptr, ...)')
     if (needs_int_set):
         lines.push('declare i32 @putchar(i32)')
-    if (needs_print_string || needs_print_bool || needs_throw || needs_try_catch):
+    if (needs_print_string || needs_print_bool || needs_throw || needs_try_catch || needs_function_exception_frames):
         lines.push('declare i32 @puts(ptr)')
-    if (needs_throw || needs_try_catch || needs_read_lines || needs_read_file || needs_path_write):
+    if (needs_throw || needs_try_catch || needs_function_exception_frames || needs_read_lines || needs_read_file || needs_path_write):
         lines.push('declare void @exit(i32)')
     if (needs_strcmp || needs_string_search || needs_string_array_helpers):
         lines.push('declare i32 @strcmp(ptr, ptr)')
@@ -12326,6 +12433,7 @@ void llvm_print_ir(ProgramIR program):
     bool needs_hash = LLVM_SCAN_NEEDS_HASH != 0
     bool needs_num_hash = LLVM_SCAN_NEEDS_NUM_HASH != 0
     bool needs_thread_pool = LLVM_SCAN_NEEDS_THREAD_POOL != 0
+    bool needs_function_exception_frames = (needs_thread_pool || needs_throw || needs_try_catch || needs_read_lines || needs_read_file || needs_path_write || needs_int_array) && program_has_managed_bindings(program)
     reset_function_lookup_cache()
     string[] foreign_modules = active_foreign_modules(program)
     # The integer-grid helper also calls string and string-array helpers.
@@ -12366,7 +12474,7 @@ void llvm_print_ir(ProgramIR program):
         for (StringConstIR constant in string_constants):
             print(emit_string_constant(constant))
         emitted_any_header = true
-    if (needs_thread_pool || needs_throw || needs_try_catch || needs_read_lines || needs_read_file || needs_path_write || needs_int_array):
+    if (needs_thread_pool || needs_throw || needs_try_catch || needs_function_exception_frames || needs_read_lines || needs_read_file || needs_path_write || needs_int_array):
         print(exception_handler_symbol() + ' = thread_local global ptr null')
         print(exception_message_symbol() + ' = thread_local global ptr null')
         emitted_any_header = true
@@ -12385,10 +12493,10 @@ void llvm_print_ir(ProgramIR program):
         for (string declaration in emit_thread_pool_runtime_declarations()):
             print(declaration)
         emitted_any_header = true
-    if (needs_string_helpers || needs_thread_pool || needs_try_catch || needs_path_write || needs_int_array || needs_string_array_map_expression || needs_string_array_filter_expression):
+    if (needs_string_helpers || needs_thread_pool || needs_try_catch || needs_function_exception_frames || needs_path_write || needs_int_array || needs_string_array_map_expression || needs_string_array_filter_expression):
         print('declare i32 @setjmp(ptr) returns_twice')
         emitted_any_header = true
-    if (needs_string_helpers || needs_thread_pool || needs_throw || needs_try_catch || needs_read_lines || needs_read_file || needs_path_write || needs_int_array || needs_string_array_map_expression || needs_string_array_filter_expression):
+    if (needs_string_helpers || needs_thread_pool || needs_throw || needs_try_catch || needs_function_exception_frames || needs_read_lines || needs_read_file || needs_path_write || needs_int_array || needs_string_array_map_expression || needs_string_array_filter_expression):
         print('declare void @longjmp(ptr, i32) noreturn')
         emitted_any_header = true
     if (needs_string_array_helpers || needs_string_array_array || needs_bool_array || needs_int_array || needs_int_array_array || needs_record_array || needs_backend_free || needs_records || needs_maps || needs_read_lines || needs_read_file):
@@ -12403,10 +12511,10 @@ void llvm_print_ir(ProgramIR program):
     if (needs_int_set):
         print('declare i32 @putchar(i32)')
         emitted_any_header = true
-    if (needs_print_string || needs_print_bool || needs_throw || needs_try_catch):
+    if (needs_print_string || needs_print_bool || needs_throw || needs_try_catch || needs_function_exception_frames):
         print('declare i32 @puts(ptr)')
         emitted_any_header = true
-    if (needs_throw || needs_try_catch || needs_read_lines || needs_read_file || needs_path_write):
+    if (needs_throw || needs_try_catch || needs_function_exception_frames || needs_read_lines || needs_read_file || needs_path_write):
         print('declare void @exit(i32)')
         emitted_any_header = true
     if (needs_strcmp || needs_string_search || needs_string_array_helpers):
