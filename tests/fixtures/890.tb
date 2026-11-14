@@ -1,0 +1,54 @@
+int flip(bool[] values):
+    values[0] = false
+    return 0
+
+int fail(bool value):
+    throw 'grid task failed'
+
+int main():
+    thread_pool pool = thread_pool(1)
+    bool[][] input = [[true], [], [false, true]]
+    future<int> task = pool.submit(bool[][] grid -> {
+        bool[][] first = grid
+        bool[][] second = grid
+        first = second
+        first = first
+        int ignored = flip(second[0])
+        int count = 0
+        for (const bool[] row : first) {
+            for (bool value : row) {
+                if (value) {
+                    count = count + 1
+                }
+            }
+        }
+        if (second[0][0]) {
+            count = count + 10
+        }
+        return count
+    }, input)
+    print(task.await())
+    print(input[0][0])
+    future<int> failed = pool.submit(bool[][] grid -> {
+        bool[][] local = grid
+        local = grid
+        return fail(local[0][0])
+    }, input)
+    try:
+        print(failed.await())
+    catch (exception error):
+        print(error)
+    future<int> next = pool.submit(bool[][] grid -> {
+        bool[][] local = grid
+        local = grid
+        return local.length()
+    }, input)
+    print(next.await())
+    bool[][] empty = []
+    future<int> empty_task = pool.submit(bool[][] grid -> {
+        bool[][] local = grid
+        local = grid
+        return local.length()
+    }, empty)
+    print(empty_task.await())
+    return 0
