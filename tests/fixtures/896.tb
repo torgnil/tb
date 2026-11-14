@@ -1,0 +1,43 @@
+import regex;
+
+int main():
+    string base = 'a'
+    for (int index = 0; index < 7; index += 1):
+        base += base
+    string matched = base + 'z'
+    Regex repeated = regex_compile('(ab|a)+z')
+    print(regex_match(repeated, matched))
+    print(regex_match(repeated, base))
+    print(regex_contains(repeated, 'b' + matched))
+    print(regex_contains(repeated, base))
+    Regex optional = regex_compile('(a?)*')
+    print(regex_match(optional, base))
+    print(regex_contains(optional, base))
+    print(regex_contains(regex_compile('^a+$'), base))
+    print(regex_contains(regex_compile('[a-z]+'), base))
+    print(regex_match(regex_compile('a{64}'), base))
+    print(regex_contains(regex_compile('a{64}'), base))
+    string varied = 'abcdefghijklmno'
+    for (int index = 0; index < 4; index += 1):
+        varied += varied
+    print(regex_contains(regex_compile('a+z'), varied))
+    Regex changed = regex_compile('a')
+    changed.characters[0] = 'b'
+    print(regex_contains(changed, base))
+    print(regex_contains(changed, base + 'b'))
+    Regex damaged = regex_compile('a')
+    damaged.out1[0] = 999
+    print(regex_contains(damaged, base))
+    Regex unreachable = Regex(true, 0, [4, 99], [-1, -1], [-1, -1], ['', ''])
+    print(regex_contains(unreachable, base))
+    Regex cycle = Regex(true, 0, [12, 4], [0, -1], [0, -1], ['2', '1'])
+    print(regex_match(cycle, base))
+    print(regex_contains(cycle, base))
+    Regex stale = regex_compile('(a+)')
+    for (int state = 0; state < stale.operations.length(); state += 1):
+        if (stale.operations[state] == REGEX_NFA_SAVE):
+            stale.out2[state] = -1
+            break
+    print(regex_match(stale, base))
+    print(regex_contains(stale, base))
+    return 0

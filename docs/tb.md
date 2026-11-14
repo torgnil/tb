@@ -1060,16 +1060,23 @@ byte endpoints in ascending order. Empty, unclosed, reversed, malformed, and
 unsupported-escape classes are invalid. Class matching scans its members for
 each active state; it does not use recursive backtracking.
 The `valid` field is false for an invalid pattern, and matching it returns false.
-`regex_match` makes one managed copy of the input
-before scanning so indexed byte reads use cached length metadata. It uses O(n)
-additional memory and copies the whole input even when the first byte cannot
-match; it does not impose a separate array-length limit. `regex_contains` and
-`regex_find_start` materialize the input as a temporary `string[]` of one-byte
-strings before scanning, also using O(n) additional memory. The NFA active and
-start-position arrays use O(m) additional memory. That array is limited to
-2,147,483,647 bytes; longer input aborts. The NFA work is
-O(n * m), where n is the input byte length and m is the number of compiled
-states, plus scans of bracket-class members for matching active states.
+For inputs of at least 128 bytes, `regex_match` and `regex_contains` can use a
+bounded per-call transition cache for unanchored programs of at most 63 states
+built from literals, dots, groups, alternation, and repetitions. The general
+matcher handles other programs and takes over if more than eight distinct
+transitions are needed. Program fields are checked on each call, so changes to
+public `Regex` fields are honored.
+`regex_match` copies the input before scanning, either as one managed string or
+as an array of one-byte strings on the cached path. It uses O(n) additional
+memory and copies the whole input even when the first byte cannot match; inputs
+larger than 2,147,483,647 bytes use the general path without a separate
+array-length limit. `regex_contains` and `regex_find_start` materialize the
+input as a temporary `string[]` of one-byte strings before scanning, also using
+O(n) additional memory; this array is limited to 2,147,483,647 bytes, and longer
+input aborts. The NFA active and start-position arrays use O(m) additional
+memory. General NFA work is O(n * m), where n is the input byte length and m is
+the number of compiled states, plus scans of bracket-class members for matching
+active states.
 The compiler embeds the module, so it does not need a separate file at runtime.
 The names `regex`, `random`, and `uuid` are reserved for these built-in modules;
 other module imports continue to resolve relative to the importing source file.

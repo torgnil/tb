@@ -3362,6 +3362,35 @@ private bool function_has_managed_bindings(ParsedFunction function_ir):
             return true
     return false
 
+# Parameters are borrowed on entry. A frame is needed only when a managed
+# slot may own a value: any managed local, main's copied argv, or a parameter
+# that can be rebound. Mutating an object through a parameter does not change
+# the ownership of the parameter slot.
+private bool function_may_own_managed_binding(ParsedFunction function_ir, bool bootstrap_main_args):
+    if (bootstrap_main_args):
+        return true
+    for (BindingIR local_decl in function_ir.locals):
+        if (is_backend_managed_type(local_decl.type_name)):
+            return true
+    bool has_managed_parameter = false
+    for (BindingIR param_decl in function_ir.params):
+        if (is_backend_managed_type(param_decl.type_name)):
+            has_managed_parameter = true
+    if (!has_managed_parameter):
+        return false
+    for (BlockIR block in function_ir.blocks):
+        for (LinearInstruction op in block.instructions):
+            string assigned_name = ''
+            if (op.kind == 'assign_local' || op.kind == 'assign_local_add'):
+                assigned_name = op.detail
+            else if (op.kind == 'set' || op.kind == 'catch'):
+                assigned_name = ir_parse_binding_decl(op.detail).name
+            if (assigned_name != ''):
+                for (BindingIR param_decl in function_ir.params):
+                    if (param_decl.name == assigned_name && is_backend_managed_type(param_decl.type_name)):
+                        return true
+    return false
+
 private bool program_has_managed_bindings(ProgramIR program):
     for (ParsedFunction function_ir in program.functions):
         if (function_has_managed_bindings(function_ir)):
@@ -10201,7 +10230,7 @@ void append_plain_function_lines(string[] lines, ProgramIR program, ParsedFuncti
         function_llvm_type = 'i32'.substring(0)
     lines.push('define ' + function_llvm_type + ' @' + function_name + '(' + join_llvm_strings(params, ', ') + ') {')
     # Slot flags are initialized before the frame can receive an exception.
-    bool has_exception_frame = function_has_managed_bindings(function_ir) && function_exception_runtime_enabled()
+    bool has_exception_frame = function_may_own_managed_binding(function_ir, bootstrap_main_args) && function_exception_runtime_enabled()
     if (has_exception_frame):
         lines.push('tb.fn.exc.entry:')
         string[] frame_allocas = emit_function_exception_frame_allocas(function_ir, bootstrap_main_args)

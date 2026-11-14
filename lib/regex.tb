@@ -774,9 +774,20 @@ private bool regex_add_state(Regex program, int state, int[] seen, int generatio
         if (seen[current] != generation):
             seen[current] = generation
             int operation = program.operations[current]
-            if (regex_queue_epsilon(program, current, pending, at_start, at_end)):
-                continue
-            if (operation == REGEX_NFA_CHAR || operation == REGEX_NFA_ANY || operation == REGEX_NFA_MATCH || operation == REGEX_NFA_CLASS || operation == REGEX_NFA_BRACKET):
+            # Keep epsilon handling aligned with regex_queue_epsilon. Dispatch
+            # here avoids rereading and redispatching each state in this hot loop.
+            if (operation == REGEX_NFA_EMPTY || operation == REGEX_NFA_REPEAT_ENTER || operation == REGEX_NFA_REPEAT_FIRST || operation == REGEX_NFA_SAVE):
+                pending.push(program.out1[current])
+            else if (operation == REGEX_NFA_START):
+                if (at_start):
+                    pending.push(program.out1[current])
+            else if (operation == REGEX_NFA_END):
+                if (at_end):
+                    pending.push(program.out1[current])
+            else if (operation == REGEX_NFA_SPLIT || operation == REGEX_NFA_REPEAT_END):
+                pending.push(program.out2[current])
+                pending.push(program.out1[current])
+            else if (operation == REGEX_NFA_CHAR || operation == REGEX_NFA_ANY || operation == REGEX_NFA_MATCH || operation == REGEX_NFA_CLASS || operation == REGEX_NFA_BRACKET):
                 active.push(current)
             else:
                 return false
@@ -813,6 +824,91 @@ private int regex_state_match(Regex program, int state, string character):
         return regex_bracket_check(program.characters[state], character)
     return REGEX_CLASS_NO_MATCH
 
+# This bounded cache applies only to unanchored literal/any NFAs. Programs
+# outside these limits keep the general matcher and its validation behavior.
+private bool regex_fast_program_eligible(Regex program):
+    int count = program.operations.length()
+    if (count == 0 || count > 63 || program.start < 0 || program.start >= count):
+        return false
+    for (int state = 0; state < count; state += 1):
+        int operation = program.operations[state]
+        if (operation == REGEX_NFA_CHAR || operation == REGEX_NFA_ANY):
+            int target = program.out1[state]
+            if (target < 0 || target >= count):
+                return false
+        else if (operation == REGEX_NFA_MATCH):
+            continue
+        else if (!(operation == REGEX_NFA_EMPTY || operation == REGEX_NFA_SPLIT || operation == REGEX_NFA_REPEAT_ENTER || operation == REGEX_NFA_REPEAT_FIRST || operation == REGEX_NFA_REPEAT_END || operation == REGEX_NFA_SAVE)):
+            return false
+    return true
+
+# Return -1 to use the general matcher, otherwise a boolean result as 0 or 1.
+private int regex_fast_boolean(Regex program, string[] text_bytes, bool full, bool fast_saves):
+    int count = program.operations.length()
+    if (count == 0 || count > 63 || program.start < 0 || program.start >= count):
+        return -1
+    int match_mask = 0
+    for (int state = 0; state < count; state += 1):
+        if (program.operations[state] == REGEX_NFA_MATCH):
+            match_mask |= 1 << state
+    int[] seen = range(count)
+    seen.fill(0)
+    int[] pending = []
+    int[] terminal = []
+    int[] closures = range(count)
+    for (int state = 0; state < count; state += 1):
+        terminal.clear()
+        if (!regex_add_state(program, state, seen, state + 1, pending, terminal, false, false, fast_saves)):
+            return -1
+        int mask = 0
+        for (int terminal_state : terminal):
+            mask |= 1 << terminal_state
+        closures[state] = mask
+    int initial = closures[program.start]
+    int active = initial
+    int[] cache_masks = []
+    string[] cache_characters = []
+    int[] cache_results = []
+    int position = 0
+    while (position < text_bytes.length()):
+        if (!full):
+            active |= initial
+            if ((active & match_mask) != 0):
+                return 1
+        else if (active == 0):
+            return 0
+        string character = text_bytes[position]
+        int cache_index = 0
+        bool found = false
+        while (cache_index < cache_masks.length()):
+            if (cache_masks[cache_index] == active && cache_characters[cache_index] == character):
+                found = true
+                break
+            cache_index += 1
+        int next = 0
+        if (found):
+            next = cache_results[cache_index]
+        else:
+            # Bound lookup cost on irregular input; the caller then reruns
+            # the ordinary matcher from the beginning.
+            if (cache_masks.length() >= 8):
+                return -1
+            for (int state = 0; state < count; state += 1):
+                if ((active & (1 << state)) != 0):
+                    int operation = program.operations[state]
+                    if (operation == REGEX_NFA_ANY || (operation == REGEX_NFA_CHAR && program.characters[state] == character)):
+                        next |= closures[program.out1[state]]
+            cache_masks.push(active)
+            cache_characters.push(character)
+            cache_results.push(next)
+        active = next
+        position += 1
+    if (!full):
+        active |= initial
+    if ((active & match_mask) != 0):
+        return 1
+    return 0
+
 bool regex_match(Regex program, string text):
     if (!program.valid):
         return false
@@ -822,13 +918,18 @@ bool regex_match(Regex program, string text):
     if (program.out1.length() != count || program.out2.length() != count || program.characters.length() != count):
         return false
     bool fast_saves = regex_save_cache_valid(program)
+    int text_length = text.length()
+    if (text_length >= 128 && text_length <= 2147483647):
+        if (regex_fast_program_eligible(program)):
+            int fast_result = regex_fast_boolean(program, text.split(''), true, fast_saves)
+            if (fast_result >= 0):
+                return fast_result == 1
     int[] seen = range(count)
     seen.fill(0)
     int generation = 1
     int[] pending = []
     int[] current = []
     int[] next = []
-    int text_length = text.length()
     bool final_lf = false
     if (text_length > 0):
         final_lf = text[text_length - 1] == '\n'
@@ -878,6 +979,11 @@ bool regex_contains(Regex program, string text):
     # length and walks it directly, so matching does not rescan borrowed text.
     string[] text_bytes = text.split('')
     int text_length = text_bytes.length()
+    if (text_length >= 128):
+        if (regex_fast_program_eligible(program)):
+            int fast_result = regex_fast_boolean(program, text_bytes, false, fast_saves)
+            if (fast_result >= 0):
+                return fast_result == 1
     bool final_lf = false
     if (text_length > 0):
         final_lf = text_bytes[text_length - 1] == '\n'
@@ -916,6 +1022,16 @@ bool regex_contains(Regex program, string text):
         current.clear()
         for (int state : next):
             current.push(state)
+        # With no surviving states, another identical byte cannot match the
+        # same start closure. Keep anchor-sensitive boundaries in the loop.
+        if (next.is_empty() && text_index > 0):
+            int last_unanchored = text_length - 1
+            if (final_lf):
+                last_unanchored -= 1
+            while (text_index + 1 < last_unanchored):
+                if (text_bytes[text_index + 1] != character):
+                    break
+                text_index += 1
         text_index += 1
     return false
 
