@@ -532,6 +532,17 @@ string merge_submit_return_types(string left, string right):
     return left
 
 string array_callback_block_expression_type(Node node, SubmitLambdaScope scope, Node[] functions, bool callback_context, string callback_name):
+    if (callback_name == 'string_flat_map'):
+        if (node.kind == 'Array'):
+            string array_type = string_array_flat_map_expression_type(node, scope, functions)
+            if (array_type != ''):
+                return array_type
+        else if (node.kind == 'Call'):
+            Node helper = submit_lambda_helper(functions, node.value)
+            if (helper.kind != ''):
+                BindingIR signature = ir_parse_binding_decl(helper.value)
+                if (normalize_llvm_type_name(signature.type_name) == 'string[]'):
+                    return string_array_flat_map_expression_type(node, scope, functions)
     if (!callback_context):
         return submit_lambda_expression_type(node, scope, functions)
     if (!int_array_scalar_expression(node, scope.names, functions)):
@@ -1133,6 +1144,61 @@ string validate_string_array_block(Node lambda_node, BindingIR[] captured, Node[
         throw 'string[] ' + callback_name + ' block must return ' + required_type + '; got ' + result_type
     return result_type
 
+string validate_string_array_flat_map_block(Node lambda_node, BindingIR[] captured, Node[] functions):
+    if (lambda_node.kind != 'Lambda' || lambda_node.children.length() != 1 || lambda_node.children[0].kind != 'Block'):
+        throw 'string[] flat_map requires a block callback with one string parameter'
+    BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+    string parameter_type = parameter.type_name
+    if (parameter_type.starts_with('const ')):
+        parameter_type = parameter_type.substring(6)
+    if (parameter_type != 'string'):
+        throw 'string[] flat_map requires string parameter; got ' + parameter_type
+
+    string[] names = [parameter.name]
+    string[] types = ['string']
+    string[] const_names = []
+    string[] declared_names = [parameter.name]
+    string[] input_names = [parameter.name]
+    string[] managed_local_names = []
+    for (BindingIR binding : captured):
+        string capture_type = binding.type_name
+        if (capture_type.starts_with('const ')):
+            capture_type = capture_type.substring(6)
+        if (!(capture_type == 'int' || capture_type == 'bool' || capture_type == 'string')):
+            throw 'string[] flat_map block captures must use int, bool, or string; got ' + capture_type
+        names.push(binding.name)
+        types.push(capture_type)
+        const_names.push(binding.name)
+        declared_names.push(binding.name)
+        input_names.push(binding.name)
+    SubmitLambdaScope scope = SubmitLambdaScope(names, types, const_names, declared_names, input_names, managed_local_names, parameter.name)
+    SubmitLambdaValidation validation = validate_submit_lambda_block_statements(lambda_node.children[0].children, scope, functions, 0, false, 'string_flat_map')
+    SubmitLambdaBlockCheck check = validation.check
+    if (!check.returns_all_paths || check.return_type == ''):
+        throw 'string[] flat_map block must return a string[] on every path'
+    if (check.return_type != 'string[]'):
+        throw 'string[] flat_map block must return string[]; got ' + check.return_type
+    return check.return_type
+
+SubmitLambdaRewrite rewrite_string_array_flat_map_block(Node lambda_node, BindingIR[] captured, string[] used_names, int next_index, Node[] functions):
+    validate_string_array_flat_map_block(lambda_node, captured, functions)
+    BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+    string helper_name = string_array_flat_map_expression_helper_name(used_names, next_index)
+    string[] current_names = add_unique_name(used_names, helper_name)
+    int current_index = next_index + 1
+    Node[] helper_children = [Node('Param', 'string ' + parameter.name, [])]
+    Node[] callback_values = [Node('Identifier', helper_name, [])]
+    for (BindingIR binding : captured):
+        string capture_type = binding.type_name
+        if (capture_type.starts_with('const ')):
+            capture_type = capture_type.substring(6)
+        helper_children.push(Node('Param', 'const ' + capture_type + ' ' + binding.name, []))
+        callback_values.push(Node('Identifier', binding.name, []))
+    helper_children = append_nodes(helper_children, lambda_node.children[0].children)
+    Node helper = Node('Function', 'string[] ' + helper_name, helper_children)
+    Node rewritten = Node('FlatMapStringExpression', lambda_node.value, callback_values)
+    return SubmitLambdaRewrite(rewritten, [helper], current_names, current_index)
+
 Node[] string_array_callback_body(Node lambda_node):
     if (lambda_node.children[0].kind == 'Block'):
         return lambda_node.children[0].children
@@ -1300,48 +1366,63 @@ SubmitLambdaRewrite rewrite_array_map_expression(Node node, string[] used_names,
             if (string_array_callback):
                 throw 'string[] flat_map callbacks are not supported in global initializers'
             throw 'int[] flat_map callbacks are not supported in global initializers'
-        if (lambda_node.children.length() != 1 || lambda_node.children[0].kind == 'Block'):
+        if (lambda_node.children.length() != 1):
             if (string_array_callback):
                 throw 'string[] flat_map supports noncapturing expression callbacks only'
             throw 'int[] flat_map supports noncapturing expression callbacks only'
         if (!(parameter.type_name == 'int' || parameter.type_name == 'string')):
             throw 'int[] flat_map expression requires int parameter; got ' + parameter.type_name
-        string[] locals = submit_lambda_local_names(lambda_node.children[0], [parameter.name])
-        string[] free_names = submit_lambda_free_identifiers(lambda_node.children[0], locals, [])
-        if (!free_names.is_empty()):
-            if (string_array_callback):
-                throw 'string[] flat_map supports noncapturing expression callbacks only'
-            throw 'int[] flat_map supports noncapturing expression callbacks only'
-        if (!array_flat_map_expression(lambda_node.children[0], [parameter.name], functions)):
-            if (string_array_callback):
-                throw 'string[] flat_map supports string[] literals or declared helper calls only'
-            throw 'int[] flat_map supports array literals or declared helper calls only'
-        if (string_array_callback):
-            SubmitLambdaScope string_scope = SubmitLambdaScope([parameter.name], ['string'], [], [parameter.name], [parameter.name], [], parameter.name)
-            string callback_return_type = string_array_flat_map_expression_type(lambda_node.children[0], string_scope, functions)
-            if (callback_return_type != 'string[]'):
-                if (callback_return_type == ''):
-                    throw 'string[] flat_map expression has invalid string array elements'
-                throw 'string[] flat_map expression must return string[]; got ' + callback_return_type
-            string string_helper_name = string_array_flat_map_expression_helper_name(current_names, current_index)
-            current_names = add_unique_name(current_names, string_helper_name)
-            current_index += 1
-            generated.push(Node('Function', 'string[] ' + string_helper_name, [Node('Param', 'string ' + parameter.name, []), Node('Return', '', [lambda_node.children[0]])]))
-            children[1] = Node('FlatMapStringExpression', lambda_node.value, [Node('Identifier', string_helper_name, [])])
+        if (string_array_callback && lambda_node.children[0].kind == 'Block'):
+            string[] locals = submit_lambda_local_names(lambda_node.children[0], [parameter.name])
+            string[] free_names = submit_lambda_free_identifiers(lambda_node.children[0], locals, [])
+            if (!free_names.is_empty()):
+                throw 'string[] flat_map block captures require visible scalar int, bool, or string bindings'
+            BindingIR[] no_captures = []
+            SubmitLambdaRewrite flat_map_block = rewrite_string_array_flat_map_block(lambda_node, no_captures, current_names, current_index, functions)
+            generated = append_nodes(generated, flat_map_block.generated)
+            current_names = flat_map_block.used_names
+            current_index = flat_map_block.next_index
+            children[1] = flat_map_block.node
             rewritten = Node(node.kind, node.value, children)
         else:
-            SubmitLambdaScope scope = SubmitLambdaScope([parameter.name], ['int'], [], [parameter.name], [parameter.name], [], parameter.name)
-            string callback_return_type = submit_lambda_expression_type_context(lambda_node.children[0], scope, functions, true, 'flat_map')
-            if (callback_return_type != 'int[]'):
-                if (callback_return_type == ''):
-                    throw 'int[] flat_map expression has invalid array element types'
-                throw 'int[] flat_map expression must return int[]; got ' + callback_return_type
-            string helper_name = int_array_flat_map_expression_helper_name(current_names, current_index)
-            current_names = add_unique_name(current_names, helper_name)
-            current_index += 1
-            generated.push(Node('Function', 'int[] ' + helper_name, [Node('Param', 'int ' + parameter.name, []), Node('Return', '', [lambda_node.children[0]])]))
-            children[1] = Node('FlatMapIntExpression', lambda_node.value, [Node('Identifier', helper_name, [])])
-            rewritten = Node(node.kind, node.value, children)
+            if (lambda_node.children[0].kind == 'Block'):
+                throw 'int[] flat_map supports noncapturing expression callbacks only'
+            string[] locals = submit_lambda_local_names(lambda_node.children[0], [parameter.name])
+            string[] free_names = submit_lambda_free_identifiers(lambda_node.children[0], locals, [])
+            if (!free_names.is_empty()):
+                if (string_array_callback):
+                    throw 'string[] flat_map supports noncapturing expression callbacks only'
+                throw 'int[] flat_map supports noncapturing expression callbacks only'
+            if (!array_flat_map_expression(lambda_node.children[0], [parameter.name], functions)):
+                if (string_array_callback):
+                    throw 'string[] flat_map supports string[] literals or declared helper calls only'
+                throw 'int[] flat_map supports array literals or declared helper calls only'
+            if (string_array_callback):
+                SubmitLambdaScope string_scope = SubmitLambdaScope([parameter.name], ['string'], [], [parameter.name], [parameter.name], [], parameter.name)
+                string callback_return_type = string_array_flat_map_expression_type(lambda_node.children[0], string_scope, functions)
+                if (callback_return_type != 'string[]'):
+                    if (callback_return_type == ''):
+                        throw 'string[] flat_map expression has invalid string array elements'
+                    throw 'string[] flat_map expression must return string[]; got ' + callback_return_type
+                string string_helper_name = string_array_flat_map_expression_helper_name(current_names, current_index)
+                current_names = add_unique_name(current_names, string_helper_name)
+                current_index += 1
+                generated.push(Node('Function', 'string[] ' + string_helper_name, [Node('Param', 'string ' + parameter.name, []), Node('Return', '', [lambda_node.children[0]])]))
+                children[1] = Node('FlatMapStringExpression', lambda_node.value, [Node('Identifier', string_helper_name, [])])
+                rewritten = Node(node.kind, node.value, children)
+            else:
+                SubmitLambdaScope scope = SubmitLambdaScope([parameter.name], ['int'], [], [parameter.name], [parameter.name], [], parameter.name)
+                string callback_return_type = submit_lambda_expression_type_context(lambda_node.children[0], scope, functions, true, 'flat_map')
+                if (callback_return_type != 'int[]'):
+                    if (callback_return_type == ''):
+                        throw 'int[] flat_map expression has invalid array element types'
+                    throw 'int[] flat_map expression must return int[]; got ' + callback_return_type
+                string helper_name = int_array_flat_map_expression_helper_name(current_names, current_index)
+                current_names = add_unique_name(current_names, helper_name)
+                current_index += 1
+                generated.push(Node('Function', 'int[] ' + helper_name, [Node('Param', 'int ' + parameter.name, []), Node('Return', '', [lambda_node.children[0]])]))
+                children[1] = Node('FlatMapIntExpression', lambda_node.value, [Node('Identifier', helper_name, [])])
+                rewritten = Node(node.kind, node.value, children)
     return SubmitLambdaRewrite(rewritten, generated, current_names, current_index)
 
 SubmitLambdaRewrite rewrite_array_map_expressions_in_program(Node program):
@@ -1891,6 +1972,18 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
     if (!top_level_global_initializer && node.kind == 'MethodCall' && node.value == 'flat_map' && node.children.length() == 2):
         Node lambda_node = node.children[1]
         ArrayScalarCaptureResult capture_result = string_array_callback_captures(lambda_node, bindings)
+        if (capture_result.complete && !capture_result.captures.is_empty() && lambda_node.children.length() == 1 && lambda_node.children[0].kind == 'Block'):
+            BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+            string parameter_type = parameter.type_name
+            if (parameter_type.starts_with('const ')):
+                parameter_type = parameter_type.substring(6)
+            if (parameter_type == 'string'):
+                SubmitLambdaRewrite flat_map_block = rewrite_string_array_flat_map_block(lambda_node, capture_result.captures, current_names, current_index, functions)
+                generated = append_nodes(generated, flat_map_block.generated)
+                current_names = flat_map_block.used_names
+                current_index = flat_map_block.next_index
+                rewritten_children[1] = flat_map_block.node
+                rewritten = Node(node.kind, node.value, rewritten_children)
         if (capture_result.complete && !capture_result.captures.is_empty() && lambda_node.children.length() == 1 && lambda_node.children[0].kind != 'Block' && flat_map_scalar_captures(capture_result.captures)):
             BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
             string parameter_type = parameter.type_name
