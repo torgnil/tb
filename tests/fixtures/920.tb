@@ -1,0 +1,20 @@
+set<string> receiver_allowed = {'before'}
+
+string[] prepare_words():
+    receiver_allowed.add('after')
+    return ['before', 'after', 'ignore']
+
+int main(string[] args):
+    const set<string> included = {'before', 'after'}
+    set<string> excluded = {'after', 'ignore'}
+    string[] words = ['before', 'after', 'ignore', 'other']
+
+    string[] selected = words.filter(string word -> included.contains(word) && !excluded.contains(word))
+    print(selected)
+
+    string[] mapped = words.map_to(string word -> included.contains(word) ? 'yes:' + word : 'no:' + word)
+    print(mapped)
+
+    string[] prepared = prepare_words().filter(string word -> receiver_allowed.contains(word))
+    print(prepared)
+    return 0

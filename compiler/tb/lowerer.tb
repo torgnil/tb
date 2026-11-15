@@ -324,6 +324,13 @@ private string submit_lambda_expression_type_context(Node node, SubmitLambdaScop
     if (node.kind == 'MethodCall'):
         if (node.children.length() < 1):
             return ''
+        if (node.value == 'contains' && node.children.length() == 2):
+            string set_receiver_type = submit_lambda_expression_type_context(node.children[0], scope, functions, array_callback_context, callback_name)
+            if (set_receiver_type == 'set<string>'):
+                string set_item_type = submit_lambda_expression_type_context(node.children[1], scope, functions, array_callback_context, callback_name)
+                if (set_item_type != 'string'):
+                    throw 'thread_pool.submit lambda set contains requires string; got ' + set_item_type
+                return 'bool'
         if (node.value == 'contains' && array_callback_context):
             if (node.children.length() != 2):
                 throw 'int[] ' + callback_name + ' callback set contains takes one argument'
@@ -1119,7 +1126,7 @@ ArrayScalarCaptureResult string_array_callback_captures(Node lambda_node, Bindin
         string capture_type = binding.type_name
         if (capture_type.starts_with('const ')):
             capture_type = capture_type.substring(6)
-        if (!(capture_type == 'int' || capture_type == 'bool' || capture_type == 'string' || capture_type == 'int[]' || capture_type == 'bool[]' || capture_type == 'string[]')):
+        if (!(capture_type == 'int' || capture_type == 'bool' || capture_type == 'string' || capture_type == 'int[]' || capture_type == 'bool[]' || capture_type == 'string[]' || capture_type == 'set<string>')):
             return ArrayScalarCaptureResult([], false)
         captured.push(binding)
     return ArrayScalarCaptureResult(captured, true)
