@@ -277,6 +277,8 @@ private string submit_lambda_expression_type_context(Node node, SubmitLambdaScop
         return 'string'
     if (node.kind == 'Array'):
         if (node.children.is_empty()):
+            if (array_callback_context && callback_name == 'flat_map'):
+                return 'int[]'
             return ''
         string element_type = ''
         int index = 0
@@ -447,7 +449,11 @@ private string submit_lambda_expression_type_context(Node node, SubmitLambdaScop
             bool supported_return = signature.type_name == 'int' || signature.type_name == 'bool'
             if (callback_name == 'map_to' && signature.type_name == 'string'):
                 supported_return = true
+            if (callback_name == 'flat_map' && signature.type_name == 'int[]'):
+                supported_return = true
             if (!supported_return):
+                if (callback_name == 'flat_map'):
+                    throw 'int[] flat_map callback helper ' + node.value + ' must return int[]; got ' + signature.type_name
                 throw 'int[] ' + callback_name + ' callback helper ' + node.value + ' must return int or bool; got ' + signature.type_name
             if (invalid_callback_parameter):
                 throw 'int[] ' + callback_name + ' callback helper ' + node.value + ' parameters must use int, bool, string, or const int[], const bool[], const string[], const int[][], const bool[][], or const string[][]'
@@ -1034,6 +1040,27 @@ string filter_expression_helper_name(string[] used_names, int start_index):
         index += 1
     return '__tb_int_filter_expression_' + index.to_string()
 
+string int_array_flat_map_expression_helper_name(string[] used_names, int start_index):
+    int index = start_index
+    while (contains_name(used_names, '__tb_int_array_flat_map_expression_' + index.to_string())):
+        index += 1
+    return '__tb_int_array_flat_map_expression_' + index.to_string()
+
+bool int_array_flat_map_expression(Node node, string[] allowed_names, Node[] functions):
+    if (node.kind == 'Array'):
+        for (Node item : node.children):
+            if (!int_array_scalar_expression(item, allowed_names, functions)):
+                return false
+        return true
+    if (node.kind == 'Call'):
+        if (submit_lambda_helper(functions, node.value).kind == ''):
+            return false
+        for (Node argument : node.children):
+            if (!int_array_scalar_expression(argument, allowed_names, functions)):
+                return false
+        return true
+    return false
+
 string string_array_filter_expression_helper_name(string[] used_names, int start_index):
     int index = start_index
     while (contains_name(used_names, '__tb_string_array_filter_expression_' + index.to_string())):
@@ -1131,7 +1158,7 @@ ArrayScalarCaptureResult string_array_callback_captures(Node lambda_node, Bindin
         captured.push(binding)
     return ArrayScalarCaptureResult(captured, true)
 
-SubmitLambdaRewrite rewrite_array_map_expression(Node node, string[] used_names, int next_index, Node[] functions):
+SubmitLambdaRewrite rewrite_array_map_expression(Node node, string[] used_names, int next_index, Node[] functions, bool allow_global_flat_map):
     if (node.kind == 'Lambda' || node.kind == 'Lambda0' || node.kind == 'Lambda2'):
         return SubmitLambdaRewrite(node, [], used_names, next_index)
     Node[] children = []
@@ -1139,7 +1166,7 @@ SubmitLambdaRewrite rewrite_array_map_expression(Node node, string[] used_names,
     string[] current_names = used_names
     int current_index = next_index
     for (Node child : node.children):
-        SubmitLambdaRewrite rewritten_child = rewrite_array_map_expression(child, current_names, current_index, functions)
+        SubmitLambdaRewrite rewritten_child = rewrite_array_map_expression(child, current_names, current_index, functions, allow_global_flat_map)
         children.push(rewritten_child.node)
         generated = append_nodes(generated, rewritten_child.generated)
         current_names = rewritten_child.used_names
@@ -1206,6 +1233,33 @@ SubmitLambdaRewrite rewrite_array_map_expression(Node node, string[] used_names,
                         generated.push(Node('Function', callback_return_type + ' ' + helper_name, [Node('Param', 'int ' + parameter.name, []), Node('Return', '', [lambda_node.children[0]])]))
                         children[1] = Node('FilterIntExpression', lambda_node.value, [Node('Identifier', helper_name, [])])
                         rewritten = Node(node.kind, node.value, children)
+    if (node.kind == 'MethodCall' && node.value == 'flat_map' && children.length() == 2 && children[1].kind == 'Lambda' && !is_edges_for_point_flat_map_lambda(children[1])):
+        if (!allow_global_flat_map):
+            throw 'int[] flat_map callbacks are not supported in global initializers'
+        Node lambda_node = children[1]
+        if (lambda_node.children.length() != 1 || lambda_node.children[0].kind == 'Block'):
+            throw 'int[] flat_map supports noncapturing expression callbacks only'
+        BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+        if (parameter.type_name != 'int'):
+            throw 'int[] flat_map expression requires int parameter; got ' + parameter.type_name
+        string[] locals = submit_lambda_local_names(lambda_node.children[0], [parameter.name])
+        string[] free_names = submit_lambda_free_identifiers(lambda_node.children[0], locals, [])
+        if (!free_names.is_empty()):
+            throw 'int[] flat_map supports noncapturing expression callbacks only'
+        if (!int_array_flat_map_expression(lambda_node.children[0], [parameter.name], functions)):
+            throw 'int[] flat_map supports array literals or declared helper calls only'
+        SubmitLambdaScope scope = SubmitLambdaScope([parameter.name], ['int'], [], [parameter.name], [parameter.name], [], parameter.name)
+        string callback_return_type = submit_lambda_expression_type_context(lambda_node.children[0], scope, functions, true, 'flat_map')
+        if (callback_return_type != 'int[]'):
+            if (callback_return_type == ''):
+                throw 'int[] flat_map expression has invalid array element types'
+            throw 'int[] flat_map expression must return int[]; got ' + callback_return_type
+        string helper_name = int_array_flat_map_expression_helper_name(current_names, current_index)
+        current_names = add_unique_name(current_names, helper_name)
+        current_index += 1
+        generated.push(Node('Function', 'int[] ' + helper_name, [Node('Param', 'int ' + parameter.name, []), Node('Return', '', [lambda_node.children[0]])]))
+        children[1] = Node('FlatMapIntExpression', lambda_node.value, [Node('Identifier', helper_name, [])])
+        rewritten = Node(node.kind, node.value, children)
     return SubmitLambdaRewrite(rewritten, generated, current_names, current_index)
 
 SubmitLambdaRewrite rewrite_array_map_expressions_in_program(Node program):
@@ -1222,7 +1276,7 @@ SubmitLambdaRewrite rewrite_array_map_expressions_in_program(Node program):
             children.push(child)
             continue
         Node[] visible_functions = program_visible_function_nodes(program.children, current_module_id)
-        SubmitLambdaRewrite rewritten = rewrite_array_map_expression(child, used_names, next_index, visible_functions)
+        SubmitLambdaRewrite rewritten = rewrite_array_map_expression(child, used_names, next_index, visible_functions, child.kind != 'VarDecl')
         children.push(rewritten.node)
         generated = append_generated_nodes_for_module(generated, rewritten.generated, current_module_id)
         used_names = rewritten.used_names
@@ -2785,6 +2839,11 @@ TempResult lower_linear_value(Node node, int next_temp):
                                 return TempResult(name, lines, right.next_temp + 1)
         if (node.value == 'flat_map'):
             if (node.children.length() == 2):
+                if (node.children[1].kind == 'FlatMapIntExpression' && node.children[1].children.length() == 1 && node.children[1].children[0].kind == 'Identifier'):
+                    string name = temp_name(base.next_temp)
+                    string[] lines = base.lines
+                    lines.push(name + ' = method-call-lambda flat_map_int_expr ' + base.name + ' ' + node.children[1].value + ' ' + node.children[1].children[0].value)
+                    return TempResult(name, lines, base.next_temp + 1)
                 if (node.children[1].kind == 'Lambda' && is_edges_for_point_flat_map_lambda(node.children[1])):
                     Node body = node.children[1].children[0]
                     TempResult capture_points = lower_linear_value(body.children[0], base.next_temp)
@@ -3117,6 +3176,10 @@ TempIRResult lower_linear_value_ir(Node node, int next_temp):
                                 return TempIRResult(name, instructions, right.next_temp + 1)
         if (node.value == 'flat_map'):
             if (node.children.length() == 2):
+                if (node.children[1].kind == 'FlatMapIntExpression' && node.children[1].children.length() == 1 && node.children[1].children[0].kind == 'Identifier'):
+                    string name = temp_name(base.next_temp)
+                    LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', name, 'unknown', 'unknown', 'method-call-lambda', ['flat_map_int_expr', base.name, node.children[1].value, node.children[1].children[0].value])])
+                    return TempIRResult(name, instructions, base.next_temp + 1)
                 if (node.children[1].kind == 'Lambda' && is_edges_for_point_flat_map_lambda(node.children[1])):
                     Node body = node.children[1].children[0]
                     TempIRResult capture_points = lower_linear_value_ir(body.children[0], base.next_temp)
@@ -5155,6 +5218,7 @@ ProgramIR lower_tokens_ir(Token[] tokens):
     bool has_submit_identifier = false
     bool has_map_to_identifier = false
     bool has_filter_identifier = false
+    bool has_flat_map_identifier = false
     bool has_arrow_symbol = false
     for (Token token : tokens):
         if (token_is(token, 'IDENTIFIER', 'submit')):
@@ -5165,11 +5229,13 @@ ProgramIR lower_tokens_ir(Token[] tokens):
             has_map_to_identifier = true
         if (token_is(token, 'IDENTIFIER', 'filter')):
             has_filter_identifier = true
+        if (token_is(token, 'IDENTIFIER', 'flat_map')):
+            has_flat_map_identifier = true
     bool has_const = false
     for (Token token : tokens):
         if (token_is(token, 'KEYWORD', 'const')):
             has_const = true
-    bool needs_program = (has_submit_identifier || has_map_to_identifier || has_filter_identifier) && has_arrow_symbol
+    bool needs_program = (has_submit_identifier || has_map_to_identifier || has_filter_identifier || has_flat_map_identifier) && has_arrow_symbol
     bool has_range_foreach = tokens_have_direct_range_foreach(tokens)
     bool has_private_global = false
     bool has_private_record = false

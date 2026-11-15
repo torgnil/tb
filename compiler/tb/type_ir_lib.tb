@@ -2776,6 +2776,22 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
                 return refined_value_op(op, 'Edge[]', 'owned')
             if (op.args[0] == 'flat_map_edges_for_point' && base_type == 'int[]'):
                 return refined_value_op(op, 'Edge[]', 'owned')
+            if (op.args[0] == 'flat_map_int_expr'):
+                if (op.args.length() != 4):
+                    throw 'int[] flat_map expression has invalid IR arity'
+                string flat_map_receiver_type = normalize_llvm_type_name(base_type)
+                BindingIR flat_map_parameter = ir_parse_binding_decl(op.args[2])
+                FunctionSigIR flat_map_callback = lookup_function_sig(functions, op.args[3])
+                if (flat_map_receiver_type != 'int[]'):
+                    throw 'int[] flat_map expression requires int[] receiver; got ' + flat_map_receiver_type
+                if (normalize_llvm_type_name(flat_map_parameter.type_name) != 'int'):
+                    throw 'int[] flat_map expression requires int parameter; got ' + flat_map_parameter.type_name
+                if (flat_map_callback.name == '' || flat_map_callback.param_types.length() != 1 || normalize_llvm_type_name(flat_map_callback.param_types[0]) != 'int'):
+                    throw 'int[] flat_map expression callback must have signature int[](int)'
+                string flat_map_return_type = normalize_llvm_type_name(flat_map_callback.return_type)
+                if (flat_map_return_type != 'int[]'):
+                    throw 'int[] flat_map expression must return int[]; got ' + flat_map_return_type
+                return refined_value_op(op, 'int[]', 'owned')
         if (op.args.length() >= 3):
             BindingIR binding = ir_parse_binding_decl(op.args[2])
             if (op.args[0] == 'map_to' && base_type == 'int[]' && binding.type_name == 'int'):
