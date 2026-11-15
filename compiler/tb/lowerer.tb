@@ -543,6 +543,17 @@ string array_callback_block_expression_type(Node node, SubmitLambdaScope scope, 
                 BindingIR signature = ir_parse_binding_decl(helper.value)
                 if (normalize_llvm_type_name(signature.type_name) == 'string[]'):
                     return string_array_flat_map_expression_type(node, scope, functions)
+    if (callback_name == 'int_flat_map'):
+        if (node.kind == 'Array'):
+            string array_type = submit_lambda_expression_type_context(node, scope, functions, true, 'flat_map')
+            if (array_type != ''):
+                return array_type
+        else if (node.kind == 'Call'):
+            Node helper = submit_lambda_helper(functions, node.value)
+            if (helper.kind != ''):
+                BindingIR signature = ir_parse_binding_decl(helper.value)
+                if (normalize_llvm_type_name(signature.type_name) == 'int[]'):
+                    return submit_lambda_expression_type_context(node, scope, functions, true, 'flat_map')
     if (!callback_context):
         return submit_lambda_expression_type(node, scope, functions)
     if (!int_array_scalar_expression(node, scope.names, functions)):
@@ -1180,6 +1191,58 @@ string validate_string_array_flat_map_block(Node lambda_node, BindingIR[] captur
         throw 'string[] flat_map block must return string[]; got ' + check.return_type
     return check.return_type
 
+string validate_int_array_flat_map_block(Node lambda_node, BindingIR[] captured, Node[] functions):
+    if (lambda_node.kind != 'Lambda' || lambda_node.children.length() != 1 || lambda_node.children[0].kind != 'Block'):
+        throw 'int[] flat_map requires a block callback with one int parameter'
+    BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+    if (parameter.type_name != 'int'):
+        throw 'int[] flat_map block requires a mutable int parameter; got ' + parameter.type_name
+
+    string[] names = [parameter.name]
+    string[] types = ['int']
+    string[] const_names = []
+    string[] declared_names = [parameter.name]
+    string[] input_names = [parameter.name]
+    string[] managed_local_names = []
+    for (BindingIR binding : captured):
+        string capture_type = binding.type_name
+        if (capture_type.starts_with('const ')):
+            capture_type = capture_type.substring(6)
+        if (!(capture_type == 'int' || capture_type == 'bool' || capture_type == 'string')):
+            throw 'int[] flat_map block captures must use int, bool, or string; got ' + capture_type
+        names.push(binding.name)
+        types.push(capture_type)
+        const_names.push(binding.name)
+        declared_names.push(binding.name)
+        input_names.push(binding.name)
+    SubmitLambdaScope scope = SubmitLambdaScope(names, types, const_names, declared_names, input_names, managed_local_names, parameter.name)
+    SubmitLambdaValidation validation = validate_submit_lambda_block_statements(lambda_node.children[0].children, scope, functions, 0, false, 'int_flat_map')
+    SubmitLambdaBlockCheck check = validation.check
+    if (!check.returns_all_paths || check.return_type == ''):
+        throw 'int[] flat_map block must return an int[] on every path'
+    if (check.return_type != 'int[]'):
+        throw 'int[] flat_map block must return int[]; got ' + check.return_type
+    return check.return_type
+
+SubmitLambdaRewrite rewrite_int_array_flat_map_block(Node lambda_node, BindingIR[] captured, string[] used_names, int next_index, Node[] functions):
+    validate_int_array_flat_map_block(lambda_node, captured, functions)
+    BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+    string helper_name = int_array_flat_map_expression_helper_name(used_names, next_index)
+    string[] current_names = add_unique_name(used_names, helper_name)
+    int current_index = next_index + 1
+    Node[] helper_children = [Node('Param', 'int ' + parameter.name, [])]
+    Node[] callback_values = [Node('Identifier', helper_name, [])]
+    for (BindingIR binding : captured):
+        string capture_type = binding.type_name
+        if (capture_type.starts_with('const ')):
+            capture_type = capture_type.substring(6)
+        helper_children.push(Node('Param', 'const ' + capture_type + ' ' + binding.name, []))
+        callback_values.push(Node('Identifier', binding.name, []))
+    helper_children = append_nodes(helper_children, lambda_node.children[0].children)
+    Node helper = Node('Function', 'int[] ' + helper_name, helper_children)
+    Node rewritten = Node('FlatMapIntExpression', lambda_node.value, callback_values)
+    return SubmitLambdaRewrite(rewritten, [helper], current_names, current_index)
+
 SubmitLambdaRewrite rewrite_string_array_flat_map_block(Node lambda_node, BindingIR[] captured, string[] used_names, int next_index, Node[] functions):
     validate_string_array_flat_map_block(lambda_node, captured, functions)
     BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
@@ -1379,6 +1442,18 @@ SubmitLambdaRewrite rewrite_array_map_expression(Node node, string[] used_names,
                 throw 'string[] flat_map block captures require visible scalar int, bool, or string bindings'
             BindingIR[] no_captures = []
             SubmitLambdaRewrite flat_map_block = rewrite_string_array_flat_map_block(lambda_node, no_captures, current_names, current_index, functions)
+            generated = append_nodes(generated, flat_map_block.generated)
+            current_names = flat_map_block.used_names
+            current_index = flat_map_block.next_index
+            children[1] = flat_map_block.node
+            rewritten = Node(node.kind, node.value, children)
+        else if (parameter.type_name == 'int' && lambda_node.children[0].kind == 'Block'):
+            string[] locals = submit_lambda_local_names(lambda_node.children[0], [parameter.name])
+            string[] free_names = submit_lambda_free_identifiers(lambda_node.children[0], locals, [])
+            if (!free_names.is_empty()):
+                throw 'int[] flat_map block captures require visible scalar int, bool, or string bindings'
+            BindingIR[] no_captures = []
+            SubmitLambdaRewrite flat_map_block = rewrite_int_array_flat_map_block(lambda_node, no_captures, current_names, current_index, functions)
             generated = append_nodes(generated, flat_map_block.generated)
             current_names = flat_map_block.used_names
             current_index = flat_map_block.next_index
@@ -2025,6 +2100,18 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
                     rewritten_children[1] = Node('FlatMapStringExpression', lambda_node.value, captured_values)
                     rewritten = Node(node.kind, node.value, rewritten_children)
         ArrayScalarCaptureResult int_capture_result = int_array_scalar_captures(lambda_node, bindings)
+        if (int_capture_result.complete && !int_capture_result.captures.is_empty() && lambda_node.children.length() == 1 && lambda_node.children[0].kind == 'Block'):
+            BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+            string parameter_type = parameter.type_name
+            if (parameter_type.starts_with('const ')):
+                parameter_type = parameter_type.substring(6)
+            if (parameter_type == 'int'):
+                SubmitLambdaRewrite flat_map_block = rewrite_int_array_flat_map_block(lambda_node, int_capture_result.captures, current_names, current_index, functions)
+                generated = append_nodes(generated, flat_map_block.generated)
+                current_names = flat_map_block.used_names
+                current_index = flat_map_block.next_index
+                rewritten_children[1] = flat_map_block.node
+                rewritten = Node(node.kind, node.value, rewritten_children)
         if (int_capture_result.complete && !int_capture_result.captures.is_empty() && lambda_node.children.length() == 1 && lambda_node.children[0].kind != 'Block' && flat_map_scalar_captures(int_capture_result.captures)):
             BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
             string parameter_type = parameter.type_name

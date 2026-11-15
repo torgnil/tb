@@ -1,0 +1,51 @@
+int helper_calls = 0
+
+int[] suffix_chunk(int value, string suffix):
+    helper_calls += 1
+    return [value, suffix.length()]
+
+int main(string[] args):
+    int threshold = 2
+    int bias = 3
+    bool include_all = false
+    string suffix = 'xy'
+    int[] source = [1, 2, 4, 5]
+    int[] expanded = source.flat_map(int item -> {
+        if (item < threshold) {
+            return []
+        }
+        int adjusted = item + bias
+        if (!include_all && item == 5) {
+            return [adjusted]
+        }
+        int[] chunk = suffix_chunk(adjusted, suffix)
+        return chunk
+    })
+    print(expanded)
+    print(source)
+    print(helper_calls)
+
+    int[] empty_source = []
+    int[] empty_result = empty_source.flat_map(int item -> {
+        int[] chunk = suffix_chunk(item, suffix)
+        return chunk
+    })
+    print(empty_result.length())
+    print(helper_calls)
+
+    try:
+        int[] failed = [1, 99].flat_map(int item -> {
+            if (item == 99) {
+                throw 'int flat_map block failed'
+            }
+            return [item]
+        })
+        print(failed)
+    catch (string error):
+        print(error)
+
+    int[] recovered = [3].flat_map(int item -> {
+        return [item + bias]
+    })
+    print(recovered)
+    return 0
