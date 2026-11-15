@@ -2792,6 +2792,22 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
                 if (flat_map_return_type != 'int[]'):
                     throw 'int[] flat_map expression must return int[]; got ' + flat_map_return_type
                 return refined_value_op(op, 'int[]', 'owned')
+            if (op.args[0] == 'flat_map_string_expr'):
+                if (op.args.length() != 4):
+                    throw 'string[] flat_map expression has invalid IR arity'
+                string flat_map_receiver_type = normalize_llvm_type_name(base_type)
+                BindingIR flat_map_parameter = ir_parse_binding_decl(op.args[2])
+                FunctionSigIR flat_map_callback = lookup_function_sig(functions, op.args[3])
+                if (flat_map_receiver_type != 'string[]'):
+                    throw 'string[] flat_map expression requires string[] receiver; got ' + flat_map_receiver_type
+                if (normalize_llvm_type_name(flat_map_parameter.type_name) != 'string'):
+                    throw 'string[] flat_map expression requires string parameter; got ' + flat_map_parameter.type_name
+                if (flat_map_callback.name == '' || flat_map_callback.param_types.length() != 1 || normalize_llvm_type_name(flat_map_callback.param_types[0]) != 'string'):
+                    throw 'string[] flat_map expression callback must have signature string[](string)'
+                string flat_map_return_type = normalize_llvm_type_name(flat_map_callback.return_type)
+                if (flat_map_return_type != 'string[]'):
+                    throw 'string[] flat_map expression must return string[]; got ' + flat_map_return_type
+                return refined_value_op(op, 'string[]', 'owned')
         if (op.args.length() >= 3):
             BindingIR binding = ir_parse_binding_decl(op.args[2])
             if (op.args[0] == 'map_to' && base_type == 'int[]' && binding.type_name == 'int'):

@@ -1682,7 +1682,7 @@ bool instruction_uses_temp_at(LinearInstruction[] instructions, int instruction_
                 if (index != 2):
                     bool metadata_operand = false
                     if (index == 3):
-                        if (instructions[instruction_index].args[0] == 'map_to' || instructions[instruction_index].args[0] == 'map_to_self' || instructions[instruction_index].args[0] == 'map_to_expr' || instructions[instruction_index].args[0] == 'filter_int_expr' || instructions[instruction_index].args[0] == 'flat_map_int_expr'):
+                        if (instructions[instruction_index].args[0] == 'map_to' || instructions[instruction_index].args[0] == 'map_to_self' || instructions[instruction_index].args[0] == 'map_to_expr' || instructions[instruction_index].args[0] == 'filter_int_expr' || instructions[instruction_index].args[0] == 'flat_map_int_expr' || instructions[instruction_index].args[0] == 'flat_map_string_expr'):
                             metadata_operand = true
                     if (!metadata_operand && temp_name == instructions[instruction_index].args[index]):
                         return true
@@ -2093,6 +2093,8 @@ bool temp_needs_backend_free(ParsedFunction function_ir, string temp_name):
     if (result_type == 'future<int>' || result_type == 'future<num>' || result_type == 'future<bool>' || result_type == 'future<string>' || result_type == 'future<int[]>' || result_type == 'future<int[][]>' || result_type == 'future<string[]>'):
         return op.detail == 'method-call'
     if (result_type == 'string[]'):
+        if (op.detail == 'method-call-lambda' && op.args.length() == 4 && op.args[0] == 'flat_map_string_expr'):
+            return true
         if (op.detail == 'index' && op.ownership_mode == 'owned'):
             return true
         if (op.detail == 'array' || op.detail == 'call' || op.detail == 'slice'):
@@ -4222,6 +4224,11 @@ void analyze_program_features(ProgramIR program, string[] map_types):
                         needs_string_array = true
                         needs_runtime_string_copy = true
                         needs_throw = true
+                    if (op.args[0] == 'flat_map_string_expr'):
+                        needs_string_array_map_expression = true
+                        needs_string_array = true
+                        needs_runtime_string_copy = true
+                        needs_throw = true
                     if (op.args[0] == 'map_to_edge_distance'):
                         needs_map_to_edge_distance = true
                     if (op.args[0] == 'flat_map_edges_for_point'):
@@ -5748,6 +5755,15 @@ string emit_bootstrap_fixture_lambda_instruction(ProgramIR program, ParsedFuncti
         if (release_receiver):
             release_flag = 'true'
         string call_line = '  ' + lhs + ' = call ptr @tb_bootstrap_int_array_flat_map_expr(ptr ' + temp_ref(op.args[1]) + ', ptr @' + op.args[3] + ', i1 ' + release_flag + ')'
+        return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, call_line)
+    if (op.args[0] == 'flat_map_string_expr'):
+        if (op.args.length() != 4):
+            throw 'unsupported string[] flat_map expression lambda arity'
+        bool release_receiver = array_scalar_query_releases_receiver(function_ir, op.args[1], op.lhs)
+        string release_flag = 'false'
+        if (release_receiver):
+            release_flag = 'true'
+        string call_line = '  ' + lhs + ' = call ptr @tb_bootstrap_string_array_flat_map_expr(ptr ' + temp_ref(op.args[1]) + ', ptr @' + op.args[3] + ', i1 ' + release_flag + ')'
         return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, call_line)
     throw 'unsupported llvm fixture lambda op: ' + join_llvm_strings(op.args, ' ')
 
@@ -8463,6 +8479,8 @@ string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, Lin
             if (op.args[0] == 'filter_int_expr'):
                 return emit_int_array_filter_expression_instruction(function_ir, op)
             if (op.args[0] == 'flat_map_int_expr'):
+                return emit_bootstrap_fixture_lambda_instruction(program, function_ir, op)
+            if (op.args[0] == 'flat_map_string_expr'):
                 return emit_bootstrap_fixture_lambda_instruction(program, function_ir, op)
         if (op.args.length() == 4):
             if (op.args[0] == 'map_to_expr'):

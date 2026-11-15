@@ -1,0 +1,55 @@
+int split_calls = 0
+int decoration_calls = 0
+int shared_calls = 0
+string[] shared_chunk = ['common', 'tail']
+
+string[] split_words(string line):
+    split_calls += 1
+    return line.split(' ')
+
+string decorate(string word):
+    decoration_calls += 1
+    return word + '!'
+
+string[] repeated_chunk(string ignored):
+    shared_calls += 1
+    return shared_chunk
+
+string[] make_line():
+    return ['left right']
+
+int main(string[] args):
+    string[] lines = ['red blue', 'green']
+    string[] words = lines.flat_map(string line -> split_words(line))
+    print(words.length())
+    for (int index : range(words.length())):
+        print(words[index])
+    print(split_calls)
+
+    string[] decorated = ['a', 'b'].flat_map(string word -> [word, decorate(word)])
+    print(decorated.length())
+    for (int index : range(decorated.length())):
+        print(decorated[index])
+    print(decoration_calls)
+
+    string[] empty_chunk = ['unused'].flat_map(string word -> [])
+    print(empty_chunk.length())
+    string[] empty_source = []
+    string[] no_chunks = empty_source.flat_map(string line -> split_words(line))
+    print(no_chunks.length())
+    print(split_calls)
+
+    string[] temporary = make_line().flat_map(string line -> split_words(line))
+    print(temporary.length())
+    print(temporary[0])
+    print(temporary[1])
+    print(split_calls)
+
+    string[] shared = ['first', 'second'].flat_map(string word -> repeated_chunk(word))
+    print(shared.length())
+    shared[0] = 'changed'
+    for (int index : range(shared.length())):
+        print(shared[index])
+    print(shared_chunk[0])
+    print(shared_calls)
+    return 0
