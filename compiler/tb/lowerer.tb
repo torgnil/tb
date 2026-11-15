@@ -1208,7 +1208,7 @@ ArrayScalarCaptureResult string_array_callback_captures(Node lambda_node, Bindin
         captured.push(binding)
     return ArrayScalarCaptureResult(captured, true)
 
-bool string_array_flat_map_scalar_captures(BindingIR[] captured):
+bool flat_map_scalar_captures(BindingIR[] captured):
     for (BindingIR binding : captured):
         string capture_type = binding.type_name
         if (capture_type.starts_with('const ')):
@@ -1891,7 +1891,7 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
     if (!top_level_global_initializer && node.kind == 'MethodCall' && node.value == 'flat_map' && node.children.length() == 2):
         Node lambda_node = node.children[1]
         ArrayScalarCaptureResult capture_result = string_array_callback_captures(lambda_node, bindings)
-        if (capture_result.complete && !capture_result.captures.is_empty() && lambda_node.children.length() == 1 && lambda_node.children[0].kind != 'Block' && string_array_flat_map_scalar_captures(capture_result.captures)):
+        if (capture_result.complete && !capture_result.captures.is_empty() && lambda_node.children.length() == 1 && lambda_node.children[0].kind != 'Block' && flat_map_scalar_captures(capture_result.captures)):
             BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
             string parameter_type = parameter.type_name
             if (parameter_type.starts_with('const ')):
@@ -1930,6 +1930,47 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
                     helper_children = append_nodes(helper_children, [Node('Return', '', [lambda_node.children[0]])])
                     generated.push(Node('Function', 'string[] ' + helper_name, helper_children))
                     rewritten_children[1] = Node('FlatMapStringExpression', lambda_node.value, captured_values)
+                    rewritten = Node(node.kind, node.value, rewritten_children)
+        ArrayScalarCaptureResult int_capture_result = int_array_scalar_captures(lambda_node, bindings)
+        if (int_capture_result.complete && !int_capture_result.captures.is_empty() && lambda_node.children.length() == 1 && lambda_node.children[0].kind != 'Block' && flat_map_scalar_captures(int_capture_result.captures)):
+            BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+            string parameter_type = parameter.type_name
+            if (parameter_type.starts_with('const ')):
+                parameter_type = parameter_type.substring(6)
+            if (parameter_type == 'int'):
+                string[] allowed_names = [parameter.name]
+                string[] scope_names = [parameter.name]
+                string[] scope_types = ['int']
+                string[] const_names = []
+                for (BindingIR binding in int_capture_result.captures):
+                    string capture_type = binding.type_name
+                    if (capture_type.starts_with('const ')):
+                        capture_type = capture_type.substring(6)
+                    allowed_names.push(binding.name)
+                    scope_names.push(binding.name)
+                    scope_types.push(capture_type)
+                    const_names.push(binding.name)
+                if (array_flat_map_expression(lambda_node.children[0], allowed_names, functions)):
+                    SubmitLambdaScope scope = SubmitLambdaScope(scope_names, scope_types, const_names, scope_names, scope_names, [], parameter.name)
+                    string callback_return_type = submit_lambda_expression_type_context(lambda_node.children[0], scope, functions, true, 'flat_map')
+                    if (callback_return_type != 'int[]'):
+                        if (callback_return_type == ''):
+                            throw 'int[] flat_map expression has invalid array element types'
+                        throw 'int[] flat_map expression must return int[]; got ' + callback_return_type
+                    string helper_name = int_array_flat_map_expression_helper_name(current_names, current_index)
+                    current_names = add_unique_name(current_names, helper_name)
+                    current_index += 1
+                    Node[] helper_children = [Node('Param', 'int ' + parameter.name, [])]
+                    Node[] captured_values = [Node('Identifier', helper_name, [])]
+                    for (BindingIR binding in int_capture_result.captures):
+                        string capture_type = binding.type_name
+                        if (capture_type.starts_with('const ')):
+                            capture_type = capture_type.substring(6)
+                        helper_children.push(Node('Param', 'const ' + capture_type + ' ' + binding.name, []))
+                        captured_values.push(Node('Identifier', binding.name, []))
+                    helper_children = append_nodes(helper_children, [Node('Return', '', [lambda_node.children[0]])])
+                    generated.push(Node('Function', 'int[] ' + helper_name, helper_children))
+                    rewritten_children[1] = Node('FlatMapIntExpression', lambda_node.value, captured_values)
                     rewritten = Node(node.kind, node.value, rewritten_children)
     if (rewrite_worker):
         Node lambda_node = node.children[1]
@@ -2964,11 +3005,20 @@ TempResult lower_linear_value(Node node, int next_temp):
                                 return TempResult(name, lines, right.next_temp + 1)
         if (node.value == 'flat_map'):
             if (node.children.length() == 2):
-                if (node.children[1].kind == 'FlatMapIntExpression' && node.children[1].children.length() == 1 && node.children[1].children[0].kind == 'Identifier'):
-                    string name = temp_name(base.next_temp)
+                if (node.children[1].kind == 'FlatMapIntExpression' && node.children[1].children.length() >= 1 && node.children[1].children[0].kind == 'Identifier'):
+                    int next_temp = base.next_temp
                     string[] lines = base.lines
-                    lines.push(name + ' = method-call-lambda flat_map_int_expr ' + base.name + ' ' + node.children[1].value + ' ' + node.children[1].children[0].value)
-                    return TempResult(name, lines, base.next_temp + 1)
+                    string[] args = ['flat_map_int_expr', base.name, node.children[1].value, node.children[1].children[0].value]
+                    if (node.children[1].children.length() > 1):
+                        args[0] = 'flat_map_int_expr_captured'
+                        for (int capture_index = 1; capture_index < node.children[1].children.length(); capture_index += 1):
+                            TempResult capture_value = lower_linear_value(node.children[1].children[capture_index], next_temp)
+                            lines = append_lines(lines, capture_value.lines)
+                            args.push(capture_value.name)
+                            next_temp = capture_value.next_temp
+                    string name = temp_name(next_temp)
+                    lines.push(name + ' = method-call-lambda ' + join_strings(args, ' '))
+                    return TempResult(name, lines, next_temp + 1)
                 if (node.children[1].kind == 'FlatMapStringExpression' && node.children[1].children.length() >= 1 && node.children[1].children[0].kind == 'Identifier'):
                     int next_temp = base.next_temp
                     string[] lines = base.lines
@@ -3315,10 +3365,20 @@ TempIRResult lower_linear_value_ir(Node node, int next_temp):
                                 return TempIRResult(name, instructions, right.next_temp + 1)
         if (node.value == 'flat_map'):
             if (node.children.length() == 2):
-                if (node.children[1].kind == 'FlatMapIntExpression' && node.children[1].children.length() == 1 && node.children[1].children[0].kind == 'Identifier'):
-                    string name = temp_name(base.next_temp)
-                    LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', name, 'unknown', 'unknown', 'method-call-lambda', ['flat_map_int_expr', base.name, node.children[1].value, node.children[1].children[0].value])])
-                    return TempIRResult(name, instructions, base.next_temp + 1)
+                if (node.children[1].kind == 'FlatMapIntExpression' && node.children[1].children.length() >= 1 && node.children[1].children[0].kind == 'Identifier'):
+                    int next_temp = base.next_temp
+                    LinearInstruction[] instructions = base.instructions
+                    string[] args = ['flat_map_int_expr', base.name, node.children[1].value, node.children[1].children[0].value]
+                    if (node.children[1].children.length() > 1):
+                        args[0] = 'flat_map_int_expr_captured'
+                        for (int capture_index = 1; capture_index < node.children[1].children.length(); capture_index += 1):
+                            TempIRResult capture_value = lower_linear_value_ir(node.children[1].children[capture_index], next_temp)
+                            instructions = append_instructions(instructions, capture_value.instructions)
+                            args.push(capture_value.name)
+                            next_temp = capture_value.next_temp
+                    string name = temp_name(next_temp)
+                    instructions.push(LinearInstruction('value', name, 'unknown', 'unknown', 'method-call-lambda', args))
+                    return TempIRResult(name, instructions, next_temp + 1)
                 if (node.children[1].kind == 'FlatMapStringExpression' && node.children[1].children.length() >= 1 && node.children[1].children[0].kind == 'Identifier'):
                     int next_temp = base.next_temp
                     LinearInstruction[] instructions = base.instructions

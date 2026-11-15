@@ -2792,6 +2792,31 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
                 if (flat_map_return_type != 'int[]'):
                     throw 'int[] flat_map expression must return int[]; got ' + flat_map_return_type
                 return refined_value_op(op, 'int[]', 'owned')
+            if (op.args[0] == 'flat_map_int_expr_captured'):
+                if (op.args.length() < 5):
+                    throw 'int[] flat_map expression has invalid captured IR arity'
+                if (normalize_llvm_type_name(base_type) != 'int[]'):
+                    throw 'int[] flat_map expression requires int[] receiver; got ' + normalize_llvm_type_name(base_type)
+                BindingIR flat_map_parameter = ir_parse_binding_decl(op.args[2])
+                if (normalize_llvm_type_name(flat_map_parameter.type_name) != 'int'):
+                    throw 'int[] flat_map expression requires int parameter; got ' + flat_map_parameter.type_name
+                FunctionSigIR flat_map_callback = lookup_function_sig(functions, op.args[3])
+                int capture_count = op.args.length() - 4
+                if (flat_map_callback.name == '' || flat_map_callback.param_types.length() != capture_count + 1 || normalize_llvm_type_name(flat_map_callback.param_types[0]) != 'int'):
+                    throw 'int[] flat_map expression callback has invalid captured signature'
+                int capture_index = 0
+                while (capture_index < capture_count):
+                    string capture_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[capture_index + 4]))
+                    if (!(capture_type == 'int' || capture_type == 'bool' || capture_type == 'string')):
+                        throw 'int[] flat_map captures must be int, bool, or string; got ' + capture_type
+                    string parameter_type = normalize_llvm_type_name(flat_map_callback.param_types[capture_index + 1])
+                    if (parameter_type != capture_type):
+                        throw 'int[] flat_map callback capture must have type ' + capture_type + '; got ' + parameter_type
+                    capture_index += 1
+                string flat_map_return_type = normalize_llvm_type_name(flat_map_callback.return_type)
+                if (flat_map_return_type != 'int[]'):
+                    throw 'int[] flat_map expression must return int[]; got ' + flat_map_return_type
+                return refined_value_op(op, 'int[]', 'owned')
             if (op.args[0] == 'flat_map_string_expr'):
                 if (op.args.length() != 4):
                     throw 'string[] flat_map expression has invalid IR arity'
