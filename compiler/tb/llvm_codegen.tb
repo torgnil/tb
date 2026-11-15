@@ -451,17 +451,26 @@ private string llvm_thread_pool_submit_name(string future_type, string arg_type)
         return '@tb_thread_pool_submit_bool_string_array_array'
     return ''
 
-private string llvm_thread_pool_submit_string_int_array_name(string future_type, string first_arg_type, string second_arg_type):
+private string llvm_thread_pool_submit_array_int_array_name(string future_type, string first_arg_type, string second_arg_type):
     future_type = normalize_llvm_type_name(future_type)
     first_arg_type = normalize_llvm_type_name(first_arg_type)
     second_arg_type = normalize_llvm_type_name(second_arg_type)
-    if (first_arg_type != 'string' || second_arg_type != 'int[]'):
+    if ((first_arg_type != 'string' && first_arg_type != 'string[]') || second_arg_type != 'int[]'):
         return ''
+    string first_prefix = 'string'
+    if (first_arg_type == 'string[]'):
+        first_prefix = 'string_array'
     if (future_type == 'future<int>'):
+        if (first_prefix == 'string_array'):
+            return '@tb_thread_pool_submit_i64_string_array_int_array'
         return '@tb_thread_pool_submit_i64_string_int_array'
     if (future_type == 'future<bool>'):
+        if (first_prefix == 'string_array'):
+            return '@tb_thread_pool_submit_bool_string_array_int_array'
         return '@tb_thread_pool_submit_bool_string_int_array'
     if (future_type == 'future<string>'):
+        if (first_prefix == 'string_array'):
+            return '@tb_thread_pool_submit_string_string_array_int_array'
         return '@tb_thread_pool_submit_string_string_int_array'
     return ''
 
@@ -481,6 +490,7 @@ private string[] emit_thread_pool_runtime_declarations():
         'declare ptr @tb_thread_pool_submit_i64_string_array(ptr, ptr, ptr)',
         'declare ptr @tb_thread_pool_submit_i64_string_array_array(ptr, ptr, ptr)',
         'declare ptr @tb_thread_pool_submit_i64_string_int_array(ptr, ptr, ptr, ptr)',
+        'declare ptr @tb_thread_pool_submit_i64_string_array_int_array(ptr, ptr, ptr, ptr)',
         'declare ptr @tb_thread_pool_submit_int_array(ptr, ptr)',
         'declare ptr @tb_thread_pool_submit_int_array_i64(ptr, ptr, i64)',
         'declare ptr @tb_thread_pool_submit_int_array_bool(ptr, ptr, i1)',
@@ -535,6 +545,7 @@ private string[] emit_thread_pool_runtime_declarations():
         'declare ptr @tb_thread_pool_submit_bool_string_array(ptr, ptr, ptr)',
         'declare ptr @tb_thread_pool_submit_bool_string_array_array(ptr, ptr, ptr)',
         'declare ptr @tb_thread_pool_submit_bool_string_int_array(ptr, ptr, ptr, ptr)',
+        'declare ptr @tb_thread_pool_submit_bool_string_array_int_array(ptr, ptr, ptr, ptr)',
         'declare ptr @tb_future_bool_retain(ptr)',
         'declare void @tb_future_bool_release(ptr)',
         'declare i1 @tb_future_bool_await(ptr)',
@@ -549,6 +560,7 @@ private string[] emit_thread_pool_runtime_declarations():
         'declare ptr @tb_thread_pool_submit_string_int_array(ptr, ptr, ptr)',
         'declare ptr @tb_thread_pool_submit_string_int_array_array(ptr, ptr, ptr)',
         'declare ptr @tb_thread_pool_submit_string_string_int_array(ptr, ptr, ptr, ptr)',
+        'declare ptr @tb_thread_pool_submit_string_string_array_int_array(ptr, ptr, ptr, ptr)',
         'declare ptr @tb_future_string_retain(ptr)',
         'declare void @tb_future_string_release(ptr)',
         'declare ptr @tb_future_string_await(ptr)',
@@ -7938,13 +7950,16 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
         if (op.args.length() == 5):
             string first_arg_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[3]))
             string second_arg_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[4]))
-            string mixed_submit_name = llvm_thread_pool_submit_string_int_array_name(future_type, first_arg_type, second_arg_type)
+            string mixed_submit_name = llvm_thread_pool_submit_array_int_array_name(future_type, first_arg_type, second_arg_type)
             if (mixed_submit_name == ''):
                 throw 'unsupported llvm thread_pool submit signature: ' + future_type + ' ' + first_arg_type + ', ' + second_arg_type
             string mixed_call = '  ' + lhs + ' = call ptr ' + mixed_submit_name + '(ptr ' + temp_ref(op.args[1]) + ', ptr @' + op.args[2] + ', ptr ' + temp_ref(op.args[3]) + ', ptr ' + temp_ref(op.args[4]) + ')'
             string mixed_argument_releases = ''
             if (temp_needs_backend_free(function_ir, op.args[3])):
-                mixed_argument_releases = emit_backend_release_ptr('string', temp_ref(op.args[3]))
+                string first_argument_type = 'string'
+                if (first_arg_type == 'string[]'):
+                    first_argument_type = 'string[]'
+                mixed_argument_releases = emit_backend_release_ptr(first_argument_type, temp_ref(op.args[3]))
             if (temp_needs_backend_free(function_ir, op.args[4])):
                 if (mixed_argument_releases != ''):
                     mixed_argument_releases += '\n'

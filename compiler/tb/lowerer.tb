@@ -1977,7 +1977,7 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
                 captured = submit_lambda_captures(lambda_node, submit_bindings)
                 BindingIR lambda_parameter = ir_parse_binding_decl(lambda_node.value)
                 string lambda_parameter_type = lambda_parameter.type_name
-                if (submit_lambda_managed_task_parameter_type(lambda_parameter_type) && !captured.is_empty() && lambda_parameter_type != 'int[]'):
+                if (submit_lambda_managed_task_parameter_type(lambda_parameter_type) && !captured.is_empty() && lambda_parameter_type != 'int[]' && lambda_parameter_type != 'string[]'):
                     throw 'thread_pool.submit lambda with a managed task parameter cannot capture values'
             worker_return_type = validate_submit_lambda(lambda_node, functions, captured)
             rewrite_worker = lambda_node.kind == 'Lambda'
@@ -2240,10 +2240,12 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
         current_index += 1
         Node[] function_children = []
         bool array_task_parameter = false
+        bool string_array_task_parameter = false
         bool array_task_array_captures = false
         if (lambda_node.kind == 'Lambda' && !captured.is_empty()):
             BindingIR lambda_parameter = ir_parse_binding_decl(lambda_node.value)
             array_task_parameter = lambda_parameter.type_name == 'int[]'
+            string_array_task_parameter = lambda_parameter.type_name == 'string[]'
             array_task_array_captures = array_task_parameter && submit_lambda_array_capture_index(captured) >= 0
         bool packed_environment = !mixed_string_scalar_captures && ((lambda_node.kind == 'Lambda0' && captured.length() > 1) || (lambda_node.kind == 'Lambda' && !captured.is_empty()))
         string environment_name = ''
@@ -2259,6 +2261,10 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
             current_index += 1
             if (array_task_parameter):
                 function_children.push(Node('Param', 'const int[][] ' + environment_name, []))
+            else if (string_array_task_parameter):
+                BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
+                function_children.push(Node('Param', 'const string[] ' + parameter.name, []))
+                function_children.push(Node('Param', 'const int[] ' + environment_name, []))
             else:
                 function_children.push(Node('Param', 'const int[] ' + environment_name, []))
         else:
@@ -2294,7 +2300,7 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
             int environment_offset = 0
             if (lambda_node.kind == 'Lambda'):
                 BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
-                if (!array_task_parameter):
+                if (!array_task_parameter && !string_array_task_parameter):
                     Node parameter_value = Node('Index', '', [Node('Identifier', environment_name, []), Node('Int', '0', [])])
                     if (parameter.type_name == 'bool'):
                         parameter_value = Node('Binary', '!=', [parameter_value, Node('Int', '0', [])])
@@ -2337,10 +2343,11 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
                 current_names = add_unique_name(current_names, wrapper_task_name)
                 current_index += 1
                 wrapper_children.push(Node('Param', parameter.type_name + ' ' + wrapper_task_name, []))
-                if (parameter.type_name == 'bool'):
-                    packed_values.push(Node('Ternary', '', [Node('Identifier', wrapper_task_name, []), Node('Int', '1', []), Node('Int', '0', [])]))
-                else:
-                    packed_values.push(Node('Identifier', wrapper_task_name, []))
+                if (!string_array_task_parameter):
+                    if (parameter.type_name == 'bool'):
+                        packed_values.push(Node('Ternary', '', [Node('Identifier', wrapper_task_name, []), Node('Int', '1', []), Node('Int', '0', [])]))
+                    else:
+                        packed_values.push(Node('Identifier', wrapper_task_name, []))
             for (int capture_index = 0; capture_index < captured.length(); capture_index += 1):
                 BindingIR binding = captured[capture_index]
                 string capture_type = binding.type_name
@@ -2383,7 +2390,11 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
                     wrapper_children.push(Node('VarDecl', 'int[][] ' + wrapper_environment_name, [Node('Array', '', [task_row, capture_row])]))
             else:
                 wrapper_children.push(Node('VarDecl', 'int[] ' + wrapper_environment_name, [Node('Array', '', packed_values)]))
-            Node submit_call = Node('MethodCall', 'submit', [Node('Identifier', wrapper_pool_name, []), Node('Identifier', worker_name, []), Node('Identifier', wrapper_environment_name, [])])
+            Node[] submit_arguments = [Node('Identifier', wrapper_pool_name, []), Node('Identifier', worker_name, [])]
+            if (string_array_task_parameter):
+                submit_arguments.push(Node('Identifier', wrapper_task_name, []))
+            submit_arguments.push(Node('Identifier', wrapper_environment_name, []))
+            Node submit_call = Node('MethodCall', 'submit', submit_arguments)
             wrapper_children.push(Node('Return', '', [submit_call]))
             generated.push(Node('Function', 'future<' + worker_return_type + '> ' + wrapper_name, wrapper_children))
             Node[] call_arguments = [rewritten_children[0]]
