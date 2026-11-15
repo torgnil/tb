@@ -1685,7 +1685,7 @@ bool instruction_uses_temp_at(LinearInstruction[] instructions, int instruction_
                 if (index != 2):
                     bool metadata_operand = false
                     if (index == 3):
-                        if (instructions[instruction_index].args[0] == 'map_to' || instructions[instruction_index].args[0] == 'map_to_self' || instructions[instruction_index].args[0] == 'map_to_expr' || instructions[instruction_index].args[0] == 'filter_int_expr' || instructions[instruction_index].args[0] == 'flat_map_int_expr' || instructions[instruction_index].args[0] == 'flat_map_int_expr_captured' || instructions[instruction_index].args[0] == 'flat_map_string_expr' || instructions[instruction_index].args[0] == 'flat_map_string_expr_captured'):
+                        if (instructions[instruction_index].args[0] == 'map_to' || instructions[instruction_index].args[0] == 'map_to_self' || instructions[instruction_index].args[0] == 'map_to_expr' || instructions[instruction_index].args[0] == 'filter_int_expr' || instructions[instruction_index].args[0] == 'flat_map_int_expr' || instructions[instruction_index].args[0] == 'flat_map_int_expr_captured' || instructions[instruction_index].args[0] == 'flat_map_string_expr' || instructions[instruction_index].args[0] == 'flat_map_string_expr_captured' || instructions[instruction_index].args[0] == 'flat_map_string_int_expr' || instructions[instruction_index].args[0] == 'flat_map_string_int_expr_captured'):
                             metadata_operand = true
                     if (!metadata_operand && temp_name == instructions[instruction_index].args[index]):
                         return true
@@ -2125,9 +2125,9 @@ bool temp_needs_backend_free(ParsedFunction function_ir, string temp_name):
                 return true
         if (op.detail == 'method-call-lambda'):
             if (op.args.length() == 4):
-                if (op.args[0] == 'map_to_self' || op.args[0] == 'map_to_expr' || op.args[0] == 'filter_int_expr' || op.args[0] == 'flat_map_int_expr'):
+                if (op.args[0] == 'map_to_self' || op.args[0] == 'map_to_expr' || op.args[0] == 'filter_int_expr' || op.args[0] == 'flat_map_int_expr' || op.args[0] == 'flat_map_string_int_expr'):
                     return true
-            if (op.args.length() >= 5 && op.args[0] == 'flat_map_int_expr_captured'):
+            if (op.args.length() >= 5 && (op.args[0] == 'flat_map_int_expr_captured' || op.args[0] == 'flat_map_string_int_expr_captured')):
                 return true
         return op.detail == 'array' || op.detail == 'call' || op.detail == 'slice' || temp_is_owned_int_grid_index_result(function_ir, temp_name)
     if (result_type.starts_with('set<')):
@@ -4234,12 +4234,22 @@ void analyze_program_features(ProgramIR program, string[] map_types):
                         needs_string_array = true
                         needs_runtime_string_copy = true
                         needs_throw = true
+                    if (op.args[0] == 'flat_map_string_int_expr' || op.args[0] == 'flat_map_string_int_expr_captured'):
+                        needs_string_array_map_expression = true
+                        needs_string_array = true
+                        needs_int_array = true
+                        needs_runtime_string_copy = true
+                        needs_throw = true
                     if (op.args[0] == 'map_to_edge_distance'):
                         needs_map_to_edge_distance = true
                     if (op.args[0] == 'flat_map_edges_for_point'):
                         uses_edges_for_point_mapper = true
                     if (op.args[0] == 'create_prio_q_int_desc'):
                         needs_prio_q_int = true
+    # The bundled string-array map template also defines integer-output flat_map
+    # helpers, so those helpers need the int[] runtime even for string-only calls.
+    if (needs_string_array_map_expression):
+        needs_int_array = true
     if (needs_int_set):
         needs_int_array = true
     if (needs_string_set):
@@ -5819,6 +5829,40 @@ string emit_bootstrap_fixture_lambda_instruction(ProgramIR program, ParsedFuncti
         string callback_name = 'tb_bootstrap_string_array_flat_map_capture_' + op.args[3]
         string cleanup_name = 'tb_bootstrap_string_array_flat_map_capture_cleanup_' + op.args[3]
         string call_line = '  ' + lhs + ' = call ptr @tb_bootstrap_string_array_flat_map_expr_captured(ptr ' + temp_ref(op.args[1]) + ', ptr @' + callback_name + ', ptr ' + context_ref + ', ptr @' + cleanup_name + ', i1 ' + release_flag + ')'
+        lines += '\n' + call_line
+        return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, lines)
+    if (op.args[0] == 'flat_map_string_int_expr'):
+        if (op.args.length() != 4):
+            throw 'unsupported string[] flat_map int expression lambda arity'
+        bool release_receiver = array_scalar_query_releases_receiver(function_ir, op.args[1], op.lhs)
+        string release_flag = 'false'
+        if (release_receiver):
+            release_flag = 'true'
+        string call_line = '  ' + lhs + ' = call ptr @tb_bootstrap_string_array_flat_map_int_expr(ptr ' + temp_ref(op.args[1]) + ', ptr @' + op.args[3] + ', i1 ' + release_flag + ')'
+        return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, call_line)
+    if (op.args[0] == 'flat_map_string_int_expr_captured'):
+        if (op.args.length() < 5):
+            throw 'unsupported captured string[] flat_map int expression lambda arity'
+        string[] capture_types = []
+        for (int index = 4; index < op.args.length(); index += 1):
+            string source_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[index]))
+            if (!(source_type == 'int' || source_type == 'bool' || source_type == 'string')):
+                throw 'unsupported string[] flat_map capture type: ' + source_type
+            capture_types.push(llvm_type(source_type))
+        string context_type = '{ ' + join_llvm_strings(capture_types, ', ') + ' }'
+        string context_ref = temp_ref(op.lhs) + '.capture.context'
+        string lines = '  ' + context_ref + ' = alloca ' + context_type
+        for (int index = 0; index < capture_types.length(); index += 1):
+            string field = temp_ref(op.lhs) + '.capture.field.' + index.to_string()
+            lines += '\n  ' + field + ' = getelementptr ' + context_type + ', ptr ' + context_ref + ', i32 0, i32 ' + index.to_string()
+            lines += '\n  store ' + capture_types[index] + ' ' + temp_ref(op.args[index + 4]) + ', ptr ' + field
+        bool release_receiver = array_scalar_query_releases_receiver(function_ir, op.args[1], op.lhs)
+        string release_flag = 'false'
+        if (release_receiver):
+            release_flag = 'true'
+        string callback_name = 'tb_bootstrap_string_array_flat_map_capture_' + op.args[3]
+        string cleanup_name = 'tb_bootstrap_string_array_flat_map_capture_cleanup_' + op.args[3]
+        string call_line = '  ' + lhs + ' = call ptr @tb_bootstrap_string_array_flat_map_int_expr_captured(ptr ' + temp_ref(op.args[1]) + ', ptr @' + callback_name + ', ptr ' + context_ref + ', ptr @' + cleanup_name + ', i1 ' + release_flag + ')'
         lines += '\n' + call_line
         return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, lines)
     throw 'unsupported llvm fixture lambda op: ' + join_llvm_strings(op.args, ' ')
@@ -8534,11 +8578,13 @@ string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, Lin
         if (op.args.length() == 4):
             if (op.args[0] == 'filter_int_expr'):
                 return emit_int_array_filter_expression_instruction(function_ir, op)
-            if (op.args[0] == 'flat_map_int_expr' || op.args[0] == 'flat_map_string_expr'):
+            if (op.args[0] == 'flat_map_int_expr' || op.args[0] == 'flat_map_string_expr' || op.args[0] == 'flat_map_string_int_expr'):
                 return emit_bootstrap_fixture_lambda_instruction(program, function_ir, op)
         if (op.args.length() >= 5 && op.args[0] == 'flat_map_int_expr_captured'):
             return emit_bootstrap_fixture_lambda_instruction(program, function_ir, op)
         if (op.args.length() >= 5 && op.args[0] == 'flat_map_string_expr_captured'):
+            return emit_bootstrap_fixture_lambda_instruction(program, function_ir, op)
+        if (op.args.length() >= 5 && op.args[0] == 'flat_map_string_int_expr_captured'):
             return emit_bootstrap_fixture_lambda_instruction(program, function_ir, op)
         if (op.args.length() == 4):
             if (op.args[0] == 'map_to_expr'):
@@ -10644,7 +10690,7 @@ string[] emit_string_array_capture_thunks(ProgramIR program):
     for (ParsedFunction function_ir : program.functions):
         for (BlockIR block : function_ir.blocks):
             for (LinearInstruction op : block.instructions):
-                if (op.kind != 'value' || op.detail != 'method-call-lambda' || op.args.is_empty() || op.args.length() < 5 || !(op.args[0] == 'map_to_string_expr_captured' || op.args[0] == 'filter_string_expr_captured' || op.args[0] == 'flat_map_string_expr_captured')):
+                if (op.kind != 'value' || op.detail != 'method-call-lambda' || op.args.is_empty() || op.args.length() < 5 || !(op.args[0] == 'map_to_string_expr_captured' || op.args[0] == 'filter_string_expr_captured' || op.args[0] == 'flat_map_string_expr_captured' || op.args[0] == 'flat_map_string_int_expr_captured')):
                     continue
                 string callback_name = op.args[3]
                 string thunk_prefix = 'tb_bootstrap_string_array_map_capture_'
@@ -10652,7 +10698,7 @@ string[] emit_string_array_capture_thunks(ProgramIR program):
                 if (op.args[0] == 'filter_string_expr_captured'):
                     thunk_prefix = 'tb_bootstrap_string_array_filter_capture_'
                     callback_return_type = 'i1'
-                else if (op.args[0] == 'flat_map_string_expr_captured'):
+                else if (op.args[0] == 'flat_map_string_expr_captured' || op.args[0] == 'flat_map_string_int_expr_captured'):
                     thunk_prefix = 'tb_bootstrap_string_array_flat_map_capture_'
                 string thunk_name = thunk_prefix + callback_name
                 bool already_emitted = false
@@ -10687,7 +10733,7 @@ string[] emit_string_array_capture_thunks(ProgramIR program):
                 string cleanup_prefix = 'tb_bootstrap_string_array_map_capture_cleanup_'
                 if (op.args[0] == 'filter_string_expr_captured'):
                     cleanup_prefix = 'tb_bootstrap_string_array_filter_capture_cleanup_'
-                else if (op.args[0] == 'flat_map_string_expr_captured'):
+                else if (op.args[0] == 'flat_map_string_expr_captured' || op.args[0] == 'flat_map_string_int_expr_captured'):
                     cleanup_prefix = 'tb_bootstrap_string_array_flat_map_capture_cleanup_'
                 string cleanup_name = cleanup_prefix + callback_name
                 lines.push('define private void @' + cleanup_name + '(ptr %context) {')

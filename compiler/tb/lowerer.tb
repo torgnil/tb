@@ -1093,11 +1093,16 @@ string string_array_flat_map_expression_type(Node node, SubmitLambdaScope scope,
     if (node.kind == 'Array'):
         if (node.children.is_empty()):
             return 'string[]'
+        string item_type = ''
         for (Node item in node.children):
-            string item_type = submit_lambda_expression_type_context(item, scope, functions, true, 'map_to')
-            if (item_type != 'string'):
+            string current_item_type = submit_lambda_expression_type_context(item, scope, functions, true, 'map_to')
+            if (!(current_item_type == 'string' || current_item_type == 'int')):
                 return ''
-        return 'string[]'
+            if (item_type == ''):
+                item_type = current_item_type
+            else if (item_type != current_item_type):
+                return ''
+        return item_type + '[]'
     if (node.kind != 'Call'):
         return ''
     Node helper = submit_lambda_helper(functions, node.value)
@@ -1117,8 +1122,9 @@ string string_array_flat_map_expression_type(Node node, SubmitLambdaScope scope,
         parameter_count += 1
     if (node.children.length() != parameter_count):
         throw 'string[] flat_map callback helper ' + node.value + ' expects ' + parameter_count.to_string() + ' arguments but received ' + node.children.length().to_string()
-    if (normalize_llvm_type_name(signature.type_name) != 'string[]'):
-        throw 'string[] flat_map callback helper ' + node.value + ' must return string[]; got ' + signature.type_name
+    string return_type = normalize_llvm_type_name(signature.type_name)
+    if (!(return_type == 'string[]' || return_type == 'int[]')):
+        throw 'string[] flat_map callback helper ' + node.value + ' must return string[] or int[]; got ' + signature.type_name
     int index = 0
     while (index < parameter_count):
         BindingIR parameter = ir_parse_binding_decl(helper.children[index].value)
@@ -1131,7 +1137,7 @@ string string_array_flat_map_expression_type(Node node, SubmitLambdaScope scope,
         if (argument_type != parameter_type):
             throw 'string[] flat_map callback helper ' + node.value + ' argument ' + (index + 1).to_string() + ' must have type ' + parameter_type + '; got ' + argument_type
         index += 1
-    return 'string[]'
+    return return_type
 
 string string_array_filter_expression_helper_name(string[] used_names, int start_index):
     int index = start_index
@@ -1475,15 +1481,18 @@ SubmitLambdaRewrite rewrite_array_map_expression(Node node, string[] used_names,
             if (string_array_callback):
                 SubmitLambdaScope string_scope = SubmitLambdaScope([parameter.name], ['string'], [], [parameter.name], [parameter.name], [], parameter.name)
                 string callback_return_type = string_array_flat_map_expression_type(lambda_node.children[0], string_scope, functions)
-                if (callback_return_type != 'string[]'):
+                if (!(callback_return_type == 'string[]' || callback_return_type == 'int[]')):
                     if (callback_return_type == ''):
                         throw 'string[] flat_map expression has invalid string array elements'
-                    throw 'string[] flat_map expression must return string[]; got ' + callback_return_type
+                    throw 'string[] flat_map expression must return string[] or int[]; got ' + callback_return_type
                 string string_helper_name = string_array_flat_map_expression_helper_name(current_names, current_index)
                 current_names = add_unique_name(current_names, string_helper_name)
                 current_index += 1
-                generated.push(Node('Function', 'string[] ' + string_helper_name, [Node('Param', 'string ' + parameter.name, []), Node('Return', '', [lambda_node.children[0]])]))
-                children[1] = Node('FlatMapStringExpression', lambda_node.value, [Node('Identifier', string_helper_name, [])])
+                generated.push(Node('Function', callback_return_type + ' ' + string_helper_name, [Node('Param', 'string ' + parameter.name, []), Node('Return', '', [lambda_node.children[0]])]))
+                string flat_map_node_kind = 'FlatMapStringExpression'
+                if (callback_return_type == 'int[]'):
+                    flat_map_node_kind = 'FlatMapStringIntExpression'
+                children[1] = Node(flat_map_node_kind, lambda_node.value, [Node('Identifier', string_helper_name, [])])
                 rewritten = Node(node.kind, node.value, children)
             else:
                 SubmitLambdaScope scope = SubmitLambdaScope([parameter.name], ['int'], [], [parameter.name], [parameter.name], [], parameter.name)
@@ -2080,10 +2089,10 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
                 if (array_flat_map_expression(lambda_node.children[0], allowed_names, functions)):
                     SubmitLambdaScope scope = SubmitLambdaScope(scope_names, scope_types, const_names, scope_names, scope_names, [], parameter.name)
                     string callback_return_type = string_array_flat_map_expression_type(lambda_node.children[0], scope, functions)
-                    if (callback_return_type != 'string[]'):
+                    if (!(callback_return_type == 'string[]' || callback_return_type == 'int[]')):
                         if (callback_return_type == ''):
                             throw 'string[] flat_map expression has invalid string array elements'
-                        throw 'string[] flat_map expression must return string[]; got ' + callback_return_type
+                        throw 'string[] flat_map expression must return string[] or int[]; got ' + callback_return_type
                     string helper_name = string_array_flat_map_expression_helper_name(current_names, current_index)
                     current_names = add_unique_name(current_names, helper_name)
                     current_index += 1
@@ -2096,8 +2105,11 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
                         helper_children.push(Node('Param', 'const ' + capture_type + ' ' + binding.name, []))
                         captured_values.push(Node('Identifier', binding.name, []))
                     helper_children = append_nodes(helper_children, [Node('Return', '', [lambda_node.children[0]])])
-                    generated.push(Node('Function', 'string[] ' + helper_name, helper_children))
-                    rewritten_children[1] = Node('FlatMapStringExpression', lambda_node.value, captured_values)
+                    generated.push(Node('Function', callback_return_type + ' ' + helper_name, helper_children))
+                    string flat_map_node_kind = 'FlatMapStringExpression'
+                    if (callback_return_type == 'int[]'):
+                        flat_map_node_kind = 'FlatMapStringIntExpression'
+                    rewritten_children[1] = Node(flat_map_node_kind, lambda_node.value, captured_values)
                     rewritten = Node(node.kind, node.value, rewritten_children)
         ArrayScalarCaptureResult int_capture_result = int_array_scalar_captures(lambda_node, bindings)
         if (int_capture_result.complete && !int_capture_result.captures.is_empty() && lambda_node.children.length() == 1 && lambda_node.children[0].kind == 'Block'):
@@ -3213,6 +3225,20 @@ TempResult lower_linear_value(Node node, int next_temp):
                     string name = temp_name(next_temp)
                     lines.push(name + ' = method-call-lambda ' + join_strings(args, ' '))
                     return TempResult(name, lines, next_temp + 1)
+                if (node.children[1].kind == 'FlatMapStringIntExpression' && node.children[1].children.length() >= 1 && node.children[1].children[0].kind == 'Identifier'):
+                    int next_temp = base.next_temp
+                    string[] lines = base.lines
+                    string[] args = ['flat_map_string_int_expr', base.name, node.children[1].value, node.children[1].children[0].value]
+                    if (node.children[1].children.length() > 1):
+                        args[0] = 'flat_map_string_int_expr_captured'
+                        for (int capture_index = 1; capture_index < node.children[1].children.length(); capture_index += 1):
+                            TempResult capture_value = lower_linear_value(node.children[1].children[capture_index], next_temp)
+                            lines = append_lines(lines, capture_value.lines)
+                            args.push(capture_value.name)
+                            next_temp = capture_value.next_temp
+                    string name = temp_name(next_temp)
+                    lines.push(name + ' = method-call-lambda ' + join_strings(args, ' '))
+                    return TempResult(name, lines, next_temp + 1)
                 if (node.children[1].kind == 'Lambda' && is_edges_for_point_flat_map_lambda(node.children[1])):
                     Node body = node.children[1].children[0]
                     TempResult capture_points = lower_linear_value(body.children[0], base.next_temp)
@@ -3565,6 +3591,20 @@ TempIRResult lower_linear_value_ir(Node node, int next_temp):
                     string[] args = ['flat_map_string_expr', base.name, node.children[1].value, node.children[1].children[0].value]
                     if (node.children[1].children.length() > 1):
                         args[0] = 'flat_map_string_expr_captured'
+                        for (int capture_index = 1; capture_index < node.children[1].children.length(); capture_index += 1):
+                            TempIRResult capture_value = lower_linear_value_ir(node.children[1].children[capture_index], next_temp)
+                            instructions = append_instructions(instructions, capture_value.instructions)
+                            args.push(capture_value.name)
+                            next_temp = capture_value.next_temp
+                    string name = temp_name(next_temp)
+                    instructions.push(LinearInstruction('value', name, 'unknown', 'unknown', 'method-call-lambda', args))
+                    return TempIRResult(name, instructions, next_temp + 1)
+                if (node.children[1].kind == 'FlatMapStringIntExpression' && node.children[1].children.length() >= 1 && node.children[1].children[0].kind == 'Identifier'):
+                    int next_temp = base.next_temp
+                    LinearInstruction[] instructions = base.instructions
+                    string[] args = ['flat_map_string_int_expr', base.name, node.children[1].value, node.children[1].children[0].value]
+                    if (node.children[1].children.length() > 1):
+                        args[0] = 'flat_map_string_int_expr_captured'
                         for (int capture_index = 1; capture_index < node.children[1].children.length(); capture_index += 1):
                             TempIRResult capture_value = lower_linear_value_ir(node.children[1].children[capture_index], next_temp)
                             instructions = append_instructions(instructions, capture_value.instructions)
