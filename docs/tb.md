@@ -829,6 +829,8 @@ Array helpers
 - Native `int[]` `map_to` and `filter` callbacks can also capture one or more visible `string[][]` bindings. Each capture is a read-only deep snapshot cloned after the receiver is evaluated and before traversal; strings remain shared immutable values. Callback expressions and blocks may index the snapshots to read strings or query rows. Whole captures may be passed to matching scalar-result helpers through `const string[][]` parameters; indexed rows may be passed as `const string[]`. Snapshots and partial results are released if a callback throws. Top-level global initializer captures remain limited to `int` and `bool`.
 - Callback helpers may combine any of these read-only array parameters with scalar `int`, `bool`, or `string` parameters, provided all argument types match. They must return `int` or `bool`; mutable array parameters, managed results, and array captures in top-level initializers remain unsupported.
 
+- Native `int[]` `map_to` and `filter` callbacks may also capture one or more visible `set<int>` values in ordinary function bodies. Each set is cloned once after the receiver is evaluated and before traversal; callbacks see the clone as read-only and may query `allowed.contains(item)` with an `int` item. The clone and any partial result are released on normal completion or when a callback throws. Capturing sets in top-level global initializers, `set<string>`, and record sets remains unsupported.
+
 - flat_map(arr: T[], item -> U[]) -> U[]
   - Transform each element into an array and flatten the results by one level.
   - Example: `range(n).flat_map(int i -> edges_for_point(points, i))`
