@@ -115,10 +115,10 @@ generation stability is checked for releases and bootstrap changes.
 
 ## Tests
 
-Run the native regression suite with Python 3.10+:
+Run the native regression suite:
 
 ```bash
-python3 verify_fixtures_tb.py tests/fixtures --compiler bin/tb
+./verify_fixtures_tb.sh tests/fixtures --compiler bin/tb
 ```
 
 Each numbered `.tb` fixture has exactly one expectation: `.out` for executable
