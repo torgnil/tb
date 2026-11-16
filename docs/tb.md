@@ -486,7 +486,7 @@ Submitted scalar lambda blocks also support `try` / `catch` with brace-delimited
   escapes, then restore the prior handler and propagate the message. A catch in
   the same function keeps its bindings alive until ordinary scope cleanup.
 
-  If an exception is not caught, the program prints its message and exits with a non-zero status. Missing `read_file` and `read_lines` inputs print `<helper>: <path>` and exit with status 1 when uncaught. Functions with managed parameter or local slots release their owned bindings as the exception propagates. Owned expression temporaries that are not in slots and foreign or C-side resources skipped by `longjmp` are outside that cleanup, so this is not general exception-unwind safety.
+  If an exception is not caught, the program prints its message and exits with a non-zero status. Missing `read_file` and `read_lines` inputs and failed `list_dir` operations print `<helper>: <path>` and exit with status 1 when uncaught. Functions with managed parameter or local slots release their owned bindings as the exception propagates. Owned expression temporaries that are not in slots and foreign or C-side resources skipped by `longjmp` are outside that cleanup, so this is not general exception-unwind safety.
 
 8. Arrays and slices
 
@@ -557,11 +557,12 @@ Submitted scalar lambda blocks also support `try` / `catch` with brace-delimited
 - File IO is always runtime:
   - `read_lines(path)` always reads `path` when the compiled program runs.
   - `read_file(path)` always reads `path` when the compiled program runs.
+  - `list_dir(path)` always reads the directory at runtime.
   - `write_all(path, text)` always opens `path` with mode `w` and writes `text` without adding a newline.
   - `append_all(path, text)` always opens `path` with mode `a` and writes `text` without adding a newline, preserving existing contents and creating a missing path.
   - The compiler emits the file path string, not the file contents, into the generated LLVM.
-  - Missing `read_file` and `read_lines` inputs, read errors, or close errors report an operation and path, such as `read_lines: unable to read input.txt`; inside a `try` block the same message can be caught as an exception, and an uncaught error exits with status 1. A failed read or close discards partial content and closes the stream once. `write_all` reports `write_all: unable to write <path>` when opening, writing, or closing fails; a `try` block can catch that message, while an uncaught failure prints it and exits with status 1. After a successful open it closes the file once, including when writing fails.
-  - `open(path)` opens a file for writing and raises `open: unable to open <path>` if opening fails; an uncaught failure prints that message and exits with status 1. Use `read_file` and `read_lines` to read files. Call `close(file)` when finished. `write_line` and `write_lines` report write failures and stop at the first failed operation; `close` reports flush and close failures and consumes the handle even when it raises.
+  - Missing `read_file` and `read_lines` inputs, `list_dir` open/read/close errors, and file read errors report an operation and path, such as `read_lines: unable to read input.txt`; inside a `try` block the same message can be caught as an exception, and an uncaught error exits with status 1. Failed reads and directory scans discard partial results; file reads close their stream once. `write_all` reports `write_all: unable to write <path>` when opening, writing, or closing fails; a `try` block can catch that message, while an uncaught failure prints it and exits with status 1. After a successful open it closes the file once, including when writing fails.
+  - `open(path)` opens a file for writing and raises `open: unable to open <path>` if opening fails; an uncaught failure prints that message and exits with status 1. Use `read_file` and `read_lines` to read files, and `list_dir` to list their parent directory. Call `close(file)` when finished. `write_line` and `write_lines` report write failures and stop at the first failed operation; `close` reports flush and close failures and consumes the handle even when it raises.
 - Const enforcement is compile-time and applies to the binding:
   - reassigning a `const` variable and direct writes through its array, map, set, or record target are rejected during compilation
   - known mutating array, set, and priority-queue operations through a `const` binding are rejected, including UFCS and free-function forms
@@ -609,6 +610,14 @@ Core IO and string helpers
   - Print representation of `value` followed by newline. Works with `int`, `num`, `string`, `bool`, arrays and records (stringified).
   - Native `num` printing and `num.hash()` format decimal scales from zero through 2,147,483,647. Negative scales or scales above that limit abort before formatting. Large scales produce proportionally long output; the general runtime allocation-failure behavior is unchanged.
   - For `int[]`, `string[]`, and `set<int>`, a recognized owned temporary used only by `print` is released after the full container is printed. Named, borrowed, const, global, field, moved, reused, sort-result aliases, and borrowed future-array results remain with their owners.
+
+- list_dir(path: string) -> string[]
+  - Return a fresh owned array with the immediate entry names, including hidden
+    files and subdirectories, sorted in bytewise lexicographic order. The result
+    excludes `.` and `..` and does not recurse. Open, read, or close failures raise
+    `list_dir: unable to read <path>`; partial results are discarded. A
+    same-named user function does not replace this builtin. It uses the host's
+    POSIX directory APIs.
 
 - read_lines(path: string) -> string[]
   - Read lines in one pass and return them in a `string[]`, including from

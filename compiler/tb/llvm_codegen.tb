@@ -207,6 +207,7 @@ int LLVM_SCAN_NEEDS_PRINT_STRING = 0;
 int LLVM_SCAN_NEEDS_THROW = 0;
 int LLVM_SCAN_NEEDS_TRY_CATCH = 0;
 int LLVM_SCAN_NEEDS_READ_LINES = 0;
+int LLVM_SCAN_NEEDS_LIST_DIR = 0;
 int LLVM_SCAN_NEEDS_READ_FILE = 0;
 int LLVM_SCAN_NEEDS_WRITE_ALL = 0;
 int LLVM_SCAN_NEEDS_APPEND_ALL = 0;
@@ -573,7 +574,7 @@ void reset_runtime_build_metadata():
     LLVM_RUNTIME_C_FLAGS = []
     LLVM_RUNTIME_C_SOURCES = []
 
-void configure_runtime_build_metadata(bool needs_thread_pool, bool needs_secure_random):
+void configure_runtime_build_metadata(bool needs_thread_pool, bool needs_secure_random, bool needs_list_dir):
     reset_runtime_build_metadata()
     if (needs_thread_pool):
         LLVM_RUNTIME_LINK_FLAGS.push('-pthread')
@@ -582,6 +583,8 @@ void configure_runtime_build_metadata(bool needs_thread_pool, bool needs_secure_
         LLVM_RUNTIME_C_SOURCES.push('thread_pool_composite_runtime.c')
     if (needs_secure_random):
         LLVM_RUNTIME_C_SOURCES.push('secure_random_runtime.c')
+    if (needs_list_dir):
+        LLVM_RUNTIME_C_SOURCES.push('directory_runtime.c')
 
 string[] llvm_runtime_link_flags():
     string[] result = []
@@ -735,6 +738,7 @@ void reset_llvm_backend_helper_stats():
     LLVM_SCAN_NEEDS_THROW = 0
     LLVM_SCAN_NEEDS_TRY_CATCH = 0
     LLVM_SCAN_NEEDS_READ_LINES = 0
+    LLVM_SCAN_NEEDS_LIST_DIR = 0
     LLVM_SCAN_NEEDS_READ_FILE = 0
     LLVM_SCAN_NEEDS_WRITE_ALL = 0
     LLVM_SCAN_NEEDS_APPEND_ALL = 0
@@ -3437,7 +3441,7 @@ private bool program_has_managed_bindings(ProgramIR program):
     return false
 
 private bool function_exception_runtime_enabled():
-    return LLVM_SCAN_NEEDS_THROW != 0 || LLVM_SCAN_NEEDS_TRY_CATCH != 0 || LLVM_SCAN_NEEDS_THREAD_POOL != 0 || LLVM_SCAN_NEEDS_READ_LINES != 0 || LLVM_SCAN_NEEDS_READ_FILE != 0 || LLVM_SCAN_NEEDS_WRITE_ALL != 0 || LLVM_SCAN_NEEDS_APPEND_ALL != 0 || LLVM_SCAN_NEEDS_INT_ARRAY != 0
+    return LLVM_SCAN_NEEDS_THROW != 0 || LLVM_SCAN_NEEDS_TRY_CATCH != 0 || LLVM_SCAN_NEEDS_THREAD_POOL != 0 || LLVM_SCAN_NEEDS_READ_LINES != 0 || LLVM_SCAN_NEEDS_LIST_DIR != 0 || LLVM_SCAN_NEEDS_READ_FILE != 0 || LLVM_SCAN_NEEDS_WRITE_ALL != 0 || LLVM_SCAN_NEEDS_APPEND_ALL != 0 || LLVM_SCAN_NEEDS_INT_ARRAY != 0
 
 private string[] emit_function_exception_frame_allocas(ParsedFunction function_ir, bool bootstrap_main_args):
     string[] lines = emit_allocas(function_ir, bootstrap_main_args)
@@ -3769,6 +3773,7 @@ void analyze_program_features(ProgramIR program, string[] map_types):
     LLVM_SCAN_NEEDS_THROW = 0
     LLVM_SCAN_NEEDS_TRY_CATCH = 0
     LLVM_SCAN_NEEDS_READ_LINES = 0
+    LLVM_SCAN_NEEDS_LIST_DIR = 0
     LLVM_SCAN_NEEDS_READ_FILE = 0
     LLVM_SCAN_NEEDS_WRITE_ALL = 0
     LLVM_SCAN_NEEDS_APPEND_ALL = 0
@@ -3821,6 +3826,7 @@ void analyze_program_features(ProgramIR program, string[] map_types):
     bool needs_throw = false
     bool needs_try_catch = false
     bool needs_read_lines = false
+    bool needs_list_dir = false
     bool needs_read_file = false
     bool needs_write_all = false
     bool needs_append_all = false
@@ -3935,6 +3941,8 @@ void analyze_program_features(ProgramIR program, string[] map_types):
             if (op.kind == 'value' && op.detail == 'call' && !op.args.is_empty()):
                 if (op.args[0] == 'read_lines'):
                     needs_read_lines = true
+                if (op.args[0] == 'list_dir'):
+                    needs_list_dir = true
                 if (op.args[0] == 'read_file'):
                     needs_read_file = true
                 if (op.args[0] == 'write_all' && !has_user_write_all):
@@ -4147,6 +4155,8 @@ void analyze_program_features(ProgramIR program, string[] map_types):
                         needs_string_helpers_ops = true
                     if (op.args[0] == 'read_lines'):
                         needs_read_lines = true
+                    if (op.args[0] == 'list_dir'):
+                        needs_list_dir = true
                     if (op.args[0] == 'read_file'):
                         needs_read_file = true
                     if (op.args[0] == 'write_all' && !has_user_write_all):
@@ -4276,7 +4286,11 @@ void analyze_program_features(ProgramIR program, string[] map_types):
     if (needs_int_array):
         needs_integer_division = true
     needs_flat_map_edges_for_point = has_edges_for_point && uses_edges_for_point_mapper
-    configure_runtime_build_metadata(needs_thread_pool, needs_secure_random)
+    if (needs_list_dir):
+        needs_throw = true
+        needs_runtime_string_copy = true
+        needs_string_array = true
+    configure_runtime_build_metadata(needs_thread_pool, needs_secure_random, needs_list_dir)
     if (needs_to_num):
         needs_throw = true
         needs_runtime_string_copy = true
@@ -4351,6 +4365,10 @@ void analyze_program_features(ProgramIR program, string[] map_types):
         LLVM_SCAN_NEEDS_TRY_CATCH = 1
     if (needs_read_lines):
         LLVM_SCAN_NEEDS_READ_LINES = 1
+    if (needs_list_dir):
+        LLVM_SCAN_NEEDS_LIST_DIR = 1
+        LLVM_SCAN_NEEDS_THROW = 1
+        LLVM_SCAN_NEEDS_RUNTIME_STRING_COPY = 1
     if (needs_read_file):
         LLVM_SCAN_NEEDS_READ_FILE = 1
     if (needs_write_all):
@@ -5252,6 +5270,57 @@ string[] emit_read_lines_helper():
     lines.push('  call void @tb_bootstrap_string_array_free(ptr %array)')
     lines.push('  br label %failure')
     lines.push('success:')
+    lines.push('  ret ptr %array')
+    lines.push('}')
+    return lines
+
+string[] emit_list_dir_helper():
+    string[] lines = []
+    lines.push('@.fmt.list_dir.error = private unnamed_addr constant [6 x i8] c"%s%s\\0A\\00"')
+    lines.push('@.prefix.list_dir.error = private unnamed_addr constant [26 x i8] c"list_dir: unable to read \\00"')
+    lines.push('define private ptr @tb_bootstrap_list_dir(ptr %path) {')
+    lines.push('entry:')
+    lines.push('  %names.slot = alloca ptr')
+    lines.push('  %count.slot = alloca i64')
+    lines.push('  store ptr null, ptr %names.slot')
+    lines.push('  store i64 0, ptr %count.slot')
+    lines.push('  %status = call i32 @tb_directory_list(ptr %path, ptr %names.slot, ptr %count.slot)')
+    lines.push('  %succeeded = icmp eq i32 %status, 0')
+    lines.push('  br i1 %succeeded, label %list.setup, label %failure')
+    lines.push('failure:')
+    lines.push('  %handler = load ptr, ptr ' + exception_handler_symbol())
+    lines.push('  %has.handler = icmp ne ptr %handler, null')
+    lines.push('  br i1 %has.handler, label %unwind, label %fatal')
+    lines.push('unwind:')
+    lines.push('  %prefix = getelementptr inbounds [26 x i8], ptr @.prefix.list_dir.error, i32 0, i32 0')
+    lines.push('  %message = call ptr @tb_bootstrap_string_concat(ptr %prefix, ptr %path)')
+    lines.push('  store ptr %message, ptr ' + exception_message_symbol())
+    lines.push('  call void @longjmp(ptr %handler, i32 1)')
+    lines.push('  unreachable')
+    lines.push('fatal:')
+    lines.push('  %fmt = getelementptr inbounds [6 x i8], ptr @.fmt.list_dir.error, i32 0, i32 0')
+    lines.push('  %msg = getelementptr inbounds [26 x i8], ptr @.prefix.list_dir.error, i32 0, i32 0')
+    lines.push('  %printed = call i32 (ptr, ...) @printf(ptr %fmt, ptr %msg, ptr %path)')
+    lines.push('  call void @exit(i32 1)')
+    lines.push('  unreachable')
+    lines.push('list.setup:')
+    lines.push('  %names = load ptr, ptr %names.slot')
+    lines.push('  %count = load i64, ptr %count.slot')
+    lines.push('  %array = call ptr @tb_bootstrap_string_array_new(i32 0)')
+    lines.push('  br label %list.cond')
+    lines.push('list.cond:')
+    lines.push('  %index = phi i64 [ 0, %list.setup ], [ %next.index, %list.body ]')
+    lines.push('  %more = icmp slt i64 %index, %count')
+    lines.push('  br i1 %more, label %list.body, label %list.done')
+    lines.push('list.body:')
+    lines.push('  %name.slot = getelementptr inbounds ptr, ptr %names, i64 %index')
+    lines.push('  %name = load ptr, ptr %name.slot')
+    lines.push('  %name.copy = call ptr @tb_bootstrap_string_copy(ptr %name)')
+    lines.push('  %array.len = call i32 @tb_bootstrap_string_array_push(ptr %array, ptr %name.copy, i1 true)')
+    lines.push('  %next.index = add i64 %index, 1')
+    lines.push('  br label %list.cond')
+    lines.push('list.done:')
+    lines.push('  call void @tb_directory_list_free(ptr %names, i64 %count)')
     lines.push('  ret ptr %array')
     lines.push('}')
     return lines
@@ -6536,6 +6605,10 @@ string emit_call_value_instruction_core(ProgramIR program, ParsedFunction functi
         if (op.args.length() != 2):
             throw 'unsupported llvm read_lines arity'
         return emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_read_lines(ptr ' + temp_ref(op.args[1]) + ')')
+    if (call_name == 'list_dir'):
+        if (op.args.length() != 2):
+            throw 'unsupported llvm list_dir arity'
+        return emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_list_dir(ptr ' + temp_ref(op.args[1]) + ')')
     if (call_name == 'read_file'):
         if (op.args.length() != 2):
             throw 'unsupported llvm read_file arity'
@@ -12355,6 +12428,7 @@ string[] llvm_codegen_ir_borrowed(ProgramIR program):
     bool needs_throw = LLVM_SCAN_NEEDS_THROW != 0
     bool needs_try_catch = LLVM_SCAN_NEEDS_TRY_CATCH != 0
     bool needs_read_lines = LLVM_SCAN_NEEDS_READ_LINES != 0
+    bool needs_list_dir = LLVM_SCAN_NEEDS_LIST_DIR != 0
     bool needs_read_file = LLVM_SCAN_NEEDS_READ_FILE != 0
     bool needs_write_all = LLVM_SCAN_NEEDS_WRITE_ALL != 0
     bool needs_append_all = LLVM_SCAN_NEEDS_APPEND_ALL != 0
@@ -12476,6 +12550,9 @@ string[] llvm_codegen_ir_borrowed(ProgramIR program):
         lines.push('declare i32 @gettimeofday(ptr, ptr)')
     if (needs_secure_random):
         lines.push('declare i32 @tb_secure_random_i64(ptr)')
+    if (needs_list_dir):
+        lines.push('declare i32 @tb_directory_list(ptr, ptr, ptr)')
+        lines.push('declare void @tb_directory_list_free(ptr, i64)')
     if (needs_file_output || needs_path_write):
         lines.push('declare i32 @fputs(ptr, ptr)')
     if (needs_file_output):
@@ -12564,6 +12641,9 @@ string[] llvm_codegen_ir_borrowed(ProgramIR program):
             lines.push(helper)
     if (needs_read_lines):
         for (string helper in emit_read_lines_helper()):
+            lines.push(helper)
+    if (needs_list_dir):
+        for (string helper in emit_list_dir_helper()):
             lines.push(helper)
     if (needs_read_file):
         for (string helper in emit_read_file_helper()):
@@ -12716,6 +12796,7 @@ void llvm_print_ir(ProgramIR program):
     bool needs_throw = LLVM_SCAN_NEEDS_THROW != 0
     bool needs_try_catch = LLVM_SCAN_NEEDS_TRY_CATCH != 0
     bool needs_read_lines = LLVM_SCAN_NEEDS_READ_LINES != 0
+    bool needs_list_dir = LLVM_SCAN_NEEDS_LIST_DIR != 0
     bool needs_read_file = LLVM_SCAN_NEEDS_READ_FILE != 0
     bool needs_write_all = LLVM_SCAN_NEEDS_WRITE_ALL != 0
     bool needs_append_all = LLVM_SCAN_NEEDS_APPEND_ALL != 0
@@ -12857,6 +12938,10 @@ void llvm_print_ir(ProgramIR program):
     if (needs_secure_random):
         print('declare i32 @tb_secure_random_i64(ptr)')
         emitted_any_header = true
+    if (needs_list_dir):
+        print('declare i32 @tb_directory_list(ptr, ptr, ptr)')
+        print('declare void @tb_directory_list_free(ptr, i64)')
+        emitted_any_header = true
     if (needs_file_output || needs_path_write):
         print('declare i32 @fputs(ptr, ptr)')
     if (needs_file_output):
@@ -12964,6 +13049,10 @@ void llvm_print_ir(ProgramIR program):
     if (needs_read_lines):
         string[] read_lines_helper_lines = emit_read_lines_helper()
         for (string line in read_lines_helper_lines):
+            print(line)
+    if (needs_list_dir):
+        string[] list_dir_helper_lines = emit_list_dir_helper()
+        for (string line in list_dir_helper_lines):
             print(line)
     if (needs_read_file):
         string[] read_file_helper_lines = emit_read_file_helper()
