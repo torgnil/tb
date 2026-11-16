@@ -162,8 +162,8 @@ jobs:
       - name: Run native fixtures
         run: |
           set -euo pipefail
-          # The Linux fixture links need libm. Keep this platform workaround
-          # outside the self-hosted fixture verifier.
+          # Linux fixture links need libm. Keep this platform workaround outside
+          # the self-hosted fixture verifier.
           if [[ "$RUNNER_OS" == Linux ]]; then
             real_clang="$(command -v clang)"
             shim_dir="$RUNNER_TEMP/tb-fixture-tools"
@@ -202,28 +202,78 @@ jobs:
           version, target = os.environ['TB_VERSION'], os.environ['TARGET']
           name = f'tb-{version}-{target}'
           root = pathlib.Path('.build/ci-package') / name
-          (root / 'bin').mkdir(parents=True, exist_ok=True)
-          shutil.copy2('bin/tb', root / 'bin/tb-ir')
+          if root.exists():
+              shutil.rmtree(root)
+          (root / 'libexec').mkdir(parents=True)
+          shutil.copy2('bin/tb', root / 'libexec/tb')
+
+          (root / 'tb-ir').write_text(
+              '#!/bin/sh\n'
+              'set -eu\n'
+              'bundle_root=$(CDPATH= cd -- "$(dirname "$0")" && pwd)\n'
+              'exec "$bundle_root/libexec/tb" "$@"\n')
+          (root / 'tb').write_text(
+              '#!/bin/sh\n'
+              'set -eu\n'
+              'bundle_root=$(CDPATH= cd -- "$(dirname "$0")" && pwd)\n'
+              'usage() {\n'
+              '    echo "Usage: tb INPUT.tb [CLANG_ARG...] [-o OUTPUT]"\n'
+              '    echo "       tb --version"\n'
+              '    echo "Builds a native executable beside INPUT.tb by default."\n'
+              '}\n'
+              'if [ "$#" -eq 0 ]; then\n'
+              '    usage >&2\n'
+              '    exit 2\n'
+              'fi\n'
+              'case "$1" in\n'
+              '    --version) exec "$bundle_root/tb-ir" "$@" ;;\n'
+              '    --help|-h) usage; exit 0 ;;\n'
+              'esac\n'
+              'input=$1\n'
+              'shift\n'
+              'case "$input" in\n'
+              '    *.tb) output=${input%.tb} ;;\n'
+              '    *) echo "expected a .tb source file: $input" >&2; exit 2 ;;\n'
+              'esac\n'
+              'set -- -o "$output" "$@"\n'
+              'scratch_dir=$(mktemp -d "${TMPDIR:-/tmp}/tb-native.XXXXXX")\n'
+              'cleanup() { rm -rf "$scratch_dir"; }\n'
+              'trap cleanup 0\n'
+              'trap \'exit 1\' HUP INT TERM\n'
+              'llvm_file="$scratch_dir/program.ll"\n'
+              '"$bundle_root/tb-ir" "$input" "$llvm_file"\n'
+              'for suffix in cflags csources linkflags; do\n'
+              '    metadata_file="$llvm_file.$suffix"\n'
+              '    [ -f "$metadata_file" ] || continue\n'
+              '    while IFS= read -r value || [ -n "$value" ]; do\n'
+              '        [ -n "$value" ] || continue\n'
+              '        set -- "$@" "$value"\n'
+              '    done < "$metadata_file"\n'
+              'done\n'
+              + ('clang "$@" "$llvm_file" -lm\n' if target.startswith('linux-')
+               else 'clang "$@" "$llvm_file"\n'))
+
           shutil.copy2('LICENSE', root / 'LICENSE')
+          shutil.copy2('docs/tb.md', root / 'tb.md')
+          changelog = pathlib.Path('CHANGELOG.md').read_text(encoding='utf-8')
+          changelog = changelog.replace('](docs/tb.md)', '](tb.md)')
+          (root / 'CHANGELOG.md').write_text(changelog, encoding='utf-8')
+          (root / 'VERSION').write_text(version + '\n', encoding='ascii')
           shutil.copy2('.build/stage2/bootstrap.json', root / 'bootstrap.json')
-          binary_sha = hashlib.sha256((root / 'bin/tb-ir').read_bytes()).hexdigest()
+          binary_sha = hashlib.sha256((root / 'libexec/tb').read_bytes()).hexdigest()
           commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
           metadata = dict(version=version, target=target, commit=commit, stage=2,
                           binary_sha256=binary_sha,
                           clang=subprocess.check_output(['clang', '--version'], text=True),
                           generation_check=os.environ['GITHUB_EVENT_NAME'] != 'pull_request')
           (root / 'build-info.json').write_text(json.dumps(metadata, indent=2) + '\n')
-          (root / 'SHA256SUMS').write_text(binary_sha + '  bin/tb-ir\n')
-          (root / 'README.txt').write_text(
-              f'tb {version} native LLVM compiler ({target})\n'
-              'Usage: bin/tb-ir input.tb output.ll\n'
-              'Clang is required to link programs. Generated runtime C sources and\n'
-              'linker metadata may also be required.\n'
-              'Verify the extracted binary: sha256sum --check SHA256SUMS\n'
-              'On macOS: shasum -a 256 --check SHA256SUMS\n'
-              'See bootstrap.json and build-info.json for seed and source provenance.\n')
+          (root / 'SHA256SUMS').write_text(binary_sha + '  libexec/tb\n')
+          readme = pathlib.Path('README.release.md').read_text(encoding='utf-8')
+          readme = readme.replace('@VERSION@', version)
+          (root / 'README.md').write_text(readme, encoding='utf-8')
+          executables = {root / 'tb', root / 'tb-ir', root / 'libexec/tb'}
           for p in [root, *root.rglob('*')]:
-              p.chmod(0o755 if p.is_dir() or p == root / 'bin/tb-ir' else 0o644)
+              p.chmod(0o755 if p.is_dir() or p in executables else 0o644)
           dist = pathlib.Path('dist')
           dist.mkdir(exist_ok=True)
           if target.startswith('macos-'):
