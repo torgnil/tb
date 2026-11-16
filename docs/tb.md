@@ -635,6 +635,15 @@ Core IO and string helpers
     same-named user function does not replace this builtin. It uses the host's
     POSIX directory APIs.
 
+- ensure_dir(path: string) -> void
+  - Recursively create missing directories in the path. Existing directories
+    succeed unchanged, and a symlink to a directory is accepted. New
+    directories use mode 0777 subject to the process umask. If a later path
+    component fails, directories already created by the call remain. An empty
+    path, a regular-file component, or another creation failure raises
+    `ensure_dir: unable to create <path>`; the error can be caught with `try` /
+    `catch`. This POSIX builtin takes precedence over a same-named user function.
+
 - path_exists(path: string) -> bool, is_file(path: string) -> bool, and
   is_dir(path: string) -> bool
   - Inspect the path at runtime using POSIX `stat`, following symbolic links.

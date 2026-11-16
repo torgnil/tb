@@ -138,3 +138,66 @@ int tb_path_test(const char *path, int32_t kind, int32_t *matches_out) {
     }
     return 0;
 }
+
+static int tb_directory_ensure_component(const char *path) {
+    if (mkdir(path, 0777) == 0) {
+        return 0;
+    }
+    if (errno != EEXIST) {
+        return -1;
+    }
+
+    struct stat metadata;
+    if (stat(path, &metadata) != 0) {
+        return -1;
+    }
+    if (!S_ISDIR(metadata.st_mode)) {
+        errno = ENOTDIR;
+        return -1;
+    }
+    return 0;
+}
+
+int tb_directory_ensure(const char *path) {
+    if (path == NULL || path[0] == '\0') {
+        errno = EINVAL;
+        return -1;
+    }
+
+    size_t path_length = strlen(path);
+    if (path_length == SIZE_MAX) {
+        errno = EOVERFLOW;
+        return -1;
+    }
+    char *path_copy = (char *)malloc(path_length + 1);
+    if (path_copy == NULL) {
+        errno = ENOMEM;
+        return -1;
+    }
+    memcpy(path_copy, path, path_length + 1);
+
+    int result = 0;
+    int failure_errno = 0;
+    for (size_t index = 0; index <= path_length; index += 1) {
+        if (path_copy[index] != '/' && path_copy[index] != '\0') {
+            continue;
+        }
+
+        char separator = path_copy[index];
+        path_copy[index] = '\0';
+        if (path_copy[0] != '\0' && tb_directory_ensure_component(path_copy) != 0) {
+            failure_errno = errno;
+            result = -1;
+            path_copy[index] = separator;
+            break;
+        }
+        path_copy[index] = separator;
+    }
+
+    if (result == 0) {
+        failure_errno = errno;
+    }
+    free(path_copy);
+    errno = failure_errno;
+    return result;
+}
