@@ -16,6 +16,8 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
+import os
 import re
 import shutil
 import subprocess
@@ -23,6 +25,8 @@ import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+
+DEFAULT_JOBS = min(4, os.cpu_count() or 1)
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(line_buffering=True, write_through=True)
@@ -220,9 +224,12 @@ def verify_fixtures(
     fixtures_dir: Path,
     build_root: Path,
     max_phase: int | None = None,
+    jobs: int = DEFAULT_JOBS,
 ) -> list[FixtureResult]:
     if not compiler_bin.exists():
         raise FileNotFoundError(f"Missing tb compiler binary: {compiler_bin}")
+    if jobs < 1:
+        raise ValueError("jobs must be at least 1")
 
     fixtures = discover_fixtures(fixtures_dir, max_phase=max_phase)
     if not fixtures:
@@ -231,7 +238,25 @@ def verify_fixtures(
         raise RuntimeError("clang is required to verify runtime fixtures")
 
     build_root.mkdir(parents=True, exist_ok=True)
-    return [run_fixture(compiler_bin, fixtures_dir, build_root, input_path, expected_path) for input_path, expected_path in fixtures]
+
+    def verify_one(fixture: tuple[Path, Path]) -> FixtureResult:
+        input_path, expected_path = fixture
+        return run_fixture(compiler_bin, fixtures_dir, build_root, input_path, expected_path)
+
+    if jobs == 1:
+        return [verify_one(fixture) for fixture in fixtures]
+    with ThreadPoolExecutor(max_workers=jobs) as executor:
+        return list(executor.map(verify_one, fixtures))
+
+
+def positive_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("jobs must be a positive integer") from error
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("jobs must be a positive integer")
+    return parsed
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -260,6 +285,12 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Highest numbered fixture to verify (default: latest discovered fixture)",
     )
+    parser.add_argument(
+        "--jobs",
+        type=positive_int,
+        default=DEFAULT_JOBS,
+        help=f"Maximum fixtures to compile and run concurrently (default: {DEFAULT_JOBS}; use 1 for serial execution)",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -268,6 +299,7 @@ def main(argv: list[str] | None = None) -> int:
             fixtures_dir=Path(args.fixtures_dir),
             build_root=Path(args.build_root),
             max_phase=args.max_phase,
+            jobs=args.jobs,
         )
     except (FileNotFoundError, RuntimeError) as error:
         print(error, file=sys.stderr)
