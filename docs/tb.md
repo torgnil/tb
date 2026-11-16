@@ -90,17 +90,22 @@ may declare a noncached local helper directly in its body:
 
 ```tb
 int main():
-    int square(int value):
-        return value * value
-    print(square(5))
+    int offset = 5
+    int add_offset(int value):
+        return value + offset
+    print(add_offset(5))
     return 0
 ```
 
 The local helper can call itself and sibling local helpers, and its name is
 visible throughout the enclosing function body. It can use its own parameters
-and locals plus module-visible names, but cannot capture an enclosing parameter
-or direct-body local. A helper whose name is shadowed by an enclosing local
-cannot read that local in place of a same-named global. Local declarations
+and locals plus module-visible names. It can also read enclosing `int` and
+`bool` parameters and direct-body locals, including const bindings. The current
+values are passed at each call, and captures are read-only inside the helper;
+the helper's own parameters and locals shadow outer names. Recursive and
+sibling calls forward the captured values. Managed captures such as `string`
+are not supported. A helper whose name is shadowed by an enclosing local cannot
+read that local in place of a same-named global. Local function declarations
 inside deeper blocks, local `cached` functions, and local function values or
 callbacks are not supported.
 Repeated and diamond imports load a lexically normalized path once; an active

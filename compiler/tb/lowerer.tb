@@ -5470,6 +5470,9 @@ Node bind_private_module_enums(Node program):
     return Node(program.kind, program.value, children)
 
 record LocalFunctionLift(Node function, Node[] helpers);
+record LocalFunctionBodyIR(Node[] nodes);
+record LocalFunctionCaptureIR(int function_index, string name);
+record LocalFunctionCallIR(int caller_index, int target_index);
 
 bool local_function_declaration_kind(string kind):
     return kind == 'Function' || kind == 'CachedFunction' || kind == 'PrivateFunction' || kind == 'PrivateCachedFunction'
@@ -5502,12 +5505,7 @@ void reject_deeper_local_functions(Node node):
     for (Node child : node.children):
         reject_deeper_local_functions(child)
 
-string local_function_capture_in_node(Node node, string[] outer_names, string[] lambda_names):
-    if (node.kind == 'Identifier'):
-        if (contains_name(outer_names, node.value) && !contains_name(lambda_names, node.value)):
-            return node.value
-        return ''
-    # Lambda parameters keep their source spelling through local normalization.
+string[] local_function_lambda_names(Node node, string[] lambda_names):
     string[] child_lambda_names = []
     for (string name : lambda_names):
         child_lambda_names.push(name)
@@ -5518,30 +5516,114 @@ string local_function_capture_in_node(Node node, string[] outer_names, string[] 
         if (separator >= 0):
             child_lambda_names = add_unique_name(child_lambda_names, ir_parse_binding_decl(node.value.substring(0, separator)).name)
             child_lambda_names = add_unique_name(child_lambda_names, ir_parse_binding_decl(node.value.substring(separator + 3)).name)
+    return child_lambda_names
+
+string local_function_capture_in_node(Node node, string[] outer_names, string[] lambda_names):
+    if (node.kind == 'Identifier'):
+        if (contains_name(outer_names, node.value) && !contains_name(lambda_names, node.value)):
+            return node.value
+        return ''
+    # Lambda parameters keep their source spelling through local normalization.
+    string[] child_lambda_names = local_function_lambda_names(node, lambda_names)
     for (Node child : node.children):
         string capture = local_function_capture_in_node(child, outer_names, child_lambda_names)
         if (capture != ''):
             return capture
     return ''
 
-Node rewrite_local_function_calls(Node node, string[] local_names, string[] generated_names):
-    string value = node.value.substring(0)
+bool local_function_capture_assigned_in_node(Node node, string capture_name, string[] lambda_names):
+    if (node.kind == 'Assign' && node.children.length() >= 1):
+        if (node.children[0].kind == 'Identifier' && node.children[0].value == capture_name && !contains_name(lambda_names, capture_name)):
+            return true
+    string[] child_lambda_names = local_function_lambda_names(node, lambda_names)
+    for (Node child : node.children):
+        if (local_function_capture_assigned_in_node(child, capture_name, child_lambda_names)):
+            return true
+    return false
+
+bool local_function_has_capture(LocalFunctionCaptureIR[] captures, int function_index, string name):
+    for (LocalFunctionCaptureIR capture : captures):
+        if (capture.function_index == function_index && capture.name == name):
+            return true
+    return false
+
+LocalFunctionCaptureIR[] add_local_function_capture(LocalFunctionCaptureIR[] captures, int function_index, string name):
+    if (!local_function_has_capture(captures, function_index, name)):
+        captures.push(LocalFunctionCaptureIR(function_index, name))
+    return captures
+
+int local_function_name_index(string name, string[] local_names):
+    int index = 0
+    while (index < local_names.length()):
+        if (local_names[index] == name):
+            return index
+        index += 1
+    return -1
+
+LocalFunctionCallIR[] collect_local_function_calls(Node node, string[] local_names, int caller_index, LocalFunctionCallIR[] calls):
     if (node.kind == 'Call'):
-        int index = 0
-        while (index < local_names.length()):
-            if (local_names[index] == value):
-                value = generated_names[index].substring(0)
-                break
-            index += 1
+        int target_index = local_function_name_index(node.value, local_names)
+        if (target_index >= 0):
+            calls.push(LocalFunctionCallIR(caller_index, target_index))
+    for (Node child : node.children):
+        calls = collect_local_function_calls(child, local_names, caller_index, calls)
+    return calls
+
+Node rewrite_local_function_capture_reads(Node node, LocalFunctionCaptureIR[] direct_captures, int function_index, string[] outer_names, string[] capture_aliases, string[] lambda_names):
+    if (node.kind == 'Identifier' && !contains_name(lambda_names, node.value) && local_function_has_capture(direct_captures, function_index, node.value)):
+        int capture_index = 0
+        while (capture_index < outer_names.length()):
+            if (outer_names[capture_index] == node.value):
+                if (capture_index >= capture_aliases.length()):
+                    throw 'local function capture alias missing: ' + node.value
+                if (capture_aliases[capture_index] == ''):
+                    throw 'local function capture alias missing: ' + node.value
+                return Node('Identifier', capture_aliases[capture_index], [])
+            capture_index += 1
+    string[] child_lambda_names = local_function_lambda_names(node, lambda_names)
     Node[] children = []
     for (Node child : node.children):
-        children.push(rewrite_local_function_calls(child, local_names, generated_names))
+        children.push(rewrite_local_function_capture_reads(child, direct_captures, function_index, outer_names, capture_aliases, child_lambda_names))
+    return Node(node.kind, node.value, children)
+
+Node rewrite_local_function_calls(Node node, string[] local_names, string[] generated_names, LocalFunctionCaptureIR[] captures, string[] outer_names, string[] capture_aliases, int caller_index):
+    string value = node.value.substring(0)
+    int target_index = -1
+    if (node.kind == 'Call'):
+        target_index = local_function_name_index(value, local_names)
+        if (target_index >= 0):
+            value = generated_names[target_index].substring(0)
+    Node[] children = []
+    for (Node child : node.children):
+        children.push(rewrite_local_function_calls(child, local_names, generated_names, captures, outer_names, capture_aliases, caller_index))
+    if (target_index >= 0):
+        for (string outer_name : outer_names):
+            if (local_function_has_capture(captures, target_index, outer_name)):
+                string argument_name = outer_name.substring(0)
+                if (caller_index >= 0):
+                    if (!local_function_has_capture(captures, caller_index, outer_name)):
+                        throw 'local function capture forwarding failed: ' + outer_name
+                    int alias_index = 0
+                    while (alias_index < outer_names.length()):
+                        if (outer_names[alias_index] == outer_name):
+                            break
+                        alias_index += 1
+                    if (alias_index >= capture_aliases.length()):
+                        throw 'local function capture alias missing: ' + outer_name
+                    if (capture_aliases[alias_index] == ''):
+                        throw 'local function capture alias missing: ' + outer_name
+                    argument_name = capture_aliases[alias_index].substring(0)
+                children.push(Node('Identifier', argument_name, []))
     return Node(node.kind, value, children)
 
 LocalFunctionLift lift_function_local_declarations(Node function_node, string[] used_names, int next_name_index):
     Node[] body = []
     Node[] local_declarations = []
     string[] outer_names = local_function_parameters(function_node)
+    BindingIR[] outer_bindings = []
+    for (Node child : function_node.children):
+        if (child.kind == 'Param'):
+            outer_bindings.push(ir_parse_binding_decl(child.value))
     for (Node child : function_node.children):
         if (child.kind == 'Param'):
             continue
@@ -5555,7 +5637,17 @@ LocalFunctionLift lift_function_local_declarations(Node function_node, string[] 
         reject_deeper_local_functions(child)
         body.push(child)
         if (child.kind == 'VarDecl'):
-            outer_names = add_unique_name(outer_names, ir_parse_binding_decl(child.value).name)
+            BindingIR binding = ir_parse_binding_decl(child.value)
+            outer_names = add_unique_name(outer_names, binding.name)
+            bool replaced = false
+            int binding_index = 0
+            while (binding_index < outer_bindings.length()):
+                if (outer_bindings[binding_index].name == binding.name):
+                    outer_bindings[binding_index] = binding
+                    replaced = true
+                binding_index += 1
+            if (!replaced):
+                outer_bindings.push(binding)
 
     string[] local_names = []
     string[] generated_names = []
@@ -5569,9 +5661,69 @@ LocalFunctionLift lift_function_local_declarations(Node function_node, string[] 
         generated_names.push(generated_name)
         next_name_index += 1
 
+    LocalFunctionCaptureIR[] direct_captures = []
+    LocalFunctionCaptureIR[] captures = []
+    LocalFunctionBodyIR[] normalized_helper_bodies = []
+    for (int local_index = 0; local_index < local_declarations.length(); local_index += 1):
+        Node declaration = local_declarations[local_index]
+        Node[] helper_body = local_function_body(declaration)
+        for (Node statement : helper_body):
+            reject_deeper_local_functions(statement)
+        string[] helper_params = local_function_parameters(declaration)
+        LocalBindingName[] initial_bindings = []
+        for (string helper_param : helper_params):
+            initial_bindings.push(LocalBindingName(helper_param, helper_param))
+        LocalBindingListRewrite normalized = normalize_local_binding_list(helper_body, initial_bindings, 0)
+        normalized_helper_bodies.push(LocalFunctionBodyIR(normalized.nodes))
+        for (BindingIR outer_binding : outer_bindings):
+            if (contains_name(helper_params, outer_binding.name)):
+                continue
+            bool reads_outer = false
+            for (Node statement : normalized.nodes):
+                if (local_function_capture_in_node(statement, [outer_binding.name], []) == outer_binding.name):
+                    reads_outer = true
+            if (reads_outer):
+                string capture_type = outer_binding.type_name
+                if (capture_type.starts_with('const ')):
+                    capture_type = capture_type.substring(6)
+                if (capture_type != 'int' && capture_type != 'bool'):
+                    throw 'local function cannot capture outer binding: ' + outer_binding.name
+                for (Node statement : normalized.nodes):
+                    if (local_function_capture_assigned_in_node(statement, outer_binding.name, [])):
+                        throw 'local function cannot assign to captured outer binding: ' + outer_binding.name
+                direct_captures = add_local_function_capture(direct_captures, local_index, outer_binding.name)
+                captures = add_local_function_capture(captures, local_index, outer_binding.name)
+
+    LocalFunctionCallIR[] local_calls = []
+    for (int local_index = 0; local_index < normalized_helper_bodies.length(); local_index += 1):
+        for (Node statement : normalized_helper_bodies[local_index].nodes):
+            local_calls = collect_local_function_calls(statement, local_names, local_index, local_calls)
+    bool captures_changed = true
+    while (captures_changed):
+        captures_changed = false
+        for (LocalFunctionCallIR local_call : local_calls):
+            for (BindingIR outer_binding : outer_bindings):
+                if (local_function_has_capture(captures, local_call.target_index, outer_binding.name) && !local_function_has_capture(captures, local_call.caller_index, outer_binding.name)):
+                    captures = add_local_function_capture(captures, local_call.caller_index, outer_binding.name)
+                    captures_changed = true
+
+    string[] capture_aliases = []
+    for (string outer_name : outer_names):
+        bool used_by_helper = false
+        for (int local_index = 0; local_index < local_declarations.length(); local_index += 1):
+            if (local_function_has_capture(captures, local_index, outer_name)):
+                used_by_helper = true
+        if (used_by_helper):
+            string alias_name = submit_capture_name(used_names, '__tb_local_capture_', next_name_index)
+            used_names.push(alias_name)
+            capture_aliases.push(alias_name)
+            next_name_index += 1
+        else:
+            capture_aliases.push('')
+
     Node[] rewritten_body = []
     for (Node statement : body):
-        rewritten_body.push(rewrite_local_function_calls(statement, local_names, generated_names))
+        rewritten_body.push(rewrite_local_function_calls(statement, local_names, generated_names, captures, outer_names, capture_aliases, -1))
     Node[] function_children = []
     for (Node child : function_node.children):
         if (child.kind == 'Param'):
@@ -5582,30 +5734,31 @@ LocalFunctionLift lift_function_local_declarations(Node function_node, string[] 
     Node[] helpers = []
     for (int local_index = 0; local_index < local_declarations.length(); local_index += 1):
         Node declaration = local_declarations[local_index]
-        Node[] helper_body = local_function_body(declaration)
-        for (Node statement : helper_body):
-            reject_deeper_local_functions(statement)
-        string[] helper_params = local_function_parameters(declaration)
-        string[] helper_outer_names = []
-        for (string outer_name : outer_names):
-            if (!contains_name(helper_params, outer_name)):
-                helper_outer_names = add_unique_name(helper_outer_names, outer_name)
-        # Normalize this helper alone so its own block locals get identities;
-        # an unbound source-spelled name can then be checked for an outer capture.
-        LocalBindingName[] initial_bindings = []
-        for (string helper_param : helper_params):
-            initial_bindings.push(LocalBindingName(helper_param, helper_param))
-        LocalBindingListRewrite normalized = normalize_local_binding_list(helper_body, initial_bindings, 0)
-        for (Node statement : normalized.nodes):
-            string capture = local_function_capture_in_node(statement, helper_outer_names, [])
-            if (capture != ''):
-                throw 'local function cannot capture outer binding: ' + capture
         Node[] helper_children = []
         for (Node child : declaration.children):
             if (child.kind == 'Param'):
                 helper_children.push(child)
-        for (Node statement : helper_body):
-            helper_children.push(rewrite_local_function_calls(statement, local_names, generated_names))
+        for (string outer_name : outer_names):
+            if (local_function_has_capture(captures, local_index, outer_name)):
+                int alias_index = 0
+                while (alias_index < outer_names.length()):
+                    if (outer_names[alias_index] == outer_name):
+                        break
+                    alias_index += 1
+                string capture_type = 'int'
+                bool found_capture_type = false
+                for (BindingIR outer_binding : outer_bindings):
+                    if (outer_binding.name == outer_name):
+                        capture_type = outer_binding.type_name
+                        found_capture_type = true
+                if (!found_capture_type):
+                    throw 'local function capture type missing: ' + outer_name
+                if (capture_type.starts_with('const ')):
+                    capture_type = capture_type.substring(6)
+                helper_children.push(Node('Param', 'const ' + capture_type + ' ' + capture_aliases[alias_index], []))
+        for (Node statement : normalized_helper_bodies[local_index].nodes):
+            Node captured_statement = rewrite_local_function_capture_reads(statement, direct_captures, local_index, outer_names, capture_aliases, [])
+            helper_children.push(rewrite_local_function_calls(captured_statement, local_names, generated_names, captures, outer_names, capture_aliases, local_index))
         BindingIR signature = ir_parse_binding_decl(declaration.value)
         helpers.push(Node('PrivateFunction', signature.type_name + ' ' + generated_names[local_index], helper_children))
     return LocalFunctionLift(rewritten_function, helpers)
