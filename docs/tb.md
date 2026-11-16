@@ -85,7 +85,24 @@ or enum in another file; its own file uses the private enum.
 Private records and enums cannot appear in public function signatures, globals,
 or record fields.
 Private cached functions keep the existing parameter and return restrictions
-of cached functions. Private `main` and nested functions are not supported.
+of cached functions. Private `main` remains unsupported. An ordinary function
+may declare a noncached local helper directly in its body:
+
+```tb
+int main():
+    int square(int value):
+        return value * value
+    print(square(5))
+    return 0
+```
+
+The local helper can call itself and sibling local helpers, and its name is
+visible throughout the enclosing function body. It can use its own parameters
+and locals plus module-visible names, but cannot capture an enclosing parameter
+or direct-body local. A helper whose name is shadowed by an enclosing local
+cannot read that local in place of a same-named global. Local declarations
+inside deeper blocks, local `cached` functions, and local function values or
+callbacks are not supported.
 Repeated and diamond imports load a lexically normalized path once; an active
 import cycle is a compiler error.
 

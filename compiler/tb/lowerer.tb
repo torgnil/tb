@@ -5452,6 +5452,172 @@ Node bind_private_module_enums(Node program):
             children.push(rewrite_private_enum_node(child, enums, public_types, public_enums, module_id, false, no_shadows, public_globals))
     return Node(program.kind, program.value, children)
 
+record LocalFunctionLift(Node function, Node[] helpers);
+
+bool local_function_declaration_kind(string kind):
+    return kind == 'Function' || kind == 'CachedFunction' || kind == 'PrivateFunction' || kind == 'PrivateCachedFunction'
+
+string[] local_function_parameters(Node function_node):
+    string[] names = []
+    for (Node child : function_node.children):
+        if (child.kind == 'Param'):
+            names.push(ir_parse_binding_decl(child.value).name)
+    return names
+
+Node[] local_function_body(Node function_node):
+    Node[] body = []
+    for (Node child : function_node.children):
+        if (child.kind != 'Param'):
+            body.push(child)
+    return body
+
+bool node_has_nested_function_declaration(Node node):
+    if (local_function_declaration_kind(node.kind)):
+        return true
+    for (Node child : node.children):
+        if (node_has_nested_function_declaration(child)):
+            return true
+    return false
+
+void reject_deeper_local_functions(Node node):
+    if (local_function_declaration_kind(node.kind)):
+        throw 'local functions must be declared directly in a function body'
+    for (Node child : node.children):
+        reject_deeper_local_functions(child)
+
+string local_function_capture_in_node(Node node, string[] outer_names, string[] lambda_names):
+    if (node.kind == 'Identifier'):
+        if (contains_name(outer_names, node.value) && !contains_name(lambda_names, node.value)):
+            return node.value
+        return ''
+    # Lambda parameters keep their source spelling through local normalization.
+    string[] child_lambda_names = []
+    for (string name : lambda_names):
+        child_lambda_names.push(name)
+    if (node.kind == 'Lambda'):
+        child_lambda_names = add_unique_name(child_lambda_names, ir_parse_binding_decl(node.value).name)
+    else if (node.kind == 'Lambda2'):
+        int separator = node.value.index_of(' | ')
+        if (separator >= 0):
+            child_lambda_names = add_unique_name(child_lambda_names, ir_parse_binding_decl(node.value.substring(0, separator)).name)
+            child_lambda_names = add_unique_name(child_lambda_names, ir_parse_binding_decl(node.value.substring(separator + 3)).name)
+    for (Node child : node.children):
+        string capture = local_function_capture_in_node(child, outer_names, child_lambda_names)
+        if (capture != ''):
+            return capture
+    return ''
+
+Node rewrite_local_function_calls(Node node, string[] local_names, string[] generated_names):
+    string value = node.value.substring(0)
+    if (node.kind == 'Call'):
+        int index = 0
+        while (index < local_names.length()):
+            if (local_names[index] == value):
+                value = generated_names[index].substring(0)
+                break
+            index += 1
+    Node[] children = []
+    for (Node child : node.children):
+        children.push(rewrite_local_function_calls(child, local_names, generated_names))
+    return Node(node.kind, value, children)
+
+LocalFunctionLift lift_function_local_declarations(Node function_node, string[] used_names, int next_name_index):
+    Node[] body = []
+    Node[] local_declarations = []
+    string[] outer_names = local_function_parameters(function_node)
+    for (Node child : function_node.children):
+        if (child.kind == 'Param'):
+            continue
+        if (child.kind == 'Function'):
+            local_declarations.push(child)
+            continue
+        if (child.kind == 'CachedFunction' || child.kind == 'PrivateCachedFunction'):
+            throw 'local cached functions are not supported'
+        if (child.kind == 'PrivateFunction'):
+            throw 'local functions must be declared directly in a function body'
+        reject_deeper_local_functions(child)
+        body.push(child)
+        if (child.kind == 'VarDecl'):
+            outer_names = add_unique_name(outer_names, ir_parse_binding_decl(child.value).name)
+
+    string[] local_names = []
+    string[] generated_names = []
+    for (Node declaration : local_declarations):
+        string source_name = ir_parse_binding_decl(declaration.value).name
+        if (contains_name(local_names, source_name)):
+            throw 'duplicate local function in body: ' + source_name
+        local_names.push(source_name)
+        string generated_name = submit_capture_name(used_names, '__tb_local_function_', next_name_index)
+        used_names.push(generated_name)
+        generated_names.push(generated_name)
+        next_name_index += 1
+
+    Node[] rewritten_body = []
+    for (Node statement : body):
+        rewritten_body.push(rewrite_local_function_calls(statement, local_names, generated_names))
+    Node[] function_children = []
+    for (Node child : function_node.children):
+        if (child.kind == 'Param'):
+            function_children.push(child)
+    function_children = append_nodes(function_children, rewritten_body)
+    Node rewritten_function = Node(function_node.kind, function_node.value, function_children)
+
+    Node[] helpers = []
+    for (int local_index = 0; local_index < local_declarations.length(); local_index += 1):
+        Node declaration = local_declarations[local_index]
+        Node[] helper_body = local_function_body(declaration)
+        for (Node statement : helper_body):
+            reject_deeper_local_functions(statement)
+        string[] helper_params = local_function_parameters(declaration)
+        string[] helper_outer_names = []
+        for (string outer_name : outer_names):
+            if (!contains_name(helper_params, outer_name)):
+                helper_outer_names = add_unique_name(helper_outer_names, outer_name)
+        # Normalize this helper alone so its own block locals get identities;
+        # an unbound source-spelled name can then be checked for an outer capture.
+        LocalBindingName[] initial_bindings = []
+        for (string helper_param : helper_params):
+            initial_bindings.push(LocalBindingName(helper_param, helper_param))
+        LocalBindingListRewrite normalized = normalize_local_binding_list(helper_body, initial_bindings, 0)
+        for (Node statement : normalized.nodes):
+            string capture = local_function_capture_in_node(statement, helper_outer_names, [])
+            if (capture != ''):
+                throw 'local function cannot capture outer binding: ' + capture
+        Node[] helper_children = []
+        for (Node child : declaration.children):
+            if (child.kind == 'Param'):
+                helper_children.push(child)
+        for (Node statement : helper_body):
+            helper_children.push(rewrite_local_function_calls(statement, local_names, generated_names))
+        BindingIR signature = ir_parse_binding_decl(declaration.value)
+        helpers.push(Node('PrivateFunction', signature.type_name + ' ' + generated_names[local_index], helper_children))
+    return LocalFunctionLift(rewritten_function, helpers)
+
+Node lift_local_functions_in_program(Node program):
+    bool has_local_function = false
+    for (Node child : program.children):
+        if (local_function_declaration_kind(child.kind)):
+            for (Node function_child : child.children):
+                if (local_function_declaration_kind(function_child.kind)):
+                    has_local_function = true
+                else if (node_has_nested_function_declaration(function_child)):
+                    has_local_function = true
+    if (!has_local_function):
+        return program
+    string[] used_names = collect_submit_unavailable_names(program, [])
+    int next_name_index = 0
+    Node[] children = []
+    for (Node child : program.children):
+        if (local_function_declaration_kind(child.kind)):
+            LocalFunctionLift lifted = lift_function_local_declarations(child, used_names, next_name_index)
+            children.push(lifted.function)
+            for (Node helper : lifted.helpers):
+                children.push(helper)
+            next_name_index += lifted.helpers.length()
+        else:
+            children.push(child)
+    return Node(program.kind, program.value, children)
+
 Node lower_program_with_default_module(Node program):
     if (lower_program_has_module_markers(program)):
         return program
@@ -5462,6 +5628,7 @@ Node lower_program_with_default_module(Node program):
 
 string[] lower_program(Node program):
     program = lower_program_with_default_module(program)
+    program = lift_local_functions_in_program(program)
     program = bind_private_module_records(program)
     program = bind_private_module_globals(program)
     SubmitLambdaRewrite scoped_rewritten = rewrite_submit_lambdas_in_program(program, false)
@@ -5530,6 +5697,60 @@ bool top_level_function_starts(Token[] tokens, int index):
     if (paren_depth != 0 || current >= tokens.length()):
         return false
     return token_is(token_at(tokens, current), 'SYMBOL', ':') || token_is(token_at(tokens, current), 'SYMBOL', '{')
+
+bool token_starts_statement(Token[] tokens, int index):
+    if (index <= 0):
+        return true
+    Token previous = token_at(tokens, index - 1)
+    return previous.kind == 'NEWLINE' || previous.kind == 'INDENT' || previous.kind == 'DEDENT' || token_is(previous, 'SYMBOL', '{') || token_is(previous, 'SYMBOL', '}') || token_is(previous, 'SYMBOL', ';')
+
+bool generic_function_header_starts(Token[] tokens, int index):
+    string type_name = token_at(tokens, index).value
+    if (!(type_name == 'map' || type_name == 'set' || type_name == 'future')):
+        return false
+    int depth = 0
+    int current = index + 1
+    while (current < tokens.length()):
+        Token token = token_at(tokens, current)
+        if (token_is(token, 'SYMBOL', '<')):
+            depth += 1
+        else if (token_is(token, 'SYMBOL', '>')):
+            depth -= 1
+        else if (token_is(token, 'SYMBOL', '>>')):
+            depth -= 2
+        if (depth <= 0):
+            current += 1
+            break
+        if (token.kind == 'NEWLINE' || token.kind == 'DEDENT' || token.kind == 'EOF'):
+            return false
+        current += 1
+    if (depth != 0):
+        return false
+    while (token_is(token_at(tokens, current), 'SYMBOL', '[') && token_is(token_at(tokens, current + 1), 'SYMBOL', ']')):
+        current += 2
+    return token_at(tokens, current).kind == 'IDENTIFIER' && token_is(token_at(tokens, current + 1), 'SYMBOL', '(')
+
+bool local_function_declaration_starts(Token[] tokens, int index):
+    Token token = token_at(tokens, index)
+    if (token.kind == 'IDENTIFIER' && token_is(token_at(tokens, index + 1), 'SYMBOL', '<')):
+        if (!generic_function_header_starts(tokens, index)):
+            return false
+    return top_level_function_starts(tokens, index)
+
+bool tokens_have_local_function_declaration(Token[] tokens):
+    int block_depth = 0
+    for (int index = 0; index < tokens.length(); index += 1):
+        Token token = token_at(tokens, index)
+        if (block_depth > 0 && token_starts_statement(tokens, index)):
+            if (local_function_declaration_starts(tokens, index)):
+                return true
+            if (token_is(token, 'KEYWORD', 'cached') && local_function_declaration_starts(tokens, index + 1)):
+                return true
+        if (token.kind == 'INDENT' || token_is(token, 'SYMBOL', '{')):
+            block_depth += 1
+        else if (token.kind == 'DEDENT' || token_is(token, 'SYMBOL', '}')):
+            block_depth -= 1
+    return false
 
 LoweredFunctionDeclIR lower_function_declaration_from_parts(FunctionDeclParseResult function_decl, string module_id):
     BindingIR[] params = []
@@ -5607,6 +5828,7 @@ ParsedFunction lower_logical_global_initializer(Node declaration, int index, str
     return ParsedFunction('func ' + result_type + ' ' + name, name, name, module_id.substring(0), false, result_type, [], collect_function_locals(value.instructions), linear_instructions_to_blocks(value.instructions))
 
 ProgramIR lower_program_ir(Node program):
+    program = lift_local_functions_in_program(program)
     program = bind_private_module_records(program)
     program = bind_private_module_globals(program)
     SubmitLambdaRewrite rewritten = rewrite_submit_lambdas_in_program(program, true)
@@ -5692,6 +5914,7 @@ ProgramIR lower_tokens_ir(Token[] tokens):
     bool has_filter_identifier = false
     bool has_flat_map_identifier = false
     bool has_arrow_symbol = false
+    bool has_local_function = tokens_have_local_function_declaration(tokens)
     for (Token token : tokens):
         if (token_is(token, 'IDENTIFIER', 'submit')):
             has_submit_identifier = true
@@ -5727,11 +5950,11 @@ ProgramIR lower_tokens_ir(Token[] tokens):
                 if (token_at(tokens, private_name_index).kind == 'IDENTIFIER' && token_is(token_at(tokens, private_name_index + 1), 'SYMBOL', '=')):
                     has_private_global = true
         private_token_index += 1
-    if (needs_program || has_const || has_range_foreach || has_private_global || has_private_record || has_private_enum):
+    if (needs_program || has_local_function || has_const || has_range_foreach || has_private_global || has_private_record || has_private_enum):
         Node parsed = parse_program(tokens)
         if (has_range_foreach && !program_declares_range(parsed)):
             LOWER_DIRECT_RANGE_FOREACH = true
-        if (needs_program || has_private_global || has_private_record || has_private_enum):
+        if (needs_program || has_local_function || has_private_global || has_private_record || has_private_enum):
             return lower_program_ir(parsed)
         if (has_const):
             validate_const_bindings(parsed)
