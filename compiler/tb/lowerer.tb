@@ -527,6 +527,11 @@ string merge_submit_return_types(string left, string right):
         return right
     if (right == ''):
         return left
+    # An empty flat_map chunk adopts the type of a nonempty return in the block.
+    if (left == '__tb_flat_map_empty_array__'):
+        return right
+    if (right == '__tb_flat_map_empty_array__'):
+        return left
     if (left != right):
         throw 'thread_pool.submit lambda block returns must all have the same type'
     return left
@@ -534,6 +539,8 @@ string merge_submit_return_types(string left, string right):
 string array_callback_block_expression_type(Node node, SubmitLambdaScope scope, Node[] functions, bool callback_context, string callback_name):
     if (callback_name == 'string_flat_map'):
         if (node.kind == 'Array'):
+            if (node.children.is_empty()):
+                return '__tb_flat_map_empty_array__'
             string array_type = string_array_flat_map_expression_type(node, scope, functions)
             if (array_type != ''):
                 return array_type
@@ -712,7 +719,12 @@ private SubmitLambdaValidation validate_submit_lambda_block_statements(Node[] st
                 if (callback_name == 'map_to'):
                     throw 'int[] map_to callback return must use scalar int, bool, or string expressions and declared helper calls'
                 throw 'int[] ' + callback_name + ' callback return must use scalar int or bool expressions and declared scalar helper calls'
-            if (!submit_lambda_result_type(current.return_type)):
+            bool valid_result_type = submit_lambda_result_type(current.return_type)
+            if (callback_name == 'string_flat_map' && current.return_type == '__tb_flat_map_empty_array__'):
+                valid_result_type = true
+            if (callback_name == 'string_flat_map' && current.return_type.ends_with('[]')):
+                valid_result_type = true
+            if (!valid_result_type):
                 throw 'thread_pool.submit lambda return must be an int, bool, string, int[], or int[][] expression using only in-scope values and declared helper calls'
             current.returns_all_paths = true
         else if (statement.kind == 'Throw'):
@@ -1096,7 +1108,7 @@ string string_array_flat_map_expression_type(Node node, SubmitLambdaScope scope,
         string item_type = ''
         for (Node item in node.children):
             string current_item_type = submit_lambda_expression_type_context(item, scope, functions, true, 'map_to')
-            if (!(current_item_type == 'string' || current_item_type == 'int')):
+            if (current_item_type == ''):
                 return ''
             if (item_type == ''):
                 item_type = current_item_type
@@ -1192,9 +1204,11 @@ string validate_string_array_flat_map_block(Node lambda_node, BindingIR[] captur
     SubmitLambdaValidation validation = validate_submit_lambda_block_statements(lambda_node.children[0].children, scope, functions, 0, false, 'string_flat_map')
     SubmitLambdaBlockCheck check = validation.check
     if (!check.returns_all_paths || check.return_type == ''):
-        throw 'string[] flat_map block must return a string[] on every path'
-    if (check.return_type != 'string[]'):
-        throw 'string[] flat_map block must return string[]; got ' + check.return_type
+        throw 'string[] flat_map block must return string[] or int[] on every path'
+    if (check.return_type == '__tb_flat_map_empty_array__'):
+        return 'string[]'
+    if (!(check.return_type == 'string[]' || check.return_type == 'int[]')):
+        throw 'string[] flat_map block must return string[] or int[]; got ' + check.return_type
     return check.return_type
 
 string validate_int_array_flat_map_block(Node lambda_node, BindingIR[] captured, Node[] functions):
@@ -1250,7 +1264,7 @@ SubmitLambdaRewrite rewrite_int_array_flat_map_block(Node lambda_node, BindingIR
     return SubmitLambdaRewrite(rewritten, [helper], current_names, current_index)
 
 SubmitLambdaRewrite rewrite_string_array_flat_map_block(Node lambda_node, BindingIR[] captured, string[] used_names, int next_index, Node[] functions):
-    validate_string_array_flat_map_block(lambda_node, captured, functions)
+    string result_type = validate_string_array_flat_map_block(lambda_node, captured, functions)
     BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
     string helper_name = string_array_flat_map_expression_helper_name(used_names, next_index)
     string[] current_names = add_unique_name(used_names, helper_name)
@@ -1264,8 +1278,11 @@ SubmitLambdaRewrite rewrite_string_array_flat_map_block(Node lambda_node, Bindin
         helper_children.push(Node('Param', 'const ' + capture_type + ' ' + binding.name, []))
         callback_values.push(Node('Identifier', binding.name, []))
     helper_children = append_nodes(helper_children, lambda_node.children[0].children)
-    Node helper = Node('Function', 'string[] ' + helper_name, helper_children)
-    Node rewritten = Node('FlatMapStringExpression', lambda_node.value, callback_values)
+    Node helper = Node('Function', result_type + ' ' + helper_name, helper_children)
+    string callback_kind = 'FlatMapStringExpression'
+    if (result_type == 'int[]'):
+        callback_kind = 'FlatMapStringIntExpression'
+    Node rewritten = Node(callback_kind, lambda_node.value, callback_values)
     return SubmitLambdaRewrite(rewritten, [helper], current_names, current_index)
 
 Node[] string_array_callback_body(Node lambda_node):
