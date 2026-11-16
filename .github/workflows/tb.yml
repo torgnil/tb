@@ -84,7 +84,11 @@ jobs:
             ln -s "$(command -v clang-19)" .build/ci-toolchain/clang
           else
             ln -s "$(xcrun --find clang)" .build/ci-toolchain/clang
+            sdk_path="$(xcrun --sdk macosx --show-sdk-path)"
+            test -d "$sdk_path"
+            printf 'SDKROOT=%s\n' "$sdk_path" >> "$GITHUB_ENV"
             echo 'MACOSX_DEPLOYMENT_TARGET=26.0' >> "$GITHUB_ENV"
+            printf 'macOS SDK: %s\n' "$sdk_path" | tee .build/ci/macos-sdk.log
           fi
           printf '%s\n' "$PWD/.build/ci-toolchain" >> "$GITHUB_PATH"
           .build/ci-toolchain/clang --version | tee .build/ci/clang-version.log
@@ -158,20 +162,26 @@ jobs:
       - name: Run native fixtures
         run: |
           set -euo pipefail
-          # Temporary Linux compatibility shim: the repository runner currently
-          # omits libm. Keep the source checkout unchanged and retain relative
-          # fixture paths, since some diagnostic expectations contain them.
-          python3 - <<'PY'
-          import os, pathlib
-          source = pathlib.Path('verify_fixtures_tb.py').read_text()
-          needle = 'linkflags = linkflags_path.read_text(encoding="utf-8").split() if linkflags_path.exists() else []'
-          if os.environ['RUNNER_OS'] == 'Linux':
-              if source.count(needle) != 1:
-                  raise SystemExit('Fixture runner changed; update or remove the CI libm shim')
-              source = source.replace(needle, needle + '\n        if "-lm" not in linkflags:\n            linkflags.append("-lm")')
-          pathlib.Path(os.environ['RUNNER_TEMP'], 'verify_fixtures_ci.py').write_text(source)
-          PY
-          python3 "$RUNNER_TEMP/verify_fixtures_ci.py" tests/fixtures \
+          # The Linux fixture links need libm. Keep this platform workaround
+          # outside the self-hosted fixture verifier.
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            real_clang="$(command -v clang)"
+            shim_dir="$RUNNER_TEMP/tb-fixture-tools"
+            mkdir -p "$shim_dir"
+            cat > "$shim_dir/clang" <<'SH'
+          #!/bin/sh
+          for arg do
+            if [ "$arg" = "-c" ]; then
+              exec "$TB_CI_REAL_CLANG" "$@"
+            fi
+          done
+          exec "$TB_CI_REAL_CLANG" "$@" -lm
+          SH
+            chmod +x "$shim_dir/clang"
+            export TB_CI_REAL_CLANG="$real_clang"
+            export PATH="$shim_dir:$PATH"
+          fi
+          ./verify_fixtures_tb.sh tests/fixtures \
             --compiler bin/tb --build-root .build/fixtures_ci \
             2>&1 | tee .build/ci/fixtures.log
 
