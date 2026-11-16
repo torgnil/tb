@@ -1,0 +1,51 @@
+string[] tagged_words(string line, string prefix):
+    string[] words = line.split(' ')
+    int index = 0
+    while (index < words.length()):
+        words[index] = prefix + words[index]
+        index += 1
+    return words
+
+int main():
+    int minimum_length = 2
+    string prefix = '>'
+    string[] lines = ['red blue', 'x', '', 'skip']
+    string[] expanded = lines.flat_map(string line -> {
+        int length = line.length()
+        if (line.is_empty()) {
+            return []
+        }
+        if (line == 'skip') {
+            return []
+        }
+        if (length < minimum_length) {
+            return [prefix + line]
+        }
+        string[] chunk = tagged_words(line, prefix)
+        return chunk
+    })
+    print(expanded)
+    print(lines)
+
+    string[] empty_source = []
+    string[] empty_result = empty_source.flat_map(string line -> {
+        return [prefix + line]
+    })
+    print(empty_result.length())
+
+    try:
+        string[] failed = ['ok', 'boom'].flat_map(string line -> {
+            if (line == 'boom') {
+                throw 'flat_map block failed'
+            }
+            return [line]
+        })
+        print(failed)
+    catch (exception error):
+        print(error)
+
+    string[] recovered = ['ok'].flat_map(string line -> {
+        return [prefix + line]
+    })
+    print(recovered)
+    return 0

@@ -2,6 +2,30 @@
 
 All notable changes to tb will be documented in this file.
 
+## [0.4.0] - 2026-11-16
+
+### Added
+- Local functions with supported scalar and string captures, plus broader
+  worker and array-callback captures, inputs, and results.
+- Block callbacks and flattened `int[]` and `string[]` results for array
+  `flat_map` operations.
+- Filesystem directory listing and path predicates, and a shell-free process
+  runner.
+- Slices for arrays of records.
+
+### Changed
+- Source builds now use the released native `tb 0.3.0` compiler seed.
+- Fixture verification now runs through the native `tb` CLI and supports
+  bounded parallel jobs.
+- Regex matching and integer priority-queue operations have been optimized.
+
+### Fixed
+- Managed values receive broader cleanup during exception unwinding and
+  worker-local reassignment; boolean-grid ownership is handled correctly.
+- String self-concatenation remains valid when appending reallocates storage.
+- Compiler dispatch and diagnostics cover direct query calls, `to_int`,
+  incompatible native array bindings, and empty record arrays in named calls.
+
 ## [0.3.0] - 2026-11-12
 
 ### Added

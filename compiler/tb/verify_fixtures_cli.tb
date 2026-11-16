@@ -1,0 +1,566 @@
+import process;
+
+string[] FIXTURE_STEMS = []
+string[] FIXTURE_INPUTS = []
+string[] FIXTURE_COMPILE_INPUTS = []
+string[] FIXTURE_EXPECTATIONS = []
+string[] FIXTURE_TEMP_DIRS = []
+string CURRENT_DIRECTORY = ''
+string FIXTURES_DIRECTORY = ''
+string FIXTURES_COMPILE_PREFIX = ''
+string COMPILER_BINARY = ''
+string BUILD_ROOT = ''
+string RUN_DIRECTORY = ''
+string PLATFORM_SUFFIX = ''
+
+string strip_line_ending(string text):
+    if (text.ends_with('\n')):
+        text = text.substring(0, text.length() - 1)
+    if (text.ends_with('\r')):
+        text = text.substring(0, text.length() - 1)
+    return text
+
+string normalize_newlines(string text):
+    string normalized = ''
+    int index = 0
+    while (index < text.length()):
+        if (text[index] == '\r'):
+            normalized += '\n'
+            if (index + 1 < text.length() && text[index + 1] == '\n'):
+                index += 1
+        else:
+            normalized += text[index]
+        index += 1
+    return normalized
+
+string absolute_path(string path):
+    if (path.starts_with('/')):
+        return path
+    return CURRENT_DIRECTORY + '/' + path
+
+string directory_name(string path):
+    int last_separator = -1
+    for (int index = 0; index < path.length(); index += 1):
+        if (path[index] == '/'):
+            last_separator = index
+    if (last_separator < 0):
+        return '.'
+    if (last_separator == 0):
+        return '/'
+    return path.substring(0, last_separator)
+
+string base_name(string path):
+    int start = 0
+    for (int index = 0; index < path.length(); index += 1):
+        if (path[index] == '/'):
+            start = index + 1
+    return path.substring(start)
+
+void require_process_success(ProcessResult result, string message):
+    if (result.exit_code != 0):
+        throw message + result.stderr
+
+void make_directory(string path):
+    ProcessResult result = run_process(['mkdir', '-p', path])
+    require_process_success(result, 'mkdir failed for ' + path + ': ')
+
+string[] split_whitespace(string text):
+    string[] words = []
+    string word = ''
+    for (int index = 0; index < text.length(); index += 1):
+        string character = text[index]
+        if (character == ' ' || character == '\t' || character == '\n' || character == '\r'):
+            if (word != ''):
+                words.push(word)
+                word = ''
+        else:
+            word += character
+    if (word != ''):
+        words.push(word)
+    return words
+
+bool is_numeric_name(string name):
+    if (name.is_empty()):
+        return false
+    for (int index = 0; index < name.length(); index += 1):
+        if (!name[index].is_digit()):
+            return false
+    return true
+
+void add_fixture_asset(string[] assets, string relative_path):
+    if (relative_path != '' && is_file(FIXTURES_DIRECTORY + '/' + relative_path) && assets.index_of(relative_path) < 0):
+        assets.push(relative_path)
+
+void collect_literal_asset(string[] assets, string literal_path, string primary_name):
+    int first_separator = literal_path.index_of('/')
+    if (first_separator < 1 || first_separator >= literal_path.length() - 1):
+        return
+    string root_name = literal_path.substring(0, first_separator)
+    if (root_name != primary_name && root_name != 'test-files'):
+        return
+    string relative_path = literal_path.substring(first_separator + 1)
+    string component = ''
+    for (int index = 0; index <= relative_path.length(); index += 1):
+        if (index == relative_path.length() || relative_path[index] == '/'):
+            if (component == '..'):
+                return
+            component = ''
+        else:
+            component += relative_path[index]
+    add_fixture_asset(assets, relative_path)
+
+void copy_fixture_assets(int fixture_index, string source_text):
+    string temporary_path = FIXTURE_TEMP_DIRS[fixture_index]
+    string workspace_path = temporary_path + '/workspace'
+    string primary_name = base_name(FIXTURES_DIRECTORY)
+
+    string[] workspace_names = [primary_name]
+    if (primary_name != 'test-files'):
+        workspace_names.push('test-files')
+
+    string[] assets = []
+    string[] companion_suffixes = ['.in', '.out', '.err', '.tb']
+    for (string suffix in companion_suffixes):
+        string companion_path = FIXTURES_DIRECTORY + '/' + FIXTURE_STEMS[fixture_index] + suffix
+        if (is_file(companion_path)):
+            add_fixture_asset(assets, companion_path.substring(FIXTURES_DIRECTORY.length() + 1))
+
+    int scan_index = 0
+    while (scan_index < source_text.length()):
+        string quote = source_text[scan_index]
+        if (quote == '\'' || quote == '"'):
+            int close_index = scan_index + 1
+            while (close_index < source_text.length() && source_text[close_index] != quote):
+                close_index += 1
+            if (close_index < source_text.length()):
+                string literal_path = source_text.substring(scan_index + 1, close_index)
+                collect_literal_asset(assets, literal_path, primary_name)
+                scan_index = close_index + 1
+            else:
+                scan_index += 1
+        else:
+            scan_index += 1
+
+    string[] directory_command = ['mkdir', '-p']
+    for (string workspace_name in workspace_names):
+        directory_command.push(workspace_path + '/' + workspace_name)
+        for (string relative_path in assets):
+            string parent = directory_name(relative_path)
+            string destination_directory = workspace_path + '/' + workspace_name + '/' + parent
+            if (directory_command.index_of(destination_directory) < 0):
+                directory_command.push(destination_directory)
+    ProcessResult directory_result = run_process(directory_command)
+    require_process_success(directory_result, 'could not prepare fixture workspace for ' + FIXTURE_STEMS[fixture_index] + ': ')
+
+    for (string workspace_name in workspace_names):
+        for (int asset_index = 0; asset_index < assets.length(); asset_index += 1):
+            string parent = directory_name(assets[asset_index])
+            bool parent_already_copied = false
+            for (int previous_index = 0; previous_index < asset_index; previous_index += 1):
+                if (directory_name(assets[previous_index]) == parent):
+                    parent_already_copied = true
+            if (!parent_already_copied):
+                string[] copy_command = ['cp']
+                for (string relative_path in assets):
+                    if (directory_name(relative_path) == parent):
+                        copy_command.push(FIXTURES_DIRECTORY + '/' + relative_path)
+                copy_command.push(workspace_path + '/' + workspace_name + '/' + parent)
+                ProcessResult copy_result = run_process(copy_command)
+                require_process_success(copy_result, 'could not copy fixture assets for ' + FIXTURE_STEMS[fixture_index] + ': ')
+
+string c_cache_key(string source_path, string platform_suffix):
+    string result = ''
+    for (int index = 0; index < source_path.length(); index += 1):
+        string character = source_path[index]
+        if (character.is_alpha() || character.is_digit() || character == '_'):
+            result += character
+        else:
+            result += '_'
+    return RUN_DIRECTORY + '/c_runtime/' + result + '_' + platform_suffix + '.o'
+
+void compile_c_sources(string output_path, string temporary_path, string fixture_name, string[] objects):
+    string csources_path = output_path + '.csources'
+    if (!is_file(csources_path)):
+        return
+    string cflags_path = output_path + '.cflags'
+    string[] cflags = []
+    if (is_file(cflags_path)):
+        cflags = split_whitespace(read_file(cflags_path))
+    string[] source_lines = read_lines(csources_path)
+    int source_index = 0
+    for (string source_line in source_lines):
+        string source = source_line.trim()
+        if (source == ''):
+            continue
+        string resolved_source = absolute_path(source)
+        string cache_path = c_cache_key(resolved_source, PLATFORM_SUFFIX)
+        if (!is_file(cache_path)):
+            string object_path = temporary_path + '/c_' + source_index + '.o'
+            string[] command = ['clang', '-c']
+            for (string flag in cflags):
+                command.push(flag)
+            command.push(resolved_source)
+            command.push('-o')
+            command.push(object_path)
+            ProcessResult compile_result = run_process(command)
+            if (compile_result.exit_code != 0):
+                throw 'clang C runtime compile failed for ' + fixture_name + ':\n' + compile_result.stderr
+            ProcessResult move_result = run_process(['mv', '-f', object_path, cache_path])
+            require_process_success(move_result, 'could not cache C runtime object ' + cache_path + ': ')
+        objects.push(cache_path)
+        source_index += 1
+
+int verify_fixture(int fixture_index):
+    string input_path = FIXTURE_INPUTS[fixture_index]
+    string compile_input_path = FIXTURE_COMPILE_INPUTS[fixture_index]
+    string expected_path = FIXTURE_EXPECTATIONS[fixture_index]
+    string temporary_path = FIXTURE_TEMP_DIRS[fixture_index]
+    string output_path = temporary_path + '/' + FIXTURE_STEMS[fixture_index] + '.ll'
+    string binary_path = temporary_path + '/' + FIXTURE_STEMS[fixture_index]
+    string failure_path = temporary_path + '/failure.txt'
+    string actual_path = temporary_path + '/actual.txt'
+    string fixture_name = FIXTURE_STEMS[fixture_index]
+
+    try:
+        string source_text = normalize_newlines(read_file(input_path))
+        ProcessResult compile_result = run_process([COMPILER_BINARY, compile_input_path, output_path])
+        if (expected_path.ends_with('.err')):
+            string expected_diagnostic = normalize_newlines(read_file(expected_path))
+            if (expected_diagnostic.trim().is_empty()):
+                throw 'Empty diagnostic expectation for ' + fixture_name + '.tb'
+            bool llvm_present = path_exists(output_path)
+            if (compile_result.exit_code != 1 || compile_result.stderr != '' || llvm_present):
+                string llvm_state = 'false'
+                if (llvm_present):
+                    llvm_state = 'true'
+                throw 'Expected compiler rejection for ' + fixture_name + '.tb: status 1, empty stderr, no LLVM; got status ' + compile_result.exit_code + ', LLVM present: ' + llvm_state + '\n' + compile_result.stdout + compile_result.stderr
+            write_all(actual_path, normalize_newlines(compile_result.stdout))
+            return 0
+        if (compile_result.exit_code != 0):
+            throw 'tb compiler failed for ' + fixture_name + '.tb:\n' + compile_result.stdout + compile_result.stderr
+
+        copy_fixture_assets(fixture_index, source_text)
+        string[] linkflags = []
+        if (is_file(output_path + '.linkflags')):
+            linkflags = split_whitespace(read_file(output_path + '.linkflags'))
+        string[] objects = []
+        compile_c_sources(output_path, temporary_path, fixture_name, objects)
+
+        string[] clang_command = ['clang', output_path]
+        for (string object_path in objects):
+            clang_command.push(object_path)
+        clang_command.push('-o')
+        clang_command.push(binary_path)
+        for (string flag in linkflags):
+            clang_command.push(flag)
+        ProcessResult clang_result = run_process(clang_command)
+        if (clang_result.exit_code != 0):
+            throw 'clang failed for ' + fixture_name + '.tb:\n' + clang_result.stderr
+
+        string workspace_path = temporary_path + '/workspace'
+        ProcessResult run_result = run_process(['/bin/sh', '-c', 'cd "$1" && exec "$2"', 'fixture-run', workspace_path, binary_path])
+        if (run_result.exit_code != 0):
+            throw 'binary failed for ' + fixture_name + '.tb:\n' + run_result.stderr
+
+        string actual_output = normalize_newlines(run_result.stdout)
+        string output_target = ''
+        int scan_index = 0
+        while (scan_index < source_text.length()):
+            string quote = source_text[scan_index]
+            if (quote == '\'' || quote == '"'):
+                int close_index = scan_index + 1
+                while (close_index < source_text.length() && source_text[close_index] != quote):
+                    close_index += 1
+                if (quote == '\'' && scan_index >= 5 && source_text.substring(scan_index - 5, scan_index) == 'open(' && close_index < source_text.length()):
+                    output_target = source_text.substring(scan_index + 1, close_index)
+                    scan_index = source_text.length()
+                else if (close_index < source_text.length()):
+                    scan_index = close_index + 1
+                else:
+                    scan_index += 1
+            else:
+                scan_index += 1
+        if (output_target != ''):
+            string resolved_target = output_target
+            if (!resolved_target.starts_with('/')):
+                resolved_target = workspace_path + '/' + resolved_target
+            actual_output = normalize_newlines(read_file(resolved_target))
+        write_all(actual_path, actual_output)
+        return 0
+    catch (exception error):
+        try:
+            write_all(failure_path, error)
+        catch (exception ignored):
+            return 1
+        return 1
+
+int verify_partition(int partition):
+    int result = 0
+    for (int fixture_index = 0; fixture_index < FIXTURE_STEMS.length(); fixture_index += 1):
+        if (fixture_index % 8 == partition):
+            result += verify_fixture(fixture_index)
+    return result
+
+int parse_integer(string text, string label):
+    if (text.is_empty()):
+        throw label + ' must be an integer'
+    int start = 0
+    if (text[0] == '-' || text[0] == '+'):
+        start = 1
+    if (start == text.length()):
+        throw label + ' must be an integer'
+    for (int index = start; index < text.length(); index += 1):
+        if (!text[index].is_digit()):
+            throw label + ' must be an integer'
+    return text.to_int()
+
+void print_usage():
+    print('Usage: verify_fixtures_tb.sh [fixtures_dir] [--compiler PATH] [--build-root DIR] [--max-phase N] [--jobs N]')
+    print('Verify numbered tb fixtures against .out runtime output or .err compiler diagnostics.')
+    print('Concurrency is capped at 8 workers; --jobs sets a lower limit.')
+
+int run_verifier(string[] args):
+    ProcessResult cwd_result = run_process(['pwd'])
+    require_process_success(cwd_result, 'could not determine current directory: ')
+    CURRENT_DIRECTORY = strip_line_ending(cwd_result.stdout)
+
+    string fixtures_argument = 'tests/fixtures'
+    string compiler_argument = 'bin/tb'
+    string build_argument = '.build/fixtures_tb'
+    int max_phase = -1
+    int jobs = 4
+    bool has_max_phase = false
+    bool has_fixtures_argument = false
+    bool positional_only = false
+
+    int cpu_count = 1
+    try:
+        ProcessResult cpu_result = run_process(['getconf', '_NPROCESSORS_ONLN'])
+        if (cpu_result.exit_code == 0):
+            cpu_count = strip_line_ending(cpu_result.stdout).to_int()
+    catch (exception ignored):
+        cpu_count = 1
+    if (cpu_count > 8):
+        jobs = 8
+    else if (cpu_count > 0):
+        jobs = cpu_count
+
+    int argument_index = 1
+    while (argument_index < args.length()):
+        string argument = args[argument_index]
+        if (!positional_only && (argument == '-h' || argument == '--help')):
+            print_usage()
+            return 0
+        else if (!positional_only && argument == '--'):
+            positional_only = true
+        else if (!positional_only && (argument == '--compiler' || argument == '--build-root' || argument == '--max-phase' || argument == '--jobs')):
+            if (argument_index + 1 >= args.length()):
+                throw 'missing value for ' + argument
+            argument_index += 1
+            string value = args[argument_index]
+            if (argument == '--compiler'):
+                compiler_argument = value
+            else if (argument == '--build-root'):
+                build_argument = value
+            else if (argument == '--max-phase'):
+                max_phase = parse_integer(value, '--max-phase')
+                has_max_phase = true
+            else:
+                jobs = parse_integer(value, '--jobs')
+                if (jobs < 1):
+                    throw 'jobs must be a positive integer'
+        else if (!positional_only && argument.starts_with('--compiler=')):
+            compiler_argument = argument.substring(11)
+        else if (!positional_only && argument.starts_with('--build-root=')):
+            build_argument = argument.substring(13)
+        else if (!positional_only && argument.starts_with('--max-phase=')):
+            max_phase = parse_integer(argument.substring(12), '--max-phase')
+            has_max_phase = true
+        else if (!positional_only && argument.starts_with('--jobs=')):
+            jobs = parse_integer(argument.substring(7), '--jobs')
+            if (jobs < 1):
+                throw 'jobs must be a positive integer'
+        else if (!positional_only && argument.starts_with('-')):
+            throw 'unrecognized argument: ' + argument
+        else if (!has_fixtures_argument):
+            fixtures_argument = argument
+            has_fixtures_argument = true
+        else:
+            throw 'unexpected positional argument: ' + argument
+        argument_index += 1
+
+    FIXTURES_COMPILE_PREFIX = fixtures_argument
+    if (FIXTURES_COMPILE_PREFIX == ''):
+        FIXTURES_COMPILE_PREFIX = '.'
+    while (FIXTURES_COMPILE_PREFIX.length() > 1 && FIXTURES_COMPILE_PREFIX.ends_with('/')):
+        FIXTURES_COMPILE_PREFIX = FIXTURES_COMPILE_PREFIX.substring(0, FIXTURES_COMPILE_PREFIX.length() - 1)
+    if (FIXTURES_COMPILE_PREFIX == '/'):
+        FIXTURES_COMPILE_PREFIX = ''
+    FIXTURES_DIRECTORY = absolute_path(fixtures_argument)
+    COMPILER_BINARY = absolute_path(compiler_argument)
+    BUILD_ROOT = absolute_path(build_argument)
+    if (!is_file(COMPILER_BINARY)):
+        throw 'Missing tb compiler binary: ' + COMPILER_BINARY
+    if (!is_dir(FIXTURES_DIRECTORY)):
+        throw 'Missing fixtures directory: ' + FIXTURES_DIRECTORY
+
+    string[] directory_entries = list_dir(FIXTURES_DIRECTORY)
+    for (string entry in directory_entries):
+        if (entry.ends_with('.tb')):
+            string stem = entry.substring(0, entry.length() - 3)
+            if (is_numeric_name(stem)):
+                int phase = stem.to_int()
+                if (!has_max_phase || phase <= max_phase):
+                    FIXTURE_STEMS.push(stem)
+                    FIXTURE_INPUTS.push(FIXTURES_DIRECTORY + '/' + entry)
+                    if (FIXTURES_COMPILE_PREFIX == ''):
+                        FIXTURE_COMPILE_INPUTS.push('/' + entry)
+                    else if (FIXTURES_COMPILE_PREFIX == '.'):
+                        FIXTURE_COMPILE_INPUTS.push(entry)
+                    else:
+                        FIXTURE_COMPILE_INPUTS.push(FIXTURES_COMPILE_PREFIX + '/' + entry)
+                    string output_path = FIXTURES_DIRECTORY + '/' + stem + '.out'
+                    string error_path = FIXTURES_DIRECTORY + '/' + stem + '.err'
+                    bool has_output = is_file(output_path)
+                    bool has_error = is_file(error_path)
+                    if (!has_output && !has_error):
+                        throw 'Missing .out or .err expectation for ' + entry
+                    if (has_output && has_error):
+                        throw 'Ambiguous expectations for ' + entry + ': use either .out or .err'
+                    if (has_output):
+                        FIXTURE_EXPECTATIONS.push(output_path)
+                    else:
+                        FIXTURE_EXPECTATIONS.push(error_path)
+
+    if (FIXTURE_STEMS.is_empty()):
+        throw 'No .tb fixtures found in ' + FIXTURES_DIRECTORY
+
+    # Keep the original numeric phase order, preserving lexical order for ties.
+    for (int index = 1; index < FIXTURE_STEMS.length(); index += 1):
+        string selected_stem = FIXTURE_STEMS[index]
+        string selected_input = FIXTURE_INPUTS[index]
+        string selected_compile_input = FIXTURE_COMPILE_INPUTS[index]
+        string selected_expectation = FIXTURE_EXPECTATIONS[index]
+        int selected_number = selected_stem.to_int()
+        int insert_index = index
+        while (insert_index > 0 && FIXTURE_STEMS[insert_index - 1].to_int() > selected_number):
+            FIXTURE_STEMS[insert_index] = FIXTURE_STEMS[insert_index - 1]
+            FIXTURE_INPUTS[insert_index] = FIXTURE_INPUTS[insert_index - 1]
+            FIXTURE_COMPILE_INPUTS[insert_index] = FIXTURE_COMPILE_INPUTS[insert_index - 1]
+            FIXTURE_EXPECTATIONS[insert_index] = FIXTURE_EXPECTATIONS[insert_index - 1]
+            insert_index -= 1
+        FIXTURE_STEMS[insert_index] = selected_stem
+        FIXTURE_INPUTS[insert_index] = selected_input
+        FIXTURE_COMPILE_INPUTS[insert_index] = selected_compile_input
+        FIXTURE_EXPECTATIONS[insert_index] = selected_expectation
+
+    bool has_runtime_fixture = false
+    for (string expectation in FIXTURE_EXPECTATIONS):
+        if (expectation.ends_with('.out')):
+            has_runtime_fixture = true
+    if (has_runtime_fixture):
+        ProcessResult clang_check = run_process(['which', 'clang'])
+        if (clang_check.exit_code != 0):
+            throw 'clang is required to verify runtime fixtures'
+
+    ProcessResult os_result = run_process(['uname', '-s'])
+    ProcessResult arch_result = run_process(['uname', '-m'])
+    require_process_success(os_result, 'uname -s failed: ')
+    require_process_success(arch_result, 'uname -m failed: ')
+    string platform_os = strip_line_ending(os_result.stdout)
+    string platform_arch = strip_line_ending(arch_result.stdout)
+    if (platform_os == 'Darwin'):
+        platform_os = 'macos'
+    else if (platform_os == 'Linux'):
+        platform_os = 'linux'
+    else if (platform_os == 'FreeBSD'):
+        platform_os = 'freebsd'
+    PLATFORM_SUFFIX = platform_os + '_' + platform_arch
+
+    make_directory(BUILD_ROOT)
+    ProcessResult run_dir_result = run_process(['mktemp', '-d', BUILD_ROOT + '/verify_fixtures_XXXXXX'])
+    require_process_success(run_dir_result, 'could not create fixture build directory: ')
+    RUN_DIRECTORY = strip_line_ending(run_dir_result.stdout)
+    string[] directory_command = ['mkdir', '-p', RUN_DIRECTORY + '/c_runtime']
+    for (int index = 0; index < FIXTURE_STEMS.length(); index += 1):
+        string temporary_path = RUN_DIRECTORY + '/fixture_' + FIXTURE_STEMS[index] + '_' + index
+        FIXTURE_TEMP_DIRS.push(temporary_path)
+        directory_command.push(temporary_path)
+    ProcessResult directories_result = run_process(directory_command)
+    require_process_success(directories_result, 'could not create fixture workspaces: ')
+
+    int effective_jobs = jobs
+    if (effective_jobs > 8):
+        effective_jobs = 8
+    if (effective_jobs > FIXTURE_STEMS.length()):
+        effective_jobs = FIXTURE_STEMS.length()
+    thread_pool pool = thread_pool(effective_jobs)
+    future<int> first = pool.submit(verify_partition, 0)
+    future<int> second = pool.submit(verify_partition, 1)
+    future<int> third = pool.submit(verify_partition, 2)
+    future<int> fourth = pool.submit(verify_partition, 3)
+    future<int> fifth = pool.submit(verify_partition, 4)
+    future<int> sixth = pool.submit(verify_partition, 5)
+    future<int> seventh = pool.submit(verify_partition, 6)
+    future<int> eighth = pool.submit(verify_partition, 7)
+    int worker_failures = first.await() + second.await() + third.await() + fourth.await() + fifth.await() + sixth.await() + seventh.await() + eighth.await()
+
+    bool has_execution_error = false
+    string execution_error = ''
+    for (int index = 0; index < FIXTURE_STEMS.length(); index += 1):
+        string failure_path = FIXTURE_TEMP_DIRS[index] + '/failure.txt'
+        if (!has_execution_error && is_file(failure_path)):
+            has_execution_error = true
+            execution_error = read_file(failure_path)
+    if (worker_failures > 0 || has_execution_error):
+        if (execution_error == ''):
+            execution_error = 'fixture worker failed without a diagnostic'
+        if (!execution_error.ends_with('\n')):
+            execution_error += '\n'
+        write_all('/dev/stderr', execution_error)
+        cleanup_run_directory()
+        return 1
+
+    int failures = 0
+    for (int index = 0; index < FIXTURE_STEMS.length(); index += 1):
+        string actual = normalize_newlines(read_file(FIXTURE_TEMP_DIRS[index] + '/actual.txt'))
+        string expected = normalize_newlines(read_file(FIXTURE_EXPECTATIONS[index]))
+        bool passed = actual == expected
+        if (passed):
+            print('PASS ' + FIXTURE_STEMS[index])
+        else:
+            failures += 1
+            print('FAIL ' + FIXTURE_STEMS[index])
+            print('expected:')
+            print_exact_text(expected)
+            print('actual:')
+            print_exact_text(actual)
+    print((FIXTURE_STEMS.length() - failures) + '/' + FIXTURE_STEMS.length() + ' fixtures passed')
+    cleanup_run_directory()
+    if (failures == 0):
+        return 0
+    return 1
+
+void print_exact_text(string text):
+    if (text.ends_with('\n')):
+        print(text.substring(0, text.length() - 1))
+    else:
+        print(text)
+
+void cleanup_run_directory():
+    if (RUN_DIRECTORY != ''):
+        try:
+            ProcessResult remove_result = run_process(['rm', '-rf', RUN_DIRECTORY])
+        catch (exception ignored):
+            return
+        RUN_DIRECTORY = ''
+
+int main(string[] args):
+    try:
+        return run_verifier(args)
+    catch (exception error):
+        write_all('/dev/stderr', error)
+        if (!error.ends_with('\n')):
+            write_all('/dev/stderr', '\n')
+        cleanup_run_directory()
+        return 1

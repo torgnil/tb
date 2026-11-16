@@ -1,0 +1,43 @@
+int format_calls = 0
+
+string render_number(int value):
+    format_calls += 1
+    return 'n=' + value
+
+string fail_after_one(int value, const string[] prefixes):
+    if (value == -2):
+        throw 'map failed'
+    return prefixes[0] + value
+
+int main():
+    int[] values = [4, -2, 15]
+    string prefix = 'value='
+    string[] prefixed = values.map_to(int item -> prefix + item)
+    string suffix = '!'
+    string[] suffixed = values.map_to(int item -> item + suffix)
+    string[] named = values.map_to(int item -> render_number(item))
+    string[] signs = values.map_to(int item -> item > 0 ? 'positive' : 'negative')
+    string[] names = ['zero', 'one', 'two']
+    int[] order = [2, 0, 1]
+    string[] ordered_names = order.map_to(int index -> names[index])
+    values[0] = 99
+    names[0] = 'changed'
+    print(prefixed.join(','))
+    print(suffixed.join(','))
+    print(named.join(','))
+    print(signs.join(','))
+    print(ordered_names.join(','))
+    int[] empty = []
+    int calls_before_empty_map = format_calls
+    string[] empty_result = empty.map_to(int item -> render_number(item))
+    print(empty_result.length())
+    print(format_calls == calls_before_empty_map)
+    string[] prefixes = ['t=']
+    try:
+        string[] partial = values.map_to(int item -> fail_after_one(item, prefixes))
+        print(partial.join(','))
+    catch (exception error):
+        print(error)
+    print(render_number(7))
+    print(format_calls)
+    return 0

@@ -1,0 +1,57 @@
+int compare_low_first(int left, int right):
+    if (left < right):
+        return -1
+    if (left > right):
+        return 1
+    return 0
+
+int compare_high_first(int left, int right):
+    return compare_low_first(right, left)
+
+int compare_bucket(int left, int right):
+    return compare_low_first(left / 10, right / 10)
+
+int main():
+    int[] empty_values = []
+    prio_q<int> empty_queue = empty_values.create_prio_q(compare_low_first)
+    print(empty_queue.pop())
+    print(empty_queue.is_empty())
+    empty_queue.push(7)
+    print(empty_queue.pop())
+    print(empty_queue.is_empty())
+
+    int[] grouped_values = [11, 21]
+    prio_q<int> grouped = grouped_values.create_prio_q(compare_bucket)
+    grouped.push(12)
+    grouped.push(13)
+    grouped.push(22)
+    grouped.push(23)
+    int[] expected = [11, 12, 13, 21, 22, 23]
+    bool fifo_order_ok = true
+    int group_index = 0
+    while (!grouped.is_empty()):
+        if (grouped.pop() != expected[group_index]):
+            fifo_order_ok = false
+        group_index += 1
+    print(fifo_order_ok)
+
+    int[] values = []
+    for (int value = 0; value < 64; value += 1):
+        values.push(value)
+    prio_q<int> high = values.create_prio_q(compare_high_first)
+    for (int value = 64; value < 128; value += 1):
+        high.push(value)
+    int expected_high = 127
+    bool high_order_ok = true
+    while (!high.is_empty()):
+        if (high.pop() != expected_high):
+            high_order_ok = false
+        expected_high -= 1
+    print(high_order_ok)
+    print(expected_high)
+    high.push(-2)
+    high.push(4)
+    print(high.pop())
+    print(high.pop())
+    print(high.is_empty())
+    return 0

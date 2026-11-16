@@ -1,0 +1,50 @@
+int parse_calls = 0
+
+int[] parse_field(string field, int adjustment, bool enabled, string skip):
+    parse_calls += 1
+    if (!enabled || field == '' || field == skip):
+        return []
+    return [field.to_int() + adjustment]
+
+int[] parse_or_throw(string field):
+    if (field == 'boom'):
+        throw 'integer parse failed'
+    if (field == ''):
+        return []
+    return [field.to_int()]
+
+bool[] invalid_field(string field):
+    return [true]
+
+int main(string[] args):
+    string[] fields = ['10', '', '-3', 'skip']
+    int adjustment = 2
+    bool enabled = true
+    string skip = 'skip'
+
+    int[] values = fields.flat_map(string field -> parse_field(field, adjustment, enabled, skip))
+    print(values)
+    print(fields)
+    print(parse_calls)
+
+    int[] lengths = fields.flat_map(string field -> [field.length()])
+    print(lengths)
+
+    int[] copied = values
+    copied[0] = 99
+    print(values)
+    print(copied)
+
+    try:
+        int[] failed = ['1', 'boom'].flat_map(string field -> parse_or_throw(field))
+        print(failed)
+    catch (exception error):
+        print(error)
+
+    int[] recovered = ['5'].flat_map(string field -> parse_or_throw(field))
+    print(recovered)
+
+    string[] no_fields = []
+    int[] empty = no_fields.flat_map(string field -> parse_or_throw(field))
+    print(empty.length())
+    return 0

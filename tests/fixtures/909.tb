@@ -1,0 +1,56 @@
+int format_calls = 0
+
+string render_number(int value):
+    format_calls += 1
+    if (value == 6):
+        throw 'map block failed'
+    return 'n=' + value
+
+int main():
+    int[] values = [1, 2]
+    int[] excluded = [2]
+    string prefix = 'value='
+    string[] formatted = values.map_to(int item -> {
+        int doubled = item * 2
+        if (excluded[0] == item) {
+            return prefix + 'skipped'
+        }
+        if (doubled > 0) {
+            return render_number(doubled)
+        }
+        return prefix + 'zero'
+    })
+    print(formatted.join(','))
+    print(format_calls)
+
+    int[] empty = []
+    string[] empty_result = empty.map_to(int item -> {
+        return render_number(item)
+    })
+    print(empty_result.length())
+    print(format_calls)
+
+    int[] failing = [1, 2, 3]
+    try:
+        string[] partial = failing.map_to(int item -> {
+            int doubled = item * 2
+            if (excluded[0] == item) {
+                return prefix + 'skipped'
+            }
+            if (doubled > 0) {
+                return render_number(doubled)
+            }
+            return prefix + 'zero'
+        })
+        print(partial.join(','))
+    catch (exception error):
+        print(error)
+    print(format_calls)
+
+    int[] after_failure = [4]
+    string[] recovered = after_failure.map_to(int item -> {
+        return render_number(item * 2)
+    })
+    print(recovered.join(','))
+    print(format_calls)
+    return 0

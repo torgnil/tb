@@ -1,0 +1,46 @@
+set<int> mutable_allowed = {2, 4, 6}
+
+bool remove_source_item(int item):
+    mutable_allowed.remove(item)
+    return true
+
+int main(string[] args):
+    int[] values = [2, 4, 6]
+    int[] selected = values.filter(int item -> remove_source_item(item) && mutable_allowed.contains(item))
+    print(selected)
+    print(mutable_allowed.length())
+
+    set<int> block_allowed = {2, 6}
+    int[] block_selected = values.filter(int item -> {
+        if (item == 4) {
+            return false
+        }
+        return block_allowed.contains(item)
+    })
+    print(block_selected)
+
+    const set<int> mapped_values = {2, 4}
+    int[] mapped = values.map_to(int item -> {
+        if (mapped_values.contains(item)) {
+            return item * 10
+        }
+        return item
+    })
+    print(mapped)
+
+    set<int> retry_allowed = {2, 4}
+    try {
+        values.filter(int item -> {
+            if (item == 4) {
+                throw 'captured callback failed'
+            }
+            return retry_allowed.contains(item)
+        })
+    } catch (exception error) {
+        print(error)
+    }
+    print(retry_allowed.contains(2))
+    print(values.filter(int item -> retry_allowed.contains(item)))
+    int[] empty = []
+    print(empty.filter(int item -> retry_allowed.contains(item)).length())
+    return 0

@@ -245,6 +245,58 @@ loop.step:
 loop.done:
   ret ptr %clone
 }
+define private ptr @tb_bootstrap_record_array_slice___RECORD__(ptr %array, i64 %start, i64 %end) {
+entry:
+  %len32 = call i32 @tb_bootstrap_record_array_length___RECORD__(ptr %array)
+  %len64 = sext i32 %len32 to i64
+  %start.negative = icmp slt i64 %start, 0
+  %start.offset = add i64 %start, %len64
+  %start.normalized = select i1 %start.negative, i64 %start.offset, i64 %start
+  %start.below = icmp slt i64 %start.normalized, 0
+  %start.nonnegative = select i1 %start.below, i64 0, i64 %start.normalized
+  %start.above = icmp sgt i64 %start.nonnegative, %len64
+  %start.clamped = select i1 %start.above, i64 %len64, i64 %start.nonnegative
+  %end.negative = icmp slt i64 %end, 0
+  %end.offset = add i64 %end, %len64
+  %end.normalized = select i1 %end.negative, i64 %end.offset, i64 %end
+  %end.below = icmp slt i64 %end.normalized, 0
+  %end.nonnegative = select i1 %end.below, i64 0, i64 %end.normalized
+  %end.above = icmp sgt i64 %end.nonnegative, %len64
+  %end.clamped = select i1 %end.above, i64 %len64, i64 %end.nonnegative
+  %has.items = icmp sgt i64 %end.clamped, %start.clamped
+  %slice.len.raw = sub i64 %end.clamped, %start.clamped
+  %slice.len64 = select i1 %has.items, i64 %slice.len.raw, i64 0
+  %slice.len32 = trunc i64 %slice.len64 to i32
+  %result = call ptr @tb_bootstrap_record_array_new___RECORD__(i32 %slice.len32)
+  br label %loop.cond
+loop.cond:
+  %index = phi i32 [0, %entry], [%next.index, %loop.step]
+  %keep.loop = icmp slt i32 %index, %slice.len32
+  br i1 %keep.loop, label %loop.body, label %loop.done
+loop.body:
+  %index64 = sext i32 %index to i64
+  %source.index64 = add i64 %start.clamped, %index64
+  %source.index = trunc i64 %source.index64 to i32
+  %item = call ptr @tb_bootstrap_record_array_get___RECORD__(ptr %array, i32 %source.index)
+  %source.owned.ptr = getelementptr inbounds %tb_bootstrap_record_array___RECORD__, ptr %array, i32 0, i32 3
+  %source.owned = load ptr, ptr %source.owned.ptr
+  %source.owned.slot = getelementptr inbounds i8, ptr %source.owned, i32 %source.index
+  %source.owned.byte = load i8, ptr %source.owned.slot
+  %item.is.owned = icmp ne i8 %source.owned.byte, 0
+  br i1 %item.is.owned, label %clone.owned, label %copy.borrowed
+clone.owned:
+  %item.clone = call ptr @tb_bootstrap_record_clone___RECORD__(ptr %item)
+  call void @tb_bootstrap_record_array_set_owned___RECORD__(ptr %result, i32 %index, ptr %item.clone, i1 true)
+  br label %loop.step
+copy.borrowed:
+  call void @tb_bootstrap_record_array_set_owned___RECORD__(ptr %result, i32 %index, ptr %item, i1 false)
+  br label %loop.step
+loop.step:
+  %next.index = add i32 %index, 1
+  br label %loop.cond
+loop.done:
+  ret ptr %result
+}
 define private void @tb_bootstrap_record_array_free___RECORD__(ptr %array) {
 entry:
   %is.null = icmp eq ptr %array, null

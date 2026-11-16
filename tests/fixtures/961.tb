@@ -1,0 +1,60 @@
+int count_matching(string[] lines, int minimum, bool include_empty):
+    int count = 0
+    for (string line : lines):
+        if (line.length() >= minimum || (include_empty && line.is_empty())):
+            count += 1
+    return count
+
+int named_mutate(string[] lines, int[] options):
+    lines[0] = 'worker'
+    options[0] += 1
+    return lines[0].length() + options[0]
+
+int main():
+    thread_pool pool = thread_pool(3)
+    string[] lines = ['alpha', '', 'x']
+    int minimum = 3
+    bool include_empty = true
+
+    future<int> count = pool.submit(string[] input -> count_matching(input, minimum, include_empty), lines)
+    future<bool> has_long_first = pool.submit(string[] input -> input[0].length() >= minimum && include_empty, lines)
+    future<int> temporary_input = pool.submit(string[] input -> input.length() + minimum, ['tmp'])
+    future<string> label = pool.submit(string[] input -> {
+        if (include_empty) {
+            return input[0] + ':' + minimum
+        }
+        return 'disabled'
+    }, lines)
+    future<string> failed = pool.submit(string[] input -> {
+        if (include_empty) {
+            throw 'string-array capture failed'
+        }
+        return input[0]
+    }, lines)
+
+    minimum = 100
+    include_empty = false
+    lines[0] = 'changed'
+    print(count.await())
+    print(has_long_first.await())
+    print(temporary_input.await())
+    print(label.await())
+    print(count.await())
+    try:
+        print(failed.await())
+    catch (exception error):
+        print(error)
+    future<bool> after_failure = pool.submit(string[] input -> input[0] == 'changed', lines)
+    print(after_failure.await())
+
+    string[] named_lines = ['named']
+    int[] options = [4]
+    future<int> named = pool.submit(named_mutate, named_lines, options)
+    future<int> temporary_named = pool.submit(named_mutate, ['temporary'], [2])
+    named_lines[0] = 'caller'
+    options[0] = 40
+    print(named.await())
+    print(temporary_named.await())
+    print(named_lines[0])
+    print(options[0])
+    return 0

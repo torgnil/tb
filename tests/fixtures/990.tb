@@ -1,0 +1,20 @@
+import process;
+
+int main():
+    try:
+        ProcessResult empty = run_process([])
+        print('unreachable')
+    catch (exception error):
+        print(error)
+
+    try:
+        ProcessResult missing = run_process(['/__tb_process_missing_program__'])
+        print('unreachable')
+    catch (exception error):
+        print(error)
+
+    ProcessResult recovered = run_process(['/usr/bin/printf', 'recovered'])
+    print(recovered.exit_code)
+    print(recovered.stdout)
+    print(recovered.stderr == '')
+    return 0

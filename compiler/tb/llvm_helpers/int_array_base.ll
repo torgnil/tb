@@ -322,6 +322,34 @@ entry:
   call void @qsort(ptr %data, i64 %len64, i64 8, ptr %cmp)
   ret ptr %array
 }
+define private ptr @tb_bootstrap_int_array_reverse(ptr %array) {
+entry:
+  %len = call i32 @tb_bootstrap_int_array_length(ptr %array)
+  %has.pair = icmp sgt i32 %len, 1
+  br i1 %has.pair, label %setup, label %done
+setup:
+  %data.ptr = getelementptr inbounds %tb_bootstrap_int_array, ptr %array, i32 0, i32 2
+  %data = load ptr, ptr %data.ptr
+  %right.initial = sub i32 %len, 1
+  br label %loop
+loop:
+  %left = phi i32 [ 0, %setup ], [ %left.next, %swap ]
+  %right = phi i32 [ %right.initial, %setup ], [ %right.next, %swap ]
+  %has.more = icmp slt i32 %left, %right
+  br i1 %has.more, label %swap, label %done
+swap:
+  %left.ptr = getelementptr inbounds i64, ptr %data, i32 %left
+  %right.ptr = getelementptr inbounds i64, ptr %data, i32 %right
+  %left.value = load i64, ptr %left.ptr
+  %right.value = load i64, ptr %right.ptr
+  store i64 %right.value, ptr %left.ptr
+  store i64 %left.value, ptr %right.ptr
+  %left.next = add i32 %left, 1
+  %right.next = sub i32 %right, 1
+  br label %loop
+done:
+  ret ptr %array
+}
 define private ptr @tb_bootstrap_int_array_sort_desc(ptr %array) {
 entry:
   %len = call i32 @tb_bootstrap_int_array_length(ptr %array)
@@ -334,7 +362,8 @@ entry:
 define private ptr @tb_bootstrap_create_prio_q_int_by(ptr %array, ptr %cmp) {
 entry:
   %clone = call ptr @tb_bootstrap_int_array_clone(ptr %array)
-  %sorted = call ptr @tb_bootstrap_int_array_sort_by(ptr %clone, ptr %cmp)
+  %ascending = call ptr @tb_bootstrap_int_array_sort_by(ptr %clone, ptr %cmp)
+  %sorted = call ptr @tb_bootstrap_int_array_reverse(ptr %ascending)
   %pq = call ptr @malloc(i64 16)
   %array.ptr = getelementptr inbounds %tb_bootstrap_prio_q_int, ptr %pq, i32 0, i32 0
   %cmp.ptr = getelementptr inbounds %tb_bootstrap_prio_q_int, ptr %pq, i32 0, i32 1
@@ -355,21 +384,48 @@ entry:
   %empty = icmp eq i32 %len, 0
   ret i1 %empty
 }
+; Keep the queue reverse-sorted and insert new equal values before old ones.
 define private i32 @tb_bootstrap_prio_q_int_push(ptr %pq, i64 %value) {
 entry:
+  %value.slot = alloca i64
+  store i64 %value, ptr %value.slot
   %array.ptr = getelementptr inbounds %tb_bootstrap_prio_q_int, ptr %pq, i32 0, i32 0
   %array = load ptr, ptr %array.ptr
   %cmp.ptr = getelementptr inbounds %tb_bootstrap_prio_q_int, ptr %pq, i32 0, i32 1
   %cmp = load ptr, ptr %cmp.ptr
-  %len = call i32 @tb_bootstrap_int_array_push(ptr %array, i64 %value)
-  %sorted = call ptr @tb_bootstrap_int_array_sort_by(ptr %array, ptr %cmp)
-  ret i32 %len
+  %len = call i32 @tb_bootstrap_int_array_length(ptr %array)
+  %data.ptr = getelementptr inbounds %tb_bootstrap_int_array, ptr %array, i32 0, i32 2
+  %data = load ptr, ptr %data.ptr
+  br label %search
+search:
+  %low = phi i32 [ 0, %entry ], [ %low.next, %probe ]
+  %high = phi i32 [ %len, %entry ], [ %high.next, %probe ]
+  %remaining = icmp slt i32 %low, %high
+  br i1 %remaining, label %probe, label %insert
+probe:
+  %distance = sub i32 %high, %low
+  %half = lshr i32 %distance, 1
+  %middle = add i32 %low, %half
+  %item.ptr = getelementptr inbounds i64, ptr %data, i32 %middle
+  %order = call i32 %cmp(ptr %item.ptr, ptr %value.slot)
+  %after = icmp sgt i32 %order, 0
+  %past.middle = add i32 %middle, 1
+  %low.next = select i1 %after, i32 %past.middle, i32 %low
+  %high.next = select i1 %after, i32 %high, i32 %middle
+  br label %search
+insert:
+  %index64 = zext i32 %low to i64
+  %new.len = call i32 @tb_bootstrap_int_array_insert(ptr %array, i64 %index64, i64 %value)
+  ret i32 %new.len
 }
 define private i64 @tb_bootstrap_prio_q_int_pop(ptr %pq) {
 entry:
   %array.ptr = getelementptr inbounds %tb_bootstrap_prio_q_int, ptr %pq, i32 0, i32 0
   %array = load ptr, ptr %array.ptr
-  %value = call i64 @tb_bootstrap_int_array_remove_at(ptr %array, i64 0)
+  %len = call i32 @tb_bootstrap_int_array_length(ptr %array)
+  %len64 = sext i32 %len to i64
+  %last = sub i64 %len64, 1
+  %value = call i64 @tb_bootstrap_int_array_remove_at(ptr %array, i64 %last)
   ret i64 %value
 }
 define private ptr @tb_bootstrap_int_array_clone(ptr %array) {

@@ -1,0 +1,41 @@
+set<string> changing_blocked = {'drop', 'stop'}
+
+bool remove_source_word(string word):
+    changing_blocked.remove('drop')
+    return true
+
+int main(string[] args):
+    string[] words = ['drop', 'keep', 'stop']
+    string[] retained = words.filter(string word -> {
+        if (remove_source_word(word)) {
+            return !changing_blocked.contains(word)
+        }
+        return true
+    })
+    print(retained)
+    print(changing_blocked.contains('drop'))
+
+    const set<string> marked = {'keep'}
+    string[] mapped = words.map_to(string word -> {
+        if (marked.contains(word)) {
+            return word + '!'
+        }
+        return word
+    })
+    print(mapped)
+
+    set<string> throwing = {'stop'}
+    try:
+        words.map_to(string word -> {
+            if (throwing.contains(word)) {
+                throw 'set callback failed'
+            }
+            return word + '?'
+        })
+    catch (exception error):
+        print(error)
+    print(words.filter(string word -> throwing.contains(word)))
+
+    string[] empty = []
+    print(empty.filter(string word -> throwing.contains(word)).length())
+    return 0

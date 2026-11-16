@@ -1,0 +1,73 @@
+int row_word_length(const string[] row):
+    return row[1].length()
+
+int grid_word_length(const string[][] words):
+    return row_word_length(words[0])
+
+int mutate_grid_copy(string[][] words):
+    words[0][0] = 'private'
+    return words[0][0].length()
+
+bool grid_has_maple(const string[][] words):
+    return words[0][1] == 'maple'
+
+int maybe_fail_grid(const string[][] words):
+    if (words[0][0] == 'fail'):
+        throw 'string grid worker failed'
+    return words[0][0].length()
+
+future<int> submit_scoped_grid(thread_pool pool):
+    string[][] local_words = [['cedar', 'row']]
+    return pool.submit(() -> grid_word_length(local_words))
+
+int main():
+    thread_pool pool = thread_pool(1)
+    string[][] words = [['oak', 'maple'], [], ['fir']]
+
+    future<int> named = pool.submit(mutate_grid_copy, words)
+    words[0][0] = 'pear'
+    print(named.await())
+    print(words[0][0].length())
+
+    words[0][1] = 'maple'
+    future<bool> named_bool = pool.submit(grid_has_maple, words)
+    words[0][1] = 'elm'
+    print(named_bool.await())
+
+    words[0][1] = 'maple'
+    future<int> captured = pool.submit(() -> grid_word_length(words))
+    words[0][1] = 'elm'
+    print(captured.await())
+
+    words[0][1] = 'maple'
+    future<bool> explicit = pool.submit(string[][] input -> {
+        if (input.length() > 0) {
+            return grid_has_maple(input)
+        }
+        return false
+    }, words)
+    words[0][1] = 'ash'
+    print(explicit.await())
+
+    string[][] empty_row = [[]]
+    future<bool> empty_row_result = pool.submit(() -> empty_row[0].is_empty())
+    print(empty_row_result.await())
+    string[][] empty_grid = []
+    future<bool> empty_result = pool.submit(() -> empty_grid.is_empty())
+    print(empty_result.await())
+
+    const string[][] fixed_words = [['fir', 'pine']]
+    future<int> fixed = pool.submit(() -> grid_word_length(fixed_words))
+    print(fixed.await())
+    print(submit_scoped_grid(pool).await())
+
+    string[][] failing = [['fail']]
+    future<int> failure = pool.submit(() -> maybe_fail_grid(failing))
+    failing[0][0] = 'okay'
+    try:
+        print(failure.await())
+    catch (exception error):
+        print(error)
+    future<int> after_failure = pool.submit(() -> grid_word_length(words))
+    print(after_failure.await())
+    return 0

@@ -6,7 +6,7 @@ if [ "$#" -gt 0 ]; then
     case "$1" in
         --help|-h)
             echo "Usage: ./build_tb.sh"
-            echo "Build with the released tb 0.2.2 compiler (TB_BOOTSTRAP_COMPILER overrides its path)."
+            echo "Build with the released tb 0.3.0 compiler (TB_BOOTSTRAP_COMPILER overrides its path)."
             exit 0 ;;
         *) echo "Usage: ./build_tb.sh" >&2; exit 2 ;;
     esac
@@ -19,10 +19,10 @@ build_root="$repo_root/.build/stage2"
 seed_compiler="${TB_BOOTSTRAP_COMPILER:-}"
 if [ -z "$seed_compiler" ]; then
     if ! command -v brew >/dev/null 2>&1; then
-        echo "Set TB_BOOTSTRAP_COMPILER to a tb 0.2.2 LLVM compiler." >&2
+        echo "Set TB_BOOTSTRAP_COMPILER to a tb 0.3.0 LLVM compiler." >&2
         exit 1
     fi
-    seed_compiler="$(brew --cellar)/tb/0.2.2/libexec/libexec/tb"
+    seed_compiler="$(brew --cellar)/tb/0.3.0/libexec/libexec/tb"
 fi
 stage1_ll="$build_root/tb_stage1.ll"
 stage1_bin="$build_root/tb_stage1"
@@ -58,7 +58,7 @@ def sha256(path):
 seed = Path(seed_compiler).resolve()
 if not seed.is_file() or not os.access(seed, os.X_OK):
     raise SystemExit(f'Missing bootstrap compiler: {seed}\n'
-                     'Set TB_BOOTSTRAP_COMPILER to the tb 0.2.2 LLVM compiler binary.')
+                     'Set TB_BOOTSTRAP_COMPILER to the tb 0.3.0 LLVM compiler binary.')
 # Invoke a private copy, never the moving Homebrew link or active bin/tb.
 frozen_seed = build_root / 'bootstrap_seed'
 if seed == frozen_seed.resolve():
@@ -74,12 +74,12 @@ if expected_hash is not None:
     if seed_hash != expected_hash.lower():
         raise SystemExit('Bootstrap compiler SHA-256 does not match TB_BOOTSTRAP_SHA256')
 result = subprocess.run([str(frozen_seed), '--version'], capture_output=True, text=True)
-if result.returncode != 0 or result.stdout.strip() != 'tb 0.2.2' or result.stderr:
-    raise SystemExit('Bootstrap compiler must be the tb 0.2.2 LLVM compiler binary')
+if result.returncode != 0 or result.stdout.strip() != 'tb 0.3.0' or result.stderr:
+    raise SystemExit('Bootstrap compiler must be the tb 0.3.0 LLVM compiler binary')
 metadata = {'mode': 'native', 'python': sys.executable, 'python_version': sys.version,
             'seed_source': str(seed), 'seed_copy': str(frozen_seed),
-            'seed_version': '0.2.2', 'seed_sha256': seed_hash}
-print(f'Bootstrap seed: {seed} (tb 0.2.2)\nSHA-256: {seed_hash}', flush=True)
+            'seed_version': '0.3.0', 'seed_sha256': seed_hash}
+print(f'Bootstrap seed: {seed} (tb 0.3.0)\nSHA-256: {seed_hash}', flush=True)
 (build_root / 'bootstrap.json').write_text(json.dumps(metadata, indent=2) + '\n')
 
 helpers = sorted((repo_root / 'compiler/tb/llvm_helpers').glob('*.ll'))
@@ -119,15 +119,17 @@ lines.append("    if (name == 'strings'):")
 lines.append(f"        return {tb_string(source_text(repo_root / 'lib/strings.tb'))}")
 lines.append("    if (name == 'union_find'):")
 lines.append(f"        return {tb_string(source_text(repo_root / 'lib/union_find.tb'))}")
+lines.append("    if (name == 'process'):")
+lines.append(f"        return {tb_string(source_text(repo_root / 'lib/process.tb'))}")
 lines.append("    throw 'unknown built-in module: ' + name")
 
 runtime = repo_root / 'compiler/tb/runtime'
 header = source_text(runtime / 'thread_pool_composite_runtime.h')
 include = '#include "thread_pool_composite_runtime.h"'
 lines.extend(['', 'string llvm_embedded_runtime_text(string name):'])
-for name in ('thread_pool_runtime.c', 'thread_pool_composite_runtime.c', 'secure_random_runtime.c'):
+for name in ('thread_pool_runtime.c', 'thread_pool_composite_runtime.c', 'secure_random_runtime.c', 'directory_runtime.c', 'process_runtime.c'):
     text = source_text(runtime / name)
-    if name != 'secure_random_runtime.c':
+    if name in ('thread_pool_runtime.c', 'thread_pool_composite_runtime.c'):
         if text.count(include) != 1:
             raise SystemExit(f'Expected one composite runtime header include: {name}')
         # Each emitted C source is self-contained; no external header is needed.

@@ -514,7 +514,7 @@ BindingIR[] initialized_managed_locals(ParsedFunction function_ir, string[] reco
     if (is_main_args_parameter):
         result.push(function_ir.params[0])
     for (BindingIR parameter in function_ir.params):
-        if (normalize_llvm_type_name(parameter.type_name) == 'string'):
+        if (normalize_llvm_type_name(parameter.type_name) == 'string' || normalize_llvm_type_name(parameter.type_name) == 'bool[][]'):
             result.push(parameter)
     for (BlockIR block in function_ir.blocks):
         for (LinearInstruction op in block.instructions):
@@ -632,7 +632,7 @@ LinearInstruction[] exit_cleanup_instructions(OwnershipIdentifierTargetCache ide
         if (transferred_binding != ''):
             BindingIR transferred = ir_parse_binding_decl(transferred_binding)
             string transferred_type = normalize_llvm_type_name(transferred.type_name)
-            if (transferred_type == 'string' || ir_is_conditional_binding(transferred.name)):
+            if (transferred_type == 'string' || transferred_type == 'bool[][]' || ir_is_conditional_binding(transferred.name)):
                 transferred_binding = ''
     for (BindingIR binding in initialized_managed):
         string current = binding_decl(binding)

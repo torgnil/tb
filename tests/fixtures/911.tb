@@ -1,0 +1,90 @@
+string format_and_increment(string prefix, int[] values):
+    values[0] = values[0] + 1
+    return prefix + values[0] + ':' + values[1]
+
+bool matches_values(string prefix, int[] values):
+    return prefix == 'named-' && values[0] == 3
+
+string identity_prefix(string prefix, int[] values):
+    return prefix
+
+int score_values(string prefix, int[] values):
+    return prefix.length() + values[0]
+
+int count_values(string prefix, int[] values):
+    return values.length()
+
+int main():
+    thread_pool pool = thread_pool(3)
+
+    string prefix = 'job-'
+    int number = 3
+    bool enabled = true
+    future<string> captured_text = pool.submit(() -> prefix + number)
+    future<bool> captured_check = pool.submit(() -> enabled && prefix == 'job-')
+    future<int> captured_score = pool.submit(() -> prefix.length() + number)
+    prefix = 'updated-'
+    number = 50
+    enabled = false
+    print(captured_text.await())
+    print(captured_check.await())
+    print(captured_score.await())
+    print(captured_text.await())
+
+    string block_prefix = 'block-'
+    int block_number = 8
+    bool block_enabled = true
+    future<string> block_result = pool.submit(() -> {
+        if (block_enabled) {
+            return block_prefix + block_number
+        }
+        return 'disabled'
+    })
+    block_prefix = 'changed-'
+    block_number = 99
+    block_enabled = false
+    print(block_result.await())
+
+    const string constant_prefix = 'constant-'
+    const int constant_number = 5
+    future<string> constant_result = pool.submit(() -> constant_prefix + constant_number)
+    print(constant_result.await())
+
+    const string failure_prefix = 'fail-'
+    const int failure_number = 10
+    const bool throw_now = true
+    future<string> failed = pool.submit(() -> {
+        if (throw_now) {
+            throw 'mixed capture failed'
+        }
+        return failure_prefix + failure_number
+    })
+    try:
+        print(failed.await())
+    catch (exception error):
+        print(error)
+
+    string named_prefix = 'named-'
+    int[] named_values = [3, 8]
+    future<string> named_text = pool.submit(format_and_increment, named_prefix, named_values)
+    future<bool> named_check = pool.submit(matches_values, named_prefix, named_values)
+    future<string> named_identity = pool.submit(identity_prefix, named_prefix, named_values)
+    future<int> named_score = pool.submit(score_values, named_prefix, named_values)
+    future<string> temporary_named = pool.submit(identity_prefix, 'named-' + 'temporary-', [2, 5])
+    named_prefix = 'changed-'
+    named_values[0] = 90
+    print(named_text.await())
+    print(named_check.await())
+    print(named_identity.await())
+    print(temporary_named.await())
+    print(named_score.await())
+    print(named_text.await())
+    print(named_values[0])
+
+    int[] empty_values = []
+    future<int> empty_count = pool.submit(count_values, 'empty-', empty_values)
+    print(empty_count.await())
+
+    future<string> after_failure = pool.submit(() -> prefix + number)
+    print(after_failure.await())
+    return 0

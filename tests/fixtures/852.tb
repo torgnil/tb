@@ -1,0 +1,27 @@
+int main():
+    thread_pool pool = thread_pool(1)
+    int[] values = [1, 2, 3]
+    future<num> total = pool.submit(int[] items -> {
+        int sum = 0
+        for (int value in items) {
+            sum += value
+        }
+        return sum + 0.5
+    }, values)
+    values.clear()
+    print(total.await())
+    print(total.await())
+
+    int[] empty = []
+    future<num> failure = pool.submit(int[] items -> {
+        if (items.is_empty()) {
+            throw 'empty-input'
+        }
+        return items[0] + 0.25
+    }, empty)
+    try:
+        failure.await()
+        print('missing failure')
+    catch (exception error):
+        print(error)
+    return 0

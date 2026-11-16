@@ -1,0 +1,41 @@
+int numeric_value(string field):
+    return field.to_int()
+
+int main():
+    int adjustment = 2
+    bool include_next = true
+    string skip = 'skip'
+    string[] fields = ['1', '', 'skip', 'boom']
+
+    try:
+        int[] failed = fields.flat_map(string field -> {
+            if (field == 'boom') {
+                throw 'flat_map int block failed'
+            }
+            if (field == '' || field == skip) {
+                return []
+            }
+            int value = numeric_value(field) + adjustment
+            if (include_next && value > 0) {
+                return [value, value + 1]
+            }
+            return [value]
+        })
+        print(failed)
+    catch (exception error):
+        print(error)
+
+    print(fields[0])
+
+    int[] recovered = ['4', 'skip'].flat_map(string field -> {
+        if (field == skip) {
+            return []
+        }
+        int value = numeric_value(field) + adjustment
+        if (include_next) {
+            return [value, value + 1]
+        }
+        return [value]
+    })
+    print(recovered)
+    return 0

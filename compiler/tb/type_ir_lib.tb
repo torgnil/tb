@@ -139,7 +139,7 @@ string future_value_type(string type_name):
 
 bool is_thread_pool_submit_arg_type(string type_name):
     type_name = normalize_llvm_type_name(type_name)
-    return type_name == 'int' || type_name == 'bool' || type_name == 'string' || type_name == 'int[]' || type_name == 'bool[]' || type_name == 'int[][]' || type_name == 'bool[][]' || type_name == 'string[]'
+    return type_name == 'int' || type_name == 'bool' || type_name == 'string' || type_name == 'int[]' || type_name == 'bool[]' || type_name == 'int[][]' || type_name == 'bool[][]' || type_name == 'string[]' || type_name == 'string[][]'
 
 bool is_thread_pool_submit_return_type(string type_name):
     type_name = normalize_llvm_type_name(type_name)
@@ -223,6 +223,10 @@ bool is_supported_call_array_type(string type_name):
     string normalized_type = normalize_llvm_type_name(type_name)
     return normalized_type == 'int[]' || normalized_type == 'bool[]' || normalized_type == 'string[]' || normalized_type == 'int[][]' || normalized_type == 'bool[][]' || normalized_type == 'string[][]'
 
+bool is_supported_call_array_context_type(string type_name):
+    string normalized_type = normalize_llvm_type_name(type_name)
+    return is_supported_call_array_type(normalized_type) || (normalized_type.ends_with('[]') && record_name_from_type(array_item_type(normalized_type)) != '')
+
 private RefineInstructionsResult contextualize_bool_grid_literal(LinearInstruction[] instructions, string[] temp_types, string array_name):
     string actual_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, array_name))
     if (!is_untyped_array_shape(actual_type)):
@@ -238,7 +242,7 @@ private RefineInstructionsResult contextualize_bool_grid_literal(LinearInstructi
 
 bool can_contextualize_call_array_literal(LinearInstruction[] instructions, string[] temp_types, string array_name, string expected_type):
     string normalized_expected_type = normalize_llvm_type_name(expected_type)
-    if (!is_supported_call_array_type(normalized_expected_type)):
+    if (!is_supported_call_array_context_type(normalized_expected_type)):
         return false
     string actual_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, array_name))
     if (actual_type == normalized_expected_type):
@@ -282,15 +286,17 @@ RefineInstructionsResult contextualize_call_array_literal(LinearInstruction[] in
         temp_types = set_temp_type_slot(temp_types, array_name, normalized_expected_type)
     return RefineInstructionsResult(instructions, temp_types)
 
-private RefineInstructionsResult contextualize_direct_user_arrays(LinearInstruction op, LinearInstruction[] instructions, string[] temp_types, FunctionSigIR[] functions, EnumTypeIR[] enum_types):
+private RefineInstructionsResult contextualize_direct_user_arrays(LinearInstruction op, LinearInstruction[] instructions, string[] temp_types, FunctionSigIR[] functions, EnumTypeIR[] enum_types, string[] record_names):
     FunctionSigIR call_sig = lookup_function_sig(functions, op.args[0])
     if (call_sig.name == '' || op.args.length() != call_sig.param_types.length() + 1):
+        return RefineInstructionsResult(instructions, temp_types)
+    if (op.args[0] == 'sum' && (record_type_exists(record_names, 'sum') || op.args.length() != 2)):
         return RefineInstructionsResult(instructions, temp_types)
     int index = 0
     while (index < call_sig.param_types.length()):
         string expected_type = normalize_enum_type_name(normalize_llvm_type_name(call_sig.param_types[index]), enum_types)
         string actual_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[index + 1])), enum_types)
-        if (actual_type != expected_type && (!is_untyped_array_shape(actual_type) || !is_supported_call_array_type(expected_type) || !can_contextualize_call_array_literal(instructions, temp_types, op.args[index + 1], expected_type))):
+        if (actual_type != expected_type && (!is_untyped_array_shape(actual_type) || !is_supported_call_array_context_type(expected_type) || !can_contextualize_call_array_literal(instructions, temp_types, op.args[index + 1], expected_type))):
             return RefineInstructionsResult(instructions, temp_types)
         index += 1
     index = 0
@@ -303,6 +309,12 @@ private RefineInstructionsResult contextualize_direct_user_arrays(LinearInstruct
             temp_types = contextual_arg.temp_types
         index += 1
     return RefineInstructionsResult(instructions, temp_types)
+
+private bool is_direct_user_array_context_call(LinearInstruction op):
+    if (op.kind != 'value' || op.detail != 'call' || op.args.is_empty()):
+        return false
+    string name = op.args[0]
+    return name == 'split' || name == 'join' || name == 'sqrt' || name == 'min' || name == 'max' || name == 'length' || name == 'is_empty' || name == 'sum'
 
 private bool is_supported_deep_grid_key_map_value_type(string value_type):
     return value_type == 'bool' || value_type == 'int' || value_type == 'string' || value_type == 'bool[]' || value_type == 'int[]' || value_type == 'string[]'
@@ -522,31 +534,41 @@ string thread_pool_submit_result_type(FunctionSigIR[] functions, string function
             return 'future<num>'
         if (argument_count == 1 && function_sig.param_types.length() == 1 && parameter_type == 'int'):
             return 'future<num>'
-        throw 'thread_pool.submit currently supports num functions with signature num fn(), num fn(num), or num fn(int)'
+        if (argument_count == 1 && function_sig.param_types.length() == 1 && parameter_type == 'int[]'):
+            return 'future<num>'
+        throw 'thread_pool.submit currently supports num functions with signature num fn(), num fn(num), num fn(int), or num fn(int[])'
     if (function_sig.return_type == 'string[]'):
         if (argument_count == 0 && function_sig.param_types.is_empty()):
             return 'future<string[]>'
         if (argument_count == 1 && function_sig.param_types.length() == 1 && function_sig.param_types[0] == 'string[]'):
             return 'future<string[]>'
         throw 'thread_pool.submit currently requires a function with signature string[] fn() or string[] fn(string[])'
+    if (argument_count == 2):
+        bool string_and_int_array = function_sig.param_types.length() == 2 && normalize_llvm_type_name(function_sig.param_types[0]) == 'string' && normalize_llvm_type_name(function_sig.param_types[1]) == 'int[]'
+        bool string_array_and_int_array = function_sig.param_types.length() == 2 && normalize_llvm_type_name(function_sig.param_types[0]) == 'string[]' && normalize_llvm_type_name(function_sig.param_types[1]) == 'int[]'
+        if ((string_and_int_array || string_array_and_int_array) && (function_sig.return_type == 'int' || function_sig.return_type == 'bool' || function_sig.return_type == 'string')):
+            return 'future<' + function_sig.return_type + '>'
+        throw 'thread_pool.submit currently requires a function with signature T fn(string, int[]) or T fn(string[], int[]) where T is int, bool, or string'
     if (argument_count == 0):
         if (function_sig.param_types.length() != 0):
-            throw 'thread_pool.submit currently requires a function with signature T fn() or T fn(U) where T is int, bool, string, or int[] and U is int, bool, string, int[], bool[], int[][], bool[][], or string[]'
+            throw 'thread_pool.submit currently requires a function with signature T fn() or T fn(U) where T is int, bool, string, or int[] and U is int, bool, string, int[], bool[], int[][], bool[][], string[], or string[][]'
     else if (argument_count == 1):
         if (function_sig.param_types.length() != 1):
-            throw 'thread_pool.submit currently requires a function with signature T fn() or T fn(U) where T is int, bool, string, or int[] and U is int, bool, string, int[], bool[], int[][], bool[][], or string[]'
+            throw 'thread_pool.submit currently requires a function with signature T fn() or T fn(U) where T is int, bool, string, or int[] and U is int, bool, string, int[], bool[], int[][], bool[][], string[], or string[][]'
         if (!is_thread_pool_submit_arg_type(function_sig.param_types[0])):
-            throw 'thread_pool.submit currently requires a function with signature T fn() or T fn(U) where T is int, bool, string, or int[] and U is int, bool, string, int[], bool[], int[][], bool[][], or string[]'
+            throw 'thread_pool.submit currently requires a function with signature T fn() or T fn(U) where T is int, bool, string, or int[] and U is int, bool, string, int[], bool[], int[][], bool[][], string[], or string[][]'
     else:
-        throw 'thread_pool.submit currently requires a function name with zero or one argument'
+        throw 'thread_pool.submit currently requires a function name with zero or one argument, or T fn(string, int[]) or T fn(string[], int[]) where T is int, bool, or string'
     if (!is_thread_pool_submit_return_type(function_sig.return_type)):
-        throw 'thread_pool.submit currently requires a function with signature T fn() or T fn(U) where T is int, bool, string, int[], or int[][] and U is int, bool, string, int[], bool[], int[][], bool[][], or string[]'
+        throw 'thread_pool.submit currently requires a function with signature T fn() or T fn(U) where T is int, bool, string, int[], or int[][] and U is int, bool, string, int[], bool[], int[][], bool[][], string[], or string[][]'
     if (function_sig.param_types.length() == 1 && function_sig.param_types[0] == 'bool[]' && (function_sig.return_type != 'int' && function_sig.return_type != 'bool')):
         throw 'thread_pool.submit currently requires a function with signature int fn(bool[]) or bool fn(bool[])'
-    if (function_sig.param_types.length() == 1 && function_sig.param_types[0] == 'string[]' && (function_sig.return_type != 'int' && function_sig.return_type != 'bool' && function_sig.return_type != 'string[]')):
-        throw 'thread_pool.submit currently requires a function with signature int fn(string[]), bool fn(string[]), or string[] fn(string[])'
+    if (function_sig.param_types.length() == 1 && function_sig.param_types[0] == 'string[]' && (function_sig.return_type != 'int' && function_sig.return_type != 'bool' && function_sig.return_type != 'string' && function_sig.return_type != 'string[]')):
+        throw 'thread_pool.submit currently requires a function with signature int fn(string[]), bool fn(string[]), string fn(string[]), or string[] fn(string[])'
     if (function_sig.param_types.length() == 1 && function_sig.param_types[0] == 'bool[][]' && (function_sig.return_type != 'int' && function_sig.return_type != 'bool')):
         throw 'thread_pool.submit currently requires a function with signature int fn(bool[][]) or bool fn(bool[][])'
+    if (function_sig.param_types.length() == 1 && normalize_llvm_type_name(function_sig.param_types[0]) == 'string[][]' && (function_sig.return_type != 'int' && function_sig.return_type != 'bool' && function_sig.return_type != 'string')):
+        throw 'thread_pool.submit currently requires a function with signature int fn(string[][]), bool fn(string[][]), or string fn(string[][])'
     return 'future<' + function_sig.return_type + '>'
 
 RecordFieldIR[] collect_record_fields(RecordDeclIR[] records):
@@ -1223,6 +1245,8 @@ string infer_call_type(string name, FunctionSigIR[] functions):
     string foreign_return_type = foreign_function_return_type(name)
     if (foreign_return_type != 'unknown'):
         return foreign_return_type
+    if (name == '__tb_internal_process_capture'):
+        return 'string[]'
     if (name == 'thread_pool'):
         return 'thread_pool'
     if (name == 'length'):
@@ -1243,6 +1267,10 @@ string infer_call_type(string name, FunctionSigIR[] functions):
         return 'string[]'
     if (name == 'read_lines'):
         return 'string[]'
+    if (name == 'list_dir'):
+        return 'string[]'
+    if (name == 'path_exists' || name == 'is_file' || name == 'is_dir'):
+        return 'bool'
     if (name == 'read_file'):
         return 'string'
     if (name == 'write_all'):
@@ -1310,7 +1338,7 @@ string lookup_cached_field_type(string[] keys, string[] types, string record_nam
     return lookup_cached_name_type(keys, types, record_name + '.' + field_name)
 
 string infer_call_type_cached(string name, FunctionSigIR[] functions, string[] cache_names, string[] cache_types):
-    if (is_direct_trim_builtin(name) || name == 'substring' || name == 'random_bits' || name == 'to_num'):
+    if (is_direct_trim_builtin(name) || name == 'substring' || name == 'random_bits' || name == 'to_num' || name == 'to_int'):
         string user_result_type = lookup_function_return_type(functions, name)
         if (user_result_type != 'unknown'):
             return user_result_type
@@ -1339,6 +1367,22 @@ private bool is_direct_trim_builtin(string name):
     return name == 'trim' || name == 'trim_left' || name == 'trim_right'
 
 private void validate_direct_trim_call(string name, LinearInstruction op, EnumTypeIR[] enum_types, string[] temp_types):
+    int argument_count = op.args.length() - 1
+    if (argument_count != 1):
+        throw name + ' expects exactly one string argument; got: ' + argument_count.to_string()
+    string argument_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
+    if (argument_type != 'string'):
+        throw name + ' requires a string argument, got: ' + argument_type
+
+private void validate_direct_list_dir_call(LinearInstruction op, EnumTypeIR[] enum_types, string[] temp_types):
+    int argument_count = op.args.length() - 1
+    if (argument_count != 1):
+        throw 'list_dir expects exactly one string argument; got: ' + argument_count.to_string()
+    string argument_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
+    if (argument_type != 'string'):
+        throw 'list_dir requires a string argument, got: ' + argument_type
+
+private void validate_direct_path_classification_call(string name, LinearInstruction op, EnumTypeIR[] enum_types, string[] temp_types):
     int argument_count = op.args.length() - 1
     if (argument_count != 1):
         throw name + ' expects exactly one string argument; got: ' + argument_count.to_string()
@@ -1919,6 +1963,19 @@ private string validate_native_abs_method_call(LinearInstruction op, string[] te
 private LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bindings, FunctionSigIR[] functions, RecordFieldIR[] record_fields, map<string, string> field_types, string[] record_names, EnumTypeIR[] enum_types, string[] temp_types):
     if (op.kind != 'value'):
         return op
+    if (op.detail == 'call' && !op.args.is_empty() && op.args[0] == '__tb_internal_process_capture'):
+        if (op.args.length() != 2):
+            throw 'run_process expects exactly one string[] argument'
+        string argument_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
+        if (argument_type != 'string[]'):
+            throw 'run_process requires string[] arguments; got ' + argument_type
+        return refined_value_op(op, 'string[]', 'owned')
+    if (op.detail == 'call' && !op.args.is_empty() && op.args[0] == 'list_dir'):
+        validate_direct_list_dir_call(op, enum_types, temp_types)
+        return refined_value_op(op, 'string[]', 'owned')
+    if (op.detail == 'call' && !op.args.is_empty() && (op.args[0] == 'path_exists' || op.args[0] == 'is_file' || op.args[0] == 'is_dir')):
+        validate_direct_path_classification_call(op.args[0], op, enum_types, temp_types)
+        return refined_value_op(op, 'bool', 'plain')
     if (op.detail == 'call' && !op.args.is_empty() && op.args[0] == 'sqrt'):
         FunctionSigIR sqrt_sig = lookup_function_sig(functions, 'sqrt')
         if (has_matching_direct_signature(op, sqrt_sig, enum_types, temp_types)):
@@ -2118,8 +2175,8 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
                     throw 'captured string[] filter callback signature must start with string'
                 for (int capture_index = 4; capture_index < op.args.length(); capture_index += 1):
                     string capture_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[capture_index]))
-                    if (!(capture_type == 'int' || capture_type == 'bool' || capture_type == 'string' || capture_type == 'int[]' || capture_type == 'bool[]' || capture_type == 'string[]')):
-                        throw 'string[] filter callback captures must be int, bool, string, int[], bool[], or string[]; got ' + capture_type
+                    if (!(capture_type == 'int' || capture_type == 'bool' || capture_type == 'string' || capture_type == 'int[]' || capture_type == 'bool[]' || capture_type == 'string[]' || capture_type == 'set<string>')):
+                        throw 'string[] filter callback captures must be int, bool, string, int[], bool[], string[], or set<string>; got ' + capture_type
                     if (normalize_llvm_type_name(captured_filter_callback.param_types[capture_index - 3]) != capture_type):
                         throw 'captured string[] filter callback parameter type does not match capture; got ' + capture_type
                 string captured_filter_return_type = normalize_llvm_type_name(captured_filter_callback.return_type)
@@ -2167,9 +2224,9 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
         string right_type = lookup_temp_type_slot(temp_types, op.args[2])
         string normalized_left_type = normalize_llvm_type_name(left_type)
         string normalized_right_type = normalize_llvm_type_name(right_type)
-        if (normalized_left_type == 'int' || normalized_left_type == 'num'):
+        if (normalized_left_type == 'int' || normalized_left_type == 'num' || normalized_left_type == 'string'):
             left_type = normalized_left_type
-        if (normalized_right_type == 'int' || normalized_right_type == 'num'):
+        if (normalized_right_type == 'int' || normalized_right_type == 'num' || normalized_right_type == 'string'):
             right_type = normalized_right_type
         if (op.args[0] == '<' || op.args[0] == '<=' || op.args[0] == '>' || op.args[0] == '>='):
             bool left_is_string = normalize_llvm_type_name(left_type) == 'string'
@@ -2216,7 +2273,9 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
                 throw 'sort is an array method; use array.sort(...)'
         if (op.args[0] == 'length' || op.args[0] == 'is_empty'):
             validate_direct_native_query_receiver(op, op.args[0], functions, record_fields, enum_types, temp_types, record_names)
-        if (op.args[0] == 'to_int'):
+        if (op.args[0] == 'to_int' && lookup_function_return_type(functions, 'to_int') == 'unknown' && record_type_exists(record_names, 'to_int')):
+            return refined_value_op(op, 'to_int', refine_ownership_mode(op, 'to_int'))
+        if (op.args[0] == 'to_int' && lookup_function_return_type(functions, 'to_int') == 'unknown' && !record_type_exists(record_names, 'to_int')):
             if (op.args.length() == 2):
                 string to_int_argument_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
                 if (to_int_argument_type != '' && to_int_argument_type != 'unknown' && to_int_argument_type != 'string'):
@@ -2245,6 +2304,10 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
         string result_type = infer_call_type_cached(op.args[0], functions, TYPE_IR_FUNCTION_TYPE_CACHE_NAMES, TYPE_IR_FUNCTION_TYPE_CACHE_VALUES)
         if (split_calls_user_function):
             result_type = lookup_function_return_type(functions, op.args[0])
+        if (op.args[0] == 'length'):
+            FunctionSigIR length_function = lookup_function_sig(functions, 'length')
+            if (has_matching_direct_signature(op, length_function, enum_types, temp_types)):
+                result_type = length_function.return_type
         if (is_direct_string_predicate(op.args[0]) && result_type == 'unknown' && lookup_function_return_type(functions, op.args[0]) == 'unknown' && !record_type_exists(record_names, op.args[0])):
             int argument_count = op.args.length() - 1
             if (argument_count != 1):
@@ -2606,7 +2669,7 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
             string minmax_result_type = refine_ufcs_minmax_result_type(op, functions, enum_types, temp_types)
             if (minmax_result_type != ''):
                 return refined_value_op(op, minmax_result_type, refine_ownership_mode(op, minmax_result_type))
-        if (method_name == 'submit' && base_type == 'thread_pool' && (op.args.length() == 3 || op.args.length() == 4)):
+        if (method_name == 'submit' && base_type == 'thread_pool' && (op.args.length() == 3 || op.args.length() == 4 || op.args.length() == 5)):
             string future_type = thread_pool_submit_result_type(functions, op.args[2], op.args.length() - 3)
             if (op.args.length() == 4):
                 FunctionSigIR worker_sig = lookup_function_sig(functions, op.args[2])
@@ -2614,6 +2677,13 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
                 string actual_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[3]))
                 if (expected_type != actual_type):
                     throw 'thread_pool.submit argument for ' + source_name_for_function_sig(functions, op.args[2]) + ' requires ' + expected_type + '; got ' + actual_type
+            if (op.args.length() == 5):
+                FunctionSigIR worker_sig = lookup_function_sig(functions, op.args[2])
+                for (int argument_index = 0; argument_index < 2; argument_index += 1):
+                    string expected_type = normalize_llvm_type_name(worker_sig.param_types[argument_index])
+                    string actual_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[argument_index + 3]))
+                    if (expected_type != actual_type):
+                        throw 'thread_pool.submit argument ' + (argument_index + 1).to_string() + ' for ' + source_name_for_function_sig(functions, op.args[2]) + ' requires ' + expected_type + '; got ' + actual_type
             return refined_value_op(op, future_type, refine_ownership_mode(op, future_type))
         if (method_name == 'contains'):
             string contains_receiver_type = normalize_llvm_type_name(base_type)
@@ -2737,14 +2807,137 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
                 int capture_index = 4
                 while (capture_index < op.args.length()):
                     string capture_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[capture_index]))
-                    if (!(capture_type == 'int' || capture_type == 'bool' || capture_type == 'string' || capture_type == 'int[]' || capture_type == 'bool[]' || capture_type == 'string[]')):
-                        throw 'string[] map_to callback captures must be int, bool, string, int[], bool[], or string[]; got ' + capture_type
+                    if (!(capture_type == 'int' || capture_type == 'bool' || capture_type == 'string' || capture_type == 'int[]' || capture_type == 'bool[]' || capture_type == 'string[]' || capture_type == 'set<string>')):
+                        throw 'string[] map_to callback captures must be int, bool, string, int[], bool[], string[], or set<string>; got ' + capture_type
                     capture_index += 1
                 return refined_value_op(op, 'string[]', 'owned')
             if (op.args[0] == 'map_to_edge_distance' && base_type == 'int[]'):
                 return refined_value_op(op, 'Edge[]', 'owned')
             if (op.args[0] == 'flat_map_edges_for_point' && base_type == 'int[]'):
                 return refined_value_op(op, 'Edge[]', 'owned')
+            if (op.args[0] == 'flat_map_int_expr'):
+                if (op.args.length() != 4):
+                    throw 'int[] flat_map expression has invalid IR arity'
+                string flat_map_receiver_type = normalize_llvm_type_name(base_type)
+                BindingIR flat_map_parameter = ir_parse_binding_decl(op.args[2])
+                FunctionSigIR flat_map_callback = lookup_function_sig(functions, op.args[3])
+                if (flat_map_receiver_type != 'int[]'):
+                    throw 'int[] flat_map expression requires int[] receiver; got ' + flat_map_receiver_type
+                if (normalize_llvm_type_name(flat_map_parameter.type_name) != 'int'):
+                    throw 'int[] flat_map expression requires int parameter; got ' + flat_map_parameter.type_name
+                if (flat_map_callback.name == '' || flat_map_callback.param_types.length() != 1 || normalize_llvm_type_name(flat_map_callback.param_types[0]) != 'int'):
+                    throw 'int[] flat_map expression callback must have signature int[](int)'
+                string flat_map_return_type = normalize_llvm_type_name(flat_map_callback.return_type)
+                if (flat_map_return_type != 'int[]'):
+                    throw 'int[] flat_map expression must return int[]; got ' + flat_map_return_type
+                return refined_value_op(op, 'int[]', 'owned')
+            if (op.args[0] == 'flat_map_int_expr_captured'):
+                if (op.args.length() < 5):
+                    throw 'int[] flat_map expression has invalid captured IR arity'
+                if (normalize_llvm_type_name(base_type) != 'int[]'):
+                    throw 'int[] flat_map expression requires int[] receiver; got ' + normalize_llvm_type_name(base_type)
+                BindingIR flat_map_parameter = ir_parse_binding_decl(op.args[2])
+                if (normalize_llvm_type_name(flat_map_parameter.type_name) != 'int'):
+                    throw 'int[] flat_map expression requires int parameter; got ' + flat_map_parameter.type_name
+                FunctionSigIR flat_map_callback = lookup_function_sig(functions, op.args[3])
+                int capture_count = op.args.length() - 4
+                if (flat_map_callback.name == '' || flat_map_callback.param_types.length() != capture_count + 1 || normalize_llvm_type_name(flat_map_callback.param_types[0]) != 'int'):
+                    throw 'int[] flat_map expression callback has invalid captured signature'
+                int capture_index = 0
+                while (capture_index < capture_count):
+                    string capture_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[capture_index + 4]))
+                    if (!(capture_type == 'int' || capture_type == 'bool' || capture_type == 'string')):
+                        throw 'int[] flat_map captures must be int, bool, or string; got ' + capture_type
+                    string parameter_type = normalize_llvm_type_name(flat_map_callback.param_types[capture_index + 1])
+                    if (parameter_type != capture_type):
+                        throw 'int[] flat_map callback capture must have type ' + capture_type + '; got ' + parameter_type
+                    capture_index += 1
+                string flat_map_return_type = normalize_llvm_type_name(flat_map_callback.return_type)
+                if (flat_map_return_type != 'int[]'):
+                    throw 'int[] flat_map expression must return int[]; got ' + flat_map_return_type
+                return refined_value_op(op, 'int[]', 'owned')
+            if (op.args[0] == 'flat_map_string_expr'):
+                if (op.args.length() != 4):
+                    throw 'string[] flat_map expression has invalid IR arity'
+                string flat_map_receiver_type = normalize_llvm_type_name(base_type)
+                BindingIR flat_map_parameter = ir_parse_binding_decl(op.args[2])
+                FunctionSigIR flat_map_callback = lookup_function_sig(functions, op.args[3])
+                if (flat_map_receiver_type != 'string[]'):
+                    throw 'string[] flat_map expression requires string[] receiver; got ' + flat_map_receiver_type
+                if (normalize_llvm_type_name(flat_map_parameter.type_name) != 'string'):
+                    throw 'string[] flat_map expression requires string parameter; got ' + flat_map_parameter.type_name
+                if (flat_map_callback.name == '' || flat_map_callback.param_types.length() != 1 || normalize_llvm_type_name(flat_map_callback.param_types[0]) != 'string'):
+                    throw 'string[] flat_map expression callback must have signature string[](string)'
+                string flat_map_return_type = normalize_llvm_type_name(flat_map_callback.return_type)
+                if (flat_map_return_type != 'string[]'):
+                    throw 'string[] flat_map expression must return string[]; got ' + flat_map_return_type
+                return refined_value_op(op, 'string[]', 'owned')
+            if (op.args[0] == 'flat_map_string_expr_captured'):
+                if (op.args.length() < 5):
+                    throw 'string[] flat_map expression has invalid captured IR arity'
+                if (normalize_llvm_type_name(base_type) != 'string[]'):
+                    throw 'string[] flat_map expression requires string[] receiver; got ' + normalize_llvm_type_name(base_type)
+                BindingIR flat_map_parameter = ir_parse_binding_decl(op.args[2])
+                if (normalize_llvm_type_name(flat_map_parameter.type_name) != 'string'):
+                    throw 'string[] flat_map expression requires string parameter; got ' + flat_map_parameter.type_name
+                FunctionSigIR flat_map_callback = lookup_function_sig(functions, op.args[3])
+                int capture_count = op.args.length() - 4
+                if (flat_map_callback.name == '' || flat_map_callback.param_types.length() != capture_count + 1 || normalize_llvm_type_name(flat_map_callback.param_types[0]) != 'string'):
+                    throw 'string[] flat_map expression callback has invalid captured signature'
+                int capture_index = 0
+                while (capture_index < capture_count):
+                    string capture_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[capture_index + 4]))
+                    if (!(capture_type == 'int' || capture_type == 'bool' || capture_type == 'string')):
+                        throw 'string[] flat_map captures must be int, bool, or string; got ' + capture_type
+                    string parameter_type = normalize_llvm_type_name(flat_map_callback.param_types[capture_index + 1])
+                    if (parameter_type != capture_type):
+                        throw 'string[] flat_map callback capture must have type ' + capture_type + '; got ' + parameter_type
+                    capture_index += 1
+                string flat_map_return_type = normalize_llvm_type_name(flat_map_callback.return_type)
+                if (flat_map_return_type != 'string[]'):
+                    throw 'string[] flat_map expression must return string[]; got ' + flat_map_return_type
+                return refined_value_op(op, 'string[]', 'owned')
+            if (op.args[0] == 'flat_map_string_int_expr'):
+                if (op.args.length() != 4):
+                    throw 'string[] flat_map int expression has invalid IR arity'
+                string flat_map_receiver_type = normalize_llvm_type_name(base_type)
+                BindingIR flat_map_parameter = ir_parse_binding_decl(op.args[2])
+                FunctionSigIR flat_map_callback = lookup_function_sig(functions, op.args[3])
+                if (flat_map_receiver_type != 'string[]'):
+                    throw 'string[] flat_map int expression requires string[] receiver; got ' + flat_map_receiver_type
+                if (normalize_llvm_type_name(flat_map_parameter.type_name) != 'string'):
+                    throw 'string[] flat_map int expression requires string parameter; got ' + flat_map_parameter.type_name
+                if (flat_map_callback.name == '' || flat_map_callback.param_types.length() != 1 || normalize_llvm_type_name(flat_map_callback.param_types[0]) != 'string'):
+                    throw 'string[] flat_map int callback must have signature int[](string)'
+                string flat_map_return_type = normalize_llvm_type_name(flat_map_callback.return_type)
+                if (flat_map_return_type != 'int[]'):
+                    throw 'string[] flat_map int expression must return int[]; got ' + flat_map_return_type
+                return refined_value_op(op, 'int[]', 'owned')
+            if (op.args[0] == 'flat_map_string_int_expr_captured'):
+                if (op.args.length() < 5):
+                    throw 'string[] flat_map int expression has invalid captured IR arity'
+                if (normalize_llvm_type_name(base_type) != 'string[]'):
+                    throw 'string[] flat_map int expression requires string[] receiver; got ' + normalize_llvm_type_name(base_type)
+                BindingIR flat_map_parameter = ir_parse_binding_decl(op.args[2])
+                if (normalize_llvm_type_name(flat_map_parameter.type_name) != 'string'):
+                    throw 'string[] flat_map int expression requires string parameter; got ' + flat_map_parameter.type_name
+                FunctionSigIR flat_map_callback = lookup_function_sig(functions, op.args[3])
+                int capture_count = op.args.length() - 4
+                if (flat_map_callback.name == '' || flat_map_callback.param_types.length() != capture_count + 1 || normalize_llvm_type_name(flat_map_callback.param_types[0]) != 'string'):
+                    throw 'string[] flat_map int callback has invalid captured signature'
+                int capture_index = 0
+                while (capture_index < capture_count):
+                    string capture_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[capture_index + 4]))
+                    if (!(capture_type == 'int' || capture_type == 'bool' || capture_type == 'string')):
+                        throw 'string[] flat_map captures must be int, bool, or string; got ' + capture_type
+                    string parameter_type = normalize_llvm_type_name(flat_map_callback.param_types[capture_index + 1])
+                    if (parameter_type != capture_type):
+                        throw 'string[] flat_map callback capture must have type ' + capture_type + '; got ' + parameter_type
+                    capture_index += 1
+                string flat_map_return_type = normalize_llvm_type_name(flat_map_callback.return_type)
+                if (flat_map_return_type != 'int[]'):
+                    throw 'string[] flat_map int expression must return int[]; got ' + flat_map_return_type
+                return refined_value_op(op, 'int[]', 'owned')
         if (op.args.length() >= 3):
             BindingIR binding = ir_parse_binding_decl(op.args[2])
             if (op.args[0] == 'map_to' && base_type == 'int[]' && binding.type_name == 'int'):
@@ -2806,7 +2999,11 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
         if (op.args.is_empty()):
             return op
         string base_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[0]))
-        if (base_type == 'string' || base_type == 'string[]' || base_type == 'int[]' || base_type == 'bool[]' || base_type == 'int[][]' || base_type == 'string[][]'):
+        string slice_record_name = ''
+        if (base_type.ends_with('[]')):
+            slice_record_name = record_name_from_type(array_item_type(base_type))
+        bool is_record_array = slice_record_name != '' && record_type_exists(record_names, slice_record_name)
+        if (base_type == 'string' || base_type == 'string[]' || base_type == 'int[]' || base_type == 'bool[]' || base_type == 'int[][]' || base_type == 'string[][]' || is_record_array):
             int bound_index = 1
             while (bound_index < op.args.length()):
                 string bound_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[bound_index]))
@@ -2825,6 +3022,8 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
             return refined_value_op(op, 'int[][]', 'owned')
         if (base_type == 'string[][]'):
             return refined_value_op(op, 'string[][]', 'owned')
+        if (is_record_array):
+            return refined_value_op(op, base_type, 'owned')
         return op
     if (op.detail == 'array'):
         string[] item_types = []
@@ -2877,6 +3076,19 @@ void validate_map_binding_type(string binding_name, string expected_type, string
             if (normalized_actual_type != normalized_expected_type):
                 throw 'map binding ' + ir_source_binding_name(binding_name) + ' requires ' + normalized_expected_type + '; got ' + normalized_actual_type
 
+# Native arrays have different element layouts; never reinterpret known values.
+private void validate_native_array_binding_type(string binding_name, string expected_type, string actual_type, EnumTypeIR[] enum_types):
+    string expected = normalize_enum_type_name(normalize_llvm_type_name(expected_type), enum_types)
+    string actual = normalize_enum_type_name(normalize_llvm_type_name(actual_type), enum_types)
+    if (expected == '' || expected == 'unknown' || actual == '' || actual == 'unknown' || is_untyped_array_shape(actual)):
+        return
+    # Scalar destinations retain their existing scalar-binding diagnostics.
+    if (expected == 'int' || expected == 'bool' || expected == 'num' || expected == 'string'):
+        return
+    if (is_supported_call_array_type(expected) || is_supported_call_array_type(actual)):
+        if (actual != expected):
+            throw 'array binding ' + ir_source_binding_name(binding_name) + ' requires ' + expected + '; got ' + actual
+
 private BindingIR[] combined_refine_bindings(BindingIR[] globals, BindingIR[] params, BindingIR[] locals):
     BindingIR[] bindings = []
     for (BindingIR binding in globals):
@@ -2916,8 +3128,8 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
         if (op.kind == 'range_guard'):
             for (string bound in op.args):
                 validate_range_bound_type(bound, temp_types, enum_types)
-        if (op.kind == 'value' && op.detail == 'call' && !op.args.is_empty() && (op.args[0] == 'split' || op.args[0] == 'join' || op.args[0] == 'sqrt' || op.args[0] == 'min' || op.args[0] == 'max')):
-            RefineInstructionsResult contextual_call = contextualize_direct_user_arrays(op, block_refined, temp_types, functions, enum_types)
+        if (is_direct_user_array_context_call(op)):
+            RefineInstructionsResult contextual_call = contextualize_direct_user_arrays(op, block_refined, temp_types, functions, enum_types, record_names)
             block_refined = contextual_call.instructions
             temp_types = contextual_call.temp_types
         if (op.kind == 'value' && op.detail == 'call'):
@@ -3051,7 +3263,7 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                                     block_refined = contextual_map.instructions
                                     temp_types = contextual_map.temp_types
                                     actual_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[index]))
-                                if (is_untyped_array_shape(actual_type) && is_supported_call_array_type(expected_type)):
+                                if (is_untyped_array_shape(actual_type) && is_supported_call_array_context_type(expected_type)):
                                     RefineInstructionsResult contextual_array = contextualize_call_array_literal(block_refined, temp_types, current.args[index], expected_type)
                                     block_refined = contextual_array.instructions
                                     temp_types = contextual_array.temp_types
@@ -3070,7 +3282,7 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                             block_refined = contextual_map.instructions
                             temp_types = contextual_map.temp_types
                             actual_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[index]))
-                        if (is_untyped_array_shape(actual_type) && is_supported_call_array_type(expected_type)):
+                        if (is_untyped_array_shape(actual_type) && is_supported_call_array_context_type(expected_type)):
                             RefineInstructionsResult contextual_array = contextualize_call_array_literal(block_refined, temp_types, current.args[index], expected_type)
                             block_refined = contextual_array.instructions
                             temp_types = contextual_array.temp_types
@@ -3116,6 +3328,7 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                             if (lookup_temp_type_slot(temp_types, arg_name) == '[]' && item_type.ends_with('[]')):
                                 block_refined = set_temp_type(block_refined, arg_name, item_type)
                                 temp_types = set_temp_type_slot(temp_types, arg_name, item_type)
+                validate_native_array_binding_type(binding.name, binding.type_name, lookup_temp_type_slot(temp_types, current.args[0]), enum_types)
         if (current.kind == 'assign_field'):
             if (current.args.length() >= 2):
                 string base_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, current.args[0]))
@@ -3240,6 +3453,7 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                             if (lookup_temp_type_slot(temp_types, arg_name) == '[]' && item_type.ends_with('[]')):
                                 block_refined = set_temp_type(block_refined, arg_name, item_type)
                                 temp_types = set_temp_type_slot(temp_types, arg_name, item_type)
+                validate_native_array_binding_type(current.detail, binding_type, lookup_temp_type_slot(temp_types, current.args[0]), enum_types)
         if (current.lhs != ''):
             temp_types = set_temp_type_slot(temp_types, current.lhs, current.result_type)
         block_refined.push(current)
@@ -3291,6 +3505,7 @@ GlobalDeclIR refine_global(GlobalDeclIR global_decl, BindingIR[] globals, Functi
         refined = set_temp_type(refined, global_decl.value_name, binding.type_name)
     else if (is_untyped_array_shape(value_type) && binding.type_name.ends_with('[]')):
         refined = set_temp_type(refined, global_decl.value_name, binding.type_name)
+    validate_native_array_binding_type(binding.name, binding.type_name, lookup_temp_type(refined, global_decl.value_name), enum_types)
     return GlobalDeclIR(global_decl.header.substring(0), refined, global_decl.value_name.substring(0), global_decl.module_id.substring(0))
 
 # Arm stores precede the merge's type metadata. Resolve them only after all
@@ -3781,6 +3996,7 @@ ProgramIR refine_program_ir_with_regex(ProgramIR program, bool regex_imported):
             refined_global = GlobalDeclIR(refined_global.header, set_temp_type(refined_global.instructions, global_decl.value_name, normalized_global_type), refined_global.value_name, refined_global.module_id)
         else if (is_untyped_array_shape(value_type) && normalized_global_type.ends_with('[]')):
             refined_global = GlobalDeclIR(refined_global.header, set_temp_type(refined_global.instructions, global_decl.value_name, normalized_global_type), refined_global.value_name, refined_global.module_id)
+        validate_native_array_binding_type(binding.name, binding.type_name, lookup_temp_type(refined_global.instructions, global_decl.value_name), enum_types)
         refined_globals.push(refined_global)
         int global_op_index = 0
         while (global_op_index < refined_global.instructions.length()):

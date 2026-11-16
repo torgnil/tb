@@ -1,0 +1,52 @@
+int calls = 0
+int[] common_chunk = [8, 9]
+
+int[] pair(int value):
+    calls += 1
+    return [value, value + 10]
+
+int[] source_values():
+    return [4, 6]
+
+int[] shared_chunk(int value):
+    return common_chunk
+
+int main(string[] args):
+    int[] source = [2, 2, 5]
+    int[] expanded = source.flat_map(int value -> pair(value))
+    print(expanded.length())
+    for (int index : range(expanded.length())):
+        print(expanded[index])
+    print(calls)
+    print(source[0])
+    expanded[0] = 99
+    print(expanded[0])
+    print(source[0])
+
+    int[] literal_chunks = [1, 3].flat_map(int value -> [value, value])
+    print(literal_chunks.length())
+    for (int index : range(literal_chunks.length())):
+        print(literal_chunks[index])
+
+    int[] empty_chunks = [9].flat_map(int value -> [])
+    print(empty_chunks.length())
+
+    int[] empty_source = []
+    int[] no_chunks = empty_source.flat_map(int value -> pair(value))
+    print(no_chunks.length())
+    print(calls)
+
+    int[] temporary_source = source_values().flat_map(int value -> [value + 1])
+    print(temporary_source.length())
+    print(temporary_source[0])
+    print(temporary_source[1])
+
+    int[] shared_values = [1, 2].flat_map(int value -> shared_chunk(value))
+    shared_values[0] = 77
+    print(shared_values.length())
+    print(shared_values[0])
+    print(shared_values[1])
+    print(shared_values[2])
+    print(shared_values[3])
+    print(common_chunk[0])
+    return 0

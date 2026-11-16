@@ -1,0 +1,85 @@
+int grid_worker_ticks = 0
+
+string replace_grid_first(string[][] rows):
+    rows[0][0] = rows[0][0] + '-worker'
+    return rows[0][0]
+
+string summarize_grid(const string[][] rows):
+    return rows[0][0] + ':' + rows[0][1]
+
+string fail_grid(const string[][] rows):
+    if (rows[0][0] == 'fail'):
+        throw 'string grid worker failed'
+    return rows[0][0]
+
+string delay_grid(string[][] rows):
+    int ticks = 0
+    while (ticks < 5000000):
+        ticks += 1
+        grid_worker_ticks += 1
+    return rows[0][0]
+
+void drain_grid_queue():
+    thread_pool pool = thread_pool(1)
+    string[][] active_grid = [['active']]
+    future<string> active = pool.submit(delay_grid, active_grid)
+    string[][] first_grid = [['first']]
+    future<string> first = pool.submit(string[][] input -> input[0][0], first_grid)
+    string[][] second_grid = [['second']]
+    future<string> second = pool.submit(string[][] input -> input[0][0], second_grid)
+    string[][] third_grid = [['third']]
+    future<string> third = pool.submit(string[][] input -> input[0][0], third_grid)
+
+int main():
+    thread_pool pool = thread_pool(1)
+
+    string[][] named_grid = [['oak', 'maple']]
+    future<string> named = pool.submit(replace_grid_first, named_grid)
+    named_grid[0][0] = 'caller'
+    print(named.await())
+    print(named.await())
+    print(named_grid[0][0])
+
+    string[][] expression_grid = [['cedar', 'row']]
+    future<string> expression = pool.submit(string[][] input -> input[0][0] + ':' + input[0][1], expression_grid)
+    expression_grid[0][0] = 'changed'
+    print(expression.await())
+
+    string[][] block_grid = [['birch', 'pine']]
+    future<string> block = pool.submit(string[][] input -> {
+        if (input.is_empty()) {
+            return 'empty'
+        }
+        return summarize_grid(input)
+    }, block_grid)
+    block_grid[0][0] = 'changed'
+    print(block.await())
+
+    string[][] captured_grid = [['fir', 'cedar']]
+    future<string> captured = pool.submit(() -> captured_grid[0][0] + ':' + captured_grid[0][1])
+    captured_grid[0][0] = 'changed'
+    print(captured.await())
+    print(captured.await())
+
+    string[][] empty_grid = []
+    future<string> empty = pool.submit(string[][] input -> {
+        if (input.is_empty()) {
+            return 'empty'
+        }
+        return input[0][0]
+    }, empty_grid)
+    print(empty.await())
+
+    string[][] failing_grid = [['fail']]
+    future<string> failure = pool.submit(string[][] input -> fail_grid(input), failing_grid)
+    try:
+        print(failure.await())
+    catch (exception error):
+        print(error)
+
+    string[][] live_grid = [['alive']]
+    future<string> after_failure = pool.submit(string[][] input -> input[0][0], live_grid)
+    print(after_failure.await())
+    drain_grid_queue()
+    print(grid_worker_ticks)
+    return 0

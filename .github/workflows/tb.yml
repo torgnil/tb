@@ -1,0 +1,279 @@
+name: tb CI and release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Embedded version for a manual build (dev or a semantic version)'
+        required: true
+        default: dev
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tb-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'release' }}
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  SEED_TAG: v0.3.0
+  SEED_VERSION: '0.3.0'
+  PYTHON_VERSION: '3.12'
+
+jobs:
+  build:
+    name: Build and test (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x86_64
+            runner: ubuntu-24.04
+            os: Linux
+            arch: x86_64
+            seed_asset: tb-0.3.0-linux-x86_64-3480c46.tar.gz
+            seed_sha256: bc53902c1063cd3182906f654a8271594c35ee134c2ade002c2b36872e2d0ca5
+            seed_member: tb-0.3.0-linux-x86_64-3480c46/bin/tb-ir
+          - target: macos-arm64
+            # The current macOS seed requires macOS 26 or newer.
+            runner: macos-26
+            os: Darwin
+            arch: arm64
+            seed_asset: tb-0.3.0-macos-arm64.zip
+            seed_sha256: 953b9c3e3b0102c981dcd7ca79ec42333dc255b2c94f6f010d67473999c57522
+            seed_member: tb-0.3.0-macos-arm64/libexec/tb
+    env:
+      TARGET: ${{ matrix.target }}
+      EXPECTED_OS: ${{ matrix.os }}
+      EXPECTED_ARCH: ${{ matrix.arch }}
+      SEED_ASSET: ${{ matrix.seed_asset }}
+      SEED_SHA256: ${{ matrix.seed_sha256 }}
+      SEED_MEMBER: ${{ matrix.seed_member }}
+      REQUESTED_VERSION: ${{ inputs.version || 'dev' }}
+      RELEASE_TAG: ${{ github.event.release.tag_name || '' }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Select native toolchain
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = "$EXPECTED_OS"
+          test "$(uname -m)" = "$EXPECTED_ARCH"
+          mkdir -p .build/ci-toolchain .build/ci
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends clang-19 build-essential curl ca-certificates
+            ln -s "$(command -v clang-19)" .build/ci-toolchain/clang
+          else
+            ln -s "$(xcrun --find clang)" .build/ci-toolchain/clang
+            echo 'MACOSX_DEPLOYMENT_TARGET=26.0' >> "$GITHUB_ENV"
+          fi
+          printf '%s\n' "$PWD/.build/ci-toolchain" >> "$GITHUB_PATH"
+          .build/ci-toolchain/clang --version | tee .build/ci/clang-version.log
+          python3 --version | tee .build/ci/python-version.log
+
+      - name: Select embedded version
+        run: |
+          set -euo pipefail
+          version="$REQUESTED_VERSION"
+          if [[ "$GITHUB_EVENT_NAME" == release ]]; then
+            version="${RELEASE_TAG#v}"
+          elif [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          fi
+          if [[ "$version" != dev && ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9][A-Za-z0-9.-]*)?$ ]]; then
+            echo "Unsupported embedded version: $version" >&2
+            exit 1
+          fi
+          printf 'TB_VERSION=%s\n' "$version" >> "$GITHUB_ENV"
+
+      - name: Cache pinned seed archive
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/tb-seed-cache
+          key: tb-seed-${{ runner.os }}-${{ runner.arch }}-${{ env.SEED_TAG }}-${{ matrix.seed_sha256 }}
+
+      - name: Download, verify, and install seed
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/tb-seed-cache"
+          export SEED_ARCHIVE="$RUNNER_TEMP/tb-seed-cache/$SEED_ASSET"
+          if [[ ! -f "$SEED_ARCHIVE" ]]; then
+            curl --fail --location --retry 3 --proto '=https' --proto-redir '=https' \
+              "https://github.com/torgnil/tb/releases/download/$SEED_TAG/$SEED_ASSET" \
+              -o "$SEED_ARCHIVE"
+          fi
+          python3 - <<'PY'
+          import hashlib, os, pathlib, tarfile, zipfile
+          archive = pathlib.Path(os.environ['SEED_ARCHIVE'])
+          actual = hashlib.sha256(archive.read_bytes()).hexdigest()
+          if actual != os.environ['SEED_SHA256']:
+              raise SystemExit('Seed archive SHA-256 mismatch; remove the cached archive and retry')
+          member = os.environ['SEED_MEMBER']
+          if archive.name.endswith('.zip'):
+              with zipfile.ZipFile(archive) as z:
+                  data = z.read(member)
+          else:
+              with tarfile.open(archive, 'r:gz') as t:
+                  entry = t.getmember(member)
+                  if not entry.isfile():
+                      raise SystemExit('Seed archive member must be a regular file')
+                  with t.extractfile(entry) as f:
+                      data = f.read()
+          seed = pathlib.Path('.build/ci-seed/tb-ir').resolve()
+          seed.parent.mkdir(parents=True, exist_ok=True)
+          seed.write_bytes(data)
+          seed.chmod(0o755)
+          binary_sha = hashlib.sha256(data).hexdigest()
+          with open(os.environ['GITHUB_ENV'], 'a') as f:
+              f.write(f'TB_BOOTSTRAP_COMPILER={seed}\nTB_BOOTSTRAP_SHA256={binary_sha}\n')
+          print(f'Archive SHA-256: {actual}\nBinary SHA-256: {binary_sha}')
+          PY
+          test "$(.build/ci-seed/tb-ir --version)" = "tb $SEED_VERSION"
+
+      - name: Build stage2 with the released native seed
+        run: |
+          set -euo pipefail
+          ./build_tb.sh 2>&1 | tee .build/ci/build.log
+          test "$(bin/tb --version)" = "tb $TB_VERSION"
+
+      - name: Run native fixtures
+        run: |
+          set -euo pipefail
+          # Temporary Linux compatibility shim: the repository runner currently
+          # omits libm. Keep the source checkout unchanged and retain relative
+          # fixture paths, since some diagnostic expectations contain them.
+          python3 - <<'PY'
+          import os, pathlib
+          source = pathlib.Path('verify_fixtures_tb.py').read_text()
+          needle = 'linkflags = linkflags_path.read_text(encoding="utf-8").split() if linkflags_path.exists() else []'
+          if os.environ['RUNNER_OS'] == 'Linux':
+              if source.count(needle) != 1:
+                  raise SystemExit('Fixture runner changed; update or remove the CI libm shim')
+              source = source.replace(needle, needle + '\n        if "-lm" not in linkflags:\n            linkflags.append("-lm")')
+          pathlib.Path(os.environ['RUNNER_TEMP'], 'verify_fixtures_ci.py').write_text(source)
+          PY
+          python3 "$RUNNER_TEMP/verify_fixtures_ci.py" tests/fixtures \
+            --compiler bin/tb --build-root .build/fixtures_ci \
+            2>&1 | tee .build/ci/fixtures.log
+
+      - name: Check self-hosting generation stability
+        if: github.event_name != 'pull_request'
+        run: |
+          set -euo pipefail
+          bin/tb compiler/tb/tb.tb .build/stage2/tb_stage3.ll \
+            2>&1 | tee .build/ci/generation.log
+          cmp .build/stage2/tb_stage2.ll .build/stage2/tb_stage3.ll
+          echo 'Stage2/stage3 LLVM is byte-identical.' | tee -a .build/ci/generation.log
+
+      - name: Package native compiler
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, shutil, subprocess, tarfile, zipfile
+          version, target = os.environ['TB_VERSION'], os.environ['TARGET']
+          name = f'tb-{version}-{target}'
+          root = pathlib.Path('.build/ci-package') / name
+          (root / 'bin').mkdir(parents=True, exist_ok=True)
+          shutil.copy2('bin/tb', root / 'bin/tb-ir')
+          shutil.copy2('LICENSE', root / 'LICENSE')
+          shutil.copy2('.build/stage2/bootstrap.json', root / 'bootstrap.json')
+          binary_sha = hashlib.sha256((root / 'bin/tb-ir').read_bytes()).hexdigest()
+          commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+          metadata = dict(version=version, target=target, commit=commit, stage=2,
+                          binary_sha256=binary_sha,
+                          clang=subprocess.check_output(['clang', '--version'], text=True),
+                          generation_check=os.environ['GITHUB_EVENT_NAME'] != 'pull_request')
+          (root / 'build-info.json').write_text(json.dumps(metadata, indent=2) + '\n')
+          (root / 'SHA256SUMS').write_text(binary_sha + '  bin/tb-ir\n')
+          (root / 'README.txt').write_text(
+              f'tb {version} native LLVM compiler ({target})\n'
+              'Usage: bin/tb-ir input.tb output.ll\n'
+              'Clang is required to link programs. Generated runtime C sources and\n'
+              'linker metadata may also be required.\n'
+              'Verify the extracted binary: sha256sum --check SHA256SUMS\n'
+              'On macOS: shasum -a 256 --check SHA256SUMS\n'
+              'See bootstrap.json and build-info.json for seed and source provenance.\n')
+          for p in [root, *root.rglob('*')]:
+              p.chmod(0o755 if p.is_dir() or p == root / 'bin/tb-ir' else 0o644)
+          dist = pathlib.Path('dist')
+          dist.mkdir(exist_ok=True)
+          if target.startswith('macos-'):
+              archive = dist / f'{name}.zip'
+              with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as z:
+                  for p in sorted(root.rglob('*')):
+                      if p.is_file():
+                          z.write(p, arcname=str(pathlib.Path(name) / p.relative_to(root)))
+          else:
+              archive = dist / f'{name}.tar.gz'
+              with tarfile.open(archive, 'w:gz') as t:
+                  t.add(root, arcname=name)
+          digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+          archive.with_name(archive.name + '.sha256').write_text(digest + '  ' + archive.name + '\n')
+          print(f'{archive}: {digest}')
+          PY
+
+      - name: Upload distributable artifacts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tb-dist-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload build and test diagnostics
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tb-logs-${{ matrix.target }}
+          path: |
+            .build/ci/*.log
+            .build/stage2/bootstrap.json
+            .build/stage2/tb_stage1.ll
+            .build/stage2/tb_stage2.ll
+            .build/stage2/tb_stage3.ll
+          if-no-files-found: ignore
+          retention-days: 7
+
+  attach-release-assets:
+    name: Attach verified builds to published release
+    if: github.event_name == 'release' && github.event.action == 'published'
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Download both platform bundles
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: tb-dist-*
+          merge-multiple: true
+          path: release-files
+
+      - name: Attach archives and checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          gh release upload "$RELEASE_TAG" release-files/* --repo "$GITHUB_REPOSITORY" --clobber

@@ -1,0 +1,36 @@
+enum State { OPEN, CLOSED }
+record Payload(string text, int[] values);
+
+void reassign_and_throw(State state, string message, string suffix):
+    state = 'state-' + suffix
+    message = 'parameter-' + suffix
+    string local_text = 'local-' + suffix
+    int[] local_values = [4, 9]
+    Payload local_payload = Payload(local_text, local_values)
+    throw message
+
+void call_reassign_and_throw(State state, string message, string suffix):
+    string local_message = 'caller-' + suffix
+    int[] local_values = [1, 2, 3]
+    reassign_and_throw(state, message, suffix)
+
+int catch_and_continue():
+    int[] values = [10]
+    try:
+        throw 'local-catch'
+    catch (exception error):
+        print(error)
+    values[0] += 1
+    return values[0]
+
+string succeed_after_catch(string value):
+    return value + '-ok'
+
+int main():
+    try:
+        call_reassign_and_throw(State.OPEN, 'borrowed', 'case')
+    catch (exception error):
+        print(error)
+    print(catch_and_continue())
+    print(succeed_after_catch('later'))
+    return 0
