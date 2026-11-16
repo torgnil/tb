@@ -250,7 +250,7 @@ jobs:
               '        set -- "$@" "$value"\n'
               '    done < "$metadata_file"\n'
               'done\n'
-              ('clang "$@" "$llvm_file" -lm\n' if target.startswith('linux-')
+              + ('clang "$@" "$llvm_file" -lm\n' if target.startswith('linux-')
                else 'clang "$@" "$llvm_file"\n'))
 
           shutil.copy2('LICENSE', root / 'LICENSE')
@@ -268,38 +268,8 @@ jobs:
                           generation_check=os.environ['GITHUB_EVENT_NAME'] != 'pull_request')
           (root / 'build-info.json').write_text(json.dumps(metadata, indent=2) + '\n')
           (root / 'SHA256SUMS').write_text(binary_sha + '  libexec/tb\n')
-          minimum_os = '\nThis macOS bundle targets macOS 26.0 or newer.' if target.startswith('macos-') else ''
-          readme = (
-              '# tb\n\n'
-              'tb is a small compiled programming language with an LLVM-based toolchain.\n\n'
-              f'This {target} bundle contains the self-hosted compiler, native build launcher,\n'
-              'LLVM IR launcher, language reference, changelog, license, version, and build\n'
-              'provenance. Python is not required to use the bundle. Clang is required for\n'
-              f'native builds.{minimum_os}\n\n'
-              '## Quick Start\n\n'
-              'Compile and run a program:\n\n'
-              '```sh\n'
-              './tb path/to/program.tb -O2\n'
-              'path/to/program\n'
-              '```\n\n'
-              'By default, `tb` writes the executable beside the source, without `.tb`. Use\n'
-              '`-o` to choose another output path:\n\n'
-              '```sh\n'
-              './tb path/to/program.tb -o ./program -O2\n'
-              './program\n'
-              './tb --version\n'
-              '```\n\n'
-              'To generate LLVM IR only:\n\n'
-              '```sh\n'
-              './tb-ir path/to/program.tb output.ll\n'
-              '```\n\n'
-              'Threaded programs produce C runtime sources and linker metadata beside the LLVM\n'
-              'output. The `tb` launcher compiles and links these automatically. See `tb.md`\n'
-              'for the language reference and `CHANGELOG.md` for release notes.\n\n'
-              'On Linux, verify the compiler binary with `sha256sum --check SHA256SUMS`. On\n'
-              'macOS, use `shasum -a 256 --check SHA256SUMS`. Build provenance is recorded in\n'
-              '`bootstrap.json` and `build-info.json`.\n\n'
-              'Repository: https://github.com/torgnil/tb\n')
+          readme = pathlib.Path('README.release.md').read_text(encoding='utf-8')
+          readme = readme.replace('@VERSION@', version)
           (root / 'README.md').write_text(readme, encoding='utf-8')
           executables = {root / 'tb', root / 'tb-ir', root / 'libexec/tb'}
           for p in [root, *root.rglob('*')]:
