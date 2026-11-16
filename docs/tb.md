@@ -604,6 +604,21 @@ Random values
 - The random module also provides `RandomGenerator seeded_random(int seed)` and `int random_next(RandomGenerator generator)` for reproducible sequences. Each generator keeps mutable state; advancing a record updates it, and assigning a generator copies its current state. The sequence uses xorshift64 with left shifts by 13 and 17 and a logical right shift by 7. A zero seed or state is replaced by `-7046029254386353131`, so seed zero shares a sequence with that seed. `random_next_below(generator, upper)` and `random_next_between(generator, lower, upper)` advance that generator and return reproducible values within the same exclusive ranges and with the same invalid-range error as the OS-backed functions. Rejection sampling avoids modulo bias over the nonzero xorshift state cycle, including intervals wider than the largest positive `int`. These deterministic values are not cryptographically secure.
 - `import uuid;` provides `uuid() -> string`, a newly owned lowercase UUID v4; `Uuid uuid_parse(string text)`; `string uuid_format(Uuid value)`; and `bool uuid_is_valid(string text)` (also available as `text.uuid_is_valid()`). `Uuid` stores the first and last eight bytes as signed 64-bit `high` and `low` words in network order. Parsing accepts exactly 36 ASCII bytes in canonical `8-4-4-4-12` hexadecimal form, with case-insensitive digits; invalid input raises `uuid: invalid format`. Formatting emits lowercase canonical text for every pair of 64-bit words. Parsing and validation accept nil values and do not restrict version or variant bits. The UUID module imports `random` to generate values; random functions are therefore also available. Both modules are embedded in the compiler, so no separate files are needed at runtime; the name `uuid` is reserved as a built-in module import.
 
+Process execution
+
+- `import process;` provides `ProcessResult run_process(string[] argv)`. It
+  executes the argument vector directly without a shell, searches `PATH`,
+  inherits the current working directory, environment, and stdin, then waits
+  for completion while capturing stdout and stderr separately. The result has
+  `exit_code`, `stdout`, and `stderr` fields. A normal exit uses its exit code;
+  termination by signal uses the negative signal number. A nonzero child exit
+  is a result, not an exception. An empty argument vector or empty executable
+  name raises `run_process: empty command`; a spawn or capture failure raises
+  `run_process: unable to run <executable>`. Result strings are owned through
+  ordinary record field lifetime rules. This synchronous POSIX API has no
+  timeout, stdin pipe, or working-directory/environment override. Captured
+  output is text in tb strings; embedded NUL bytes cannot be represented.
+
 Core IO and string helpers
 
 - print(value) -> void

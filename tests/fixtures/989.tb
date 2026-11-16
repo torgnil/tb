@@ -1,0 +1,16 @@
+import process;
+
+int main():
+    ProcessResult arguments = run_process(['printf', '%s:%s', 'a b', '$HOME; echo bad'])
+    print(arguments.exit_code)
+    print(arguments.stdout)
+    print(arguments.stderr == '')
+
+    ProcessResult streams = run_process(['/bin/sh', '-c', 'printf out; printf err >&2; exit 7'])
+    print(streams.exit_code)
+    print(streams.stdout)
+    print(streams.stderr)
+
+    ProcessResult terminated = run_process(['/bin/sh', '-c', 'kill -TERM $$'])
+    print(terminated.exit_code < 0)
+    return 0

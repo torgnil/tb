@@ -119,13 +119,15 @@ lines.append("    if (name == 'strings'):")
 lines.append(f"        return {tb_string(source_text(repo_root / 'lib/strings.tb'))}")
 lines.append("    if (name == 'union_find'):")
 lines.append(f"        return {tb_string(source_text(repo_root / 'lib/union_find.tb'))}")
+lines.append("    if (name == 'process'):")
+lines.append(f"        return {tb_string(source_text(repo_root / 'lib/process.tb'))}")
 lines.append("    throw 'unknown built-in module: ' + name")
 
 runtime = repo_root / 'compiler/tb/runtime'
 header = source_text(runtime / 'thread_pool_composite_runtime.h')
 include = '#include "thread_pool_composite_runtime.h"'
 lines.extend(['', 'string llvm_embedded_runtime_text(string name):'])
-for name in ('thread_pool_runtime.c', 'thread_pool_composite_runtime.c', 'secure_random_runtime.c', 'directory_runtime.c'):
+for name in ('thread_pool_runtime.c', 'thread_pool_composite_runtime.c', 'secure_random_runtime.c', 'directory_runtime.c', 'process_runtime.c'):
     text = source_text(runtime / name)
     if name in ('thread_pool_runtime.c', 'thread_pool_composite_runtime.c'):
         if text.count(include) != 1:
