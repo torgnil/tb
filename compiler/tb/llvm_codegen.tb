@@ -2157,7 +2157,7 @@ bool temp_needs_backend_free(ParsedFunction function_ir, string temp_name):
     if (result_type == 'int[][]'):
         return op.detail == 'array' || op.detail == 'call' || op.detail == 'slice'
     if (result_type.ends_with('[]') && record_name_from_type(array_item_type(result_type)) != ''):
-        return op.detail == 'array' || op.detail == 'call'
+        return op.detail == 'array' || op.detail == 'call' || op.detail == 'slice'
     if (result_type == 'string'):
         return op.detail == 'call'
     if (result_type.starts_with('map<')):
@@ -7504,7 +7504,9 @@ string emit_last_value(string result_name, string receiver_type, string receiver
 
 bool array_scalar_query_releases_receiver(ParsedFunction function_ir, string receiver_name, string query_temp_name):
     string receiver_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, receiver_name))
-    if (receiver_type == 'int[]' || receiver_type == 'bool[]' || receiver_type == 'string[]' || receiver_type == 'int[][]' || receiver_type == 'bool[][]' || receiver_type == 'string[][]'):
+    bool is_native_array = receiver_type == 'int[]' || receiver_type == 'bool[]' || receiver_type == 'string[]' || receiver_type == 'int[][]' || receiver_type == 'bool[][]' || receiver_type == 'string[][]'
+    bool is_record_array = receiver_type.ends_with('[]') && record_name_from_type(array_item_type(receiver_type)) != ''
+    if (is_native_array || is_record_array):
         if (temp_needs_backend_free(function_ir, receiver_name) && !temp_is_moved(function_ir, receiver_name)):
             return temp_is_query_only_use_in_producing_block(function_ir, receiver_name, query_temp_name)
     return false
@@ -8386,6 +8388,13 @@ string emit_slice_value_instruction(ParsedFunction function_ir, LinearInstructio
         if (op.args.length() == 3):
             return emit_array_scalar_query_with_release(function_ir, op.args[0], op.lhs, '  ' + lhs + ' = call ptr @tb_bootstrap_string_array_array_slice(ptr ' + temp_ref(op.args[0]) + ', i64 ' + temp_ref(op.args[1]) + ', i64 ' + temp_ref(op.args[2]) + ')')
         throw 'unsupported llvm string[][] slice arity'
+    if (base_type.ends_with('[]') && record_name_from_type(array_item_type(base_type)) != ''):
+        string record_name = record_name_from_type(array_item_type(base_type))
+        if (op.args.length() == 2):
+            return emit_array_scalar_query_with_release(function_ir, op.args[0], op.lhs, '  %slice_len32_' + op.lhs + ' = call i32 @tb_bootstrap_record_array_length_' + record_name + '(ptr ' + temp_ref(op.args[0]) + ')\n  %slice_len64_' + op.lhs + ' = sext i32 %slice_len32_' + op.lhs + ' to i64\n  ' + lhs + ' = call ptr @tb_bootstrap_record_array_slice_' + record_name + '(ptr ' + temp_ref(op.args[0]) + ', i64 ' + temp_ref(op.args[1]) + ', i64 %slice_len64_' + op.lhs + ')')
+        if (op.args.length() == 3):
+            return emit_array_scalar_query_with_release(function_ir, op.args[0], op.lhs, '  ' + lhs + ' = call ptr @tb_bootstrap_record_array_slice_' + record_name + '(ptr ' + temp_ref(op.args[0]) + ', i64 ' + temp_ref(op.args[1]) + ', i64 ' + temp_ref(op.args[2]) + ')')
+        throw 'unsupported llvm record array slice arity'
     throw 'unsupported llvm slice base type: ' + lookup_temp_llvm_type(function_ir, op.args[0])
 
 string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op):
