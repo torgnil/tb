@@ -3,15 +3,15 @@
 ## Build the current checkout
 
 The compiler builds itself from a released native `tb` compiler. The current
-seed is `tb 0.3.0`; the release provides macOS and Linux binaries. Python 3.8+
+seed is `tb 0.4.0`; the release provides macOS and Linux binaries. Python 3.8+
 is used for build utilities only. The host also needs Bash and Clang.
 
 On macOS, `build_tb.sh` uses the Homebrew compiler at
-`$(brew --cellar)/tb/0.3.0/libexec/libexec/tb`. On Linux or with another
+`$(brew --cellar)/tb/0.4.0/libexec/libexec/tb`. On Linux or with another
 installation, point `TB_BOOTSTRAP_COMPILER` at the native LLVM compiler binary:
 
 ```sh
-TB_BOOTSTRAP_COMPILER=/path/to/tb-0.3.0 \
+TB_BOOTSTRAP_COMPILER=/path/to/tb-0.4.0 \
 TB_BOOTSTRAP_SHA256='<sha256-of-that-binary>' \
 ./build_tb.sh
 ```
