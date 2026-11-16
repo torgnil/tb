@@ -84,7 +84,11 @@ jobs:
             ln -s "$(command -v clang-19)" .build/ci-toolchain/clang
           else
             ln -s "$(xcrun --find clang)" .build/ci-toolchain/clang
+            sdk_path="$(xcrun --sdk macosx --show-sdk-path)"
+            test -d "$sdk_path"
+            printf 'SDKROOT=%s\n' "$sdk_path" >> "$GITHUB_ENV"
             echo 'MACOSX_DEPLOYMENT_TARGET=26.0' >> "$GITHUB_ENV"
+            printf 'macOS SDK: %s\n' "$sdk_path" | tee .build/ci/macos-sdk.log
           fi
           printf '%s\n' "$PWD/.build/ci-toolchain" >> "$GITHUB_PATH"
           .build/ci-toolchain/clang --version | tee .build/ci/clang-version.log
