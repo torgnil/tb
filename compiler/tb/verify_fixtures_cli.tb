@@ -11,6 +11,7 @@ string FIXTURES_COMPILE_PREFIX = ''
 string COMPILER_BINARY = ''
 string BUILD_ROOT = ''
 string RUN_DIRECTORY = ''
+string PLATFORM_SUFFIX = ''
 
 string strip_line_ending(string text):
     if (text.ends_with('\n')):
@@ -140,16 +141,32 @@ void copy_fixture_assets(int fixture_index, string source_text):
         else:
             scan_index += 1
 
+    string[] directory_command = ['mkdir', '-p']
     for (string workspace_name in workspace_names):
-        string fixture_workspace = workspace_path + '/' + workspace_name
-        make_directory(fixture_workspace)
+        directory_command.push(workspace_path + '/' + workspace_name)
         for (string relative_path in assets):
-            string source_path = FIXTURES_DIRECTORY + '/' + relative_path
-            if (is_file(source_path)):
-                string destination_path = fixture_workspace + '/' + relative_path
-                make_directory(directory_name(destination_path))
-                ProcessResult copy_result = run_process(['cp', source_path, destination_path])
-                require_process_success(copy_result, 'copy failed for ' + source_path + ': ')
+            string parent = directory_name(relative_path)
+            string destination_directory = workspace_path + '/' + workspace_name + '/' + parent
+            if (directory_command.index_of(destination_directory) < 0):
+                directory_command.push(destination_directory)
+    ProcessResult directory_result = run_process(directory_command)
+    require_process_success(directory_result, 'could not prepare fixture workspace for ' + FIXTURE_STEMS[fixture_index] + ': ')
+
+    for (string workspace_name in workspace_names):
+        for (int asset_index = 0; asset_index < assets.length(); asset_index += 1):
+            string parent = directory_name(assets[asset_index])
+            bool parent_already_copied = false
+            for (int previous_index = 0; previous_index < asset_index; previous_index += 1):
+                if (directory_name(assets[previous_index]) == parent):
+                    parent_already_copied = true
+            if (!parent_already_copied):
+                string[] copy_command = ['cp']
+                for (string relative_path in assets):
+                    if (directory_name(relative_path) == parent):
+                        copy_command.push(FIXTURES_DIRECTORY + '/' + relative_path)
+                copy_command.push(workspace_path + '/' + workspace_name + '/' + parent)
+                ProcessResult copy_result = run_process(copy_command)
+                require_process_success(copy_result, 'could not copy fixture assets for ' + FIXTURE_STEMS[fixture_index] + ': ')
 
 string c_cache_key(string source_path, string platform_suffix):
     string result = ''
@@ -165,19 +182,6 @@ void compile_c_sources(string output_path, string temporary_path, string fixture
     string csources_path = output_path + '.csources'
     if (!is_file(csources_path)):
         return
-    ProcessResult os_result = run_process(['uname', '-s'])
-    ProcessResult arch_result = run_process(['uname', '-m'])
-    require_process_success(os_result, 'uname -s failed: ')
-    require_process_success(arch_result, 'uname -m failed: ')
-    string platform_os = strip_line_ending(os_result.stdout)
-    string platform_arch = strip_line_ending(arch_result.stdout)
-    if (platform_os == 'Darwin'):
-        platform_os = 'macos'
-    else if (platform_os == 'Linux'):
-        platform_os = 'linux'
-    else if (platform_os == 'FreeBSD'):
-        platform_os = 'freebsd'
-    string platform_suffix = platform_os + '_' + platform_arch
     string cflags_path = output_path + '.cflags'
     string[] cflags = []
     if (is_file(cflags_path)):
@@ -189,7 +193,7 @@ void compile_c_sources(string output_path, string temporary_path, string fixture
         if (source == ''):
             continue
         string resolved_source = absolute_path(source)
-        string cache_path = c_cache_key(resolved_source, platform_suffix)
+        string cache_path = c_cache_key(resolved_source, PLATFORM_SUFFIX)
         if (!is_file(cache_path)):
             string object_path = temporary_path + '/c_' + source_index + '.o'
             string[] command = ['clang', '-c']
@@ -293,7 +297,7 @@ int verify_fixture(int fixture_index):
 int verify_partition(int partition):
     int result = 0
     for (int fixture_index = 0; fixture_index < FIXTURE_STEMS.length(); fixture_index += 1):
-        if (fixture_index % 4 == partition):
+        if (fixture_index % 8 == partition):
             result += verify_fixture(fixture_index)
     return result
 
@@ -313,7 +317,7 @@ int parse_integer(string text, string label):
 void print_usage():
     print('Usage: verify_fixtures_tb.sh [fixtures_dir] [--compiler PATH] [--build-root DIR] [--max-phase N] [--jobs N]')
     print('Verify numbered tb fixtures against .out runtime output or .err compiler diagnostics.')
-    print('Concurrency is capped at 4 workers; --jobs sets a lower limit.')
+    print('Concurrency is capped at 8 workers; --jobs sets a lower limit.')
 
 int run_verifier(string[] args):
     ProcessResult cwd_result = run_process(['pwd'])
@@ -336,8 +340,8 @@ int run_verifier(string[] args):
             cpu_count = strip_line_ending(cpu_result.stdout).to_int()
     catch (exception ignored):
         cpu_count = 1
-    if (cpu_count > 4):
-        jobs = 4
+    if (cpu_count > 8):
+        jobs = 8
     else if (cpu_count > 0):
         jobs = cpu_count
 
@@ -459,19 +463,35 @@ int run_verifier(string[] args):
         if (clang_check.exit_code != 0):
             throw 'clang is required to verify runtime fixtures'
 
+    ProcessResult os_result = run_process(['uname', '-s'])
+    ProcessResult arch_result = run_process(['uname', '-m'])
+    require_process_success(os_result, 'uname -s failed: ')
+    require_process_success(arch_result, 'uname -m failed: ')
+    string platform_os = strip_line_ending(os_result.stdout)
+    string platform_arch = strip_line_ending(arch_result.stdout)
+    if (platform_os == 'Darwin'):
+        platform_os = 'macos'
+    else if (platform_os == 'Linux'):
+        platform_os = 'linux'
+    else if (platform_os == 'FreeBSD'):
+        platform_os = 'freebsd'
+    PLATFORM_SUFFIX = platform_os + '_' + platform_arch
+
     make_directory(BUILD_ROOT)
     ProcessResult run_dir_result = run_process(['mktemp', '-d', BUILD_ROOT + '/verify_fixtures_XXXXXX'])
     require_process_success(run_dir_result, 'could not create fixture build directory: ')
     RUN_DIRECTORY = strip_line_ending(run_dir_result.stdout)
-    make_directory(RUN_DIRECTORY + '/c_runtime')
+    string[] directory_command = ['mkdir', '-p', RUN_DIRECTORY + '/c_runtime']
     for (int index = 0; index < FIXTURE_STEMS.length(); index += 1):
         string temporary_path = RUN_DIRECTORY + '/fixture_' + FIXTURE_STEMS[index] + '_' + index
         FIXTURE_TEMP_DIRS.push(temporary_path)
-        make_directory(temporary_path)
+        directory_command.push(temporary_path)
+    ProcessResult directories_result = run_process(directory_command)
+    require_process_success(directories_result, 'could not create fixture workspaces: ')
 
     int effective_jobs = jobs
-    if (effective_jobs > 4):
-        effective_jobs = 4
+    if (effective_jobs > 8):
+        effective_jobs = 8
     if (effective_jobs > FIXTURE_STEMS.length()):
         effective_jobs = FIXTURE_STEMS.length()
     thread_pool pool = thread_pool(effective_jobs)
@@ -479,7 +499,11 @@ int run_verifier(string[] args):
     future<int> second = pool.submit(verify_partition, 1)
     future<int> third = pool.submit(verify_partition, 2)
     future<int> fourth = pool.submit(verify_partition, 3)
-    int worker_failures = first.await() + second.await() + third.await() + fourth.await()
+    future<int> fifth = pool.submit(verify_partition, 4)
+    future<int> sixth = pool.submit(verify_partition, 5)
+    future<int> seventh = pool.submit(verify_partition, 6)
+    future<int> eighth = pool.submit(verify_partition, 7)
+    int worker_failures = first.await() + second.await() + third.await() + fourth.await() + fifth.await() + sixth.await() + seventh.await() + eighth.await()
 
     bool has_execution_error = false
     string execution_error = ''
