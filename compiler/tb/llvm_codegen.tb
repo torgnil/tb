@@ -6549,8 +6549,11 @@ string emit_call_value_instruction_core(ProgramIR program, ParsedFunction functi
     string lhs = temp_ref(op.lhs)
     string call_name = op.args[0]
     string call_arg1_type = ''
+    bool native_abs_signature = false
     if (op.args.length() >= 2):
         call_arg1_type = normalize_llvm_type_name(lookup_temp_llvm_type(function_ir, op.args[1]))
+    if (op.args.length() == 2 && (call_arg1_type == 'int' || call_arg1_type == 'num')):
+        native_abs_signature = true
     bool no_named_override = lookup_named_function_decl(program, call_name).header == '' && lookup_record_decl(program, call_name).header == ''
     if (call_name == 'random_bits' && no_named_override):
         if (op.args.length() != 1):
@@ -7011,7 +7014,7 @@ string emit_call_value_instruction_core(ProgramIR program, ParsedFunction functi
         string[] lines = emit_num_materialize_if_needed(function_ir, op.args[1], op.lhs + '.sqrt')
         lines.push('  ' + lhs + ' = call %tb_bootstrap_num @tb_bootstrap_num_sqrt(%tb_bootstrap_num ' + emit_num_store_value(function_ir, op.args[1], op.lhs + '.sqrt') + ')')
         return emit_tracked_builtin_call_line(join_llvm_strings(lines, '\n'))
-    if (call_name == 'abs'):
+    if (call_name == 'abs' && (!direct_call_matches_named_function(program, function_ir, op, call_name) || native_abs_signature)):
         if (op.args.length() != 2):
             throw 'unsupported llvm abs arity'
         if (call_arg1_type == 'num'):

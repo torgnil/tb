@@ -913,6 +913,7 @@ Array helpers
 
 - abs(x: int | num) -> int | num — returns the value's magnitude and preserves a `num` value's decimal scale.
   - Runtime lowering supports both `int` and `num` values; `value.abs()` is also supported through UFCS. Known invalid argument types and arity are rejected during type refinement; UFCS requires an `int` or `num` receiver and no explicit arguments.
+  - A direct call to a same-named user function takes precedence when its exact signature differs from the native one-argument `int` or `num` signature; bare empty array arguments receive the matching parameter's type. Native numeric `abs` keeps precedence for those one-argument types.
 
 - min(a: int | num, b: int | num) -> int | num
   - Return the smaller value. Runtime lowering supports same-type `int` and `num` operands; `num` keeps the selected operand's scale. Equal values select the right operand.
