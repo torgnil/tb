@@ -1,0 +1,45 @@
+future<string> submit_scoped(thread_pool pool):
+    string prefix = 'scope-'
+    string[] values = ['value']
+    return pool.submit(string[] input -> prefix + input[0], values)
+
+int main():
+    thread_pool pool = thread_pool(1)
+    future<string> scoped = submit_scoped(pool)
+    print(scoped.await())
+
+    string prefix = 'before-'
+    string[] values = ['item']
+    future<string> expression = pool.submit(string[] input -> prefix + input[0], values)
+    prefix = 'after-'
+    values[0] = 'changed'
+    print(expression.await())
+    print(expression.await())
+
+    string block_prefix = 'block-'
+    string[] block_values = ['item']
+    future<string> block = pool.submit(string[] input -> {
+        string result = block_prefix + input[0]
+        return result
+    }, block_values)
+    block_prefix = 'changed-'
+    block_values[0] = 'changed'
+    print(block.await())
+
+    string error_prefix = 'error-'
+    string[] failing_values = ['fail']
+    future<string> failed = pool.submit(string[] input -> {
+        if (input[0] == 'fail') {
+            throw 'string task failed'
+        }
+        return error_prefix + input[0]
+    }, failing_values)
+    failing_values[0] = 'changed'
+    try:
+        print(failed.await())
+    catch (exception error):
+        print(error)
+
+    future<string> recovered = pool.submit(string[] input -> error_prefix + input[0], ['recovered'])
+    print(recovered.await())
+    return 0
