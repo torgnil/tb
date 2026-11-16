@@ -1269,6 +1269,8 @@ string infer_call_type(string name, FunctionSigIR[] functions):
         return 'string[]'
     if (name == 'list_dir'):
         return 'string[]'
+    if (name == 'path_exists' || name == 'is_file' || name == 'is_dir'):
+        return 'bool'
     if (name == 'read_file'):
         return 'string'
     if (name == 'write_all'):
@@ -1379,6 +1381,14 @@ private void validate_direct_list_dir_call(LinearInstruction op, EnumTypeIR[] en
     string argument_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
     if (argument_type != 'string'):
         throw 'list_dir requires a string argument, got: ' + argument_type
+
+private void validate_direct_path_classification_call(string name, LinearInstruction op, EnumTypeIR[] enum_types, string[] temp_types):
+    int argument_count = op.args.length() - 1
+    if (argument_count != 1):
+        throw name + ' expects exactly one string argument; got: ' + argument_count.to_string()
+    string argument_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
+    if (argument_type != 'string'):
+        throw name + ' requires a string argument, got: ' + argument_type
 
 private void validate_direct_to_string_call(LinearInstruction op):
     int argument_count = op.args.length() - 1
@@ -1963,6 +1973,9 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
     if (op.detail == 'call' && !op.args.is_empty() && op.args[0] == 'list_dir'):
         validate_direct_list_dir_call(op, enum_types, temp_types)
         return refined_value_op(op, 'string[]', 'owned')
+    if (op.detail == 'call' && !op.args.is_empty() && (op.args[0] == 'path_exists' || op.args[0] == 'is_file' || op.args[0] == 'is_dir')):
+        validate_direct_path_classification_call(op.args[0], op, enum_types, temp_types)
+        return refined_value_op(op, 'bool', 'plain')
     if (op.detail == 'call' && !op.args.is_empty() && op.args[0] == 'sqrt'):
         FunctionSigIR sqrt_sig = lookup_function_sig(functions, 'sqrt')
         if (has_matching_direct_signature(op, sqrt_sig, enum_types, temp_types)):

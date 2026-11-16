@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
+#include <sys/stat.h>
 
 static int tb_directory_name_compare(const void *left, const void *right) {
     const char *const *left_name = (const char *const *)left;
@@ -111,5 +112,29 @@ int tb_directory_list(const char *path, char ***names_out, int64_t *count_out) {
     }
     *names_out = names;
     *count_out = (int64_t)count;
+    return 0;
+}
+
+/* kind: 0 = any existing target, 1 = regular file, 2 = directory. */
+int tb_path_test(const char *path, int32_t kind, int32_t *matches_out) {
+    if (path == NULL || matches_out == NULL || kind < 0 || kind > 2) {
+        errno = EINVAL;
+        return -1;
+    }
+    *matches_out = 0;
+
+    struct stat metadata;
+    if (stat(path, &metadata) != 0) {
+        if (errno == ENOENT || errno == ENOTDIR) {
+            return 0;
+        }
+        return -1;
+    }
+
+    if (kind == 0 ||
+        (kind == 1 && S_ISREG(metadata.st_mode)) ||
+        (kind == 2 && S_ISDIR(metadata.st_mode))) {
+        *matches_out = 1;
+    }
     return 0;
 }

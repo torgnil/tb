@@ -634,6 +634,15 @@ Core IO and string helpers
     same-named user function does not replace this builtin. It uses the host's
     POSIX directory APIs.
 
+- path_exists(path: string) -> bool, is_file(path: string) -> bool, and
+  is_dir(path: string) -> bool
+  - Inspect the path at runtime using POSIX `stat`, following symbolic links.
+    `path_exists` is true for any existing target; `is_file` is true only for
+    regular files; `is_dir` is true only for directories. Missing paths and
+    paths with a non-directory parent component return false. Other inspection
+    errors raise a catchable `<function>: unable to inspect <path>` message.
+    Same-named user functions do not replace these direct builtins.
+
 - read_lines(path: string) -> string[]
   - Read lines in one pass and return them in a `string[]`, including from
     non-seekable inputs such as `/dev/stdin`. A terminal LF is removed from
