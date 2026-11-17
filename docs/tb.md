@@ -105,15 +105,15 @@ values are passed at each call, and captures are read-only inside the helper;
 the helper's own parameters and locals shadow outer names. Recursive and
 sibling calls forward the captured values. Enclosing `string` parameters and
 direct-body locals, including const bindings, can also be captured as read-only
-values; each call uses the current string value. Enclosing `int[]` parameters
-and direct-body locals, including const bindings, can also be captured. Calls
-borrow the current array value, so changes or reassignment in the enclosing
-function are visible to later calls; a helper cannot reassign the captured name,
-write an element, or call a mutating array method. Other managed captures,
-including `bool[]` and `string[]`, are not supported. A helper whose name is
-shadowed by an enclosing local cannot read that local in place of a same-named
-global. Local function declarations inside deeper blocks, local `cached`
-functions, and local function values or callbacks are not supported.
+values; each call uses the current string value. Enclosing `int[]` and
+`string[]` parameters and direct-body locals, including const bindings, can
+also be captured as read-only values. Each call borrows the current array, so
+caller mutation or reassignment is visible to later calls; a helper cannot
+reassign the captured name, write an element, or call a mutating array method.
+Other managed captures, including `bool[]`, are not supported. A helper whose
+name is shadowed by an enclosing local cannot read that local in place of a
+same-named global. Local function declarations inside deeper blocks, local
+`cached` functions, and local function values or callbacks are not supported.
 Repeated and diamond imports load a lexically normalized path once; an active
 import cycle is a compiler error.
 
