@@ -71,3 +71,13 @@ int random_next_between(RandomGenerator generator, int lower, int upper):
                 if (value >= lower && value < upper):
                     return value
     return lower + random_next_below(generator, upper - lower)
+
+# Shuffle in place with backward Fisher-Yates.
+void random_shuffle_ints(RandomGenerator generator, int[] values):
+    int index = values.length() - 1
+    while (index > 0):
+        int other = random_next_below(generator, index + 1)
+        int saved = values[index]
+        values[index] = values[other]
+        values[other] = saved
+        index -= 1
