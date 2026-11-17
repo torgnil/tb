@@ -2,30 +2,34 @@
 @.prefix.process.capture.error = private unnamed_addr constant [28 x i8] c"run_process: unable to run \00"
 @.message.process.capture.empty = private unnamed_addr constant [27 x i8] c"run_process: empty command\00"
 define private ptr @tb_bootstrap_process_capture(ptr %args) {
-  %result = call ptr @tb_bootstrap_process_capture_impl(ptr %args, ptr null, ptr null, i64 -1)
+  %result = call ptr @tb_bootstrap_process_capture_impl(ptr %args, ptr null, ptr null, i64 -1, ptr null)
   ret ptr %result
 }
 define private ptr @tb_bootstrap_process_capture_with_input(ptr %args, ptr %input) {
-  %result = call ptr @tb_bootstrap_process_capture_impl(ptr %args, ptr %input, ptr null, i64 -1)
+  %result = call ptr @tb_bootstrap_process_capture_impl(ptr %args, ptr %input, ptr null, i64 -1, ptr null)
   ret ptr %result
 }
 define private ptr @tb_bootstrap_process_capture_in_directory(ptr %args, ptr %working_directory) {
-  %result = call ptr @tb_bootstrap_process_capture_impl(ptr %args, ptr null, ptr %working_directory, i64 -1)
+  %result = call ptr @tb_bootstrap_process_capture_impl(ptr %args, ptr null, ptr %working_directory, i64 -1, ptr null)
   ret ptr %result
 }
 define private ptr @tb_bootstrap_process_capture_timeout(ptr %args, i64 %timeout.ms) {
-  %result = call ptr @tb_bootstrap_process_capture_impl(ptr %args, ptr null, ptr null, i64 %timeout.ms)
+  %result = call ptr @tb_bootstrap_process_capture_impl(ptr %args, ptr null, ptr null, i64 %timeout.ms, ptr null)
   ret ptr %result
 }
 define private ptr @tb_bootstrap_process_capture_input_timeout(ptr %args, ptr %input, i64 %timeout.ms) {
-  %result = call ptr @tb_bootstrap_process_capture_impl(ptr %args, ptr %input, ptr null, i64 %timeout.ms)
+  %result = call ptr @tb_bootstrap_process_capture_impl(ptr %args, ptr %input, ptr null, i64 %timeout.ms, ptr null)
   ret ptr %result
 }
 define private ptr @tb_bootstrap_process_capture_directory_timeout(ptr %args, ptr %working_directory, i64 %timeout.ms) {
-  %result = call ptr @tb_bootstrap_process_capture_impl(ptr %args, ptr null, ptr %working_directory, i64 %timeout.ms)
+  %result = call ptr @tb_bootstrap_process_capture_impl(ptr %args, ptr null, ptr %working_directory, i64 %timeout.ms, ptr null)
   ret ptr %result
 }
-define private ptr @tb_bootstrap_process_capture_impl(ptr %args, ptr %input, ptr %working_directory, i64 %timeout.ms) {
+define private ptr @tb_bootstrap_process_capture_with_environment(ptr %args, ptr %environment) {
+  %result = call ptr @tb_bootstrap_process_capture_impl(ptr %args, ptr null, ptr null, i64 -1, ptr %environment)
+  ret ptr %result
+}
+define private ptr @tb_bootstrap_process_capture_impl(ptr %args, ptr %input, ptr %working_directory, i64 %timeout.ms, ptr %environment) {
 entry:
   %argc = call i32 @tb_bootstrap_string_array_length(ptr %args)
   %empty = icmp sle i32 %argc, 0
@@ -52,7 +56,19 @@ start:
   %stderr.slot = alloca ptr
   %array.data.ptr.ptr = getelementptr inbounds { i32, i32, ptr, ptr }, ptr %args, i32 0, i32 2
   %array.data = load ptr, ptr %array.data.ptr.ptr
-  %status = call i32 @tb_process_run(ptr %array.data, i32 %argc, ptr %input, ptr %working_directory, i64 %timeout.ms, ptr %status.slot, ptr %timed.out.slot, ptr %stdout.slot, ptr %stderr.slot)
+  %environment.inherited = icmp eq ptr %environment, null
+  br i1 %environment.inherited, label %inherit.environment, label %supplied.environment
+inherit.environment:
+  br label %environment.ready
+supplied.environment:
+  %environment.count.supplied = call i32 @tb_bootstrap_string_array_length(ptr %environment)
+  %environment.data.ptr.ptr = getelementptr inbounds { i32, i32, ptr, ptr }, ptr %environment, i32 0, i32 2
+  %environment.data.supplied = load ptr, ptr %environment.data.ptr.ptr
+  br label %environment.ready
+environment.ready:
+  %environment.count = phi i32 [ -1, %inherit.environment ], [ %environment.count.supplied, %supplied.environment ]
+  %environment.data = phi ptr [ null, %inherit.environment ], [ %environment.data.supplied, %supplied.environment ]
+  %status = call i32 @tb_process_run(ptr %array.data, i32 %argc, ptr %input, ptr %working_directory, i64 %timeout.ms, ptr %environment.data, i32 %environment.count, ptr %status.slot, ptr %timed.out.slot, ptr %stdout.slot, ptr %stderr.slot)
   %failed = icmp ne i32 %status, 0
   br i1 %failed, label %run.error, label %run.success
 run.error:

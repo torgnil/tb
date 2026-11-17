@@ -1,0 +1,19 @@
+import process;
+
+int main():
+    ProcessResult equals_value = run_process_with_environment(
+        ['/usr/bin/env'], ['TB_PROCESS_CYCLE=one=two'])
+    print(equals_value.exit_code)
+    print(equals_value.stdout.contains('TB_PROCESS_CYCLE=one=two'))
+    print(equals_value.stdout.contains('HOME='))
+
+    ProcessResult empty_value = run_process_with_environment(
+        ['/usr/bin/env'], ['TB_PROCESS_CYCLE_EMPTY='])
+    print(empty_value.exit_code)
+    print(empty_value.stdout.contains('TB_PROCESS_CYCLE_EMPTY='))
+
+    ProcessResult empty_environment = run_process_with_environment(
+        ['/usr/bin/env'], [])
+    print(empty_environment.exit_code)
+    print(empty_environment.stdout.length())
+    return 0

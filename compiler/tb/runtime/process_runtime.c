@@ -252,18 +252,24 @@ static int tb_process_finish_buffer(tb_process_buffer *buffer) {
  * modified or retained. A non-NULL `input` is a borrowed NUL-terminated string
  * supplied to child stdin; NULL preserves inherited stdin. A non-NULL
  * `working_directory` is a borrowed NUL-terminated path used for the child
- * cwd; NULL inherits the parent cwd. `timeout_ms` is -1 for an untimed call,
- * otherwise a nonnegative deadline in milliseconds. Timed calls return
- * whether that deadline expired through `timed_out_out`. On success, the
- * caller owns both output buffers. The return value is zero on success and a
- * nonzero error number on failure.
+ * cwd; NULL inherits the parent cwd. `environment_count` is -1 to inherit the
+ * parent environment, otherwise it gives the length of the supplied borrowed
+ * environment entries. `timeout_ms` is -1 for an untimed call, otherwise a
+ * nonnegative deadline in milliseconds. Timed calls return whether that
+ * deadline expired through `timed_out_out`. On success, the caller owns both
+ * output buffers. The return value is zero on success and a nonzero error
+ * number on failure.
  */
 int tb_process_run(const char *const *arguments, int32_t argument_count,
                    const char *input, const char *working_directory,
-                   int64_t timeout_ms, int64_t *exit_code_out,
+                   int64_t timeout_ms,
+                   const char *const *environment, int32_t environment_count,
+                   int64_t *exit_code_out,
                    int32_t *timed_out_out,
                    char **stdout_out, char **stderr_out) {
     if (arguments == NULL || argument_count <= 0 || timeout_ms < -1 ||
+        environment_count < -1 ||
+        (environment_count > 0 && environment == NULL) ||
         exit_code_out == NULL || timed_out_out == NULL || stdout_out == NULL ||
         stderr_out == NULL || arguments[0] == NULL || arguments[0][0] == '\0') {
         return EINVAL;
@@ -289,6 +295,30 @@ int tb_process_run(const char *const *arguments, int32_t argument_count,
     }
     argv[argv_count] = NULL;
 
+    char **environment_copy = NULL;
+    if (environment_count >= 0) {
+        size_t supplied_environment_count = (size_t)environment_count;
+        if (supplied_environment_count > SIZE_MAX / sizeof(char *) - 1) {
+            free(argv);
+            return EOVERFLOW;
+        }
+        environment_copy = (char **)malloc(
+            (supplied_environment_count + 1) * sizeof(char *));
+        if (environment_copy == NULL) {
+            free(argv);
+            return ENOMEM;
+        }
+        for (size_t index = 0; index < supplied_environment_count; index += 1) {
+            if (environment[index] == NULL) {
+                free(environment_copy);
+                free(argv);
+                return EINVAL;
+            }
+            environment_copy[index] = (char *)environment[index];
+        }
+        environment_copy[supplied_environment_count] = NULL;
+    }
+
     int stdout_pipe[2] = {-1, -1};
     int stderr_pipe[2] = {-1, -1};
     FILE *input_file = NULL;
@@ -302,6 +332,9 @@ int tb_process_run(const char *const *arguments, int32_t argument_count,
     int wait_status = 0;
     int failed = 0;
     int failure_errno = 0;
+    char *const *child_environment = environment_count < 0
+                                         ? environ
+                                         : environment_copy;
 
     if (input != NULL) {
         input_file = tmpfile();
@@ -415,7 +448,8 @@ int tb_process_run(const char *const *arguments, int32_t argument_count,
     }
     if (spawn_error == 0) {
         spawn_error = posix_spawnp(&child, argv[0], &actions,
-                                   spawn_attributes, argv, environ);
+                                   spawn_attributes, argv,
+                                   child_environment);
     }
     if (attributes_initialized) {
         posix_spawnattr_destroy(&attributes);
@@ -583,6 +617,7 @@ done:
     tb_process_close_fd(&stderr_pipe[1]);
     free(stdout_buffer.data);
     free(stderr_buffer.data);
+    free(environment_copy);
     free(argv);
     if (failed) {
         return failure_errno == 0 ? EIO : failure_errno;

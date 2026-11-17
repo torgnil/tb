@@ -616,16 +616,21 @@ Random values
 Process execution
 
 - `import process;` provides `ProcessResult run_process(string[] argv)`,
-  `ProcessResult run_process_with_input(string[] argv, string input)`, and
+  `ProcessResult run_process_with_environment(string[] argv,
+  string[] environment)`, `ProcessResult run_process_with_input(string[] argv,
+  string input)`, and
   `ProcessResult run_process_in_directory(string[] argv,
   string working_directory)`. The corresponding deadline forms are
   `run_process_with_timeout(argv, timeout_ms)`,
   `run_process_with_input_and_timeout(argv, input, timeout_ms)`, and
   `run_process_in_directory_with_timeout(argv, working_directory, timeout_ms)`.
   Each executes the argument vector directly without a shell and searches
-  `PATH`, capturing stdout and stderr separately. They inherit the caller's
-  environment; calls without supplied input inherit stdin, while the input
-  forms supply the input string followed by EOF. Calls without a supplied
+  caller's `PATH`, capturing stdout and stderr separately. Existing forms
+  inherit the caller's environment. The environment form replaces it with the
+  supplied `NAME=VALUE` entries; use unique names. A supplied `PATH` is visible
+  to the child but does not change executable lookup for that invocation.
+  Calls without supplied input inherit stdin, while the input forms supply the
+  input string followed by EOF. Calls without a supplied
   working directory inherit the caller's directory; the directory forms start
   the child in the supplied directory, resolved relative to the caller's
   current directory. The caller's directory is unchanged. The directory option
@@ -648,8 +653,8 @@ Process execution
   Spawn, input staging (when supplied), or capture failure raises
   `run_process: unable to run <executable>`. Result strings are owned through
   ordinary record field lifetime rules. This synchronous API has no streaming
-  input or environment override. Input and captured output are text in tb
-  strings; embedded NUL bytes cannot be represented.
+  input. Input and captured output are text in tb strings; embedded NUL bytes
+  cannot be represented.
 
 Core IO and string helpers
 
