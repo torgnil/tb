@@ -1111,6 +1111,10 @@ spans `[0, 0)`, `[1, 1)`, `[2, 2)`, and `[3, 3)`. Captured groups are not
 included. Each later search reuses `regex_find_from` and may rescan the input;
 for k matches, the work can be O((k+1)*n*m^2), plus bracket scans, with
 O(n+m^2) working space in addition to the output.
+`regex_count(program, text)` counts non-overlapping matches without building
+an array of spans. `regex_count_from(program, text, start)` starts at a byte offset.
+Both use the same match ordering, anchor rules and empty-match progression as
+`regex_find_all_from`. Invalid patterns, invalid offsets and misses return zero.
 `regex_replace(program, text, replacement)` replaces every prioritized,
 non-overlapping match from left to right and preserves the intervening text.
 `regex_replace_from(program, text, replacement, start)` begins searching at the

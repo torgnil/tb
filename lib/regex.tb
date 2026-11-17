@@ -1339,6 +1339,24 @@ RegexMatch[] regex_find_all_from(Regex program, string text, int start):
 RegexMatch[] regex_find_all(Regex program, string text):
     return regex_find_all_from(program, text, 0)
 
+int regex_count_from(Regex program, string text, int start):
+    int text_length = text.length()
+    if (start < 0 || start > text_length):
+        return 0
+    string[] text_bytes = text.split('')
+    int count = 0
+    int search_start = start
+    while (search_start >= 0):
+        RegexMatch match = regex_find_prepared(program, text_bytes, search_start)
+        if (!match.matched):
+            break
+        count += 1
+        search_start = regex_next_match_start(match.start, match.end, text_length)
+    return count
+
+int regex_count(Regex program, string text):
+    return regex_count_from(program, text, 0)
+
 private bool __tb_regex_replacement_uses_captures(string replacement):
     int index = 0
     while (index < replacement.length()):
