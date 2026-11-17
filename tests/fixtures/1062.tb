@@ -1,0 +1,30 @@
+int process_flags(bool[] flags):
+    const bool[] fixed = [true, false, true]
+    bool[] overlay = [false, true, false]
+
+    bool is_active(int index):
+        return flags[index] || overlay[index]
+
+    bool fixed_allowed(int index):
+        return fixed[index]
+
+    int count_enabled(int index):
+        if (index == flags.length()):
+            return 0
+        int count = count_enabled(index + 1)
+        if (is_active(index) && fixed_allowed(index)):
+            count += 1
+        return count
+
+    print(count_enabled(0))
+    flags[0] = false
+    overlay[2] = true
+    print(count_enabled(0))
+    overlay = [true, true, true]
+    print(count_enabled(0))
+    return 0
+
+int main():
+    bool[] flags = [true, false, true]
+    process_flags(flags)
+    return 0
