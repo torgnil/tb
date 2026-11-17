@@ -2849,11 +2849,11 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
                 if (normalize_llvm_type_name(flat_map_parameter.type_name) != 'int'):
                     throw 'int[] flat_map expression requires int parameter; got ' + flat_map_parameter.type_name
                 if (flat_map_callback.name == '' || flat_map_callback.param_types.length() != 1 || normalize_llvm_type_name(flat_map_callback.param_types[0]) != 'int'):
-                    throw 'int[] flat_map expression callback must have signature int[](int)'
+                    throw 'int[] flat_map expression callback must take one int parameter'
                 string flat_map_return_type = normalize_llvm_type_name(flat_map_callback.return_type)
-                if (flat_map_return_type != 'int[]'):
-                    throw 'int[] flat_map expression must return int[]; got ' + flat_map_return_type
-                return refined_value_op(op, 'int[]', 'owned')
+                if (flat_map_return_type != 'int[]' && flat_map_return_type != 'string[]'):
+                    throw 'int[] flat_map expression must return int[] or string[]; got ' + flat_map_return_type
+                return refined_value_op(op, flat_map_return_type, 'owned')
             if (op.args[0] == 'flat_map_int_expr_captured'):
                 if (op.args.length() < 5):
                     throw 'int[] flat_map expression has invalid captured IR arity'
@@ -2876,9 +2876,9 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
                         throw 'int[] flat_map callback capture must have type ' + capture_type + '; got ' + parameter_type
                     capture_index += 1
                 string flat_map_return_type = normalize_llvm_type_name(flat_map_callback.return_type)
-                if (flat_map_return_type != 'int[]'):
-                    throw 'int[] flat_map expression must return int[]; got ' + flat_map_return_type
-                return refined_value_op(op, 'int[]', 'owned')
+                if (flat_map_return_type != 'int[]' && flat_map_return_type != 'string[]'):
+                    throw 'int[] flat_map expression must return int[] or string[]; got ' + flat_map_return_type
+                return refined_value_op(op, flat_map_return_type, 'owned')
             if (op.args[0] == 'flat_map_string_expr'):
                 if (op.args.length() != 4):
                     throw 'string[] flat_map expression has invalid IR arity'
