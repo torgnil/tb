@@ -2,6 +2,14 @@
 @.prefix.process.capture.error = private unnamed_addr constant [28 x i8] c"run_process: unable to run \00"
 @.message.process.capture.empty = private unnamed_addr constant [27 x i8] c"run_process: empty command\00"
 define private ptr @tb_bootstrap_process_capture(ptr %args) {
+  %result = call ptr @tb_bootstrap_process_capture_impl(ptr %args, ptr null)
+  ret ptr %result
+}
+define private ptr @tb_bootstrap_process_capture_with_input(ptr %args, ptr %input) {
+  %result = call ptr @tb_bootstrap_process_capture_impl(ptr %args, ptr %input)
+  ret ptr %result
+}
+define private ptr @tb_bootstrap_process_capture_impl(ptr %args, ptr %input) {
 entry:
   %argc = call i32 @tb_bootstrap_string_array_length(ptr %args)
   %empty = icmp sle i32 %argc, 0
@@ -27,7 +35,7 @@ start:
   %stderr.slot = alloca ptr
   %array.data.ptr.ptr = getelementptr inbounds { i32, i32, ptr, ptr }, ptr %args, i32 0, i32 2
   %array.data = load ptr, ptr %array.data.ptr.ptr
-  %status = call i32 @tb_process_run(ptr %array.data, i32 %argc, ptr %status.slot, ptr %stdout.slot, ptr %stderr.slot)
+  %status = call i32 @tb_process_run(ptr %array.data, i32 %argc, ptr %input, ptr %status.slot, ptr %stdout.slot, ptr %stderr.slot)
   %failed = icmp ne i32 %status, 0
   br i1 %failed, label %run.error, label %run.success
 run.error:

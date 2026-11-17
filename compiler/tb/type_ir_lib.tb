@@ -2010,11 +2010,15 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
     if (op.kind != 'value'):
         return op
     if (op.detail == 'call' && !op.args.is_empty() && op.args[0] == '__tb_internal_process_capture'):
-        if (op.args.length() != 2):
-            throw 'run_process expects exactly one string[] argument'
+        if (op.args.length() != 2 && op.args.length() != 3):
+            throw 'process capture expects one or two arguments'
         string argument_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
         if (argument_type != 'string[]'):
             throw 'run_process requires string[] arguments; got ' + argument_type
+        if (op.args.length() == 3):
+            string input_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2])), enum_types)
+            if (input_type != 'string'):
+                throw 'run_process_with_input requires string input; got ' + input_type
         return refined_value_op(op, 'string[]', 'owned')
     if (op.detail == 'call' && !op.args.is_empty() && op.args[0] == 'list_dir'):
         validate_direct_list_dir_call(op, enum_types, temp_types)

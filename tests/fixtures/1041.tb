@@ -1,0 +1,47 @@
+import process;
+
+int main():
+    try:
+        ProcessResult empty_command = run_process_with_input([], '')
+        print('unreachable')
+    catch (exception error):
+        print(error)
+
+    ProcessResult exact = run_process_with_input(['/bin/cat'], 'hello\nworld\n')
+    print(exact.exit_code)
+    print(exact.stdout == 'hello\nworld\n')
+    print(exact.stderr == '')
+
+    ProcessResult empty = run_process_with_input(['/bin/cat'], '')
+    print(empty.exit_code)
+    print(empty.stdout == '')
+
+    string[] chunks = []
+    for (int i = 0; i < 8192; i += 1):
+        chunks.push('0123456789abcdef')
+    string large_input = chunks.join('')
+
+    try:
+        ProcessResult missing = run_process_with_input(
+            ['/__tb_process_input_missing__'], large_input)
+        print('unreachable')
+    catch (exception error):
+        print(error)
+
+    ProcessResult large = run_process_with_input(['/bin/cat'], large_input)
+    print(large.exit_code)
+    print(large.stdout == large_input)
+    print(large.stderr == '')
+
+    ProcessResult partial = run_process_with_input(
+        ['/usr/bin/head', '-c', '1'], large_input)
+    print(partial.exit_code)
+    print(partial.stdout == '0')
+    print(partial.stderr == '')
+
+    ProcessResult streams = run_process_with_input(
+        ['/bin/sh', '-c', 'cat; printf err >&2; exit 7'], 'payload\n')
+    print(streams.exit_code)
+    print(streams.stdout == 'payload\n')
+    print(streams.stderr == 'err')
+    return 0

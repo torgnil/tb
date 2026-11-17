@@ -6,6 +6,7 @@
 #include <signal.h>
 #include <spawn.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
@@ -142,12 +143,14 @@ static int tb_process_finish_buffer(tb_process_buffer *buffer) {
 
 /*
  * `arguments` points at an array of NUL-terminated strings. It is not
- * modified or retained. On success, the caller owns both output buffers.
- * The return value is zero on success and a nonzero error number on failure.
+ * modified or retained. A non-NULL `input` is a borrowed NUL-terminated string
+ * supplied to child stdin; NULL preserves inherited stdin. On success, the
+ * caller owns both output buffers. The return value is zero on success and a
+ * nonzero error number on failure.
  */
 int tb_process_run(const char *const *arguments, int32_t argument_count,
-                   int64_t *exit_code_out, char **stdout_out,
-                   char **stderr_out) {
+                   const char *input, int64_t *exit_code_out,
+                   char **stdout_out, char **stderr_out) {
     if (arguments == NULL || argument_count <= 0 || exit_code_out == NULL ||
         stdout_out == NULL || stderr_out == NULL || arguments[0] == NULL ||
         arguments[0][0] == '\0') {
@@ -175,11 +178,55 @@ int tb_process_run(const char *const *arguments, int32_t argument_count,
 
     int stdout_pipe[2] = {-1, -1};
     int stderr_pipe[2] = {-1, -1};
+    FILE *input_file = NULL;
+    int input_fd = -1;
     tb_process_buffer stdout_buffer = {NULL, 0, 0};
     tb_process_buffer stderr_buffer = {NULL, 0, 0};
     pid_t child = -1;
     int failed = 0;
     int failure_errno = 0;
+
+    if (input != NULL) {
+        input_file = tmpfile();
+        if (input_file == NULL) {
+            failed = 1;
+            failure_errno = errno;
+            goto done;
+        }
+        size_t input_length = strlen(input);
+        if ((input_length > 0 &&
+             fwrite(input, 1, input_length, input_file) != input_length) ||
+            fflush(input_file) != 0) {
+            failed = 1;
+            failure_errno = errno;
+            goto done;
+        }
+        int file_descriptor = fileno(input_file);
+        if (file_descriptor < 0) {
+            failed = 1;
+            failure_errno = errno;
+            goto done;
+        }
+        if (tb_process_set_cloexec(file_descriptor) != 0) {
+            failed = 1;
+            failure_errno = errno;
+            goto done;
+        }
+        input_fd = fcntl(file_descriptor, F_DUPFD_CLOEXEC,
+                         STDERR_FILENO + 1);
+        if (input_fd < 0 || lseek(input_fd, 0, SEEK_SET) < 0) {
+            failed = 1;
+            failure_errno = errno;
+            goto done;
+        }
+        FILE *completed_input_file = input_file;
+        input_file = NULL;
+        if (fclose(completed_input_file) != 0) {
+            failed = 1;
+            failure_errno = errno;
+            goto done;
+        }
+    }
 
     if (pipe(stdout_pipe) != 0 || pipe(stderr_pipe) != 0) {
         failed = 1;
@@ -216,17 +263,25 @@ int tb_process_run(const char *const *arguments, int32_t argument_count,
         spawn_error = posix_spawn_file_actions_adddup2(
             &actions, stderr_pipe[1], STDERR_FILENO);
     }
+    if (spawn_error == 0 && input_fd >= 0) {
+        spawn_error = posix_spawn_file_actions_adddup2(
+            &actions, input_fd, STDIN_FILENO);
+    }
     int pipe_fds[] = {stdout_pipe[0], stdout_pipe[1],
                       stderr_pipe[0], stderr_pipe[1]};
     for (size_t index = 0; spawn_error == 0 && index < 4; index += 1) {
         spawn_error = posix_spawn_file_actions_addclose(&actions,
                                                         pipe_fds[index]);
     }
+    if (spawn_error == 0 && input_fd >= 0) {
+        spawn_error = posix_spawn_file_actions_addclose(&actions, input_fd);
+    }
     if (spawn_error == 0) {
         spawn_error = posix_spawnp(&child, argv[0], &actions, NULL, argv,
                                    environ);
     }
     posix_spawn_file_actions_destroy(&actions);
+    tb_process_close_fd(&input_fd);
     if (spawn_error != 0) {
         failed = 1;
         failure_errno = spawn_error;
@@ -309,6 +364,10 @@ int tb_process_run(const char *const *arguments, int32_t argument_count,
 done:
     if (failed && child > 0) {
         tb_process_reap_after_error(child, &stdout_pipe[0], &stderr_pipe[0]);
+    }
+    tb_process_close_fd(&input_fd);
+    if (input_file != NULL) {
+        fclose(input_file);
     }
     tb_process_close_fd(&stdout_pipe[0]);
     tb_process_close_fd(&stdout_pipe[1]);

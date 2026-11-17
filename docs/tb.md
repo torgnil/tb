@@ -613,18 +613,22 @@ Random values
 
 Process execution
 
-- `import process;` provides `ProcessResult run_process(string[] argv)`. It
-  executes the argument vector directly without a shell, searches `PATH`,
-  inherits the current working directory, environment, and stdin, then waits
-  for completion while capturing stdout and stderr separately. The result has
+- `import process;` provides `ProcessResult run_process(string[] argv)` and
+  `ProcessResult run_process_with_input(string[] argv, string input)`. Both
+  execute the argument vector directly without a shell, search `PATH`, inherit
+  the current working directory and environment, then wait for completion while
+  capturing stdout and stderr separately. `run_process` inherits stdin;
+  `run_process_with_input` supplies the input string followed by EOF. Empty
+  input is valid, and a child may consume only part of the input. The result has
   `exit_code`, `stdout`, and `stderr` fields. A normal exit uses its exit code;
   termination by signal uses the negative signal number. A nonzero child exit
   is a result, not an exception. An empty argument vector or empty executable
-  name raises `run_process: empty command`; a spawn or capture failure raises
-  `run_process: unable to run <executable>`. Result strings are owned through
-  ordinary record field lifetime rules. This synchronous POSIX API has no
-  timeout, stdin pipe, or working-directory/environment override. Captured
-  output is text in tb strings; embedded NUL bytes cannot be represented.
+  name raises `run_process: empty command`. Spawn, input staging (when
+  supplied), or capture failure raises `run_process: unable to run <executable>`.
+  Result strings are owned through ordinary record field lifetime rules. This
+  synchronous POSIX API has no timeout, streaming input, or
+  working-directory/environment override. Input and captured output are text
+  in tb strings; embedded NUL bytes cannot be represented.
 
 Core IO and string helpers
 
