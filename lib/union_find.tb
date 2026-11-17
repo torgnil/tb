@@ -1,15 +1,18 @@
 # Mutable disjoint sets over dense integer IDs in [0, count).
 # Each root stores the negative component size; each other entry stores its parent.
 
-private void union_find_check_index(int[] parents, int item):
+private void union_find_check_index(const int[] parents, int item):
     if (item < 0 || item >= parents.length()):
         throw 'union_find: index out of range'
 
+private int union_find_read_root(const int[] parents, int item):
+    while (parents[item] >= 0):
+        item = parents[item]
+    return item
+
 private int union_find_root(int[] parents, int item):
     union_find_check_index(parents, item)
-    int root = item
-    while (parents[root] >= 0):
-        root = parents[root]
+    int root = union_find_read_root(parents, item)
     while (item != root):
         int next = parents[item]
         parents[item] = root
@@ -62,3 +65,13 @@ int[] union_find_component_sizes(const int[] parents):
         if (parent < 0):
             sizes.push(0 - parent)
     return sizes
+
+int[] union_find_component_members(const int[] parents, int item):
+    union_find_check_index(parents, item)
+    int root = union_find_read_root(parents, item)
+    int[] members = []
+    int count = parents.length()
+    for (int candidate = 0; candidate < count; candidate += 1):
+        if (union_find_read_root(parents, candidate) == root):
+            members.push(candidate)
+    return members
