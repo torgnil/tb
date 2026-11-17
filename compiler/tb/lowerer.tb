@@ -5738,7 +5738,7 @@ LocalFunctionLift lift_function_local_declarations(Node function_node, string[] 
                 string capture_type = outer_binding.type_name
                 if (capture_type.starts_with('const ')):
                     capture_type = capture_type.substring(6)
-                if (capture_type != 'int' && capture_type != 'bool' && capture_type != 'string'):
+                if (capture_type != 'int' && capture_type != 'bool' && capture_type != 'string' && capture_type != 'int[]'):
                     throw 'local function cannot capture outer binding: ' + outer_binding.name
                 for (Node statement : normalized.nodes):
                     if (local_function_capture_assigned_in_node(statement, outer_binding.name, [])):
@@ -5766,9 +5766,9 @@ LocalFunctionLift lift_function_local_declarations(Node function_node, string[] 
             if (local_function_has_capture(captures, local_index, outer_name)):
                 used_by_helper = true
         if (used_by_helper):
-            string alias_name = submit_capture_name(used_names, '__tb_local_capture_', next_name_index)
-            used_names.push(alias_name)
-            capture_aliases.push(alias_name)
+            string alias_token = submit_capture_name(used_names, '__tb_local_capture_', next_name_index)
+            used_names.push(alias_token)
+            capture_aliases.push(outer_name + '$' + alias_token)
             next_name_index += 1
         else:
             capture_aliases.push('')
