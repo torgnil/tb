@@ -3980,7 +3980,7 @@ void analyze_program_features(ProgramIR program, string[] map_types):
                     needs_path_mutation = true
                 if (op.args[0] == 'path_exists' || op.args[0] == 'is_file' || op.args[0] == 'is_dir'):
                     needs_path_classification = true
-                if (op.args[0] == '__tb_internal_process_capture'):
+                if (op.args[0] == '__tb_internal_process_capture' || op.args[0] == '__tb_internal_process_capture_in_directory'):
                     needs_process = true
                 if (op.args[0] == 'read_file'):
                     needs_read_file = true
@@ -4204,7 +4204,7 @@ void analyze_program_features(ProgramIR program, string[] map_types):
                         needs_path_mutation = true
                     if (op.args[0] == 'path_exists' || op.args[0] == 'is_file' || op.args[0] == 'is_dir'):
                         needs_path_classification = true
-                    if (op.args[0] == '__tb_internal_process_capture'):
+                    if (op.args[0] == '__tb_internal_process_capture' || op.args[0] == '__tb_internal_process_capture_in_directory'):
                         needs_process = true
                     if (op.args[0] == 'read_file'):
                         needs_read_file = true
@@ -6813,6 +6813,10 @@ string emit_call_value_instruction_core(ProgramIR program, ParsedFunction functi
             return emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_process_capture_with_input(ptr ' + temp_ref(op.args[1]) + ', ptr ' + temp_ref(op.args[2]) + ')')
         else:
             throw 'unsupported llvm run_process arity'
+    if (call_name == '__tb_internal_process_capture_in_directory'):
+        if (op.args.length() != 3):
+            throw 'unsupported llvm run_process_in_directory arity'
+        return emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_process_capture_in_directory(ptr ' + temp_ref(op.args[1]) + ', ptr ' + temp_ref(op.args[2]) + ')')
     if (call_name == 'read_file'):
         if (op.args.length() != 2):
             throw 'unsupported llvm read_file arity'
@@ -12792,7 +12796,7 @@ string[] llvm_codegen_ir_borrowed(ProgramIR program):
     if (needs_path_classification):
         lines.push('declare i32 @tb_path_test(ptr, i32, ptr)')
     if (needs_process):
-        lines.push('declare i32 @tb_process_run(ptr, i32, ptr, ptr, ptr, ptr)')
+        lines.push('declare i32 @tb_process_run(ptr, i32, ptr, ptr, ptr, ptr, ptr)')
     if (needs_file_output || needs_path_write):
         lines.push('declare i32 @fputs(ptr, ptr)')
     if (needs_file_output):
@@ -13220,7 +13224,7 @@ void llvm_print_ir(ProgramIR program):
         print('declare i32 @tb_path_test(ptr, i32, ptr)')
         emitted_any_header = true
     if (needs_process):
-        print('declare i32 @tb_process_run(ptr, i32, ptr, ptr, ptr, ptr)')
+        print('declare i32 @tb_process_run(ptr, i32, ptr, ptr, ptr, ptr, ptr)')
         emitted_any_header = true
     if (needs_file_output || needs_path_write):
         print('declare i32 @fputs(ptr, ptr)')

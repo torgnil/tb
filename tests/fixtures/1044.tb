@@ -1,0 +1,37 @@
+import process;
+
+int main():
+    if (!is_file('test-files/process-cwd/marker.txt')):
+        return 5
+    string original_cwd = run_process(['/bin/pwd']).stdout
+    ProcessResult file = run_process_in_directory(
+        ['/bin/cat', 'marker.txt'], 'test-files/process-cwd')
+    print(file.exit_code)
+    print(file.stdout)
+    print(file.stderr == '')
+    print(run_process(['/bin/pwd']).stdout == original_cwd)
+
+    try:
+        ProcessResult empty = run_process_in_directory(['/bin/true'], '')
+        print('unexpected-empty-directory-success')
+    catch (exception error):
+        print(error)
+
+    try:
+        ProcessResult missing = run_process_in_directory(
+            ['/bin/true'], 'test-files/no-such-process-directory')
+        print('unexpected-missing-directory-success')
+    catch (exception error):
+        print(error)
+
+    try:
+        ProcessResult not_directory = run_process_in_directory(
+            ['/bin/true'], 'test-files/process-cwd/marker.txt')
+        print('unexpected-file-directory-success')
+    catch (exception error):
+        print(error)
+
+    ProcessResult recovered = run_process_in_directory(
+        ['/usr/bin/printf', 'recovered'], 'test-files/process-cwd')
+    print(recovered.stdout)
+    return 0

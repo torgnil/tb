@@ -1,3 +1,8 @@
+#if defined(__linux__)
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+#endif
 #define _POSIX_C_SOURCE 200809L
 
 #include <errno.h>
@@ -55,6 +60,19 @@ static int tb_process_set_nonblocking(int fd) {
         return -1;
     }
     return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+}
+
+static int tb_process_add_chdir(posix_spawn_file_actions_t *actions,
+                                const char *working_directory) {
+#if defined(__APPLE__)
+    return posix_spawn_file_actions_addchdir(actions, working_directory);
+#elif defined(__GLIBC__)
+    return posix_spawn_file_actions_addchdir_np(actions, working_directory);
+#else
+    (void)actions;
+    (void)working_directory;
+    return ENOTSUP;
+#endif
 }
 
 static int tb_process_buffer_append(tb_process_buffer *buffer,
@@ -144,12 +162,15 @@ static int tb_process_finish_buffer(tb_process_buffer *buffer) {
 /*
  * `arguments` points at an array of NUL-terminated strings. It is not
  * modified or retained. A non-NULL `input` is a borrowed NUL-terminated string
- * supplied to child stdin; NULL preserves inherited stdin. On success, the
- * caller owns both output buffers. The return value is zero on success and a
- * nonzero error number on failure.
+ * supplied to child stdin; NULL preserves inherited stdin. A non-NULL
+ * `working_directory` is a borrowed NUL-terminated path used for the child
+ * cwd; NULL inherits the parent cwd. On success, the caller owns both output
+ * buffers. The return value is zero on success and a nonzero error number on
+ * failure.
  */
 int tb_process_run(const char *const *arguments, int32_t argument_count,
-                   const char *input, int64_t *exit_code_out,
+                   const char *input, const char *working_directory,
+                   int64_t *exit_code_out,
                    char **stdout_out, char **stderr_out) {
     if (arguments == NULL || argument_count <= 0 || exit_code_out == NULL ||
         stdout_out == NULL || stderr_out == NULL || arguments[0] == NULL ||
@@ -257,8 +278,13 @@ int tb_process_run(const char *const *arguments, int32_t argument_count,
         failure_errno = spawn_error;
         goto done;
     }
-    spawn_error = posix_spawn_file_actions_adddup2(
-        &actions, stdout_pipe[1], STDOUT_FILENO);
+    if (working_directory != NULL) {
+        spawn_error = tb_process_add_chdir(&actions, working_directory);
+    }
+    if (spawn_error == 0) {
+        spawn_error = posix_spawn_file_actions_adddup2(
+            &actions, stdout_pipe[1], STDOUT_FILENO);
+    }
     if (spawn_error == 0) {
         spawn_error = posix_spawn_file_actions_adddup2(
             &actions, stderr_pipe[1], STDERR_FILENO);

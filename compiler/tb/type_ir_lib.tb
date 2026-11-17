@@ -1247,6 +1247,8 @@ string infer_call_type(string name, FunctionSigIR[] functions):
         return foreign_return_type
     if (name == '__tb_internal_process_capture'):
         return 'string[]'
+    if (name == '__tb_internal_process_capture_in_directory'):
+        return 'string[]'
     if (name == 'thread_pool'):
         return 'thread_pool'
     if (name == 'length'):
@@ -2009,6 +2011,16 @@ private string validate_native_abs_method_call(LinearInstruction op, string[] te
 private LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bindings, FunctionSigIR[] functions, RecordFieldIR[] record_fields, map<string, string> field_types, string[] record_names, EnumTypeIR[] enum_types, string[] temp_types):
     if (op.kind != 'value'):
         return op
+    if (op.detail == 'call' && !op.args.is_empty() && op.args[0] == '__tb_internal_process_capture_in_directory'):
+        if (op.args.length() != 3):
+            throw 'process capture in directory expects two arguments'
+        string argument_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
+        if (argument_type != 'string[]'):
+            throw 'run_process_in_directory argument 1 expected string[], actual ' + argument_type
+        string directory_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2])), enum_types)
+        if (directory_type != 'string'):
+            throw 'run_process_in_directory argument 2 expected string, actual ' + directory_type
+        return refined_value_op(op, 'string[]', 'owned')
     if (op.detail == 'call' && !op.args.is_empty() && op.args[0] == '__tb_internal_process_capture'):
         if (op.args.length() != 2 && op.args.length() != 3):
             throw 'process capture expects one or two arguments'
