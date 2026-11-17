@@ -7453,6 +7453,13 @@ string emit_string_method_call_value_instruction(ProgramIR program, ParsedFuncti
 
 string emit_builtin_query_call_value_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op, string call_name, string call_arg1_type):
     string lhs = temp_ref(op.lhs)
+    if (call_name == 'peek' && is_native_prio_q_query_type(call_arg1_type)):
+        bool calls_user_function = direct_call_matches_named_function(program, function_ir, op, call_name)
+        bool calls_record_constructor = direct_call_matches_record_constructor(program, function_ir, op, call_name)
+        if (!calls_user_function && !calls_record_constructor):
+            if (op.args.length() != 2):
+                throw 'unsupported llvm priority queue peek arity'
+            return emit_prio_q_method_call_value_instruction(program, function_ir, op, call_name, call_arg1_type)
     if (call_name == 'pop' && is_native_prio_q_query_type(call_arg1_type)):
         bool calls_user_function = direct_call_matches_named_function(program, function_ir, op, call_name)
         bool calls_record_constructor = direct_call_matches_record_constructor(program, function_ir, op, call_name)
@@ -7754,9 +7761,15 @@ string emit_map_method_call_value_instruction(ParsedFunction function_ir, Linear
 
 string emit_prio_q_method_call_value_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op, string method_name, string method_base_type):
     string lhs = temp_ref(op.lhs)
+    if (method_name == 'peek' && direct_call_matches_named_function(program, function_ir, op, method_name)):
+        return ''
     if (method_base_type == 'prio_q<int>'):
         if (method_name == 'is_empty'):
             return '  ' + lhs + ' = call i1 @tb_bootstrap_prio_q_int_is_empty(ptr ' + temp_ref(op.args[1]) + ')'
+        if (method_name == 'peek'):
+            if (op.args.length() != 2):
+                throw 'unsupported llvm prio_q<int> peek arity'
+            return '  ' + lhs + ' = call i64 @tb_bootstrap_prio_q_int_peek(ptr ' + temp_ref(op.args[1]) + ')'
         if (method_name == 'push'):
             if (op.args.length() != 3):
                 throw 'unsupported llvm prio_q<int> push arity'
@@ -7772,6 +7785,10 @@ string emit_prio_q_method_call_value_instruction(ProgramIR program, ParsedFuncti
         return ''
     if (method_name == 'is_empty'):
         return '  ' + lhs + ' = call i1 @tb_bootstrap_prio_q_generic_' + record_name + '_is_empty(ptr ' + temp_ref(op.args[1]) + ')'
+    if (method_name == 'peek'):
+        if (op.args.length() != 2):
+            throw 'unsupported llvm prio_q<' + record_name + '> peek arity'
+        return '  ' + lhs + ' = call ptr @tb_bootstrap_prio_q_generic_' + record_name + '_peek(ptr ' + temp_ref(op.args[1]) + ')'
     if (method_name == 'push'):
         if (op.args.length() != 3):
             throw 'unsupported llvm prio_q<' + record_name + '> push arity'
@@ -11905,6 +11922,20 @@ string[] emit_record_array_helpers(string record_name):
     lines.push('  %len = call i32 @tb_bootstrap_record_array_length_' + record_name + '(ptr %array)')
     lines.push('  %empty = icmp eq i32 %len, 0')
     lines.push('  ret i1 %empty')
+    lines.push('}')
+    lines.push('define private ptr @tb_bootstrap_prio_q_generic_' + record_name + '_peek(ptr %pq) {')
+    lines.push('entry:')
+    lines.push('  %array.ptr = getelementptr inbounds %tb_bootstrap_prio_q_' + record_name + ', ptr %pq, i32 0, i32 0')
+    lines.push('  %array = load ptr, ptr %array.ptr')
+    lines.push('  %len = call i32 @tb_bootstrap_record_array_length_' + record_name + '(ptr %array)')
+    lines.push('  %empty = icmp eq i32 %len, 0')
+    lines.push('  br i1 %empty, label %empty.result, label %first.item')
+    lines.push('empty.result:')
+    lines.push('  ret ptr null')
+    lines.push('first.item:')
+    lines.push('  %item = call ptr @tb_bootstrap_record_array_get_' + record_name + '(ptr %array, i32 0)')
+    lines.push('  %copy = call ptr @tb_bootstrap_record_clone_' + record_name + '(ptr %item)')
+    lines.push('  ret ptr %copy')
     lines.push('}')
     lines.push('define private i32 @tb_bootstrap_prio_q_generic_' + record_name + '_push(ptr %pq, ptr %value, i1 %is_owned) {')
     lines.push('entry:')

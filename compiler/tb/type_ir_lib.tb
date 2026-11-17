@@ -357,7 +357,7 @@ bool is_builtin_ufcs_array_context_name(string method_name):
         return true
     if (infer_method_call_type(method_name, 'unknown', empty_functions) != 'unknown'):
         return true
-    return method_name == 'abs' || method_name == 'add' || method_name == 'append_all' || method_name == 'await' || method_name == 'char_at' || method_name == 'clear' || method_name == 'contains' || method_name == 'copy' || method_name == 'create_prio_q' || method_name == 'ends_with' || method_name == 'ends_with_at' || method_name == 'fill' || method_name == 'hash' || method_name == 'index_of' || method_name == 'insert' || method_name == 'is_alnum' || method_name == 'is_alpha' || method_name == 'is_digit' || method_name == 'is_done' || method_name == 'is_empty' || method_name == 'is_space' || method_name == 'is_whitespace' || method_name == 'join' || method_name == 'keys' || method_name == 'last' || method_name == 'max' || method_name == 'min' || method_name == 'pop' || method_name == 'print' || method_name == 'push' || method_name == 'remove' || method_name == 'remove_at' || method_name == 'replace' || method_name == 'sort' || method_name == 'starts_with' || method_name == 'starts_with_at' || method_name == 'submit' || method_name == 'sum' || method_name == 'to_int' || method_name == 'union' || method_name == 'values' || method_name == 'wait_for' || method_name == 'write_all'
+    return method_name == 'abs' || method_name == 'add' || method_name == 'append_all' || method_name == 'await' || method_name == 'char_at' || method_name == 'clear' || method_name == 'contains' || method_name == 'copy' || method_name == 'create_prio_q' || method_name == 'ends_with' || method_name == 'ends_with_at' || method_name == 'fill' || method_name == 'hash' || method_name == 'index_of' || method_name == 'insert' || method_name == 'is_alnum' || method_name == 'is_alpha' || method_name == 'is_digit' || method_name == 'is_done' || method_name == 'is_empty' || method_name == 'is_space' || method_name == 'is_whitespace' || method_name == 'join' || method_name == 'keys' || method_name == 'last' || method_name == 'max' || method_name == 'min' || method_name == 'peek' || method_name == 'pop' || method_name == 'print' || method_name == 'push' || method_name == 'remove' || method_name == 'remove_at' || method_name == 'replace' || method_name == 'sort' || method_name == 'starts_with' || method_name == 'starts_with_at' || method_name == 'submit' || method_name == 'sum' || method_name == 'to_int' || method_name == 'union' || method_name == 'values' || method_name == 'wait_for' || method_name == 'write_all'
 
 bool is_same_known_type(string left, string right):
     return left != '' && left != 'unknown' && left == right
@@ -1673,6 +1673,8 @@ string infer_method_call_type(string method_name, string base_type, FunctionSigI
         return 'prio_q<' + array_item_type(base_type) + '>'
     if (method_name == 'pop' && base_type.starts_with('prio_q<')):
         return prio_q_item_type(base_type)
+    if (method_name == 'peek' && is_native_prio_q_query_type(normalize_llvm_type_name(base_type))):
+        return prio_q_item_type(base_type)
     if (method_name == 'pop' && base_type == 'int[]'):
         return 'int'
     if (method_name == 'remove_at' && base_type == 'int[]'):
@@ -2498,6 +2500,19 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
                         throw 'pop requires exactly one priority queue argument'
                     string pop_result_type = prio_q_item_type(pop_receiver_type)
                     return refined_value_op(op, pop_result_type, refine_ownership_mode(op, pop_result_type))
+        if (op.args[0] == 'peek' && op.args.length() >= 2):
+            string peek_receiver_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+            if (is_native_prio_q_query_type(peek_receiver_type)):
+                FunctionSigIR peek_function = lookup_function_sig(functions, 'peek')
+                bool calls_user_function = has_matching_direct_signature(op, peek_function, enum_types, temp_types)
+                bool calls_record_constructor = has_matching_record_constructor_signature(op, 'peek', record_fields, enum_types, temp_types)
+                if (!calls_user_function && !calls_record_constructor):
+                    if (op.args.length() != 2):
+                        throw 'peek requires exactly one priority queue argument'
+                    string peek_result_type = prio_q_item_type(peek_receiver_type)
+                    if (peek_result_type == 'int'):
+                        return refined_value_op(op, peek_result_type, 'plain')
+                    return refined_value_op(op, peek_result_type, 'owned')
         if (result_type == 'unknown' && op.args[0] == 'clear' && lookup_function_return_type(functions, 'clear') == 'unknown' && !record_type_exists(record_names, 'clear')):
             if (op.args.length() != 2):
                 throw 'clear requires exactly one array argument'
@@ -2692,6 +2707,16 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
                 throw 'bool[] clear requires no arguments'
             return refined_value_op(op, 'void', 'plain')
         string normalized_base_type = normalize_llvm_type_name(base_type)
+        if (method_name == 'peek' && is_native_prio_q_query_type(normalized_base_type)):
+            if (has_matching_ufcs_signature(op, method_name, functions, enum_types, temp_types)):
+                FunctionSigIR peek_method_sig = lookup_function_sig(functions, method_name)
+                return refined_value_op(op, peek_method_sig.return_type, refine_ownership_mode(op, peek_method_sig.return_type))
+            if (op.args.length() != 2):
+                throw 'priority queue peek takes no arguments'
+            string peek_result_type = prio_q_item_type(normalized_base_type)
+            if (peek_result_type == 'int'):
+                return refined_value_op(op, peek_result_type, 'plain')
+            return refined_value_op(op, peek_result_type, 'owned')
         if (method_name == 'slice' && (normalized_base_type == 'bool[]' || normalized_base_type == 'int[]' || normalized_base_type == 'string[]') && lookup_function_return_type(functions, method_name) == 'unknown'):
             throw 'array slice methods are not supported; use values[start:end]'
         if (method_name == 'to_int' && normalized_base_type == 'string'):
