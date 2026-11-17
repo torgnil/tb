@@ -616,28 +616,38 @@ Process execution
 - `import process;` provides `ProcessResult run_process(string[] argv)`,
   `ProcessResult run_process_with_input(string[] argv, string input)`, and
   `ProcessResult run_process_in_directory(string[] argv,
-  string working_directory)`.
+  string working_directory)`. The corresponding deadline forms are
+  `run_process_with_timeout(argv, timeout_ms)`,
+  `run_process_with_input_and_timeout(argv, input, timeout_ms)`, and
+  `run_process_in_directory_with_timeout(argv, working_directory, timeout_ms)`.
   Each executes the argument vector directly without a shell and searches
-  `PATH`, waits for completion, and captures stdout and stderr separately.
-  They inherit the caller's environment; `run_process` and
-  `run_process_in_directory` inherit stdin, while `run_process_with_input`
-  supplies the input string followed by EOF. The first two calls inherit the
-  caller's working directory; `run_process_in_directory` starts the child in
-  the supplied directory, resolved relative to the caller's current directory.
-  The caller's directory is unchanged. The directory option is supported on
-  macOS 26 and newer, and glibc Linux 2.29 and newer. Empty input is valid; a
-  child may consume only a prefix of it. The result has `exit_code`, `stdout`,
-  and `stderr` fields. A normal exit uses its exit code; termination by signal
-  uses the negative signal number. A nonzero child exit is a result, not an
-  exception. An empty argument vector or empty executable name raises
-  `run_process: empty command`;
-  an empty working directory raises
-  `run_process_in_directory: empty working directory`. Spawn, input staging
-  (when supplied), or capture failure raises
+  `PATH`, capturing stdout and stderr separately. They inherit the caller's
+  environment; calls without supplied input inherit stdin, while the input
+  forms supply the input string followed by EOF. Calls without a supplied
+  working directory inherit the caller's directory; the directory forms start
+  the child in the supplied directory, resolved relative to the caller's
+  current directory. The caller's directory is unchanged. The directory option
+  is supported on macOS 26 and newer, and glibc Linux 2.29 and newer. Empty
+  input is valid; a child may consume only a prefix of it.
+
+  A timeout is a nonnegative number of milliseconds measured from successful
+  spawn through output capture. Zero allows no child runtime. When a deadline
+  expires, tb sends `SIGKILL` to the child's process group, waits for the direct
+  child, and returns output captured so far. Timed calls set `timed_out` to
+  `true`; untimed calls set it to `false`. `exit_code` uses the ordinary exit
+  status, or the negative signal number when the child is terminated by a
+  signal. A timeout is a result state, not an exception. Negative timeout
+  values raise `run_process: timeout must be nonnegative`.
+
+  `ProcessResult` has `exit_code`, `stdout`, `stderr`, and `timed_out` fields.
+  A nonzero child exit is a result, not an exception. An empty argument vector
+  or empty executable name raises `run_process: empty command`; an empty
+  working directory raises `run_process_in_directory: empty working directory`.
+  Spawn, input staging (when supplied), or capture failure raises
   `run_process: unable to run <executable>`. Result strings are owned through
-  ordinary record field lifetime rules. This synchronous process API has no
-  timeout, streaming input, or environment override. Input and captured output
-  are text in tb strings; embedded NUL bytes cannot be represented.
+  ordinary record field lifetime rules. This synchronous API has no streaming
+  input or environment override. Input and captured output are text in tb
+  strings; embedded NUL bytes cannot be represented.
 
 Core IO and string helpers
 

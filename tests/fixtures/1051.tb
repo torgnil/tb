@@ -1,0 +1,51 @@
+import process;
+
+int main():
+    ProcessResult quick = run_process_with_timeout(['/usr/bin/printf', 'done'], 1000)
+    print(quick.exit_code)
+    print(quick.timed_out == false)
+    print(quick.stdout)
+    print(quick.stderr == '')
+
+    ProcessResult legacy = run_process(['/usr/bin/printf', 'legacy'])
+    print(legacy.timed_out == false)
+
+    ProcessResult partial = run_process_with_timeout(
+        ['/bin/sh', '-c', 'printf partial; sleep 2'], 40)
+    print(partial.timed_out)
+    print(partial.exit_code == -9)
+    print(partial.stdout)
+    print(partial.stderr == '')
+
+    ProcessResult immediate = run_process_with_timeout(['/bin/sleep', '2'], 0)
+    print(immediate.timed_out)
+    print(immediate.exit_code == -9)
+
+    # The shell exits normally, but its background child keeps the capture
+    # pipes open until the deadline kills the process group.
+    ProcessResult held_pipe = run_process_with_timeout(
+        ['/bin/sh', '-c', 'sleep 2 &'], 40)
+    print(held_pipe.timed_out)
+    print(held_pipe.exit_code == 0)
+
+    ProcessResult closed_pipes = run_process_with_timeout(
+        ['/bin/sh', '-c', 'exec >/dev/null 2>&1; sleep 2'], 40)
+    print(closed_pipes.timed_out)
+    print(closed_pipes.exit_code == -9)
+
+    try:
+        ProcessResult missing = run_process_with_timeout(
+            ['/__tb_missing_process_timeout__'], 100)
+        print('unexpected-missing-command-success')
+    catch (exception error):
+        print(error)
+
+    ProcessResult recovered = run_process(['/usr/bin/printf', 'after'])
+    print(recovered.stdout)
+
+    try:
+        ProcessResult invalid = run_process_with_timeout(['/bin/true'], -1)
+        print('unexpected-negative-timeout-success')
+    catch (exception error):
+        print(error)
+    return 0
