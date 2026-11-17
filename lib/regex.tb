@@ -1199,7 +1199,7 @@ private bool regex_search_program_valid(Regex program):
 # instructions are rejected when the search visits them.
 # Keep priority and repeat handling aligned with regex_capture_search; this
 # span-only path intentionally avoids allocating per-thread capture vectors.
-private RegexMatch regex_find_prepared(Regex program, string[] text_bytes, int start):
+private RegexMatch regex_find_prepared(Regex program, string[] text_bytes, int start, bool exact_start):
     if (!regex_search_program_valid(program)):
         return RegexMatch(false, -1, -1)
     int count = program.operations.length()
@@ -1225,7 +1225,7 @@ private RegexMatch regex_find_prepared(Regex program, string[] text_bytes, int s
         pending.clear()
         next.clear()
         # New starts have lower priority than all paths already in flight.
-        if (!found):
+        if (!found && (!exact_start || position == start)):
             regex_search_push(pending, program.start, 0, 0, position)
         int index = active.length() - 4
         while (index >= 0):
@@ -1300,13 +1300,18 @@ private RegexMatch regex_find_prepared(Regex program, string[] text_bytes, int s
             active.push(item)
         if (found && active.is_empty()):
             return RegexMatch(true, best_start, best_end)
+        if (exact_start && active.is_empty()):
+            break
         position += 1
     if (found):
         return RegexMatch(true, best_start, best_end)
     return RegexMatch(false, -1, -1)
 
 RegexMatch regex_find_from(Regex program, string text, int start):
-    return regex_find_prepared(program, text.split(''), start)
+    return regex_find_prepared(program, text.split(''), start, false)
+
+RegexMatch regex_match_at(Regex program, string text, int start):
+    return regex_find_prepared(program, text.split(''), start, true)
 
 RegexMatch regex_find(Regex program, string text):
     return regex_find_from(program, text, 0)
@@ -1327,7 +1332,7 @@ RegexMatch[] regex_find_all_from(Regex program, string text, int start):
     string[] text_bytes = text.split('')
     int search_start = start
     while (search_start <= text_length):
-        RegexMatch match = regex_find_prepared(program, text_bytes, search_start)
+        RegexMatch match = regex_find_prepared(program, text_bytes, search_start, false)
         if (!match.matched):
             break
         matches.push(match)
@@ -1347,7 +1352,7 @@ int regex_count_from(Regex program, string text, int start):
     int count = 0
     int search_start = start
     while (search_start >= 0):
-        RegexMatch match = regex_find_prepared(program, text_bytes, search_start)
+        RegexMatch match = regex_find_prepared(program, text_bytes, search_start, false)
         if (!match.matched):
             break
         count += 1
@@ -1777,7 +1782,7 @@ string[] __tb_regex_split(string text, Regex program):
             match_start = captures.starts[0]
             match_end = captures.ends[0]
         else:
-            RegexMatch match = regex_find_prepared(program, text_bytes, search_start)
+            RegexMatch match = regex_find_prepared(program, text_bytes, search_start, false)
             if (!match.matched):
                 break
             match_start = match.start

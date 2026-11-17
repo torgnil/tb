@@ -1106,6 +1106,11 @@ They choose the earliest starting position, then the first alternative and
 greedy repetition according to their pattern order. For example, `a|aa`
 matches one byte of `aa`, while `aa|a` matches two. These functions return
 the whole-match span without captures.
+`regex_match_at(program, text, start)` returns a `RegexMatch` span for a match
+that begins exactly at the given byte offset. It follows the same match priority
+and whole-text anchor rules as `regex_find_from`. Misses, invalid offsets, and
+invalid patterns return a span with `matched == false` and both offsets set to `-1`.
+
 `regex_find_all(program, text)` returns all non-overlapping `RegexMatch` spans
 in increasing byte-offset order. `regex_find_all_from(program, text, start)`
 starts the first search at that byte offset and follows the same offset
