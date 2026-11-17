@@ -1273,6 +1273,8 @@ string infer_call_type(string name, FunctionSigIR[] functions):
         return 'string[]'
     if (name == 'ensure_dir'):
         return 'void'
+    if (name == 'remove_path' || name == 'rename_path'):
+        return 'void'
     if (name == 'path_exists' || name == 'is_file' || name == 'is_dir'):
         return 'bool'
     if (name == 'read_file'):
@@ -1401,6 +1403,24 @@ private void validate_direct_ensure_dir_call(LinearInstruction op, EnumTypeIR[] 
     string argument_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
     if (argument_type != 'string'):
         throw 'ensure_dir requires a string argument, got: ' + argument_type
+
+private void validate_direct_path_mutation_call(string name, LinearInstruction op, EnumTypeIR[] enum_types, string[] temp_types):
+    int argument_count = op.args.length() - 1
+    int expected_count = 1
+    string argument_label = 'argument'
+    if (name == 'rename_path'):
+        expected_count = 2
+        argument_label = 'arguments'
+    if (argument_count != expected_count):
+        throw name + ' expects exactly ' + expected_count.to_string() + ' string ' + argument_label + '; got: ' + argument_count.to_string()
+    int index = 1
+    while (index < op.args.length()):
+        string argument_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[index])), enum_types)
+        if (argument_type != 'string'):
+            if (expected_count == 1):
+                throw name + ' requires a string argument, got: ' + argument_type
+            throw name + ' requires string arguments, got: ' + argument_type
+        index += 1
 
 private void validate_direct_path_classification_call(string name, LinearInstruction op, EnumTypeIR[] enum_types, string[] temp_types):
     int argument_count = op.args.length() - 1
@@ -2004,6 +2024,9 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
         return refined_value_op(op, 'string[]', 'owned')
     if (op.detail == 'call' && !op.args.is_empty() && op.args[0] == 'ensure_dir'):
         validate_direct_ensure_dir_call(op, enum_types, temp_types)
+        return refined_value_op(op, 'void', 'plain')
+    if (op.detail == 'call' && !op.args.is_empty() && (op.args[0] == 'remove_path' || op.args[0] == 'rename_path')):
+        validate_direct_path_mutation_call(op.args[0], op, enum_types, temp_types)
         return refined_value_op(op, 'void', 'plain')
     if (op.detail == 'call' && !op.args.is_empty() && (op.args[0] == 'path_exists' || op.args[0] == 'is_file' || op.args[0] == 'is_dir')):
         validate_direct_path_classification_call(op.args[0], op, enum_types, temp_types)

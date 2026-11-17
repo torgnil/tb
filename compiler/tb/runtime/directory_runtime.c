@@ -1,10 +1,12 @@
 #include <errno.h>
 #include <dirent.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 static int tb_directory_name_compare(const void *left, const void *right) {
     const char *const *left_name = (const char *const *)left;
@@ -369,4 +371,20 @@ int tb_directory_ensure(const char *path) {
     free(path_copy);
     errno = failure_errno;
     return result;
+}
+
+int tb_directory_remove_path(const char *path) {
+    if (path == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+    return unlink(path);
+}
+
+int tb_directory_rename_path(const char *source, const char *destination) {
+    if (source == NULL || destination == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+    return rename(source, destination);
 }

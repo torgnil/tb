@@ -566,8 +566,9 @@ Submitted scalar lambda blocks also support `try` / `catch` with brace-delimited
   - `walk_dir(path)` always traverses the directory tree at runtime.
   - `write_all(path, text)` always opens `path` with mode `w` and writes `text` without adding a newline.
   - `append_all(path, text)` always opens `path` with mode `a` and writes `text` without adding a newline, preserving existing contents and creating a missing path.
+  - `remove_path(path)` removes the path entry at runtime, and `rename_path(source, destination)` renames it using POSIX filesystem calls.
   - The compiler emits the file path string, not the file contents, into the generated LLVM.
-  - Missing `read_file` and `read_lines` inputs, `list_dir` and `walk_dir` traversal errors, and file read errors report an operation and path, such as `read_lines: unable to read input.txt`; inside a `try` block the same message can be caught as an exception, and an uncaught error exits with status 1. Failed reads and directory scans discard partial results; file reads close their stream once. `write_all` reports `write_all: unable to write <path>` when opening, writing, or closing fails; a `try` block can catch that message, while an uncaught failure prints it and exits with status 1. After a successful open it closes the file once, including when writing fails.
+  - Missing `read_file` and `read_lines` inputs, `list_dir` and `walk_dir` traversal errors, and file read errors report an operation and path, such as `read_lines: unable to read input.txt`; inside a `try` block the same message can be caught as an exception, and an uncaught error exits with status 1. Failed reads and directory scans discard partial results; file reads close their stream once. `write_all` reports `write_all: unable to write <path>` when opening, writing, or closing fails; a `try` block can catch that message, while an uncaught failure prints it and exits with status 1. After a successful open it closes the file once, including when writing fails. `remove_path` and `rename_path` report their operation and paths on failure and can also be caught with `try` / `catch`.
   - `open(path)` opens a file for writing and raises `open: unable to open <path>` if opening fails; an uncaught failure prints that message and exits with status 1. Use `read_file` and `read_lines` to read files, `list_dir` for immediate names, and `walk_dir` for recursive paths. Call `close(file)` when finished. `write_line` and `write_lines` report write failures and stop at the first failed operation; `close` reports flush and close failures and consumes the handle even when it raises.
 - Const enforcement is compile-time and applies to the binding:
   - reassigning a `const` variable and direct writes through its array, map, set, or record target are rejected during compilation
@@ -659,6 +660,20 @@ Core IO and string helpers
     path, a regular-file component, or another creation failure raises
     `ensure_dir: unable to create <path>`; the error can be caught with `try` /
     `catch`. This POSIX builtin takes precedence over a same-named user function.
+
+- remove_path(path: string) -> void
+  - Remove the path entry with POSIX `unlink`. A regular file or symbolic link
+    is removed; a symbolic link's target is left alone. Directories and missing
+    paths fail with `remove_path: unable to remove <path>`. The error is
+    catchable, and this builtin takes precedence over a same-named user function.
+
+- rename_path(source: string, destination: string) -> void
+  - Rename a file, directory, or symbolic link with POSIX `rename`. Replacement
+    of an existing destination follows the host's POSIX rules; cross-filesystem
+    moves fail. Failures raise
+    `rename_path: unable to rename <source> to <destination>`, which can be
+    caught with `try` / `catch`. This builtin takes precedence over a same-named
+    user function.
 
 - path_exists(path: string) -> bool, is_file(path: string) -> bool, and
   is_dir(path: string) -> bool
