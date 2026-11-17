@@ -563,11 +563,12 @@ Submitted scalar lambda blocks also support `try` / `catch` with brace-delimited
   - `read_lines(path)` always reads `path` when the compiled program runs.
   - `read_file(path)` always reads `path` when the compiled program runs.
   - `list_dir(path)` always reads the directory at runtime.
+  - `walk_dir(path)` always traverses the directory tree at runtime.
   - `write_all(path, text)` always opens `path` with mode `w` and writes `text` without adding a newline.
   - `append_all(path, text)` always opens `path` with mode `a` and writes `text` without adding a newline, preserving existing contents and creating a missing path.
   - The compiler emits the file path string, not the file contents, into the generated LLVM.
-  - Missing `read_file` and `read_lines` inputs, `list_dir` open/read/close errors, and file read errors report an operation and path, such as `read_lines: unable to read input.txt`; inside a `try` block the same message can be caught as an exception, and an uncaught error exits with status 1. Failed reads and directory scans discard partial results; file reads close their stream once. `write_all` reports `write_all: unable to write <path>` when opening, writing, or closing fails; a `try` block can catch that message, while an uncaught failure prints it and exits with status 1. After a successful open it closes the file once, including when writing fails.
-  - `open(path)` opens a file for writing and raises `open: unable to open <path>` if opening fails; an uncaught failure prints that message and exits with status 1. Use `read_file` and `read_lines` to read files, and `list_dir` to list their parent directory. Call `close(file)` when finished. `write_line` and `write_lines` report write failures and stop at the first failed operation; `close` reports flush and close failures and consumes the handle even when it raises.
+  - Missing `read_file` and `read_lines` inputs, `list_dir` and `walk_dir` traversal errors, and file read errors report an operation and path, such as `read_lines: unable to read input.txt`; inside a `try` block the same message can be caught as an exception, and an uncaught error exits with status 1. Failed reads and directory scans discard partial results; file reads close their stream once. `write_all` reports `write_all: unable to write <path>` when opening, writing, or closing fails; a `try` block can catch that message, while an uncaught failure prints it and exits with status 1. After a successful open it closes the file once, including when writing fails.
+  - `open(path)` opens a file for writing and raises `open: unable to open <path>` if opening fails; an uncaught failure prints that message and exits with status 1. Use `read_file` and `read_lines` to read files, `list_dir` for immediate names, and `walk_dir` for recursive paths. Call `close(file)` when finished. `write_line` and `write_lines` report write failures and stop at the first failed operation; `close` reports flush and close failures and consumes the handle even when it raises.
 - Const enforcement is compile-time and applies to the binding:
   - reassigning a `const` variable and direct writes through its array, map, set, or record target are rejected during compilation
   - known mutating array, set, and priority-queue operations through a `const` binding are rejected, including UFCS and free-function forms
@@ -638,6 +639,17 @@ Core IO and string helpers
     `list_dir: unable to read <path>`; partial results are discarded. A
     same-named user function does not replace this builtin. It uses the host's
     POSIX directory APIs.
+
+- walk_dir(path: string) -> string[]
+  - Return a fresh owned array containing every descendant path, including
+    files, directories, hidden entries, and symlinks, sorted in bytewise
+    lexicographic order. The supplied root is not included. Child names are
+    joined with one `/` at the root boundary; other spelling in the supplied
+    root is retained. A root symlink is opened normally, while symlinks found
+    below the root are listed but not traversed. Open, read, metadata, close,
+    size overflow, or allocation failures discard partial results and raise
+    `walk_dir: unable to read <root>`. A same-named user function does not
+    replace this builtin. It uses the host's POSIX directory APIs.
 
 - ensure_dir(path: string) -> void
   - Recursively create missing directories in the path. Existing directories

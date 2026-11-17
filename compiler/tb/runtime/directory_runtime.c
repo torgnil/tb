@@ -115,6 +115,175 @@ int tb_directory_list(const char *path, char ***names_out, int64_t *count_out) {
     return 0;
 }
 
+static char *tb_directory_join_path(const char *directory, const char *name) {
+    size_t directory_length = strlen(directory);
+    size_t name_length = strlen(name);
+    while (directory_length > 1 && directory[directory_length - 1] == '/') {
+        directory_length -= 1;
+    }
+
+    int needs_separator = !(directory_length == 1 && directory[0] == '/');
+    size_t separator_length = needs_separator ? 1 : 0;
+    if (directory_length > SIZE_MAX - separator_length ||
+        directory_length + separator_length > SIZE_MAX - name_length - 1) {
+        errno = EOVERFLOW;
+        return NULL;
+    }
+
+    size_t path_length = directory_length + separator_length + name_length;
+    char *joined_path = (char *)malloc(path_length + 1);
+    if (joined_path == NULL) {
+        errno = ENOMEM;
+        return NULL;
+    }
+    memcpy(joined_path, directory, directory_length);
+    if (needs_separator) {
+        joined_path[directory_length] = '/';
+    }
+    memcpy(joined_path + directory_length + separator_length, name, name_length + 1);
+    return joined_path;
+}
+
+static int tb_directory_append_path(char ***paths, size_t *count, size_t *capacity,
+                                    char *path) {
+    if (*count >= (size_t)INT32_MAX) {
+        errno = EOVERFLOW;
+        return -1;
+    }
+    if (*count == *capacity) {
+        size_t new_capacity = *capacity == 0 ? 8 : *capacity * 2;
+        if (new_capacity < *capacity || new_capacity > (size_t)INT32_MAX) {
+            new_capacity = (size_t)INT32_MAX;
+        }
+        if (new_capacity <= *capacity || new_capacity > SIZE_MAX / sizeof(**paths)) {
+            errno = EOVERFLOW;
+            return -1;
+        }
+        char **grown_paths = (char **)realloc(*paths, new_capacity * sizeof(**paths));
+        if (grown_paths == NULL) {
+            errno = ENOMEM;
+            return -1;
+        }
+        *paths = grown_paths;
+        *capacity = new_capacity;
+    }
+    (*paths)[*count] = path;
+    *count += 1;
+    return 0;
+}
+
+static int tb_directory_push_pending(char ***directories, size_t *count,
+                                     size_t *capacity, char *directory) {
+    if (*count >= (size_t)INT32_MAX) {
+        errno = EOVERFLOW;
+        return -1;
+    }
+    if (*count == *capacity) {
+        size_t new_capacity = *capacity == 0 ? 8 : *capacity * 2;
+        if (new_capacity < *capacity || new_capacity > (size_t)INT32_MAX) {
+            new_capacity = (size_t)INT32_MAX;
+        }
+        if (new_capacity <= *capacity || new_capacity > SIZE_MAX / sizeof(**directories)) {
+            errno = EOVERFLOW;
+            return -1;
+        }
+        char **grown_directories = (char **)realloc(*directories,
+                                                   new_capacity * sizeof(**directories));
+        if (grown_directories == NULL) {
+            errno = ENOMEM;
+            return -1;
+        }
+        *directories = grown_directories;
+        *capacity = new_capacity;
+    }
+    (*directories)[*count] = directory;
+    *count += 1;
+    return 0;
+}
+
+int tb_directory_walk(const char *path, char ***paths_out, int64_t *count_out) {
+    if (path == NULL || paths_out == NULL || count_out == NULL) {
+        errno = EINVAL;
+        return -1;
+    }
+    *paths_out = NULL;
+    *count_out = 0;
+
+    char **paths = NULL;
+    size_t path_count = 0;
+    size_t path_capacity = 0;
+    /* Pending entries borrow path strings owned by paths; string addresses stay stable on realloc. */
+    char **pending_directories = NULL;
+    size_t pending_count = 0;
+    size_t pending_capacity = 0;
+    char **names = NULL;
+    int64_t name_count = 0;
+    const char *current_directory = path;
+    int failure_errno = 0;
+
+    for (;;) {
+        if (current_directory == NULL) {
+            if (pending_count == 0) {
+                break;
+            }
+            current_directory = pending_directories[--pending_count];
+        }
+
+        if (tb_directory_list(current_directory, &names, &name_count) != 0) {
+            failure_errno = errno;
+            goto failure;
+        }
+
+        for (int64_t index = 0; index < name_count; index += 1) {
+            char *child_path = tb_directory_join_path(current_directory, names[index]);
+            if (child_path == NULL) {
+                failure_errno = errno;
+                goto failure;
+            }
+
+            struct stat metadata;
+            if (lstat(child_path, &metadata) != 0) {
+                failure_errno = errno;
+                free(child_path);
+                goto failure;
+            }
+
+            if (tb_directory_append_path(&paths, &path_count, &path_capacity,
+                                         child_path) != 0) {
+                failure_errno = errno;
+                free(child_path);
+                goto failure;
+            }
+            if (S_ISDIR(metadata.st_mode) &&
+                tb_directory_push_pending(&pending_directories, &pending_count,
+                                          &pending_capacity, child_path) != 0) {
+                failure_errno = errno;
+                goto failure;
+            }
+        }
+
+        tb_directory_list_free(names, name_count);
+        names = NULL;
+        name_count = 0;
+        current_directory = NULL;
+    }
+
+    free(pending_directories);
+    if (path_count > 1) {
+        qsort(paths, path_count, sizeof(*paths), tb_directory_name_compare);
+    }
+    *paths_out = paths;
+    *count_out = (int64_t)path_count;
+    return 0;
+
+failure:
+    tb_directory_list_free(names, name_count);
+    tb_directory_list_free(paths, (int64_t)path_count);
+    free(pending_directories);
+    errno = failure_errno;
+    return -1;
+}
+
 /* kind: 0 = any existing target, 1 = regular file, 2 = directory. */
 int tb_path_test(const char *path, int32_t kind, int32_t *matches_out) {
     if (path == NULL || matches_out == NULL || kind < 0 || kind > 2) {

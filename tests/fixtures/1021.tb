@@ -1,0 +1,22 @@
+import process;
+
+string[] walk_dir(string path):
+    return ['shadowed']
+
+int main():
+    string[] fixture_assets = [
+        'test-files/walk-dir/.hidden',
+        'test-files/walk-dir/alpha.txt',
+        'test-files/walk-dir/nested/child.txt',
+        'test-files/walk-dir/nested/deep/grandchild.txt',
+        'test-files/walk-dir/zeta.txt'
+    ]
+    ensure_dir('test-files/walk-dir/empty')
+    ProcessResult link_result = run_process(['/bin/ln', '-s', 'nested', 'test-files/walk-dir/link'])
+    if (link_result.exit_code != 0):
+        throw 'could not create symlink fixture'
+
+    for (string path : walk_dir('test-files/walk-dir////')):
+        print(path)
+    print(walk_dir('test-files/walk-dir/empty').length())
+    return 0
