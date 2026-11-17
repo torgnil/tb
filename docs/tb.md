@@ -837,6 +837,7 @@ Managed string allocation aborts if its requested length is invalid or storage c
 - `byte_count_from(text, needle, start) -> int` counts non-overlapping matches at or after a byte offset, including `text.byte_count_from(needle, start)`. Invalid starts return zero. For an empty needle, every byte boundary from `start` through the end matches.
 - `byte_partition(text, needle) -> string[]` returns the prefix, the first exact byte match, and the suffix. A missing match returns `[text, "", ""]`. An empty needle matches at byte zero and returns `["", "", text]`. The UFCS form is `text.byte_partition(needle)`.
 - `byte_rpartition(text, needle) -> string[]` returns the prefix, the last exact byte match, and the suffix. A missing match returns `["", "", text]`. An empty needle matches at the end and returns `[text, "", ""]`. The UFCS form is `text.byte_rpartition(needle)`.
+- `byte_split_n(text, separator, max_splits) -> string[]` splits on at most `max_splits` exact byte matches and returns the remaining text as the final field. It preserves empty fields. Zero splits returns the entire text as one field. An empty separator or a negative limit raises an exception. The UFCS form is `text.byte_split_n(separator, max_splits)`.
 
 - contains(s: string, sub: string) -> bool
   - True when `sub` appears in `s`.

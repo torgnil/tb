@@ -84,3 +84,21 @@ string[] byte_rpartition(string text, string needle):
 
 private string[] byte_partition_at(string text, string needle, int position):
     return [text.substring(0, position), needle, text.substring(position + needle.length())]
+
+string[] byte_split_n(string text, string separator, int max_splits):
+    if (separator.is_empty()):
+        throw 'byte_split_n: empty separator'
+    if (max_splits < 0):
+        throw 'byte_split_n: negative split limit'
+    int separator_length = separator.length()
+    string[] fields = []
+    int start = 0
+    while (max_splits > 0):
+        int position = byte_index_of_from(text, separator, start)
+        if (position < 0):
+            break
+        fields.push(text.substring(start, position))
+        start = position + separator_length
+        max_splits -= 1
+    fields.push(text.substring(start))
+    return fields
