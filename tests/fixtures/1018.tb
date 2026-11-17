@@ -1,0 +1,31 @@
+int callback_count = 0
+
+int double_value(int value):
+    callback_count += 1
+    return value * 2
+
+cached int triple_value(int value):
+    return value * 3
+
+private bool is_even(int value):
+    callback_count += 1
+    return value % 2 == 0
+
+int main():
+    int[] values = [1, 2, 3]
+    int[] named_map = values.map_to(double_value)
+    int[] cached_map = values.map_to(triple_value)
+    print(named_map[2])
+    print(cached_map[2])
+    print(callback_count)
+
+    int[] evens = values.filter(is_even)
+    print(evens.length())
+    print(evens[0])
+    print(callback_count)
+
+    int[] empty = []
+    int[] empty_map = empty.map_to(double_value)
+    int[] empty_filter = empty.filter(is_even)
+    print(callback_count)
+    return 0

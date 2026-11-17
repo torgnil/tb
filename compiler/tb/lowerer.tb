@@ -274,6 +274,49 @@ Node submit_lambda_helper(Node[] functions, string name):
         index -= 1
     return Node('', '', [])
 
+Node named_int_array_callback_helper(Node[] functions, string name, string callback_name):
+    Node helper = Node('', '', [])
+    int matches = 0
+    for (Node function_node : functions):
+        if (function_node.kind == 'Function' || function_node.kind == 'CachedFunction' || function_node.kind == 'PrivateFunction' || function_node.kind == 'PrivateCachedFunction'):
+            BindingIR function_signature = ir_parse_binding_decl(function_node.value)
+            if (function_signature.name == name):
+                helper = function_node
+                matches += 1
+    if (matches > 1):
+        throw 'int[] ' + callback_name + ' callback helper ' + name + ' is ambiguous'
+    if (matches == 0):
+        return Node('', '', [])
+
+    BindingIR function_signature = ir_parse_binding_decl(helper.value)
+    string result_type = function_signature.type_name
+    if (result_type.starts_with('const ')):
+        result_type = result_type.substring(6)
+    string parameter_types = ''
+    string only_parameter_type = ''
+    int parameter_count = 0
+    for (Node child : helper.children):
+        if (child.kind != 'Param'):
+            break
+        BindingIR parameter = ir_parse_binding_decl(child.value)
+        string parameter_type = parameter.type_name
+        if (parameter_type.starts_with('const ')):
+            parameter_type = parameter_type.substring(6)
+        if (parameter_count > 0):
+            parameter_types += ', '
+        parameter_types += parameter_type
+        only_parameter_type = parameter_type
+        parameter_count += 1
+    string expected_result = 'int'
+    if (callback_name == 'filter'):
+        expected_result = 'bool'
+    string actual_signature = result_type + '(' + parameter_types + ')'
+    if (parameter_count != 1 || only_parameter_type != 'int'):
+        return Node('', '', [])
+    if (result_type != expected_result):
+        throw 'int[] ' + callback_name + ' callback helper ' + name + ' must have signature ' + expected_result + '(int); got ' + actual_signature
+    return helper
+
 Node[] program_visible_function_nodes(Node[] declarations, string module_id):
     Node[] visible = []
     string active_module = ''
@@ -1423,6 +1466,15 @@ SubmitLambdaRewrite rewrite_array_map_expression(Node node, string[] used_names,
         current_names = rewritten_child.used_names
         current_index = rewritten_child.next_index
     Node rewritten = Node(node.kind, node.value, children)
+    if (node.kind == 'MethodCall' && (node.value == 'map_to' || node.value == 'filter') && children.length() == 2 && children[1].kind == 'Identifier'):
+        Node named_helper = named_int_array_callback_helper(functions, children[1].value, node.value)
+        if (named_helper.kind != ''):
+            string parameter_name = submit_capture_name(current_names, '__tb_named_callback_item_', current_index)
+            current_names = add_unique_name(current_names, parameter_name)
+            current_index += 1
+            Node call = Node('Call', children[1].value, [Node('Identifier', parameter_name, [])])
+            children[1] = Node('Lambda', 'int ' + parameter_name, [call])
+            rewritten = Node(node.kind, node.value, children)
     if (node.kind == 'MethodCall' && node.value == 'map_to'):
         if (children.length() == 2):
             SubmitLambdaRewrite string_map = rewrite_string_array_map_lambda(children[1], current_names, current_index, functions)
@@ -5612,6 +5664,16 @@ int local_function_name_index(string name, string[] local_names):
         index += 1
     return -1
 
+string local_function_callback_reference_in_node(Node node, string[] local_names):
+    if (node.kind == 'MethodCall' && (node.value == 'map_to' || node.value == 'filter') && node.children.length() == 2 && node.children[1].kind == 'Identifier'):
+        if (local_function_name_index(node.children[1].value, local_names) >= 0):
+            return node.children[1].value
+    for (Node child : node.children):
+        string name = local_function_callback_reference_in_node(child, local_names)
+        if (name != ''):
+            return name
+    return ''
+
 LocalFunctionCallIR[] collect_local_function_calls(Node node, string[] local_names, int caller_index, LocalFunctionCallIR[] calls):
     if (node.kind == 'Call'):
         int target_index = local_function_name_index(node.value, local_names)
@@ -5713,6 +5775,11 @@ LocalFunctionLift lift_function_local_declarations(Node function_node, string[] 
         generated_names.push(generated_name)
         next_name_index += 1
 
+    for (Node statement : body):
+        string callback_name = local_function_callback_reference_in_node(statement, local_names)
+        if (callback_name != ''):
+            throw 'local function callback values are not supported: ' + callback_name
+
     LocalFunctionCaptureIR[] direct_captures = []
     LocalFunctionCaptureIR[] captures = []
     LocalFunctionBodyIR[] normalized_helper_bodies = []
@@ -5727,6 +5794,10 @@ LocalFunctionLift lift_function_local_declarations(Node function_node, string[] 
             initial_bindings.push(LocalBindingName(helper_param, helper_param))
         LocalBindingListRewrite normalized = normalize_local_binding_list(helper_body, initial_bindings, 0)
         normalized_helper_bodies.push(LocalFunctionBodyIR(normalized.nodes))
+        for (Node statement : normalized.nodes):
+            string callback_name = local_function_callback_reference_in_node(statement, local_names)
+            if (callback_name != ''):
+                throw 'local function callback values are not supported: ' + callback_name
         for (BindingIR outer_binding : outer_bindings):
             if (contains_name(helper_params, outer_binding.name)):
                 continue
@@ -6111,6 +6182,38 @@ ProgramIR lower_program_ir(Node program):
             throw 'unsupported top-level node in shared bootstrap IR: ' + child.kind
     return ProgramIR(imports, globals, records, enums, functions)
 
+bool node_has_visible_named_array_callback(Node node, Node[] functions):
+    if (node.kind == 'MethodCall' && (node.value == 'map_to' || node.value == 'filter') && node.children.length() == 2 && node.children[1].kind == 'Identifier'):
+        if (named_int_array_callback_helper(functions, node.children[1].value, node.value).kind != ''):
+            return true
+    for (Node child : node.children):
+        if (node_has_visible_named_array_callback(child, functions)):
+            return true
+    return false
+
+bool program_has_visible_named_array_callback(Node program):
+    string module_id = ''
+    for (Node child : program.children):
+        if (child.kind == 'ModuleMarker'):
+            module_id = child.value
+        else:
+            Node[] visible_functions = program_visible_function_nodes(program.children, module_id)
+            if (node_has_visible_named_array_callback(child, visible_functions)):
+                return true
+    return false
+
+bool tokens_may_have_bare_array_callback(Token[] tokens):
+    int index = 0
+    while (index + 3 < tokens.length()):
+        Token method_name = token_at(tokens, index)
+        if ((token_is(method_name, 'IDENTIFIER', 'map_to') || token_is(method_name, 'IDENTIFIER', 'filter')) &&
+            token_is(token_at(tokens, index + 1), 'SYMBOL', '(') &&
+            token_at(tokens, index + 2).kind == 'IDENTIFIER' &&
+            token_is(token_at(tokens, index + 3), 'SYMBOL', ')')):
+            return true
+        index += 1
+    return false
+
 # Check only the direct source spelling of a range foreach; other forms keep
 # the ordinary array path unless a direct loop already required the prepass.
 bool tokens_have_direct_range_foreach(Token[] tokens):
@@ -6136,6 +6239,7 @@ ProgramIR lower_tokens_ir(Token[] tokens):
     bool has_filter_identifier = false
     bool has_flat_map_identifier = false
     bool has_arrow_symbol = false
+    bool has_named_array_callback = false
     bool has_local_function = tokens_have_local_function_declaration(tokens)
     for (Token token : tokens):
         if (token_is(token, 'IDENTIFIER', 'submit')):
@@ -6152,7 +6256,9 @@ ProgramIR lower_tokens_ir(Token[] tokens):
     for (Token token : tokens):
         if (token_is(token, 'KEYWORD', 'const')):
             has_const = true
-    bool needs_program = (has_submit_identifier || has_map_to_identifier || has_filter_identifier || has_flat_map_identifier) && has_arrow_symbol
+    if (!has_arrow_symbol && (has_map_to_identifier || has_filter_identifier) && tokens_may_have_bare_array_callback(tokens)):
+        has_named_array_callback = program_has_visible_named_array_callback(parse_program(tokens))
+    bool needs_program = has_named_array_callback || ((has_submit_identifier || has_map_to_identifier || has_filter_identifier || has_flat_map_identifier) && has_arrow_symbol)
     bool has_range_foreach = tokens_have_direct_range_foreach(tokens)
     bool has_private_global = false
     bool has_private_record = false
