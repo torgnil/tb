@@ -118,6 +118,17 @@ private bool submit_lambda_string_scalar_captures(BindingIR[] captured):
             return false
     return string_capture_count == 1 && scalar_capture_count > 0
 
+private bool submit_lambda_multiple_string_captures(BindingIR[] captured):
+    if (captured.length() < 2):
+        return false
+    for (BindingIR binding : captured):
+        string capture_type = binding.type_name
+        if (capture_type.starts_with('const ')):
+            capture_type = capture_type.substring(6)
+        if (capture_type != 'string'):
+            return false
+    return true
+
 string quote_string(string value):
     return '\'' + value + '\''
 
@@ -1734,11 +1745,12 @@ BindingIR[] submit_lambda_captures(Node lambda_node, BindingIR[] bindings):
         int array_capture_index = submit_lambda_array_capture_index(captured)
         bool supported_single_managed_capture = managed_capture_count == 1 && (captured.length() == 1 || array_capture_index >= 0)
         bool supported_string_scalar_captures = lambda_node.kind == 'Lambda0' && string_capture_count == 1 && managed_capture_count == 1 && submit_lambda_string_scalar_captures(captured)
+        bool supported_multiple_string_captures = lambda_node.kind == 'Lambda0' && submit_lambda_multiple_string_captures(captured)
         bool multiple_array_captures = lambda_node.kind == 'Lambda0' && int_array_capture_count >= 2 && managed_capture_count == int_array_capture_count
         bool explicit_array_task_captures = lambda_node.kind == 'Lambda' && int_array_task && managed_capture_count == int_array_capture_count
         bool explicit_string_array_task_capture = explicit_string_array_string_capture && managed_capture_count == 1
-        if ((lambda_node.kind != 'Lambda0' && !explicit_array_task_captures && !explicit_string_array_task_capture) || (lambda_node.kind == 'Lambda0' && !supported_single_managed_capture && !multiple_array_captures && !supported_string_scalar_captures)):
-            throw 'thread_pool.submit lambda managed captures require a zero-argument lambda with only int[] and scalar captures, or one string, int[][], bool[][], or string[][] capture'
+        if ((lambda_node.kind != 'Lambda0' && !explicit_array_task_captures && !explicit_string_array_task_capture) || (lambda_node.kind == 'Lambda0' && !supported_single_managed_capture && !multiple_array_captures && !supported_string_scalar_captures && !supported_multiple_string_captures)):
+            throw 'thread_pool.submit lambda managed captures require a zero-argument lambda with only int[] and scalar captures, one string with optional scalar captures, multiple strings only, or one int[][], bool[][], or string[][] capture'
     return captured
 
 private bool int_array_callback_array_snapshot_type(string type_name):
@@ -1951,6 +1963,18 @@ private Node rewrite_submit_string_scalar_capture_reads(Node node, BindingIR[] c
     Node[] children = []
     for (Node child : node.children):
         children.push(rewrite_submit_string_scalar_capture_reads(child, captured, environment_name))
+    return Node(node.kind, node.value, children)
+
+private Node rewrite_submit_string_capture_reads(Node node, BindingIR[] captured, string environment_name):
+    if (node.kind == 'Identifier'):
+        for (int capture_index = 0; capture_index < captured.length(); capture_index += 1):
+            if (captured[capture_index].name == node.value):
+                Node row = Node('Index', '', [Node('Identifier', environment_name, []), Node('Int', '0', [])])
+                return Node('Index', '', [row, Node('Int', capture_index.to_string(), [])])
+        return node
+    Node[] children = []
+    for (Node child : node.children):
+        children.push(rewrite_submit_string_capture_reads(child, captured, environment_name))
     return Node(node.kind, node.value, children)
 
 # Called only after a supported worker or array-callback block passed validation.
@@ -2357,6 +2381,7 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
                         rewritten_children[1] = lambda_node
                         rewritten_children.push(Node('Identifier', array_capture_name, []))
         bool mixed_string_scalar_captures = lambda_node.kind == 'Lambda0' && submit_lambda_string_scalar_captures(captured)
+        bool multiple_string_captures = lambda_node.kind == 'Lambda0' && submit_lambda_multiple_string_captures(captured)
         string scalar_environment_name = ''
         string mixed_string_capture_name = ''
         if (mixed_string_scalar_captures):
@@ -2390,7 +2415,9 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
             environment_name = submit_capture_name(current_names, '__tb_submit_environment_', current_index)
             current_names = add_unique_name(current_names, environment_name)
             current_index += 1
-            if (array_task_parameter):
+            if (multiple_string_captures):
+                function_children.push(Node('Param', 'const string[][] ' + environment_name, []))
+            else if (array_task_parameter):
                 function_children.push(Node('Param', 'const int[][] ' + environment_name, []))
             else if (string_array_task_parameter):
                 if (string_array_task_string_capture):
@@ -2413,6 +2440,8 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
         Node lambda_body = lambda_node.children[0]
         if (mixed_string_scalar_captures):
             lambda_body = rewrite_submit_string_scalar_capture_reads(lambda_body, captured, scalar_environment_name)
+        else if (multiple_string_captures):
+            lambda_body = rewrite_submit_string_capture_reads(lambda_body, captured, environment_name)
         else if (array_task_array_captures):
             BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
             BindingIR[] projection_bindings = [parameter]
@@ -2437,7 +2466,7 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
                 function_children.push(Node('VarDecl', 'const string[] ' + parameter.name, [task_value]))
                 Node capture_value = Node('Index', '', [Node('Index', '', [Node('Identifier', environment_name, []), Node('Int', '1', [])]), Node('Int', '0', [])])
                 function_children.push(Node('VarDecl', 'const string ' + captured[0].name, [capture_value]))
-            else:
+            else if (!multiple_string_captures):
                 int environment_offset = 0
                 if (lambda_node.kind == 'Lambda'):
                     BindingIR parameter = ir_parse_binding_decl(lambda_node.value)
@@ -2503,7 +2532,10 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
             string wrapper_environment_name = submit_capture_name(current_names, '__tb_submit_environment_', current_index)
             current_names = add_unique_name(current_names, wrapper_environment_name)
             current_index += 1
-            if (string_array_task_string_capture):
+            if (multiple_string_captures):
+                Node capture_row = Node('Array', '', capture_values)
+                wrapper_children.push(Node('VarDecl', 'string[][] ' + wrapper_environment_name, [Node('Array', '', [capture_row])]))
+            else if (string_array_task_string_capture):
                 string wrapper_capture_row_name = submit_capture_name(current_names, '__tb_submit_captures_', current_index)
                 current_names = add_unique_name(current_names, wrapper_capture_row_name)
                 current_index += 1
