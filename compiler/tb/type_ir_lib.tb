@@ -2707,6 +2707,13 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
                 throw 'bool[] clear requires no arguments'
             return refined_value_op(op, 'void', 'plain')
         string normalized_base_type = normalize_llvm_type_name(base_type)
+        if (method_name == 'int_keys' && normalized_base_type == 'map<int, int>'):
+            if (has_matching_ufcs_signature(op, method_name, functions, enum_types, temp_types)):
+                FunctionSigIR keys_sig = lookup_function_sig(functions, method_name)
+                return refined_value_op(op, keys_sig.return_type, refine_ownership_mode(op, keys_sig.return_type))
+            if (op.args.length() != 2):
+                throw 'map int_keys takes no arguments'
+            return refined_value_op(op, 'int[]', 'owned')
         if (method_name == 'peek' && is_native_prio_q_query_type(normalized_base_type)):
             if (has_matching_ufcs_signature(op, method_name, functions, enum_types, temp_types)):
                 FunctionSigIR peek_method_sig = lookup_function_sig(functions, method_name)
