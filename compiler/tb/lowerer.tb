@@ -5731,6 +5731,9 @@ string[] local_function_lambda_names(Node node, string[] lambda_names):
             child_lambda_names = add_unique_name(child_lambda_names, ir_parse_binding_decl(node.value.substring(separator + 3)).name)
     return child_lambda_names
 
+private bool local_function_capture_type_supported(string type_name):
+    return type_name == 'int' || type_name == 'bool' || type_name == 'string' || type_name == 'int[]' || type_name == 'bool[]' || type_name == 'string[]' || type_name == 'int[][]' || type_name == 'bool[][]' || type_name == 'string[][]'
+
 string local_function_capture_in_node(Node node, string[] outer_names, string[] lambda_names):
     if (node.kind == 'Identifier'):
         if (contains_name(outer_names, node.value) && !contains_name(lambda_names, node.value)):
@@ -5918,7 +5921,7 @@ LocalFunctionLift lift_function_local_declarations(Node function_node, string[] 
                 string capture_type = outer_binding.type_name
                 if (capture_type.starts_with('const ')):
                     capture_type = capture_type.substring(6)
-                if (capture_type != 'int' && capture_type != 'bool' && capture_type != 'string' && capture_type != 'int[]' && capture_type != 'bool[]' && capture_type != 'string[]'):
+                if (!local_function_capture_type_supported(capture_type)):
                     throw 'local function cannot capture outer binding: ' + outer_binding.name
                 for (Node statement : normalized.nodes):
                     if (local_function_capture_assigned_in_node(statement, outer_binding.name, [])):
