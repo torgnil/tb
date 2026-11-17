@@ -2111,6 +2111,8 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
         if (op.args.length() != 1):
             throw 'foreach iterable marker requires one source value'
         string iterable_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[0]))
+        if (iterable_type == 'map<string, int>'):
+            return refined_value_op(op, 'string[]', 'borrowed')
         return refined_value_op(op, iterable_type, 'borrowed')
     if (op.detail == 'method-call'):
         if (op.args.length() >= 2):
