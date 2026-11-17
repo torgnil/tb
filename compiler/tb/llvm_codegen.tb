@@ -184,6 +184,7 @@ int LLVM_SCAN_NEEDS_INT_SET = 0;
 private int LLVM_SCAN_NEEDS_STRING_SET = 0;
 int LLVM_SCAN_NEEDS_BOOL_ARRAY = 0;
 int LLVM_SCAN_NEEDS_BOOL_ARRAY_ARRAY = 0;
+int LLVM_SCAN_NEEDS_BOOL_ARRAY_MAP_INT_EXPR = 0;
 int LLVM_SCAN_NEEDS_PRIO_Q_INT = 0;
 int LLVM_SCAN_NEEDS_INT_ARRAY = 0;
 int LLVM_SCAN_NEEDS_INT_ARRAY_STRING_FLAT_MAP = 0;
@@ -723,6 +724,7 @@ void reset_llvm_backend_helper_stats():
     LLVM_SCAN_NEEDS_STRING_SET = 0
     LLVM_SCAN_NEEDS_BOOL_ARRAY = 0
     LLVM_SCAN_NEEDS_BOOL_ARRAY_ARRAY = 0
+    LLVM_SCAN_NEEDS_BOOL_ARRAY_MAP_INT_EXPR = 0
     LLVM_SCAN_NEEDS_PRIO_Q_INT = 0
     LLVM_SCAN_NEEDS_INT_ARRAY = 0
     LLVM_SCAN_NEEDS_INT_ARRAY_STRING_FLAT_MAP = 0
@@ -1715,7 +1717,7 @@ bool instruction_uses_temp_at(LinearInstruction[] instructions, int instruction_
                 if (index != 2):
                     bool metadata_operand = false
                     if (index == 3):
-                        if (instructions[instruction_index].args[0] == 'map_to' || instructions[instruction_index].args[0] == 'map_to_self' || instructions[instruction_index].args[0] == 'map_to_expr' || instructions[instruction_index].args[0] == 'filter_int_expr' || instructions[instruction_index].args[0] == 'flat_map_int_expr' || instructions[instruction_index].args[0] == 'flat_map_int_expr_captured' || instructions[instruction_index].args[0] == 'flat_map_string_expr' || instructions[instruction_index].args[0] == 'flat_map_string_expr_captured' || instructions[instruction_index].args[0] == 'flat_map_string_int_expr' || instructions[instruction_index].args[0] == 'flat_map_string_int_expr_captured'):
+                        if (instructions[instruction_index].args[0] == 'map_to' || instructions[instruction_index].args[0] == 'map_to_self' || instructions[instruction_index].args[0] == 'map_to_expr' || instructions[instruction_index].args[0] == 'map_to_bool_expr' || instructions[instruction_index].args[0] == 'filter_int_expr' || instructions[instruction_index].args[0] == 'flat_map_int_expr' || instructions[instruction_index].args[0] == 'flat_map_int_expr_captured' || instructions[instruction_index].args[0] == 'flat_map_string_expr' || instructions[instruction_index].args[0] == 'flat_map_string_expr_captured' || instructions[instruction_index].args[0] == 'flat_map_string_int_expr' || instructions[instruction_index].args[0] == 'flat_map_string_int_expr_captured'):
                             metadata_operand = true
                     if (!metadata_operand && temp_name == instructions[instruction_index].args[index]):
                         return true
@@ -2159,7 +2161,7 @@ bool temp_needs_backend_free(ParsedFunction function_ir, string temp_name):
                 return true
         if (op.detail == 'method-call-lambda'):
             if (op.args.length() == 4):
-                if (op.args[0] == 'map_to_self' || op.args[0] == 'map_to_expr' || op.args[0] == 'filter_int_expr' || op.args[0] == 'flat_map_int_expr' || op.args[0] == 'flat_map_string_int_expr'):
+                if (op.args[0] == 'map_to_self' || op.args[0] == 'map_to_expr' || op.args[0] == 'map_to_bool_expr' || op.args[0] == 'filter_int_expr' || op.args[0] == 'flat_map_int_expr' || op.args[0] == 'flat_map_string_int_expr'):
                     return true
             if (op.args.length() >= 5 && (op.args[0] == 'flat_map_int_expr_captured' || op.args[0] == 'flat_map_string_int_expr_captured')):
                 return true
@@ -3768,6 +3770,7 @@ void analyze_program_features(ProgramIR program, string[] map_types):
     LLVM_SCAN_NEEDS_STRING_SET = 0
     LLVM_SCAN_NEEDS_BOOL_ARRAY = 0
     LLVM_SCAN_NEEDS_BOOL_ARRAY_ARRAY = 0
+    LLVM_SCAN_NEEDS_BOOL_ARRAY_MAP_INT_EXPR = 0
     LLVM_SCAN_NEEDS_PRIO_Q_INT = 0
     LLVM_SCAN_NEEDS_INT_ARRAY = 0
     LLVM_SCAN_NEEDS_INT_ARRAY_STRING_FLAT_MAP = 0
@@ -3826,6 +3829,7 @@ void analyze_program_features(ProgramIR program, string[] map_types):
     bool needs_string_set = false
     bool needs_bool_array = false
     bool needs_bool_array_array = false
+    bool needs_bool_array_map_int_expr = false
     bool needs_prio_q_int = false
     bool needs_int_array = false
     bool needs_int_array_string_flat_map = false
@@ -4283,6 +4287,11 @@ void analyze_program_features(ProgramIR program, string[] map_types):
                     if (!op.args.is_empty() && op.args[0] == 'hash' && method_base_type == 'num'):
                         needs_num_hash = true
                 if (op.detail == 'method-call-lambda' && op.args.length() >= 1):
+                    if (op.args[0] == 'map_to_bool_expr'):
+                        needs_bool_array = true
+                        needs_int_array = true
+                        needs_bool_array_map_int_expr = true
+                        needs_throw = true
                     if ((op.args[0] == 'flat_map_int_expr' || op.args[0] == 'flat_map_int_expr_captured') && result_type == 'string[]'):
                         needs_int_array_string_flat_map = true
                         needs_string_array = true
@@ -4387,6 +4396,8 @@ void analyze_program_features(ProgramIR program, string[] map_types):
         LLVM_SCAN_NEEDS_BOOL_ARRAY = 1
     if (needs_bool_array_array):
         LLVM_SCAN_NEEDS_BOOL_ARRAY_ARRAY = 1
+    if (needs_bool_array_map_int_expr):
+        LLVM_SCAN_NEEDS_BOOL_ARRAY_MAP_INT_EXPR = 1
     if (needs_prio_q_int):
         LLVM_SCAN_NEEDS_PRIO_Q_INT = 1
     if (needs_int_array):
@@ -5873,6 +5884,13 @@ string emit_int_array_map_to_expression_instruction(ParsedFunction function_ir, 
         throw 'unsupported int[] map_to expression lambda arity'
     string lhs = temp_ref(op.lhs)
     string call_line = '  ' + lhs + ' = call ptr @tb_bootstrap_int_array_map_expr(ptr ' + temp_ref(op.args[1]) + ', ptr @' + op.args[3] + ')'
+    return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, call_line)
+
+string emit_bool_array_map_to_expression_instruction(ParsedFunction function_ir, LinearInstruction op):
+    if (op.args.length() != 4):
+        throw 'unsupported bool[] map_to expression lambda arity'
+    string lhs = temp_ref(op.lhs)
+    string call_line = '  ' + lhs + ' = call ptr @tb_bootstrap_bool_array_map_int_expr(ptr ' + temp_ref(op.args[1]) + ', ptr @' + op.args[3] + ')'
     return emit_array_scalar_query_with_release(function_ir, op.args[1], op.lhs, call_line)
 
 string emit_int_array_filter_expression_instruction(ParsedFunction function_ir, LinearInstruction op):
@@ -8900,6 +8918,8 @@ string emit_value_instruction(ProgramIR program, ParsedFunction function_ir, Lin
         if (op.args.length() == 4):
             if (op.args[0] == 'map_to_expr'):
                 return emit_int_array_map_to_expression_instruction(function_ir, op)
+            if (op.args[0] == 'map_to_bool_expr'):
+                return emit_bool_array_map_to_expression_instruction(function_ir, op)
         if (op.args.length() == 4):
             if (op.args[0] == 'map_to_self'):
                 return emit_int_array_map_to_self_lambda_instruction(function_ir, op)
@@ -11753,6 +11773,9 @@ string[] emit_record_set_helpers(ProgramIR program, string record_name):
 string[] emit_bool_array_helpers():
     return llvm_embedded_helper_text('bool_array.ll').split_lines()
 
+string[] emit_bool_array_map_int_expr_helpers():
+    return llvm_embedded_helper_text('bool_array_map_int_expr.ll').split_lines()
+
 string[] emit_bool_array_array_helpers():
     return llvm_embedded_helper_text('bool_array_array.ll').split_lines()
 
@@ -12630,6 +12653,7 @@ string[] llvm_codegen_ir_borrowed(ProgramIR program):
     string[] record_set_types = program_record_set_types(program)
     bool needs_bool_array = LLVM_SCAN_NEEDS_BOOL_ARRAY != 0
     bool needs_bool_array_array = LLVM_SCAN_NEEDS_BOOL_ARRAY_ARRAY != 0
+    bool needs_bool_array_map_int_expr = LLVM_SCAN_NEEDS_BOOL_ARRAY_MAP_INT_EXPR != 0
     bool needs_prio_q_int = LLVM_SCAN_NEEDS_PRIO_Q_INT != 0
     bool needs_int_array = LLVM_SCAN_NEEDS_INT_ARRAY != 0
     bool needs_int_array_string_flat_map = LLVM_SCAN_NEEDS_INT_ARRAY_STRING_FLAT_MAP != 0
@@ -12845,6 +12869,9 @@ string[] llvm_codegen_ir_borrowed(ProgramIR program):
     if (needs_int_array):
         for (string helper in emit_int_array_helpers()):
             lines.push(helper)
+    if (needs_bool_array_map_int_expr):
+        for (string helper in emit_bool_array_map_int_expr_helpers()):
+            lines.push(helper)
     if (needs_int_array_string_flat_map):
         for (string helper in emit_int_array_map_string_helpers()):
             lines.push(helper)
@@ -13031,6 +13058,7 @@ void llvm_print_ir(ProgramIR program):
     string[] record_set_types = program_record_set_types(program)
     bool needs_bool_array = LLVM_SCAN_NEEDS_BOOL_ARRAY != 0
     bool needs_bool_array_array = LLVM_SCAN_NEEDS_BOOL_ARRAY_ARRAY != 0
+    bool needs_bool_array_map_int_expr = LLVM_SCAN_NEEDS_BOOL_ARRAY_MAP_INT_EXPR != 0
     bool needs_prio_q_int = LLVM_SCAN_NEEDS_PRIO_Q_INT != 0
     bool needs_int_array = LLVM_SCAN_NEEDS_INT_ARRAY != 0
     bool needs_int_array_string_flat_map = LLVM_SCAN_NEEDS_INT_ARRAY_STRING_FLAT_MAP != 0
@@ -13282,6 +13310,9 @@ void llvm_print_ir(ProgramIR program):
     if (needs_int_array):
         string[] int_array_helper_lines = emit_int_array_helpers()
         for (string line in int_array_helper_lines):
+            print(line)
+    if (needs_bool_array_map_int_expr):
+        for (string line in emit_bool_array_map_int_expr_helpers()):
             print(line)
     if (needs_int_array_string_flat_map):
         for (string line in emit_int_array_map_string_helpers()):

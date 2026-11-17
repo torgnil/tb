@@ -2193,6 +2193,25 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
                 if (expression_return_type != 'int'):
                     throw 'int[] map_to expression must return int; got ' + expression_return_type
                 return refined_value_op(op, 'int[]', 'owned')
+            if (op.args[0] == 'map_to_bool_expr'):
+                if (op.args.length() != 4):
+                    throw 'bool[] map_to expression has invalid IR arity'
+                string bool_expression_receiver_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+                BindingIR bool_expression_parameter = ir_parse_binding_decl(op.args[2])
+                string bool_expression_parameter_type = normalize_enum_type_name(normalize_llvm_type_name(bool_expression_parameter.type_name), enum_types)
+                FunctionSigIR bool_expression_callback = lookup_function_sig(functions, op.args[3])
+                if (bool_expression_receiver_type != 'bool[]'):
+                    throw 'bool[] map_to expression requires bool[] receiver; got ' + bool_expression_receiver_type
+                if (bool_expression_parameter_type != 'bool'):
+                    throw 'bool[] map_to expression requires bool parameter; got ' + bool_expression_parameter_type
+                if (bool_expression_callback.name == '' || bool_expression_callback.param_types.length() != 1):
+                    throw 'bool[] map_to expression callback must have signature int(bool)'
+                if (normalize_llvm_type_name(bool_expression_callback.param_types[0]) != 'bool'):
+                    throw 'bool[] map_to expression callback must have signature int(bool)'
+                string bool_expression_return_type = normalize_llvm_type_name(bool_expression_callback.return_type)
+                if (bool_expression_return_type != 'int'):
+                    throw 'bool[] map_to expression must return int; got ' + bool_expression_return_type
+                return refined_value_op(op, 'int[]', 'owned')
             if (op.args[0] == 'filter_int_expr'):
                 if (op.args.length() != 4):
                     throw 'int[] filter expression has invalid IR arity'

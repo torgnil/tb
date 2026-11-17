@@ -1150,6 +1150,12 @@ string map_expression_helper_name(string[] used_names, int start_index):
         index += 1
     return '__tb_int_map_expression_' + index.to_string()
 
+string bool_array_map_expression_helper_name(string[] used_names, int start_index):
+    int index = start_index
+    while (contains_name(used_names, '__tb_bool_array_map_expression_' + index.to_string())):
+        index += 1
+    return '__tb_bool_array_map_expression_' + index.to_string()
+
 string string_array_map_expression_helper_name(string[] used_names, int start_index):
     int index = start_index
     while (contains_name(used_names, '__tb_string_array_map_expression_' + index.to_string())):
@@ -1518,6 +1524,19 @@ SubmitLambdaRewrite rewrite_array_map_expression(Node node, string[] used_names,
                             current_index += 1
                             generated.push(Node('Function', callback_return_type + ' ' + helper_name, [Node('Param', 'int ' + parameter.name, []), Node('Return', '', [lambda_node.children[0]])]))
                             children[1] = Node('MapIntExpression', lambda_node.value, [Node('Identifier', helper_name, [])])
+                            rewritten = Node(node.kind, node.value, children)
+                        else if (parameter_type == 'bool' && int_array_scalar_expression(lambda_node.children[0], [parameter.name], functions)):
+                            SubmitLambdaScope scope = SubmitLambdaScope([parameter.name], ['bool'], [], [parameter.name], [parameter.name], [], parameter.name)
+                            string callback_return_type = submit_lambda_expression_type_context(lambda_node.children[0], scope, functions, true, 'map_to')
+                            if (callback_return_type == ''):
+                                throw 'bool[] map_to expression has invalid scalar operand types'
+                            if (callback_return_type != 'int'):
+                                throw 'bool[] map_to expression must return int; got ' + callback_return_type
+                            string helper_name = bool_array_map_expression_helper_name(current_names, current_index)
+                            current_names = add_unique_name(current_names, helper_name)
+                            current_index += 1
+                            generated.push(Node('Function', 'int ' + helper_name, [Node('Param', 'bool ' + parameter.name, []), Node('Return', '', [lambda_node.children[0]])]))
+                            children[1] = Node('MapBoolExpression', lambda_node.value, [Node('Identifier', helper_name, [])])
                             rewritten = Node(node.kind, node.value, children)
     if (node.kind == 'MethodCall' && node.value == 'filter'):
         if (children.length() == 2):
@@ -3352,6 +3371,13 @@ TempResult lower_linear_value(Node node, int next_temp):
                             string[] lines = base.lines
                             lines.push(name + ' = method-call-lambda map_to_expr ' + base.name + ' ' + node.children[1].value + ' ' + node.children[1].children[0].value)
                             return TempResult(name, lines, base.next_temp + 1)
+                if (node.children[1].kind == 'MapBoolExpression'):
+                    if (node.children[1].children.length() == 1):
+                        if (node.children[1].children[0].kind == 'Identifier'):
+                            string name = temp_name(base.next_temp)
+                            string[] lines = base.lines
+                            lines.push(name + ' = method-call-lambda map_to_bool_expr ' + base.name + ' ' + node.children[1].value + ' ' + node.children[1].children[0].value)
+                            return TempResult(name, lines, base.next_temp + 1)
                 if (node.children[1].kind == 'Lambda'):
                     if (is_parse_binding_call_lambda(node.children[1])):
                         string name = temp_name(base.next_temp)
@@ -3730,6 +3756,12 @@ TempIRResult lower_linear_value_ir(Node node, int next_temp):
                         if (node.children[1].children[0].kind == 'Identifier'):
                             string name = temp_name(base.next_temp)
                             LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', name, 'unknown', 'unknown', 'method-call-lambda', ['map_to_expr', base.name, node.children[1].value, node.children[1].children[0].value])])
+                            return TempIRResult(name, instructions, base.next_temp + 1)
+                if (node.children[1].kind == 'MapBoolExpression'):
+                    if (node.children[1].children.length() == 1):
+                        if (node.children[1].children[0].kind == 'Identifier'):
+                            string name = temp_name(base.next_temp)
+                            LinearInstruction[] instructions = append_instructions(base.instructions, [LinearInstruction('value', name, 'unknown', 'unknown', 'method-call-lambda', ['map_to_bool_expr', base.name, node.children[1].value, node.children[1].children[0].value])])
                             return TempIRResult(name, instructions, base.next_temp + 1)
                 if (node.children[1].kind == 'Lambda'):
                     if (is_parse_binding_call_lambda(node.children[1])):

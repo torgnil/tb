@@ -1,0 +1,40 @@
+int encode_flag_calls = 0
+
+int encode_flag(bool flag):
+    encode_flag_calls += 1
+    return flag ? 1 : 0
+
+int fail_on_true(bool flag):
+    if (flag):
+        throw 'bool map failed'
+    return 0
+
+void print_ints(int[] values):
+    for (int value in values):
+        print(value)
+
+void print_bools(bool[] values):
+    for (bool value in values):
+        print(value)
+
+int main():
+    bool[] flags = [true, false, true]
+    print_ints(flags.map_to(bool flag -> flag ? 1 : 0))
+    print_ints(flags.map_to(bool flag -> encode_flag(flag)))
+    print(encode_flag_calls)
+
+    bool[] empty = []
+    int[] empty_result = empty.map_to(bool flag -> fail_on_true(true))
+    print(empty_result.length())
+
+    int[] owned_result = [true, false].map_to(bool flag -> flag ? 4 : 6)
+    print_ints(owned_result)
+
+    try:
+        int[] partial = [false, true, false].map_to(bool flag -> fail_on_true(flag))
+        print_ints(partial)
+    catch (string error):
+        print(error)
+
+    print_bools(flags)
+    return 0

@@ -927,6 +927,15 @@ Array helpers
   arrays are released before the exception is rethrown. Top-level global
   initializers retain their existing `int`/`bool` capture limit.
 
+  - For native `bool[]`, a scalar-expression `map_to` callback may use a typed
+  `bool` parameter, scalar operators and ternaries, and matching declared
+  scalar helper calls to produce an independent owned `int[]`. Items are
+  visited in source order; empty input skips the callback, and a throwing
+  callback releases the partial result before rethrowing. This form does not
+  support captures or brace blocks. For example,
+  `flags.map_to(bool flag -> flag ? 1 : 0)` converts a boolean mask to integer
+  weights.
+
 - filter(arr: T[], item -> bool) -> T[]
   - Keep the items for which the predicate returns `true` and return a new array.
   - For native `string[]`, a typed `string` parameter may return a boolean expression using that item, string, integer, and boolean literals, existing string methods/operators, comparisons, boolean operators, and direct calls to declared helpers with matching types. In a function body, the expression may capture visible `int`, `bool`, `string`, `int[]`, `bool[]`, and `string[]` bindings as read-only snapshots evaluated after the receiver and before traversal; captured arrays may be indexed or passed to matching array helpers, and the lambda parameter shadows an outer binding with the same name. A helper with a mutable array parameter can change its private snapshot for later callback invocations without changing the caller's array. Brace blocks support the same scalar locals, control flow, string expressions, queries, and helper calls as string-array map blocks; every path must return a bool or throw. The item and captures are read-only. Set captures are described below; other managed values and global-initializer captures remain unsupported. Results preserve source order and duplicates in an independent array; empty input skips the callback. If a callback throws, captured arrays, partial output, and an owned temporary source are released before the exception is rethrown.

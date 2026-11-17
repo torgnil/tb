@@ -35,6 +35,7 @@ initialize:
   store ptr %initialized.data, ptr %data.ptr
   ret ptr %array
 }
+
 define private i32 @tb_bootstrap_bool_array_length(ptr %array) {
 entry:
   %is.null = icmp eq ptr %array, null
