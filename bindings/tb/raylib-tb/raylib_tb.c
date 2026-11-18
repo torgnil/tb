@@ -241,6 +241,18 @@ void __tb_foreign_raylib_DrawTexture(int64_t texture_handle, int64_t x, int64_t 
     DrawTexture(*texture, (int) x, (int) y, tb_raylib_color_from_id(color_id));
 }
 
+void __tb_foreign_raylib_DrawTextureSized(int64_t handle, int64_t x, int64_t y,
+                                        int64_t width, int64_t height, int64_t color_id) {
+    Texture2D *texture = tb_raylib_texture_from_handle(handle);
+    if (texture == NULL || width <= 0 || height <= 0) {
+        return;
+    }
+    Rectangle source = {0.0f, 0.0f, (float) texture->width, (float) texture->height};
+    Rectangle destination = {(float) x, (float) y, (float) width, (float) height};
+    DrawTexturePro(*texture, source, destination, (Vector2) {0.0f, 0.0f}, 0.0f,
+                   tb_raylib_color_from_id(color_id));
+}
+
 void __tb_foreign_raylib_UnloadTexture(int64_t texture_handle) {
     Texture2D *texture = tb_raylib_texture_from_handle(texture_handle);
     if (texture == NULL) {
