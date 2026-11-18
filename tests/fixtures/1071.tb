@@ -1,0 +1,92 @@
+record Task(int priority, string label)
+record Marker(int value)
+
+int compare_low_first(int left, int right):
+    if (left < right):
+        return -1
+    if (left > right):
+        return 1
+    return 0
+
+int compare_bucket(int left, int right):
+    return compare_low_first(left / 10, right / 10)
+
+int compare_task_priority(Task left, Task right):
+    if (left.priority > right.priority):
+        return -1
+    if (left.priority < right.priority):
+        return 1
+    return 0
+
+int compare_marker(Marker left, Marker right):
+    return left.value - right.value
+
+int peek(prio_q<Marker> queue):
+    return 139
+
+int main():
+    int[] values = [5, 2, 9, 3]
+    prio_q<int> queue = values.create_prio_q(compare_low_first)
+    print(queue.peek())
+    print(peek(queue))
+    print(queue.is_empty())
+    print(queue.pop())
+    print(queue.peek())
+    print(queue.pop())
+    print(queue.peek())
+    print(queue.pop())
+    print(queue.peek())
+    print(queue.pop())
+    print(queue.is_empty())
+
+    int[] empty_values = []
+    prio_q<int> empty_queue = empty_values.create_prio_q(compare_low_first)
+    print(empty_queue.peek())
+    print(empty_queue.is_empty())
+    empty_queue.push(4)
+    print(peek(empty_queue))
+    print(empty_queue.peek())
+    print(empty_queue.pop())
+    print(empty_queue.is_empty())
+
+    int[] grouped_values = [11, 21]
+    prio_q<int> grouped = grouped_values.create_prio_q(compare_bucket)
+    grouped.push(12)
+    grouped.push(13)
+    grouped.push(22)
+    grouped.push(23)
+    print(grouped.peek())
+    print(peek(grouped))
+    print(grouped.pop())
+    print(grouped.peek())
+    print(grouped.pop())
+
+    int suffix_number = 1
+    string suffix = suffix_number.to_string()
+    Task[] tasks = [Task(5, 'task-5-' + suffix), Task(9, 'task-9-' + suffix), Task(7, 'task-7-' + suffix)]
+    prio_q<Task> task_queue = tasks.create_prio_q(compare_task_priority)
+    Task first = task_queue.peek()
+    Task direct = peek(task_queue)
+    print(first.label)
+    print(direct.label)
+    print(direct.priority)
+    first.priority = -1
+    first.label = 'changed'
+    Task second = task_queue.peek()
+    print(second.label)
+    print(second.priority)
+    Task removed = task_queue.pop()
+    print(removed.label)
+    Task next = task_queue.peek()
+    print(next.label)
+
+    Task[] no_tasks = []
+    prio_q<Task> empty_tasks = no_tasks.create_prio_q(compare_task_priority)
+    Task absent = empty_tasks.peek()
+    print(empty_tasks.is_empty())
+
+    Marker[] markers = [Marker(1), Marker(2)]
+    prio_q<Marker> marker_queue = markers.create_prio_q(compare_marker)
+    print(marker_queue.peek())
+    print(peek(marker_queue))
+    return 0

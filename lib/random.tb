@@ -71,3 +71,64 @@ int random_next_between(RandomGenerator generator, int lower, int upper):
                 if (value >= lower && value < upper):
                     return value
     return lower + random_next_below(generator, upper - lower)
+
+# Shuffle in place with backward Fisher-Yates.
+void random_shuffle_ints(RandomGenerator generator, int[] values):
+    int index = values.length() - 1
+    while (index > 0):
+        int other = random_next_below(generator, index + 1)
+        int saved = values[index]
+        values[index] = values[other]
+        values[other] = saved
+        index -= 1
+
+# Draw distinct indices using a sparse partial Fisher-Yates permutation.
+int[] random_sample_indices(RandomGenerator generator, int population, int count):
+    if (count < 0 || count > population):
+        throw 'random: invalid sample size'
+    int[] sample = []
+    if (count == 0):
+        return sample
+
+    map<int, int> replacements = {}
+    int remaining = population
+    while (sample.length() < count):
+        int position = 0
+        if (remaining > 1):
+            position = generator.random_next_below(remaining)
+        int chosen = position
+        if (replacements.contains(position)):
+            chosen = replacements[position]
+        sample.push(chosen)
+
+        remaining -= 1
+        if (position != remaining):
+            int last = remaining
+            if (replacements.contains(remaining)):
+                last = replacements[remaining]
+            replacements[position] = last
+    return sample
+
+int[] random_sample_ints(RandomGenerator generator, const int[] values, int count):
+    int[] indices = generator.random_sample_indices(values.length(), count)
+    int[] sample = []
+    for (int index in indices):
+        sample.push(values[index])
+    return sample
+
+string[] random_sample_strings(RandomGenerator generator, const string[] values, int count):
+    int[] indices = generator.random_sample_indices(values.length(), count)
+    string[] sample = []
+    for (int index in indices):
+        sample.push(values[index])
+    return sample
+
+void random_shuffle_strings(RandomGenerator generator, string[] values):
+    int index = values.length() - 1
+    while (index > 0):
+        int other = generator.random_next_below(index + 1)
+        if (other != index):
+            string saved = values[index]
+            values[index] = values[other]
+            values[other] = saved
+        index -= 1

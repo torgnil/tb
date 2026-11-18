@@ -1,0 +1,50 @@
+int calls = 0
+
+string[][] load_rows(int mode):
+    calls += 1
+    if (mode == 0):
+        return []
+    return [[], ['oak'], ['pine']]
+
+int main():
+    thread_pool pool = thread_pool(1)
+    future<int> score = pool.submit(() -> {
+        int total = 0
+        for (const string[] row in load_rows(1)) {
+            if (row.is_empty()) {
+                continue
+            }
+            total += row[0].length()
+        }
+        for (const string[] empty_row in load_rows(0)) {
+            total += empty_row.length()
+        }
+        return total
+    })
+    print(score.await())
+
+    future<string> first = pool.submit(() -> {
+        for (const string[] row in load_rows(1)) {
+            if (!row.is_empty()) {
+                return row[0]
+            }
+        }
+        return 'missing'
+    })
+    print(first.await())
+
+    future<int> broken = pool.submit(() -> {
+        for (const string[] row in load_rows(1)) {
+            break
+        }
+        for (const string[] failing_row in load_rows(1)) {
+            throw 'stopped'
+        }
+        return 0
+    })
+    try:
+        print(broken.await())
+    catch (exception error):
+        print(error)
+    print(calls)
+    return 0

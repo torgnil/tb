@@ -1,0 +1,18 @@
+import process;
+
+int main():
+    ProcessResult timed = run_process_in_directory_with_timeout(
+        ['/bin/sleep', '2'], '/', 40)
+    print(timed.timed_out)
+    print(timed.exit_code == -9)
+
+    ProcessResult quick = run_process_in_directory_with_timeout(
+        ['/bin/pwd'], '/', 1000)
+    print(quick.exit_code)
+    print(quick.timed_out == false)
+    print(quick.stdout == '/\n')
+
+    ProcessResult legacy = run_process_in_directory(['/bin/pwd'], '/')
+    print(legacy.timed_out == false)
+    print(legacy.stdout == '/\n')
+    return 0

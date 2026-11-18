@@ -1,0 +1,25 @@
+import random;
+
+int[] pick(RandomGenerator generator, const int[] values, int count):
+    return generator.random_sample_ints(values, count)
+
+int main():
+    RandomGenerator generator = seeded_random(42)
+    RandomGenerator reference = seeded_random(42)
+    int[] values = [9, -7, 9, 13, 42, 9]
+    int[] sample = pick(generator, values, 6)
+    int[] indices = reference.random_sample_indices(values.length(), 6)
+    print(sample.length())
+    for (int i = 0; i < sample.length(); i += 1):
+        print(sample[i] == values[indices[i]])
+    print(generator.state == reference.state)
+    sample[0] = 99
+    print(values[indices[0]] != 99)
+    print(pick(generator, values, 0).length())
+    print(generator.state == reference.state)
+    try:
+        print(pick(generator, values, 7).length())
+    catch (exception error):
+        print(error)
+    print(generator.state == reference.state)
+    return 0

@@ -450,9 +450,10 @@ ParsedFunction materialize_owned_foreach_iterables(ParsedFunction function_ir):
                 LinearInstruction source = ownership_lookup_temp_instruction(function_ir, source_name)
                 string declaration = ''
                 string iterable_type = normalize_llvm_type_name(op.result_type)
-                bool supported_iterable_type = iterable_type == 'int[]' || iterable_type == 'bool[]' || iterable_type == 'string[]' || iterable_type == 'int[][]' || iterable_type == 'bool[][]' || iterable_type == 'set<int>' || iterable_type == 'set<string>'
+                bool supported_iterable_type = iterable_type == 'int[]' || iterable_type == 'bool[]' || iterable_type == 'string[]' || iterable_type == 'int[][]' || iterable_type == 'bool[][]' || iterable_type == 'string[][]' || iterable_type == 'set<int>' || iterable_type == 'set<string>'
                 bool owned_source = source.kind == 'value' && normalize_llvm_type_name(source.result_type) == iterable_type && ownership_is_owned_mode(source.ownership_mode)
-                if (supported_iterable_type && owned_source):
+                bool map_snapshot = iterable_type != '' && iterable_type == map_foreach_snapshot_type(source.result_type)
+                if (map_snapshot || (supported_iterable_type && owned_source)):
                     string local_name = 'foreach.' + marker_name
                     declaration = iterable_type + ' ' + local_name
                     locals.push(BindingIR(iterable_type, local_name))
@@ -473,8 +474,17 @@ ParsedFunction materialize_owned_foreach_iterables(ParsedFunction function_ir):
                 string declaration = owned_declarations[marker_index]
                 if (declaration != ''):
                     string local_name = ir_parse_binding_decl(declaration).name
-                    instructions.push(LinearInstruction('set', '', '', '', declaration, [source_names[marker_index]]))
+                    string source_name = source_names[marker_index]
                     string iterable_type = ir_parse_binding_decl(declaration).type_name
+                    LinearInstruction source = ownership_lookup_temp_instruction(function_ir, source_name)
+                    if (iterable_type != '' && iterable_type == map_foreach_snapshot_type(source.result_type)):
+                        string keys_name = op.lhs + '.keys'
+                        string keys_method = 'keys'
+                        if (is_native_int_key_map_type(source.result_type)):
+                            keys_method = 'foreach.int_keys'
+                        instructions.push(LinearInstruction('value', keys_name, iterable_type, 'owned', 'method-call', [keys_method, source_name]))
+                        source_name = keys_name
+                    instructions.push(LinearInstruction('set', '', '', '', declaration, [source_name]))
                     instructions.push(LinearInstruction('value', op.lhs, iterable_type, 'borrowed', 'identifier', [local_name]))
                 continue
             if (op.kind == 'foreach_end'):

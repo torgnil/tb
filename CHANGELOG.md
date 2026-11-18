@@ -2,6 +2,40 @@
 
 All notable changes to tb will be documented in this file.
 
+## [0.5.0] - 2026-11-18
+
+### Added
+- Recursive directory creation and traversal, plus file and directory removal
+  and renaming. Process helpers support stdin, a child working directory,
+  timeouts, and explicit child environments.
+- Read-only array and grid captures in local functions, more string and
+  string-array capture combinations in submitted workers, and worker loops
+  over named or helper-produced string grids.
+- Boolean-grid slices, direct key iteration for native integer, string, and
+  integer-array maps, and typed key snapshots for integer maps.
+- String results from integer-array `flat_map` callbacks and integer results
+  from boolean-array `map_to` callbacks.
+- Bounded literal and regex text operations, reverse byte search and partition,
+  exact-offset regex operations, match counting, and capture participation
+  queries that distinguish absent captures from empty matches.
+- Seeded sampling and shuffling for integer and string arrays, union-find
+  component queries and validated batch merges, priority queue peeking and
+  length, and UUID version, variant, and ordering queries.
+- Raylib bindings for custom fonts, text measurement and clipping, texture
+  scaling, window resizing and maximization, and exit-key control. Source
+  builds with `tb.sh` can opt into static raylib linking on macOS.
+
+### Changed
+- Source and release builds use the released native tb 0.4.0 compiler seed.
+
+### Fixed
+- Literal string splitting accepts single-character separators such as `/`
+  in direct and method calls.
+- `write_all('/dev/stderr', text)` uses inherited standard error, including
+  when redirected to a pipe or file.
+- Exact calls to a user-defined `abs` resolve to that function where the
+  native `abs` signature does not apply.
+
 ## [0.4.0] - 2026-11-16
 
 ### Added

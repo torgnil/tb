@@ -60,9 +60,12 @@ output. The `tb` launcher compiles and links these automatically. No
 `TB_RESOURCE_ROOT` setting is needed. Input, import, and output paths are
 interpreted from the current working directory.
 
-External libraries such as raylib are not included. Set `TB_RAYLIB_ROOT` when
-compiling a program that imports raylib. See `tb.md` for language details and
-`CHANGELOG.md` for release notes.
+For raylib programs, use the source checkout's `tb.sh` with a local raylib
+installation. The release bundle omits the raylib C wrapper and library.
+Set `TB_RAYLIB_ROOT` to override library discovery. On macOS,
+`TB_RAYLIB_STATIC=1` enables static raylib linking through `tb.sh`.
+
+See `tb.md` for language details and `CHANGELOG.md` for release notes.
 
 ## License
 

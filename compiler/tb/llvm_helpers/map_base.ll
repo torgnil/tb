@@ -234,6 +234,29 @@ done:
   ret ptr %result
 }
 
+define private ptr __MAP_INT_KEYS_NAME__(ptr %map) {
+entry:
+  %len = call i32 __MAP_LENGTH_NAME__(ptr %map)
+  %result = call ptr @tb_bootstrap_int_array_new(i32 %len)
+  %keys.ptr = getelementptr inbounds __MAP_STRUCT__, ptr %map, i32 0, i32 1
+  %keys = load ptr, ptr %keys.ptr
+  br label %loop.cond
+loop.cond:
+  %index = phi i32 [0, %entry], [%next.index, %loop.step]
+  %keep.loop = icmp slt i32 %index, %len
+  br i1 %keep.loop, label %loop.body, label %done
+loop.body:
+  %key.slot = getelementptr inbounds __KEY_LLVM_TYPE__, ptr %keys, i32 %index
+  %key.value = load __KEY_LLVM_TYPE__, ptr %key.slot
+  call void @tb_bootstrap_int_array_set(ptr %result, i32 %index, i64 %key.value)
+  br label %loop.step
+loop.step:
+  %next.index = add i32 %index, 1
+  br label %loop.cond
+done:
+  ret ptr %result
+}
+
 __VALUES_BLOCK__
 
 define private ptr __MAP_CLONE_NAME__(ptr %map) {

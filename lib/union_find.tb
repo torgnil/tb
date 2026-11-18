@@ -1,15 +1,18 @@
 # Mutable disjoint sets over dense integer IDs in [0, count).
 # Each root stores the negative component size; each other entry stores its parent.
 
-private void union_find_check_index(int[] parents, int item):
+private void union_find_check_index(const int[] parents, int item):
     if (item < 0 || item >= parents.length()):
         throw 'union_find: index out of range'
 
+private int union_find_read_root(const int[] parents, int item):
+    while (parents[item] >= 0):
+        item = parents[item]
+    return item
+
 private int union_find_root(int[] parents, int item):
     union_find_check_index(parents, item)
-    int root = item
-    while (parents[root] >= 0):
-        root = parents[root]
+    int root = union_find_read_root(parents, item)
     while (item != root):
         int next = parents[item]
         parents[item] = root
@@ -48,3 +51,68 @@ bool union_find_connected(int[] parents, int left, int right):
 int union_find_component_size(int[] parents, int item):
     int root = union_find_root(parents, item)
     return 0 - parents[root]
+
+int union_find_component_count(const int[] parents):
+    int count = 0
+    for (int parent in parents):
+        if (parent < 0):
+            count += 1
+    return count
+
+int[] union_find_component_sizes(const int[] parents):
+    int[] sizes = []
+    for (int parent in parents):
+        if (parent < 0):
+            sizes.push(0 - parent)
+    return sizes
+
+int[] union_find_component_members(const int[] parents, int item):
+    union_find_check_index(parents, item)
+    int root = union_find_read_root(parents, item)
+    int[] members = []
+    int count = parents.length()
+    for (int candidate = 0; candidate < count; candidate += 1):
+        if (union_find_read_root(parents, candidate) == root):
+            members.push(candidate)
+    return members
+
+int[] union_find_representatives(const int[] parents):
+    int[] representatives = []
+    int count = parents.length()
+    for (int item = 0; item < count; item += 1):
+        representatives.push(union_find_read_root(parents, item))
+    return representatives
+
+int union_find_representative(const int[] parents, int item):
+    union_find_check_index(parents, item)
+    return union_find_read_root(parents, item)
+
+bool union_find_connected_readonly(const int[] parents, int left, int right):
+    return parents.union_find_representative(left) == parents.union_find_representative(right)
+
+int union_find_component_size_readonly(const int[] parents, int item):
+    int root = parents.union_find_representative(item)
+    return 0 - parents[root]
+
+int[][] union_find_components(const int[] parents):
+    map<int, int[]> members = {}
+    int count = parents.length()
+    for (int item = 0; item < count; item += 1):
+        int root = union_find_read_root(parents, item)
+        if (members.contains(root)):
+            members[root].push(item)
+        else:
+            members[root] = [item]
+    return members.values()
+
+int union_find_union_all(int[] parents, const int[][] edges):
+    for (const int[] edge in edges):
+        if (edge.length() != 2):
+            throw 'union_find: edge must contain two items'
+        union_find_check_index(parents, edge[0])
+        union_find_check_index(parents, edge[1])
+    int merged = 0
+    for (const int[] edge in edges):
+        if (parents.union_find_union(edge[0], edge[1])):
+            merged += 1
+    return merged

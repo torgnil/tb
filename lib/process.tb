@@ -1,7 +1,56 @@
-record ProcessResult(int exit_code, string stdout, string stderr)
+record ProcessResult(int exit_code, string stdout, string stderr, bool timed_out)
 
 ProcessResult run_process(string[] argv):
     if (argv.is_empty() || argv[0] == ''):
         throw 'run_process: empty command'
     string[] captured = __tb_internal_process_capture(argv)
-    return ProcessResult(captured[0].to_int(), captured[1], captured[2])
+    return ProcessResult(captured[0].to_int(), captured[1], captured[2], false)
+
+ProcessResult run_process_with_environment(string[] argv, string[] environment):
+    if (argv.is_empty() || argv[0] == ''):
+        throw 'run_process: empty command'
+    string[] captured = __tb_internal_process_capture_environment(argv, environment)
+    return ProcessResult(captured[0].to_int(), captured[1], captured[2], false)
+
+ProcessResult run_process_with_input(string[] argv, string input):
+    if (argv.is_empty() || argv[0] == ''):
+        throw 'run_process: empty command'
+    string[] captured = __tb_internal_process_capture(argv, input)
+    return ProcessResult(captured[0].to_int(), captured[1], captured[2], false)
+
+ProcessResult run_process_in_directory(string[] argv, string working_directory):
+    if (argv.is_empty() || argv[0] == ''):
+        throw 'run_process: empty command'
+    if (working_directory == ''):
+        throw 'run_process_in_directory: empty working directory'
+    string[] captured = __tb_internal_process_capture_in_directory(argv, working_directory)
+    return ProcessResult(captured[0].to_int(), captured[1], captured[2], false)
+
+ProcessResult run_process_with_timeout(string[] argv, int timeout_ms):
+    if (argv.is_empty() || argv[0] == ''):
+        throw 'run_process: empty command'
+    if (timeout_ms < 0):
+        throw 'run_process: timeout must be nonnegative'
+    string[] captured = __tb_internal_process_capture_timeout(argv, timeout_ms)
+    return ProcessResult(
+        captured[0].to_int(), captured[1], captured[2], captured[3].to_int() != 0)
+
+ProcessResult run_process_with_input_and_timeout(string[] argv, string input, int timeout_ms):
+    if (argv.is_empty() || argv[0] == ''):
+        throw 'run_process: empty command'
+    if (timeout_ms < 0):
+        throw 'run_process: timeout must be nonnegative'
+    string[] captured = __tb_internal_process_capture_input_timeout(argv, input, timeout_ms)
+    return ProcessResult(
+        captured[0].to_int(), captured[1], captured[2], captured[3].to_int() != 0)
+
+ProcessResult run_process_in_directory_with_timeout(string[] argv, string working_directory, int timeout_ms):
+    if (argv.is_empty() || argv[0] == ''):
+        throw 'run_process: empty command'
+    if (working_directory == ''):
+        throw 'run_process_in_directory: empty working directory'
+    if (timeout_ms < 0):
+        throw 'run_process: timeout must be nonnegative'
+    string[] captured = __tb_internal_process_capture_directory_timeout(argv, working_directory, timeout_ms)
+    return ProcessResult(
+        captured[0].to_int(), captured[1], captured[2], captured[3].to_int() != 0)

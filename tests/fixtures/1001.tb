@@ -1,0 +1,29 @@
+void ensure_dir(string path):
+    print('shadowed builtin')
+
+int main():
+    ensure_dir('test-files/generated//nested/./leaf/')
+    print(is_dir('test-files/generated/nested/leaf'))
+    ensure_dir('test-files/generated/nested/leaf')
+    ensure_dir('test-files/generated')
+    ensure_dir('.')
+    write_all('test-files/generated/nested/leaf/result.txt', 'created')
+    print(read_file('test-files/generated/nested/leaf/result.txt'))
+
+    try:
+        ensure_dir('')
+    catch (exception error):
+        print(error.starts_with('ensure_dir: unable to create '))
+
+    try:
+        ensure_dir('test-files/1001.in/child')
+    catch (exception error):
+        print(error)
+    print(is_file('test-files/1001.in'))
+
+    try:
+        ensure_dir('test-files/partial/../../test-files/1001.in/child')
+    catch (exception error):
+        print(error)
+    print(is_dir('test-files/partial'))
+    return 0

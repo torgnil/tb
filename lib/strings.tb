@@ -55,3 +55,115 @@ int byte_count_from(string text, string needle, int start):
         count += 1
         start = position + needle_length
     return count
+
+# Find the last exact byte sequence, including overlapping matches.
+int byte_last_index_of(string text, string needle):
+    return byte_last_index_of_before(text, needle, text.length())
+
+int byte_last_index_of_before(string text, string needle, int end):
+    if (end < 0 || end > text.length()):
+        return -1
+    int position = end - needle.length()
+    while (position >= 0):
+        if (text.starts_with_at(needle, position)):
+            return position
+        position -= 1
+    return -1
+
+string[] byte_partition(string text, string needle):
+    int position = byte_index_of(text, needle)
+    if (position < 0):
+        return [text, '', '']
+    return byte_partition_at(text, needle, position)
+
+string[] byte_rpartition(string text, string needle):
+    int position = byte_last_index_of(text, needle)
+    if (position < 0):
+        return ['', '', text]
+    return byte_partition_at(text, needle, position)
+
+private string[] byte_partition_at(string text, string needle, int position):
+    return [text.substring(0, position), needle, text.substring(position + needle.length())]
+
+string[] byte_split_n(string text, string separator, int max_splits):
+    if (separator.is_empty()):
+        throw 'byte_split_n: empty separator'
+    if (max_splits < 0):
+        throw 'byte_split_n: negative split limit'
+    int separator_length = separator.length()
+    string[] fields = []
+    int start = 0
+    while (max_splits > 0):
+        int position = byte_index_of_from(text, separator, start)
+        if (position < 0):
+            break
+        fields.push(text.substring(start, position))
+        start = position + separator_length
+        max_splits -= 1
+    fields.push(text.substring(start))
+    return fields
+
+string[] byte_rsplit_n(string text, string separator, int max_splits):
+    if (separator.is_empty()):
+        throw 'byte_rsplit_n: empty separator'
+    if (max_splits < 0):
+        throw 'byte_rsplit_n: negative split limit'
+    int separator_length = separator.length()
+    int[] offsets = []
+    int end = text.length()
+    while (offsets.length() < max_splits):
+        int position = text.byte_last_index_of_before(separator, end)
+        if (position < 0):
+            break
+        offsets.push(position)
+        end = position
+
+    string[] fields = []
+    int start = 0
+    for (int index = offsets.length() - 1; index >= 0; index -= 1):
+        int position = offsets[index]
+        fields.push(text.substring(start, position))
+        start = position + separator_length
+    fields.push(text.substring(start))
+    return fields
+
+int[] byte_find_all(string text, string needle):
+    return text.byte_find_all_from(needle, 0)
+
+int[] byte_find_all_from(string text, string needle, int start):
+    int[] matches = []
+    int text_length = text.length()
+    if (start < 0 || start > text_length):
+        return matches
+    int needle_length = needle.length()
+    if (needle_length == 0):
+        for (int position = start; position <= text_length; position += 1):
+            matches.push(position)
+        return matches
+    while (true):
+        int position = text.byte_index_of_from(needle, start)
+        if (position < 0):
+            return matches
+        matches.push(position)
+        start = position + needle_length
+    return matches
+
+string byte_replace_n(string text, string needle, string replacement, int max_replacements):
+    if (needle.is_empty()):
+        throw 'byte_replace_n: empty needle'
+    if (max_replacements < 0):
+        throw 'byte_replace_n: negative replacement limit'
+    if (max_replacements == 0):
+        return text
+    string[] fields = text.byte_split_n(needle, max_replacements)
+    return fields.join(replacement)
+
+string byte_rreplace_n(string text, string needle, string replacement, int max_replacements):
+    if (needle.is_empty()):
+        throw 'byte_rreplace_n: empty needle'
+    if (max_replacements < 0):
+        throw 'byte_rreplace_n: negative replacement limit'
+    if (max_replacements == 0):
+        return text
+    string[] fields = text.byte_rsplit_n(needle, max_replacements)
+    return fields.join(replacement)

@@ -376,11 +376,16 @@ entry:
   %pq = call ptr @tb_bootstrap_create_prio_q_int_by(ptr %array, ptr @tb_bootstrap_cmp_int_desc)
   ret ptr %pq
 }
-define private i1 @tb_bootstrap_prio_q_int_is_empty(ptr %pq) {
+define private i32 @tb_bootstrap_prio_q_int_length(ptr %pq) {
 entry:
   %array.ptr = getelementptr inbounds %tb_bootstrap_prio_q_int, ptr %pq, i32 0, i32 0
   %array = load ptr, ptr %array.ptr
   %len = call i32 @tb_bootstrap_int_array_length(ptr %array)
+  ret i32 %len
+}
+define private i1 @tb_bootstrap_prio_q_int_is_empty(ptr %pq) {
+entry:
+  %len = call i32 @tb_bootstrap_prio_q_int_length(ptr %pq)
   %empty = icmp eq i32 %len, 0
   ret i1 %empty
 }
@@ -426,6 +431,20 @@ entry:
   %len64 = sext i32 %len to i64
   %last = sub i64 %len64, 1
   %value = call i64 @tb_bootstrap_int_array_remove_at(ptr %array, i64 %last)
+  ret i64 %value
+}
+define private i64 @tb_bootstrap_prio_q_int_peek(ptr %pq) {
+entry:
+  %array.ptr = getelementptr inbounds %tb_bootstrap_prio_q_int, ptr %pq, i32 0, i32 0
+  %array = load ptr, ptr %array.ptr
+  %len = call i32 @tb_bootstrap_int_array_length(ptr %array)
+  %empty = icmp eq i32 %len, 0
+  br i1 %empty, label %empty.result, label %last.item
+empty.result:
+  ret i64 0
+last.item:
+  %last.index = sub i32 %len, 1
+  %value = call i64 @tb_bootstrap_int_array_get(ptr %array, i32 %last.index)
   ret i64 %value
 }
 define private ptr @tb_bootstrap_int_array_clone(ptr %array) {

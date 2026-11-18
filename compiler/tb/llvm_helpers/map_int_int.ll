@@ -360,6 +360,43 @@ done:
   ret ptr %result
 }
 
+define private ptr @tb_bootstrap_map_int_int_int_keys(ptr %map) {
+entry:
+  %len = call i32 __MAP_LENGTH_NAME__(ptr %map)
+  %result = call ptr @tb_bootstrap_int_array_new(i32 %len)
+  %cap.ptr = getelementptr inbounds __MAP_STRUCT__, ptr %map, i32 0, i32 1
+  %cap = load i32, ptr %cap.ptr
+  %keys.ptr = getelementptr inbounds __MAP_STRUCT__, ptr %map, i32 0, i32 2
+  %keys = load ptr, ptr %keys.ptr
+  %states.ptr = getelementptr inbounds __MAP_STRUCT__, ptr %map, i32 0, i32 4
+  %states = load ptr, ptr %states.ptr
+  br label %loop.cond
+loop.cond:
+  %index = phi i32 [0, %entry], [%next.index, %loop.step]
+  %out = phi i32 [0, %entry], [%next.out, %loop.step]
+  %keep.loop = icmp slt i32 %index, %cap
+  br i1 %keep.loop, label %loop.body, label %done
+loop.body:
+  %state.slot = getelementptr inbounds i8, ptr %states, i32 %index
+  %state = load i8, ptr %state.slot
+  %occupied = icmp eq i8 %state, 1
+  br i1 %occupied, label %emit, label %skip
+emit:
+  %key.slot = getelementptr inbounds i64, ptr %keys, i32 %index
+  %key.value = load i64, ptr %key.slot
+  call void @tb_bootstrap_int_array_set(ptr %result, i32 %out, i64 %key.value)
+  %out.bump = add i32 %out, 1
+  br label %loop.step
+skip:
+  br label %loop.step
+loop.step:
+  %next.out = phi i32 [%out.bump, %emit], [%out, %skip]
+  %next.index = add i32 %index, 1
+  br label %loop.cond
+done:
+  ret ptr %result
+}
+
 define private ptr __MAP_VALUES_NAME__(ptr %map) {
 entry:
   %len = call i32 __MAP_LENGTH_NAME__(ptr %map)

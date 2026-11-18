@@ -1,0 +1,46 @@
+int label_calls = 0
+string[] shared_chunk = ['shared', 'tail']
+
+string[] labels_for(int value, string prefix):
+    label_calls += 1
+    if value % 2 == 0:
+        return []
+    return [prefix + value, prefix + (0 - value)]
+
+string[] label_or_throw(int value):
+    if value == 99:
+        throw 'string flat_map failure'
+    return ['chunk-' + value]
+
+string[] shared_labels(int value):
+    return shared_chunk
+
+int main(string[] args):
+    string prefix = 'n='
+    int[] values = [1, 2, 3]
+    string[] labels = values.flat_map(int value -> labels_for(value, prefix))
+    print(labels)
+    print(values)
+
+    string[] inline = values.flat_map(int value -> [prefix + value])
+    print(inline)
+    print([8].flat_map(int value -> ['inline-' + value]))
+
+    string[] empty = [2, 4].flat_map(int value -> labels_for(value, prefix))
+    print(empty.length())
+
+    string[] shared = [1, 2].flat_map(int value -> shared_labels(value))
+    shared_chunk[0] = 'changed'
+    print(shared)
+    print(shared_chunk)
+
+    try:
+        string[] failed = [5, 99].flat_map(int value -> label_or_throw(value))
+        print(failed)
+    catch (exception error):
+        print(error)
+
+    string[] recovered = [7].flat_map(int value -> labels_for(value, prefix))
+    print(recovered)
+    print(label_calls)
+    return 0

@@ -1,0 +1,51 @@
+bool contains_value(string[] values, string target):
+    for (string value : values):
+        if (value == target):
+            return true
+    return false
+
+int count_allowed(string[] lines, string[] allowed, string[] blocked):
+    int count = 0
+    for (string line : lines):
+        if (contains_value(allowed, line) && !contains_value(blocked, line)):
+            count += 1
+    return count
+
+int main():
+    thread_pool pool = thread_pool(2)
+    string[] lines = ['a', 'b', 'c']
+    string[] allowed = ['a', 'b']
+    string[] blocked = ['c']
+    string[] empty = []
+    const string[] fixed_values = ['fixed']
+
+    future<int> expression = pool.submit(string[] input -> count_allowed(input, allowed, blocked), lines)
+    future<string> block = pool.submit(string[] input -> {
+        if (empty.is_empty() && allowed.length() == 2 && blocked.length() == 1) {
+            return input[0] + ':' + allowed[0] + ':' + blocked[0]
+        }
+        return 'unexpected'
+    }, lines)
+    future<int> failure = pool.submit(string[] input -> {
+        if (contains_value(blocked, input[0])) {
+            throw 'captured array worker failed'
+        }
+        return input.length()
+    }, ['c'])
+
+    lines[0] = 'changed'
+    allowed[0] = 'z'
+    blocked[0] = 'b'
+    empty.push('changed')
+
+    print(expression.await())
+    print(expression.await())
+    print(block.await())
+    try:
+        print(failure.await())
+    catch (exception error):
+        print(error)
+
+    future<int> recovery = pool.submit(string[] input -> input.length() + allowed.length() + blocked.length() + empty.length() + fixed_values.length(), ['after'])
+    print(recovery.await())
+    return 0

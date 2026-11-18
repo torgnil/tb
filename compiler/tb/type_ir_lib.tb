@@ -187,6 +187,19 @@ string map_key_type(string type_name):
         index += 1
     return 'unknown'
 
+bool is_native_int_key_map_type(string type_name):
+    return normalize_llvm_type_name(type_name).starts_with('map<int, ')
+
+string map_foreach_snapshot_type(string type_name):
+    string normalized = normalize_llvm_type_name(type_name)
+    if (is_native_int_key_map_type(normalized)):
+        return 'int[]'
+    if (normalized.starts_with('map<string, ')):
+        return 'string[]'
+    if (normalized.starts_with('map<int[], ')):
+        return 'int[][]'
+    return ''
+
 string map_value_type(string type_name):
     if (!(type_name.starts_with('map<') && type_name.ends_with('>'))):
         return 'unknown'
@@ -314,7 +327,7 @@ private bool is_direct_user_array_context_call(LinearInstruction op):
     if (op.kind != 'value' || op.detail != 'call' || op.args.is_empty()):
         return false
     string name = op.args[0]
-    return name == 'split' || name == 'join' || name == 'sqrt' || name == 'min' || name == 'max' || name == 'length' || name == 'is_empty' || name == 'sum'
+    return name == 'split' || name == 'join' || name == 'sqrt' || name == 'min' || name == 'max' || name == 'length' || name == 'is_empty' || name == 'sum' || name == 'abs'
 
 private bool is_supported_deep_grid_key_map_value_type(string value_type):
     return value_type == 'bool' || value_type == 'int' || value_type == 'string' || value_type == 'bool[]' || value_type == 'int[]' || value_type == 'string[]'
@@ -357,7 +370,7 @@ bool is_builtin_ufcs_array_context_name(string method_name):
         return true
     if (infer_method_call_type(method_name, 'unknown', empty_functions) != 'unknown'):
         return true
-    return method_name == 'abs' || method_name == 'add' || method_name == 'append_all' || method_name == 'await' || method_name == 'char_at' || method_name == 'clear' || method_name == 'contains' || method_name == 'copy' || method_name == 'create_prio_q' || method_name == 'ends_with' || method_name == 'ends_with_at' || method_name == 'fill' || method_name == 'hash' || method_name == 'index_of' || method_name == 'insert' || method_name == 'is_alnum' || method_name == 'is_alpha' || method_name == 'is_digit' || method_name == 'is_done' || method_name == 'is_empty' || method_name == 'is_space' || method_name == 'is_whitespace' || method_name == 'join' || method_name == 'keys' || method_name == 'last' || method_name == 'max' || method_name == 'min' || method_name == 'pop' || method_name == 'print' || method_name == 'push' || method_name == 'remove' || method_name == 'remove_at' || method_name == 'replace' || method_name == 'sort' || method_name == 'starts_with' || method_name == 'starts_with_at' || method_name == 'submit' || method_name == 'sum' || method_name == 'to_int' || method_name == 'union' || method_name == 'values' || method_name == 'wait_for' || method_name == 'write_all'
+    return method_name == 'abs' || method_name == 'add' || method_name == 'append_all' || method_name == 'await' || method_name == 'char_at' || method_name == 'clear' || method_name == 'contains' || method_name == 'copy' || method_name == 'create_prio_q' || method_name == 'ends_with' || method_name == 'ends_with_at' || method_name == 'fill' || method_name == 'hash' || method_name == 'index_of' || method_name == 'insert' || method_name == 'is_alnum' || method_name == 'is_alpha' || method_name == 'is_digit' || method_name == 'is_done' || method_name == 'is_empty' || method_name == 'is_space' || method_name == 'is_whitespace' || method_name == 'join' || method_name == 'keys' || method_name == 'last' || method_name == 'max' || method_name == 'min' || method_name == 'peek' || method_name == 'pop' || method_name == 'print' || method_name == 'push' || method_name == 'remove' || method_name == 'remove_at' || method_name == 'replace' || method_name == 'sort' || method_name == 'starts_with' || method_name == 'starts_with_at' || method_name == 'submit' || method_name == 'sum' || method_name == 'to_int' || method_name == 'union' || method_name == 'values' || method_name == 'wait_for' || method_name == 'write_all'
 
 bool is_same_known_type(string left, string right):
     return left != '' && left != 'unknown' && left == right
@@ -1247,6 +1260,10 @@ string infer_call_type(string name, FunctionSigIR[] functions):
         return foreign_return_type
     if (name == '__tb_internal_process_capture'):
         return 'string[]'
+    if (name == '__tb_internal_process_capture_in_directory'):
+        return 'string[]'
+    if (name == '__tb_internal_process_capture_timeout' || name == '__tb_internal_process_capture_input_timeout' || name == '__tb_internal_process_capture_directory_timeout'):
+        return 'string[]'
     if (name == 'thread_pool'):
         return 'thread_pool'
     if (name == 'length'):
@@ -1269,6 +1286,12 @@ string infer_call_type(string name, FunctionSigIR[] functions):
         return 'string[]'
     if (name == 'list_dir'):
         return 'string[]'
+    if (name == 'walk_dir'):
+        return 'string[]'
+    if (name == 'ensure_dir'):
+        return 'void'
+    if (name == 'remove_path' || name == 'rename_path'):
+        return 'void'
     if (name == 'path_exists' || name == 'is_file' || name == 'is_dir'):
         return 'bool'
     if (name == 'read_file'):
@@ -1381,6 +1404,40 @@ private void validate_direct_list_dir_call(LinearInstruction op, EnumTypeIR[] en
     string argument_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
     if (argument_type != 'string'):
         throw 'list_dir requires a string argument, got: ' + argument_type
+
+private void validate_direct_walk_dir_call(LinearInstruction op, EnumTypeIR[] enum_types, string[] temp_types):
+    int argument_count = op.args.length() - 1
+    if (argument_count != 1):
+        throw 'walk_dir expects exactly one string argument; got: ' + argument_count.to_string()
+    string argument_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
+    if (argument_type != 'string'):
+        throw 'walk_dir requires a string argument, got: ' + argument_type
+
+private void validate_direct_ensure_dir_call(LinearInstruction op, EnumTypeIR[] enum_types, string[] temp_types):
+    int argument_count = op.args.length() - 1
+    if (argument_count != 1):
+        throw 'ensure_dir expects exactly one string argument; got: ' + argument_count.to_string()
+    string argument_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
+    if (argument_type != 'string'):
+        throw 'ensure_dir requires a string argument, got: ' + argument_type
+
+private void validate_direct_path_mutation_call(string name, LinearInstruction op, EnumTypeIR[] enum_types, string[] temp_types):
+    int argument_count = op.args.length() - 1
+    int expected_count = 1
+    string argument_label = 'argument'
+    if (name == 'rename_path'):
+        expected_count = 2
+        argument_label = 'arguments'
+    if (argument_count != expected_count):
+        throw name + ' expects exactly ' + expected_count.to_string() + ' string ' + argument_label + '; got: ' + argument_count.to_string()
+    int index = 1
+    while (index < op.args.length()):
+        string argument_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[index])), enum_types)
+        if (argument_type != 'string'):
+            if (expected_count == 1):
+                throw name + ' requires a string argument, got: ' + argument_type
+            throw name + ' requires string arguments, got: ' + argument_type
+        index += 1
 
 private void validate_direct_path_classification_call(string name, LinearInstruction op, EnumTypeIR[] enum_types, string[] temp_types):
     int argument_count = op.args.length() - 1
@@ -1509,7 +1566,7 @@ bool is_native_query_receiver_type(string method_name, string base_type):
     if (method_name == 'length'):
         if (normalized_type == 'string' || normalized_type == 'int[]' || normalized_type == 'bool[]' || normalized_type == 'string[]' || normalized_type == 'int[][]' || normalized_type == 'string[][]' || normalized_type == 'bool[][]'):
             return true
-        if (normalized_type.starts_with('map<') || is_native_set_query_type(normalized_type) || is_native_record_array_query_type(normalized_type)):
+        if (normalized_type.starts_with('map<') || is_native_set_query_type(normalized_type) || is_native_record_array_query_type(normalized_type) || is_native_prio_q_query_type(normalized_type)):
             return true
         return false
     if (method_name == 'is_empty'):
@@ -1559,9 +1616,7 @@ private void validate_direct_native_query_receiver(LinearInstruction op, string 
         return
     string receiver_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
     if (!is_native_direct_query_receiver_type(query_name, receiver_type, record_names)):
-        string supported_receivers = 'string, native arrays, sets, maps, or declared record arrays'
-        if (query_name == 'is_empty'):
-            supported_receivers = 'string, native arrays, sets, maps, priority queues, or declared record arrays'
+        string supported_receivers = 'string, native arrays, sets, maps, priority queues, or declared record arrays'
         throw query_name + ' requires ' + supported_receivers + '; got ' + receiver_type
 
 string infer_method_call_type(string method_name, string base_type, FunctionSigIR[] functions):
@@ -1628,6 +1683,8 @@ string infer_method_call_type(string method_name, string base_type, FunctionSigI
     if (method_name == 'create_prio_q' && base_type.ends_with('[]') && record_name_from_type(array_item_type(base_type)) != ''):
         return 'prio_q<' + array_item_type(base_type) + '>'
     if (method_name == 'pop' && base_type.starts_with('prio_q<')):
+        return prio_q_item_type(base_type)
+    if (method_name == 'peek' && is_native_prio_q_query_type(normalize_llvm_type_name(base_type))):
         return prio_q_item_type(base_type)
     if (method_name == 'pop' && base_type == 'int[]'):
         return 'int'
@@ -1955,6 +2012,12 @@ private void validate_native_abs_call(LinearInstruction op, string[] temp_types,
         throw 'abs requires exactly one int or num argument'
     validate_native_abs_value_type(op.args[1], 'argument', temp_types, enum_types)
 
+private bool has_native_abs_signature(LinearInstruction op, string[] temp_types, EnumTypeIR[] enum_types):
+    if (op.args.length() != 2):
+        return false
+    string argument_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
+    return argument_type == 'int' || argument_type == 'num'
+
 private string validate_native_abs_method_call(LinearInstruction op, string[] temp_types, EnumTypeIR[] enum_types):
     if (op.args.length() != 2):
         throw 'abs method accepts no explicit arguments'
@@ -1963,16 +2026,85 @@ private string validate_native_abs_method_call(LinearInstruction op, string[] te
 private LinearInstruction refine_value_instruction(LinearInstruction op, BindingIR[] bindings, FunctionSigIR[] functions, RecordFieldIR[] record_fields, map<string, string> field_types, string[] record_names, EnumTypeIR[] enum_types, string[] temp_types):
     if (op.kind != 'value'):
         return op
+    if (op.detail == 'call' && !op.args.is_empty() && op.args[0] == '__tb_internal_process_capture_environment'):
+        if (op.args.length() != 3):
+            throw 'process capture with environment expects two arguments'
+        string argument_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
+        if (argument_type != 'string[]'):
+            throw 'run_process_with_environment argument 1 expected string[], actual ' + argument_type
+        string environment_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2])), enum_types)
+        if (environment_type != 'string[]'):
+            throw 'run_process_with_environment argument 2 expected string[], actual ' + environment_type
+        return refined_value_op(op, 'string[]', 'owned')
+    if (op.detail == 'call' && !op.args.is_empty() && op.args[0] == '__tb_internal_process_capture_timeout'):
+        if (op.args.length() != 3):
+            throw 'process capture with timeout expects two arguments'
+        string argument_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
+        if (argument_type != 'string[]'):
+            throw 'run_process_with_timeout argument 1 expected string[], actual ' + argument_type
+        string timeout_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2])), enum_types)
+        if (timeout_type != 'int'):
+            throw 'run_process_with_timeout argument 2 expected int, actual ' + timeout_type
+        return refined_value_op(op, 'string[]', 'owned')
+    if (op.detail == 'call' && !op.args.is_empty() && op.args[0] == '__tb_internal_process_capture_input_timeout'):
+        if (op.args.length() != 4):
+            throw 'process capture with input and timeout expects three arguments'
+        string argument_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
+        if (argument_type != 'string[]'):
+            throw 'run_process_with_input_and_timeout argument 1 expected string[], actual ' + argument_type
+        string input_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2])), enum_types)
+        if (input_type != 'string'):
+            throw 'run_process_with_input_and_timeout argument 2 expected string, actual ' + input_type
+        string timeout_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[3])), enum_types)
+        if (timeout_type != 'int'):
+            throw 'run_process_with_input_and_timeout argument 3 expected int, actual ' + timeout_type
+        return refined_value_op(op, 'string[]', 'owned')
+    if (op.detail == 'call' && !op.args.is_empty() && op.args[0] == '__tb_internal_process_capture_directory_timeout'):
+        if (op.args.length() != 4):
+            throw 'process capture in directory with timeout expects three arguments'
+        string argument_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
+        if (argument_type != 'string[]'):
+            throw 'run_process_in_directory_with_timeout argument 1 expected string[], actual ' + argument_type
+        string directory_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2])), enum_types)
+        if (directory_type != 'string'):
+            throw 'run_process_in_directory_with_timeout argument 2 expected string, actual ' + directory_type
+        string timeout_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[3])), enum_types)
+        if (timeout_type != 'int'):
+            throw 'run_process_in_directory_with_timeout argument 3 expected int, actual ' + timeout_type
+        return refined_value_op(op, 'string[]', 'owned')
+    if (op.detail == 'call' && !op.args.is_empty() && op.args[0] == '__tb_internal_process_capture_in_directory'):
+        if (op.args.length() != 3):
+            throw 'process capture in directory expects two arguments'
+        string argument_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
+        if (argument_type != 'string[]'):
+            throw 'run_process_in_directory argument 1 expected string[], actual ' + argument_type
+        string directory_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2])), enum_types)
+        if (directory_type != 'string'):
+            throw 'run_process_in_directory argument 2 expected string, actual ' + directory_type
+        return refined_value_op(op, 'string[]', 'owned')
     if (op.detail == 'call' && !op.args.is_empty() && op.args[0] == '__tb_internal_process_capture'):
-        if (op.args.length() != 2):
-            throw 'run_process expects exactly one string[] argument'
+        if (op.args.length() != 2 && op.args.length() != 3):
+            throw 'process capture expects one or two arguments'
         string argument_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
         if (argument_type != 'string[]'):
             throw 'run_process requires string[] arguments; got ' + argument_type
+        if (op.args.length() == 3):
+            string input_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[2])), enum_types)
+            if (input_type != 'string'):
+                throw 'run_process_with_input requires string input; got ' + input_type
         return refined_value_op(op, 'string[]', 'owned')
     if (op.detail == 'call' && !op.args.is_empty() && op.args[0] == 'list_dir'):
         validate_direct_list_dir_call(op, enum_types, temp_types)
         return refined_value_op(op, 'string[]', 'owned')
+    if (op.detail == 'call' && !op.args.is_empty() && op.args[0] == 'walk_dir'):
+        validate_direct_walk_dir_call(op, enum_types, temp_types)
+        return refined_value_op(op, 'string[]', 'owned')
+    if (op.detail == 'call' && !op.args.is_empty() && op.args[0] == 'ensure_dir'):
+        validate_direct_ensure_dir_call(op, enum_types, temp_types)
+        return refined_value_op(op, 'void', 'plain')
+    if (op.detail == 'call' && !op.args.is_empty() && (op.args[0] == 'remove_path' || op.args[0] == 'rename_path')):
+        validate_direct_path_mutation_call(op.args[0], op, enum_types, temp_types)
+        return refined_value_op(op, 'void', 'plain')
     if (op.detail == 'call' && !op.args.is_empty() && (op.args[0] == 'path_exists' || op.args[0] == 'is_file' || op.args[0] == 'is_dir')):
         validate_direct_path_classification_call(op.args[0], op, enum_types, temp_types)
         return refined_value_op(op, 'bool', 'plain')
@@ -1982,10 +2114,17 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
             return refined_value_op(op, sqrt_sig.return_type, refine_ownership_mode(op, sqrt_sig.return_type))
         if (sqrt_sig.name == '' && direct_sqrt_record_matches(op, record_fields, record_names, enum_types, temp_types)):
             return refined_value_op(op, 'sqrt', refine_ownership_mode(op, 'sqrt'))
+    if (op.detail == 'call' && !op.args.is_empty() && op.args[0] == 'abs'):
+        FunctionSigIR abs_sig = lookup_function_sig(functions, 'abs')
+        if (has_matching_direct_signature(op, abs_sig, enum_types, temp_types) && !has_native_abs_signature(op, temp_types, enum_types)):
+            return refined_value_op(op, abs_sig.return_type, refine_ownership_mode(op, abs_sig.return_type))
     if (op.detail == 'foreach-value'):
         if (op.args.length() != 1):
             throw 'foreach iterable marker requires one source value'
         string iterable_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[0]))
+        string snapshot_type = map_foreach_snapshot_type(iterable_type)
+        if (snapshot_type != ''):
+            return refined_value_op(op, snapshot_type, 'borrowed')
         return refined_value_op(op, iterable_type, 'borrowed')
     if (op.detail == 'method-call'):
         if (op.args.length() >= 2):
@@ -2067,6 +2206,10 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
         string query_method_name = op.args[0]
         if (query_method_name == 'length' || query_method_name == 'is_empty' || query_method_name == 'index_of' || query_method_name == 'hash'):
             string query_base_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+            if (query_method_name == 'length' && is_native_prio_q_query_type(query_base_type)):
+                if (has_matching_ufcs_signature(op, query_method_name, functions, enum_types, temp_types)):
+                    FunctionSigIR length_sig = lookup_function_sig(functions, query_method_name)
+                    return refined_value_op(op, length_sig.return_type, refine_ownership_mode(op, length_sig.return_type))
             validate_native_zero_argument_query_arity(op, query_method_name, query_base_type)
             string query_result_type = infer_method_call_type_cached(query_method_name, query_base_type, functions, TYPE_IR_FUNCTION_TYPE_CACHE_NAMES, TYPE_IR_FUNCTION_TYPE_CACHE_VALUES)
             return refined_value_op(op, query_result_type, refine_ownership_mode(op, query_result_type))
@@ -2117,6 +2260,25 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
                 string expression_return_type = normalize_llvm_type_name(expression_callback.return_type)
                 if (expression_return_type != 'int'):
                     throw 'int[] map_to expression must return int; got ' + expression_return_type
+                return refined_value_op(op, 'int[]', 'owned')
+            if (op.args[0] == 'map_to_bool_expr'):
+                if (op.args.length() != 4):
+                    throw 'bool[] map_to expression has invalid IR arity'
+                string bool_expression_receiver_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+                BindingIR bool_expression_parameter = ir_parse_binding_decl(op.args[2])
+                string bool_expression_parameter_type = normalize_enum_type_name(normalize_llvm_type_name(bool_expression_parameter.type_name), enum_types)
+                FunctionSigIR bool_expression_callback = lookup_function_sig(functions, op.args[3])
+                if (bool_expression_receiver_type != 'bool[]'):
+                    throw 'bool[] map_to expression requires bool[] receiver; got ' + bool_expression_receiver_type
+                if (bool_expression_parameter_type != 'bool'):
+                    throw 'bool[] map_to expression requires bool parameter; got ' + bool_expression_parameter_type
+                if (bool_expression_callback.name == '' || bool_expression_callback.param_types.length() != 1):
+                    throw 'bool[] map_to expression callback must have signature int(bool)'
+                if (normalize_llvm_type_name(bool_expression_callback.param_types[0]) != 'bool'):
+                    throw 'bool[] map_to expression callback must have signature int(bool)'
+                string bool_expression_return_type = normalize_llvm_type_name(bool_expression_callback.return_type)
+                if (bool_expression_return_type != 'int'):
+                    throw 'bool[] map_to expression must return int; got ' + bool_expression_return_type
                 return refined_value_op(op, 'int[]', 'owned')
             if (op.args[0] == 'filter_int_expr'):
                 if (op.args.length() != 4):
@@ -2356,6 +2518,19 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
                         throw 'pop requires exactly one priority queue argument'
                     string pop_result_type = prio_q_item_type(pop_receiver_type)
                     return refined_value_op(op, pop_result_type, refine_ownership_mode(op, pop_result_type))
+        if (op.args[0] == 'peek' && op.args.length() >= 2):
+            string peek_receiver_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+            if (is_native_prio_q_query_type(peek_receiver_type)):
+                FunctionSigIR peek_function = lookup_function_sig(functions, 'peek')
+                bool calls_user_function = has_matching_direct_signature(op, peek_function, enum_types, temp_types)
+                bool calls_record_constructor = has_matching_record_constructor_signature(op, 'peek', record_fields, enum_types, temp_types)
+                if (!calls_user_function && !calls_record_constructor):
+                    if (op.args.length() != 2):
+                        throw 'peek requires exactly one priority queue argument'
+                    string peek_result_type = prio_q_item_type(peek_receiver_type)
+                    if (peek_result_type == 'int'):
+                        return refined_value_op(op, peek_result_type, 'plain')
+                    return refined_value_op(op, peek_result_type, 'owned')
         if (result_type == 'unknown' && op.args[0] == 'clear' && lookup_function_return_type(functions, 'clear') == 'unknown' && !record_type_exists(record_names, 'clear')):
             if (op.args.length() != 2):
                 throw 'clear requires exactly one array argument'
@@ -2453,7 +2628,7 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
                 throw 'sum requires int[] or bool[]; got ' + sum_type
         if (op.args[0] == 'abs'):
             if (op.args.length() == 2):
-                string argument_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+                string argument_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
                 if (argument_type == 'num'):
                     result_type = 'num'
         if (op.args[0] == 'contains'):
@@ -2550,6 +2725,23 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
                 throw 'bool[] clear requires no arguments'
             return refined_value_op(op, 'void', 'plain')
         string normalized_base_type = normalize_llvm_type_name(base_type)
+        if (method_name == 'int_keys' && is_native_int_key_map_type(normalized_base_type)):
+            if (has_matching_ufcs_signature(op, method_name, functions, enum_types, temp_types)):
+                FunctionSigIR keys_sig = lookup_function_sig(functions, method_name)
+                return refined_value_op(op, keys_sig.return_type, refine_ownership_mode(op, keys_sig.return_type))
+            if (op.args.length() != 2):
+                throw 'map int_keys takes no arguments'
+            return refined_value_op(op, 'int[]', 'owned')
+        if (method_name == 'peek' && is_native_prio_q_query_type(normalized_base_type)):
+            if (has_matching_ufcs_signature(op, method_name, functions, enum_types, temp_types)):
+                FunctionSigIR peek_method_sig = lookup_function_sig(functions, method_name)
+                return refined_value_op(op, peek_method_sig.return_type, refine_ownership_mode(op, peek_method_sig.return_type))
+            if (op.args.length() != 2):
+                throw 'priority queue peek takes no arguments'
+            string peek_result_type = prio_q_item_type(normalized_base_type)
+            if (peek_result_type == 'int'):
+                return refined_value_op(op, peek_result_type, 'plain')
+            return refined_value_op(op, peek_result_type, 'owned')
         if (method_name == 'slice' && (normalized_base_type == 'bool[]' || normalized_base_type == 'int[]' || normalized_base_type == 'string[]') && lookup_function_return_type(functions, method_name) == 'unknown'):
             throw 'array slice methods are not supported; use values[start:end]'
         if (method_name == 'to_int' && normalized_base_type == 'string'):
@@ -2826,11 +3018,11 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
                 if (normalize_llvm_type_name(flat_map_parameter.type_name) != 'int'):
                     throw 'int[] flat_map expression requires int parameter; got ' + flat_map_parameter.type_name
                 if (flat_map_callback.name == '' || flat_map_callback.param_types.length() != 1 || normalize_llvm_type_name(flat_map_callback.param_types[0]) != 'int'):
-                    throw 'int[] flat_map expression callback must have signature int[](int)'
+                    throw 'int[] flat_map expression callback must take one int parameter'
                 string flat_map_return_type = normalize_llvm_type_name(flat_map_callback.return_type)
-                if (flat_map_return_type != 'int[]'):
-                    throw 'int[] flat_map expression must return int[]; got ' + flat_map_return_type
-                return refined_value_op(op, 'int[]', 'owned')
+                if (flat_map_return_type != 'int[]' && flat_map_return_type != 'string[]'):
+                    throw 'int[] flat_map expression must return int[] or string[]; got ' + flat_map_return_type
+                return refined_value_op(op, flat_map_return_type, 'owned')
             if (op.args[0] == 'flat_map_int_expr_captured'):
                 if (op.args.length() < 5):
                     throw 'int[] flat_map expression has invalid captured IR arity'
@@ -2853,9 +3045,9 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
                         throw 'int[] flat_map callback capture must have type ' + capture_type + '; got ' + parameter_type
                     capture_index += 1
                 string flat_map_return_type = normalize_llvm_type_name(flat_map_callback.return_type)
-                if (flat_map_return_type != 'int[]'):
-                    throw 'int[] flat_map expression must return int[]; got ' + flat_map_return_type
-                return refined_value_op(op, 'int[]', 'owned')
+                if (flat_map_return_type != 'int[]' && flat_map_return_type != 'string[]'):
+                    throw 'int[] flat_map expression must return int[] or string[]; got ' + flat_map_return_type
+                return refined_value_op(op, flat_map_return_type, 'owned')
             if (op.args[0] == 'flat_map_string_expr'):
                 if (op.args.length() != 4):
                     throw 'string[] flat_map expression has invalid IR arity'
@@ -3003,7 +3195,7 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
         if (base_type.ends_with('[]')):
             slice_record_name = record_name_from_type(array_item_type(base_type))
         bool is_record_array = slice_record_name != '' && record_type_exists(record_names, slice_record_name)
-        if (base_type == 'string' || base_type == 'string[]' || base_type == 'int[]' || base_type == 'bool[]' || base_type == 'int[][]' || base_type == 'string[][]' || is_record_array):
+        if (base_type == 'string' || base_type == 'string[]' || base_type == 'int[]' || base_type == 'bool[]' || base_type == 'int[][]' || base_type == 'bool[][]' || base_type == 'string[][]' || is_record_array):
             int bound_index = 1
             while (bound_index < op.args.length()):
                 string bound_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[bound_index]))
@@ -3020,6 +3212,8 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
             return refined_value_op(op, 'bool[]', 'owned')
         if (base_type == 'int[][]'):
             return refined_value_op(op, 'int[][]', 'owned')
+        if (base_type == 'bool[][]'):
+            return refined_value_op(op, 'bool[][]', 'owned')
         if (base_type == 'string[][]'):
             return refined_value_op(op, 'string[][]', 'owned')
         if (is_record_array):
@@ -3144,7 +3338,9 @@ RefineInstructionsResult refine_instructions(LinearInstruction[] instructions, B
                     if (sqrt_arg_type != '' && sqrt_arg_type != 'unknown' && sqrt_arg_type != 'int' && sqrt_arg_type != 'num'):
                         throw 'sqrt requires int or num; got ' + sqrt_arg_type
             if (!op.args.is_empty() && op.args[0] == 'abs'):
-                validate_native_abs_call(op, temp_types, enum_types)
+                FunctionSigIR abs_sig = lookup_function_sig(functions, 'abs')
+                if (!has_matching_direct_signature(op, abs_sig, enum_types, temp_types) || has_native_abs_signature(op, temp_types, enum_types)):
+                    validate_native_abs_call(op, temp_types, enum_types)
             if (op.args.length() >= 2):
                 if (op.args[0] == 'range'):
                     if (op.args.length() >= 2 && op.args.length() <= 4):

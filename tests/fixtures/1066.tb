@@ -1,0 +1,41 @@
+int parameter_grid_sum(const int[][] scores, const bool[][] enabled):
+    int score_at(int row):
+        if (enabled[row][0]):
+            return scores[row][0]
+        return 0
+
+    int total(int row):
+        if (row >= scores.length()):
+            return 0
+        return score_at(row) + total(row + 1)
+
+    return total(0)
+
+int local_grid_sum():
+    int[][] scores = [[3], [5]]
+    bool[][] enabled = [[true], [false]]
+
+    int score_at(int row):
+        if (enabled[row][0]):
+            return scores[row][0]
+        return 0
+
+    int total(int row):
+        if (row >= scores.length()):
+            return 0
+        return score_at(row) + total(row + 1)
+
+    int first = total(0)
+    scores = [[7], [11]]
+    enabled = [[true], [true]]
+    return first * 100 + total(0)
+
+int main():
+    int[][] scores = [[2], [4]]
+    bool[][] enabled = [[false], [true]]
+    print(parameter_grid_sum(scores, enabled))
+    scores[0][0] = 9
+    enabled[0][0] = true
+    print(parameter_grid_sum(scores, enabled))
+    print(local_grid_sum())
+    return 0

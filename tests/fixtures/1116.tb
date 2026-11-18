@@ -1,0 +1,41 @@
+int line_score(const string[] left, const string[] right, const string[] extra):
+    return left[0].length() * 100 + right[0].length() * 10 + extra.length()
+
+future<int> submit_score(thread_pool pool):
+    string[] left = ['aa']
+    string[] right = ['bbbb']
+    const string[] extra = []
+    future<int> task = pool.submit(() -> line_score(left, right, extra))
+    left[0] = 'longer'
+    right.push('extra')
+    return task
+
+int main():
+    thread_pool pool = thread_pool(1)
+    future<int> score = submit_score(pool)
+    print(score.await())
+    print(score.await())
+
+    const string[] left = ['first']
+    string[] right = ['last']
+    future<bool> order = pool.submit(() -> left[0] < right[0])
+    future<string> joined = pool.submit(() -> {
+        if (left.length() != right.length()) {
+            throw 'different lengths'
+        }
+        return left[0] + right[0]
+    })
+    right.push('next')
+    future<string> failure = pool.submit(() -> {
+        if (left.length() != right.length()) {
+            throw 'different lengths'
+        }
+        return left[0]
+    })
+    print(order.await())
+    print(joined.await())
+    try:
+        print(failure.await())
+    catch (exception error):
+        print(error)
+    return 0

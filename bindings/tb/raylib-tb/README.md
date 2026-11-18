@@ -59,6 +59,20 @@ Run it with:
 ./bindings/tb/raylib-tb/raylib-tb-demo
 ```
 
+## Static linking on macOS
+
+Set `TB_RAYLIB_STATIC=1` when using `tb.sh` to link raylib into the executable.
+The selected raylib installation must contain `lib/libraylib.a`.
+
+```sh
+TB_RAYLIB_STATIC=1 ./tb.sh bindings/tb/raylib-tb/raylib-tb-demo.tb
+```
+
+Project build scripts that call `tb.sh` inherit the setting, so
+`TB_RAYLIB_STATIC=1 sh build.sh` works in those projects. The resulting
+executable uses macOS system frameworks and can run without a separate
+raylib installation. Dynamic linking is the default.
+
 ## Notes
 
 The current bundled `raylib` support is intended for the shipped demo path and current supported API slice. It is not a general-purpose FFI layer.

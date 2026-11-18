@@ -1,0 +1,22 @@
+import regex;
+
+void show(RegexCapture[] matches, string text):
+    print(matches.length())
+    for (RegexCapture capture in matches):
+        print(capture.starts[0])
+        print('[' + capture.regex_group(text, 1) + ']')
+
+int main():
+    Regex pattern = regex_compile('(a+)')
+    string text = 'aa ba aa'
+    show(pattern.regex_find_n_captures(text, 2), text)
+    show(pattern.regex_find_n_captures_from(text, 2, 1), text)
+    show(pattern.regex_find_n_captures(text, 0), text)
+    show(pattern.regex_find_n_captures_from(text, -1, 2), text)
+    show(pattern.regex_find_n_captures_from(text, 9, 2), text)
+    show(regex_compile('(a?)').regex_find_n_captures('bb', 2), 'bb')
+    try:
+        show(pattern.regex_find_n_captures(text, -1), text)
+    catch (exception error):
+        print(error)
+    return 0
