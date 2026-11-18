@@ -452,7 +452,7 @@ ParsedFunction materialize_owned_foreach_iterables(ParsedFunction function_ir):
                 string iterable_type = normalize_llvm_type_name(op.result_type)
                 bool supported_iterable_type = iterable_type == 'int[]' || iterable_type == 'bool[]' || iterable_type == 'string[]' || iterable_type == 'int[][]' || iterable_type == 'bool[][]' || iterable_type == 'set<int>' || iterable_type == 'set<string>'
                 bool owned_source = source.kind == 'value' && normalize_llvm_type_name(source.result_type) == iterable_type && ownership_is_owned_mode(source.ownership_mode)
-                bool map_snapshot = iterable_type == 'string[]' && normalize_llvm_type_name(source.result_type) == 'map<string, int>'
+                bool map_snapshot = iterable_type == 'string[]' && is_string_key_map_foreach_type(source.result_type)
                 if (map_snapshot || (supported_iterable_type && owned_source)):
                     string local_name = 'foreach.' + marker_name
                     declaration = iterable_type + ' ' + local_name
@@ -477,7 +477,7 @@ ParsedFunction materialize_owned_foreach_iterables(ParsedFunction function_ir):
                     string source_name = source_names[marker_index]
                     string iterable_type = ir_parse_binding_decl(declaration).type_name
                     LinearInstruction source = ownership_lookup_temp_instruction(function_ir, source_name)
-                    if (iterable_type == 'string[]' && normalize_llvm_type_name(source.result_type) == 'map<string, int>'):
+                    if (iterable_type == 'string[]' && is_string_key_map_foreach_type(source.result_type)):
                         string keys_name = op.lhs + '.keys'
                         instructions.push(LinearInstruction('value', keys_name, 'string[]', 'owned', 'method-call', ['keys', source_name]))
                         source_name = keys_name
