@@ -1347,6 +1347,17 @@ private RegexMatch[] regex_find_all_limited(Regex program, string text, int star
 RegexMatch[] regex_find_all(Regex program, string text):
     return regex_find_all_from(program, text, 0)
 
+RegexMatch[] regex_find_n(Regex program, string text, int limit):
+    return program.regex_find_n_from(text, 0, limit)
+
+RegexMatch[] regex_find_n_from(Regex program, string text, int start, int limit):
+    if (limit < 0):
+        throw 'regex_find_n: negative match limit'
+    if (limit == 0):
+        RegexMatch[] matches = []
+        return matches
+    return regex_find_all_limited(program, text, start, limit)
+
 int regex_count_from(Regex program, string text, int start):
     int text_length = text.length()
     if (start < 0 || start > text_length):
