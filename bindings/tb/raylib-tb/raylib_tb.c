@@ -22,6 +22,9 @@
 
 #define TB_RAYLIB_MAX_TEXTURES 256
 #define TB_RAYLIB_MAX_SOUNDS 256
+#define TB_RAYLIB_MAX_FONTS 32
+
+static Font tb_raylib_fonts[TB_RAYLIB_MAX_FONTS];
 
 static Texture2D tb_raylib_textures[TB_RAYLIB_MAX_TEXTURES];
 static bool tb_raylib_texture_used[TB_RAYLIB_MAX_TEXTURES];
@@ -105,6 +108,14 @@ static Sound *tb_raylib_sound_from_handle(int64_t handle) {
     return &tb_raylib_sounds[index];
 }
 
+void __tb_foreign_raylib_EnableResizableWindow(void) {
+    SetConfigFlags(FLAG_WINDOW_RESIZABLE);
+}
+
+void __tb_foreign_raylib_MaximizeWindow(void) {
+    MaximizeWindow();
+}
+
 void __tb_foreign_raylib_InitWindow(int64_t width, int64_t height, const char *title) {
     InitWindow((int) width, (int) height, title);
 }
@@ -145,6 +156,79 @@ int64_t __tb_foreign_raylib_LoadTexture(const char *path) {
     return tb_raylib_store_texture(texture);
 }
 
+int64_t __tb_foreign_raylib_LoadFont(const char *path, int64_t font_size) {
+    if (font_size < 1 || font_size > INT32_MAX || !FileExists(path)) {
+        return 0;
+    }
+    int codepoints[95 + 224];
+    for (int i = 0; i < 95; i++) {
+        codepoints[i] = 32 + i;
+    }
+    for (int i = 0; i < 224; i++) {
+        codepoints[95 + i] = 0xa0 + i;
+    }
+    Font font = LoadFontEx(path, (int) font_size, codepoints, 95 + 224);
+    if (font.texture.id == 0 || font.texture.id == GetFontDefault().texture.id) {
+        return 0;
+    }
+    for (int64_t index = 0; index < TB_RAYLIB_MAX_FONTS; index++) {
+        if (tb_raylib_fonts[index].texture.id == 0) {
+            tb_raylib_fonts[index] = font;
+            return index + 1;
+        }
+    }
+    UnloadFont(font);
+    return 0;
+}
+
+static Font *tb_raylib_font_from_handle(int64_t handle) {
+    if (handle <= 0 || handle > TB_RAYLIB_MAX_FONTS ||
+        tb_raylib_fonts[handle - 1].texture.id == 0) {
+        return NULL;
+    }
+    return &tb_raylib_fonts[handle - 1];
+}
+
+void __tb_foreign_raylib_DrawTextEx(int64_t handle, const char *text, int64_t x, int64_t y,
+                                  int64_t font_size, int64_t color_id) {
+    Color color = tb_raylib_color_from_id(color_id);
+    Font *font = tb_raylib_font_from_handle(handle);
+    if (font == NULL) {
+        DrawText(text, (int) x, (int) y, (int) font_size, color);
+        return;
+    }
+    Vector2 position = {(float) x, (float) y};
+    DrawTextEx(*font, text, position, (float) font_size, 0.0f, color);
+}
+
+int64_t __tb_foreign_raylib_MeasureTextWidth(int64_t handle, const char *text, int64_t font_size) {
+    Font *font = tb_raylib_font_from_handle(handle);
+    if (font == NULL) {
+        return MeasureText(text, (int) font_size);
+    }
+    float width = MeasureTextEx(*font, text, (float) font_size, 0.0f).x;
+    return (int64_t) width + (width > (float) (int64_t) width);
+}
+
+void __tb_foreign_raylib_DrawTextClipped(int64_t handle, const char *text, int64_t x, int64_t y,
+                                       int64_t font_size, int64_t color_id, int64_t width,
+                                       int64_t scroll_x) {
+    if (width <= 0) {
+        return;
+    }
+    BeginScissorMode((int) x, (int) y - 1, (int) width, (int) font_size + 3);
+    __tb_foreign_raylib_DrawTextEx(handle, text, x - scroll_x, y, font_size, color_id);
+    EndScissorMode();
+}
+
+void __tb_foreign_raylib_UnloadFont(int64_t handle) {
+    if (handle > 0 && handle <= TB_RAYLIB_MAX_FONTS &&
+        tb_raylib_fonts[handle - 1].texture.id != 0) {
+        UnloadFont(tb_raylib_fonts[handle - 1]);
+        tb_raylib_fonts[handle - 1] = (Font) {0};
+    }
+}
+
 void __tb_foreign_raylib_DrawText(const char *text, int64_t x, int64_t y, int64_t font_size, int64_t color_id) {
     DrawText(text, (int) x, (int) y, (int) font_size, tb_raylib_color_from_id(color_id));
 }
@@ -182,6 +266,10 @@ void __tb_foreign_raylib_DrawLine(int64_t start_x, int64_t start_y, int64_t end_
 
 bool __tb_foreign_raylib_IsKeyDown(int64_t key) {
     return IsKeyDown((int) key);
+}
+
+void __tb_foreign_raylib_SetExitKey(int64_t key) {
+    SetExitKey((int) key);
 }
 
 bool __tb_foreign_raylib_IsKeyPressed(int64_t key) {
