@@ -1143,6 +1143,12 @@ spans `[0, 0)`, `[1, 1)`, `[2, 2)`, and `[3, 3)`. Captured groups are not
 included. Each later search reuses `regex_find_from` and may rescan the input;
 for k matches, the work can be O((k+1)*n*m^2), plus bracket scans, with
 O(n+m^2) working space in addition to the output.
+`pattern.regex_find_n_captures(text, limit)` and
+`pattern.regex_find_n_captures_from(text, start, limit)` return at most that many
+capture records in the same order as `regex_find_all_captures_from`. Zero
+returns an empty array. A negative limit raises
+`regex_find_n_captures: negative match limit`.
+
 `pattern.regex_find_n(text, limit)` returns at most `limit` match spans.
 `pattern.regex_find_n_from(text, start, limit)` starts at a byte offset.
 Both follow the same priority, anchors, and empty-match rules as

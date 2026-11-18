@@ -1698,13 +1698,24 @@ RegexCapture regex_find_captures(Regex program, string text):
     return result
 
 RegexCapture[] regex_find_all_captures_from(Regex program, string text, int start):
+    return regex_find_captures_limited(program, text, start, -1)
+
+RegexCapture[] regex_find_n_captures(Regex program, string text, int limit):
+    return program.regex_find_n_captures_from(text, 0, limit)
+
+RegexCapture[] regex_find_n_captures_from(Regex program, string text, int start, int limit):
+    if (limit < 0):
+        throw 'regex_find_n_captures: negative match limit'
+    return regex_find_captures_limited(program, text, start, limit)
+
+private RegexCapture[] regex_find_captures_limited(Regex program, string text, int start, int limit):
     RegexCapture[] matches = []
     int text_length = text.length()
-    if (start < 0 || start > text_length):
+    if (limit == 0 || start < 0 || start > text_length):
         return matches
     string[] text_bytes = text.split('')
     int search_start = start
-    while (search_start <= text_length):
+    while (search_start <= text_length && (limit < 0 || matches.length() < limit)):
         RegexCapture match = regex_capture_search(program, text_bytes, search_start, false, false)
         if (regex_capture_is_depth_limit(match)):
             throw 'regex captures: repeat nesting exceeds 12'
