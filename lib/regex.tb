@@ -1771,13 +1771,23 @@ private void __tb_regex_split_append_captures(string[] parts, RegexCapture captu
         parts.push(regex_group(capture, text, group))
 
 string[] __tb_regex_split(string text, Regex program):
+    return regex_split_limited(text, program, -1)
+
+string[] regex_split_n(string text, Regex program, int max_splits):
+    if (max_splits < 0):
+        throw 'regex_split_n: negative split limit'
+    if (max_splits == 0):
+        return [text]
+    return regex_split_limited(text, program, max_splits)
+
+private string[] regex_split_limited(string text, Regex program, int remaining):
     string[] parts = []
     int length = text.length()
     string[] text_bytes = text.split('')
     int field_start = 0
     int search_start = 0
     int group_count = regex_capture_group_count(program)
-    while (search_start <= length):
+    while (search_start <= length && remaining != 0):
         int match_start = -1
         int match_end = -1
         RegexCapture captures = RegexCapture(false, [], [])
@@ -1798,6 +1808,8 @@ string[] __tb_regex_split(string text, Regex program):
         parts.push(text.substring(field_start, match_start))
         if (group_count > 0):
             __tb_regex_split_append_captures(parts, captures, text)
+        if (remaining > 0):
+            remaining -= 1
         field_start = match_end
         search_start = regex_next_match_start(match_start, match_end, length)
         if (search_start < 0):

@@ -813,6 +813,7 @@ Managed string allocation aborts if its requested length is invalid or storage c
     untyped array arguments receive the matching parameter types.
   - UFCS helpers can be used in assignments too, for example `parts = text.split(',');` and `text = text.trim();`.
   - With `import regex;`, `split(s, pattern)` and `s.split(pattern)` also accept a compiled `Regex`. They preserve empty fields and use the match priority described below. Each capturing group contributes its captured text after the field before that match, in opening-parenthesis order; a group that did not participate contributes an empty string.
+  - `text.regex_split_n(pattern, max_splits)` uses the same regex splitting rules and stops after at most `max_splits` delimiter matches. Capture fields do not count toward the limit, and the final field contains the unsplit remainder. Zero returns the entire input as one field. A negative limit raises `regex_split_n: negative split limit`.
     Empty-match progress follows the rule below. An invalid regex acts as no separator and returns one field containing `s`. Splitting with capture groups uses the same repeat-nesting limit as the regex capture APIs.
 
 - trim(s: string) -> string
