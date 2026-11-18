@@ -49,8 +49,11 @@ if [ "$platform_os" = "darwin" ]; then
     platform_os="macos"
 fi
 platform_suffix="${platform_os}_${platform_arch}"
-linkflags=""
-cflags=""
+raylib_static=${TB_RAYLIB_STATIC:-0}
+case "$raylib_static" in
+    0|1) ;;
+    *) echo "TB_RAYLIB_STATIC must be 0 or 1" >&2; exit 1 ;;
+esac
 
 if [ ! -x "$compiler_bin" ]; then
     echo "Missing self-hosted tb compiler: $compiler_bin" >&2
@@ -76,13 +79,18 @@ esac
 
 "$compiler_bin" "$source_path" "$llvm_output"
 
-if [ -f "$linkflags_file" ]; then
-    linkflags=$(tr '\n' ' ' < "$linkflags_file")
-fi
-
-if [ -f "$cflags_file" ]; then
-    cflags=$(tr '\n' ' ' < "$cflags_file")
-fi
+compile_c_source() {
+    c_input=$1
+    c_output=$2
+    set --
+    if [ -f "$cflags_file" ]; then
+        while IFS= read -r flag || [ -n "$flag" ]; do
+            [ -n "$flag" ] || continue
+            set -- "$@" "$flag"
+        done < "$cflags_file"
+    fi
+    clang -c "$@" "$c_input" -o "$c_output"
+}
 
 if [ -f "$csources_file" ]; then
     object_index=0
@@ -100,13 +108,43 @@ if [ -f "$csources_file" ]; then
             exit 1
         fi
         object_output="$runtime_object_dir/${object_index}_$(basename "${resolved_c_source%.*}")_${platform_suffix}.o"
-        clang -c $cflags "$resolved_c_source" -o "$object_output"
+        compile_c_source "$resolved_c_source" "$object_output"
         set -- "$@" "$object_output"
         object_index=$((object_index + 1))
     done < "$csources_file"
 fi
 
-clang "$llvm_output" "$@" -o "$program_output" $linkflags
+if [ -f "$linkflags_file" ]; then
+    library_dir=""
+    while IFS= read -r flag || [ -n "$flag" ]; do
+        [ -n "$flag" ] || continue
+        case "$flag" in
+            -L*) library_dir=${flag#-L} ;;
+        esac
+        if [ "$raylib_static" = 1 ]; then
+            case "$flag" in
+                "-Wl,-rpath,$library_dir")
+                    continue ;;
+                -lraylib)
+                    if [ "$platform_os" != macos ]; then
+                        echo "Static raylib linking is currently supported on macOS" >&2
+                        exit 1
+                    fi
+                    if [ -z "$library_dir" ] || [ ! -f "$library_dir/libraylib.a" ]; then
+                        echo "Static raylib archive missing. Check TB_RAYLIB_ROOT or install raylib with libraylib.a." >&2
+                        exit 1
+                    fi
+                    set -- "$@" "$library_dir/libraylib.a" \
+                        -framework Cocoa -framework IOKit -framework OpenGL \
+                        -framework CoreVideo -framework CoreAudio -framework AudioToolbox
+                    continue ;;
+            esac
+        fi
+        set -- "$@" "$flag"
+    done < "$linkflags_file"
+fi
+
+clang "$llvm_output" "$@" -o "$program_output"
 
 echo "Built tb program: $program_output"
 echo "LLVM output: $llvm_output"

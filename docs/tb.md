@@ -618,6 +618,7 @@ Submitted scalar lambda blocks also support `try` / `catch` with brace-delimited
 - Lexer and parser errors include exact line and column. Runtime errors print a diagnostic and exit non-zero when uncaught; the message format depends on the failing operation.
 - The self-hosted compiler writes generated LLVM before resolving all foreign-module build metadata. A later metadata failure can leave LLVM in the requested output path, so output preservation is not guaranteed for every compiler failure.
 - The `raylib` foreign module searches Homebrew roots under `/opt/homebrew/opt/raylib` and `/usr/local/opt/raylib`. Set `TB_RAYLIB_ROOT` to override discovery; the bundle does not include raylib or its external dependencies.
+- On macOS, run `TB_RAYLIB_STATIC=1 ./tb.sh program.tb` to link raylib from `lib/libraylib.a` in the selected installation. The executable still uses macOS system frameworks.
 
 13. Standard library (stdlib) reference
 
