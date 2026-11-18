@@ -5574,15 +5574,38 @@ string[] emit_path_write_helper(string operation, string mode_text):
     lines.push(mode_constant + ' = private unnamed_addr constant [' + mode_size.to_string() + ' x i8] c"' + mode_text + '\\00"')
     lines.push(error_format + ' = private unnamed_addr constant [6 x i8] c"%s%s\\0A\\00"')
     lines.push(error_prefix_constant + ' = private unnamed_addr constant [' + error_prefix_size.to_string() + ' x i8] c"' + error_prefix + '\\00"')
+    bool supports_stderr = operation == 'write_all'
+    if (supports_stderr):
+        lines.push('@.write_all.stderr = private unnamed_addr constant [12 x i8] c"/dev/stderr\\00"')
     lines.push('define private void @tb_bootstrap_' + operation + '(ptr %path, ptr %text) {')
     lines.push('entry:')
     lines.push('  %mode = getelementptr inbounds [' + mode_size.to_string() + ' x i8], ptr ' + mode_constant + ', i32 0, i32 0')
+    if (supports_stderr):
+        lines.push('  %path.order = call i32 @strcmp(ptr %path, ptr @.write_all.stderr)')
+        lines.push('  %is.stderr = icmp eq i32 %path.order, 0')
+        lines.push('  br i1 %is.stderr, label %duplicate.stderr, label %open.path')
+        lines.push('duplicate.stderr:')
+        lines.push('  %fd = call i32 @dup(i32 2)')
+        lines.push('  %fd.ok = icmp sge i32 %fd, 0')
+        lines.push('  br i1 %fd.ok, label %wrap.stderr, label %failure')
+        lines.push('wrap.stderr:')
+        lines.push('  %stderr.file = call ptr @fdopen(i32 %fd, ptr %mode)')
+        lines.push('  %stderr.ok = icmp ne ptr %stderr.file, null')
+        lines.push('  br i1 %stderr.ok, label %write, label %close.stderr')
+        lines.push('close.stderr:')
+        lines.push('  call i32 @close(i32 %fd)')
+        lines.push('  br label %failure')
+        lines.push('open.path:')
     lines.push('  %file = call ptr @fopen(ptr %path, ptr %mode)')
     lines.push('  %file.ok = icmp ne ptr %file, null')
     lines.push('  br i1 %file.ok, label %write, label %failure')
     lines.push('write:')
-    lines.push('  %write.result = call i32 @fputs(ptr %text, ptr %file)')
-    lines.push('  %close.result = call i32 @fclose(ptr %file)')
+    string output_file = '%file'
+    if (supports_stderr):
+        lines.push('  %output.file = phi ptr [ %file, %open.path ], [ %stderr.file, %wrap.stderr ]')
+        output_file = '%output.file'
+    lines.push('  %write.result = call i32 @fputs(ptr %text, ptr ' + output_file + ')')
+    lines.push('  %close.result = call i32 @fclose(ptr ' + output_file + ')')
     lines.push('  %write.failed = icmp slt i32 %write.result, 0')
     lines.push('  %close.failed = icmp ne i32 %close.result, 0')
     lines.push('  %io.failed = or i1 %write.failed, %close.failed')
@@ -7144,7 +7167,7 @@ string emit_call_value_instruction_core(ProgramIR program, ParsedFunction functi
             if (sep_op.kind == 'value' && sep_op.detail == 'string'):
                 if (sep_op.args[0].length() == 2 && sep_op.args[0][0] == '\'' && sep_op.args[0][1] == '\''):
                     return emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_split_chars(ptr ' + temp_ref(op.args[1]) + ')')
-                if (sep_op.args[0].length() == 3):
+                if (is_supported_single_char_string_literal(sep_op.args[0])):
                     return emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_split_char(ptr ' + temp_ref(op.args[1]) + ', i8 ' + single_char_string_literal_i8(sep_op.args[0]) + ')')
             return emit_tracked_builtin_call_line('  ' + lhs + ' = call ptr @tb_bootstrap_split_string(ptr ' + temp_ref(op.args[1]) + ', ptr ' + temp_ref(op.args[2]) + ')')
     if (call_name == 'split_lines'):
@@ -7451,7 +7474,7 @@ string emit_string_method_call_value_instruction(ProgramIR program, ParsedFuncti
         if (sep_op.kind == 'value' && sep_op.detail == 'string'):
             if (sep_op.args[0].length() == 2 && sep_op.args[0][0] == '\'' && sep_op.args[0][1] == '\''):
                 return '  ' + lhs + ' = call ptr @tb_bootstrap_split_chars(ptr ' + temp_ref(op.args[1]) + ')'
-            if (sep_op.args[0].length() == 3):
+            if (is_supported_single_char_string_literal(sep_op.args[0])):
                 return '  ' + lhs + ' = call ptr @tb_bootstrap_split_char(ptr ' + temp_ref(op.args[1]) + ', i8 ' + single_char_string_literal_i8(sep_op.args[0]) + ')'
         return '  ' + lhs + ' = call ptr @tb_bootstrap_split_string(ptr ' + temp_ref(op.args[1]) + ', ptr ' + temp_ref(op.args[2]) + ')'
     if (method_name == 'split_lines' && method_base_type == 'string'):
@@ -12850,7 +12873,7 @@ string[] llvm_codegen_ir_borrowed(ProgramIR program):
         lines.push('declare i32 @puts(ptr)')
     if (needs_throw || needs_try_catch || needs_function_exception_frames || needs_read_lines || needs_read_file || needs_path_write):
         lines.push('declare void @exit(i32)')
-    if (needs_strcmp || needs_string_search || needs_string_array_helpers):
+    if (needs_strcmp || needs_string_search || needs_string_array_helpers || needs_write_all):
         lines.push('declare i32 @strcmp(ptr, ptr)')
     if (needs_strlen || needs_runtime_string_copy || needs_read_lines || needs_read_file || needs_string_helpers || needs_path_write):
         lines.push('declare i64 @strlen(ptr)')
@@ -12896,6 +12919,10 @@ string[] llvm_codegen_ir_borrowed(ProgramIR program):
         lines.push('declare i32 @tb_process_run(ptr, i32, ptr, ptr, i64, ptr, i32, ptr, ptr, ptr, ptr)')
     if (needs_file_output || needs_path_write):
         lines.push('declare i32 @fputs(ptr, ptr)')
+    if (needs_write_all):
+        lines.push('declare i32 @dup(i32)')
+        lines.push('declare ptr @fdopen(i32, ptr)')
+        lines.push('declare i32 @close(i32)')
     if (needs_file_output):
         lines.push('declare i32 @fputc(i32, ptr)')
     if (needs_read_lines || needs_read_file || needs_file_output || needs_path_write):
@@ -13268,7 +13295,7 @@ void llvm_print_ir(ProgramIR program):
     if (needs_throw || needs_try_catch || needs_function_exception_frames || needs_read_lines || needs_read_file || needs_path_write):
         print('declare void @exit(i32)')
         emitted_any_header = true
-    if (needs_strcmp || needs_string_search || needs_string_array_helpers):
+    if (needs_strcmp || needs_string_search || needs_string_array_helpers || needs_write_all):
         print('declare i32 @strcmp(ptr, ptr)')
         emitted_any_header = true
     if (needs_strlen || needs_runtime_string_copy || needs_read_lines || needs_read_file || needs_string_helpers || needs_path_write):
@@ -13329,6 +13356,12 @@ void llvm_print_ir(ProgramIR program):
         emitted_any_header = true
     if (needs_file_output || needs_path_write):
         print('declare i32 @fputs(ptr, ptr)')
+        emitted_any_header = true
+    if (needs_write_all):
+        print('declare i32 @dup(i32)')
+        print('declare ptr @fdopen(i32, ptr)')
+        print('declare i32 @close(i32)')
+        emitted_any_header = true
     if (needs_file_output):
         print('declare i32 @fputc(i32, ptr)')
         emitted_any_header = true

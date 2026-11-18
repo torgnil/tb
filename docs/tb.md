@@ -582,7 +582,7 @@ Submitted scalar lambda blocks also support `try` / `catch` with brace-delimited
   - `read_file(path)` always reads `path` when the compiled program runs.
   - `list_dir(path)` always reads the directory at runtime.
   - `walk_dir(path)` always traverses the directory tree at runtime.
-  - `write_all(path, text)` always opens `path` with mode `w` and writes `text` without adding a newline.
+  - `write_all(path, text)` writes `text` without adding a newline. Regular files are opened with mode `w`. The exact path `/dev/stderr` writes to the inherited standard error stream.
   - `append_all(path, text)` always opens `path` with mode `a` and writes `text` without adding a newline, preserving existing contents and creating a missing path.
   - `remove_path(path)` removes the path entry at runtime, and `rename_path(source, destination)` renames it using POSIX filesystem calls.
   - The compiler emits the file path string, not the file contents, into the generated LLVM.
@@ -754,6 +754,7 @@ Core IO and string helpers
 
 - write_all(path: string, text: string) -> void
   - The self-hosted compiler supports this helper. It overwrites or creates `path` at runtime, writing `text` exactly without adding a newline. Empty text creates or truncates the file to zero bytes.
+  - The exact path `/dev/stderr` writes to inherited standard error, including when redirected to a file or pipe. It preserves existing output and leaves the stream open for subsequent writes.
   - Opening, writing, or closing failures raise `write_all: unable to write <path>`; an uncaught failure prints that message and exits with status 1.
   - It borrows both strings, accepts const string bindings, and supports UFCS as `path.write_all(text)`. A user-defined function named `write_all` takes precedence over the builtin.
 

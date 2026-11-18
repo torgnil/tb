@@ -1,0 +1,24 @@
+import process;
+
+int main(string[] args):
+    if (args.length() > 1):
+        const string stderr_path = '/dev/stderr'
+        write_all(stderr_path, 'first')
+        stderr_path.write_all(' second\n')
+        print('stdout')
+        return 0
+
+    ProcessResult piped = run_process([args[0], 'child'])
+    print(piped.exit_code)
+    print(piped.stdout == 'stdout\n')
+    print(piped.stderr == 'first second\n')
+
+    ProcessResult redirected = run_process(['/bin/sh', '-c', 'exec 2>stderr-capture.txt; printf prefix: >&2; exec "$1" child', 'redirect', args[0]])
+    print(redirected.exit_code)
+    print(redirected.stdout == 'stdout\n')
+    print(read_file('stderr-capture.txt') == 'prefix:first second\n')
+
+    ProcessResult closed = run_process(['/bin/sh', '-c', 'exec "$1" child 2>&-', 'redirect', args[0]])
+    print(closed.exit_code)
+    print(closed.stdout == 'write_all: unable to write /dev/stderr\n')
+    return 0
