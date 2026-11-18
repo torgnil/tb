@@ -187,8 +187,13 @@ string map_key_type(string type_name):
         index += 1
     return 'unknown'
 
-bool is_string_key_map_foreach_type(string type_name):
-    return normalize_llvm_type_name(type_name).starts_with('map<string, ')
+string map_foreach_snapshot_type(string type_name):
+    string normalized = normalize_llvm_type_name(type_name)
+    if (normalized.starts_with('map<string, ')):
+        return 'string[]'
+    if (normalized.starts_with('map<int[], ')):
+        return 'int[][]'
+    return ''
 
 string map_value_type(string type_name):
     if (!(type_name.starts_with('map<') && type_name.ends_with('>'))):
@@ -2114,8 +2119,9 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
         if (op.args.length() != 1):
             throw 'foreach iterable marker requires one source value'
         string iterable_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[0]))
-        if (is_string_key_map_foreach_type(iterable_type)):
-            return refined_value_op(op, 'string[]', 'borrowed')
+        string snapshot_type = map_foreach_snapshot_type(iterable_type)
+        if (snapshot_type != ''):
+            return refined_value_op(op, snapshot_type, 'borrowed')
         return refined_value_op(op, iterable_type, 'borrowed')
     if (op.detail == 'method-call'):
         if (op.args.length() >= 2):
