@@ -2066,7 +2066,7 @@ bool temp_is_owned_managed_method_result(ParsedFunction function_ir, LinearInstr
         return true
     if (method_name == 'values' && result_type == 'int[][]' && receiver_type.starts_with('map<') && normalize_llvm_type_name(map_value_type(receiver_type)) == 'int[]'):
         return true
-    if (method_name == 'int_keys' && result_type == 'int[]' && receiver_type == 'map<int, int>'):
+    if (method_name == 'int_keys' && result_type == 'int[]' && is_native_int_key_map_type(receiver_type)):
         return true
     if (method_name == 'keys' && result_type == 'int[][]' && receiver_type.starts_with('map<') && normalize_llvm_type_name(map_key_type(receiver_type)) == 'int[]'):
         return true
@@ -3131,6 +3131,9 @@ string llvm_map_release_by_slice_name(string type_name):
 string llvm_map_keys_name(string type_name):
     return '@' + llvm_map_suffix(type_name) + '_keys'
 
+private string llvm_map_int_keys_name(string type_name):
+    return '@' + llvm_map_suffix(type_name) + '_int_keys'
+
 string llvm_map_values_name(string type_name):
     return '@' + llvm_map_suffix(type_name) + '_values'
 
@@ -3884,7 +3887,7 @@ void analyze_program_features(ProgramIR program, string[] map_types):
     bool has_edges_for_point = false
     bool uses_edges_for_point_mapper = false
     for (string map_type in map_types):
-        if (map_type == 'map<int, int>'):
+        if (is_native_int_key_map_type(map_type)):
             needs_int_array = true
         if (normalize_llvm_type_name(map_key_type(map_type)) == 'int[]' || normalize_llvm_type_name(map_key_type(map_type)) == 'int[][]'):
             needs_int_array = true
@@ -8084,10 +8087,10 @@ string emit_method_call_value_instruction_core(ProgramIR program, ParsedFunction
         if (method_base_type == 'string' && (method_name == 'hash' || method_name == 'to_int' || method_name == 'index_of' || method_name == 'contains' || method_name == 'starts_with' || method_name == 'ends_with' || method_name == 'starts_with_at' || is_string_char_predicate_name(method_name))):
             return emit_owned_string_array_index_result_release(function_ir, op.args[1], op.lhs, string_result)
         return string_result
-    if (method_name == 'int_keys' && method_base_type == 'map<int, int>' && !direct_call_matches_named_function(program, function_ir, op, method_name)):
+    if (method_name == 'int_keys' && is_native_int_key_map_type(method_base_type) && !direct_call_matches_named_function(program, function_ir, op, method_name)):
         if (op.args.length() != 2):
             throw 'map int_keys takes no arguments'
-        return '  ' + lhs + ' = call ptr @tb_bootstrap_map_int_int_int_keys(ptr ' + temp_ref(op.args[1]) + ')'
+        return '  ' + lhs + ' = call ptr ' + llvm_map_int_keys_name(method_base_type) + '(ptr ' + temp_ref(op.args[1]) + ')'
     string map_result = emit_map_method_call_value_instruction(function_ir, op, method_name, method_base_type)
     if (map_result != ''):
         return map_result
@@ -12417,6 +12420,7 @@ private string[] emit_map_helpers(string type_name):
             lines = llvm_embedded_helper_text('map_string_key.ll').split_lines()
     else:
         lines = llvm_embedded_helper_text('map_base.ll').split_lines()
+        lines = replace_llvm_template_lines(lines, '__MAP_INT_KEYS_NAME__', llvm_map_int_keys_name(type_name))
     lines = replace_llvm_template_lines(lines, '__MAP_NEW_NAME__', llvm_map_new_name(type_name))
     lines = replace_llvm_template_lines(lines, '__MAP_SET_NAME__', llvm_map_set_name(type_name))
     lines = replace_llvm_template_lines(lines, '__MAP_LENGTH_NAME__', llvm_map_length_name(type_name))

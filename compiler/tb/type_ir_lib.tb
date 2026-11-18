@@ -187,6 +187,9 @@ string map_key_type(string type_name):
         index += 1
     return 'unknown'
 
+bool is_native_int_key_map_type(string type_name):
+    return normalize_llvm_type_name(type_name).starts_with('map<int, ')
+
 string map_foreach_snapshot_type(string type_name):
     string normalized = normalize_llvm_type_name(type_name)
     if (normalized.starts_with('map<string, ')):
@@ -2718,7 +2721,7 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
                 throw 'bool[] clear requires no arguments'
             return refined_value_op(op, 'void', 'plain')
         string normalized_base_type = normalize_llvm_type_name(base_type)
-        if (method_name == 'int_keys' && normalized_base_type == 'map<int, int>'):
+        if (method_name == 'int_keys' && is_native_int_key_map_type(normalized_base_type)):
             if (has_matching_ufcs_signature(op, method_name, functions, enum_types, temp_types)):
                 FunctionSigIR keys_sig = lookup_function_sig(functions, method_name)
                 return refined_value_op(op, keys_sig.return_type, refine_ownership_mode(op, keys_sig.return_type))
