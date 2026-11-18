@@ -1394,20 +1394,28 @@ string regex_replace_first(Regex program, string text, string replacement):
     return regex_replace_first_from(program, text, replacement, 0)
 
 string regex_replace_first_from(Regex program, string text, string replacement, int start):
+    return regex_replace_one(program, text, replacement, start, false)
+
+string regex_replace_at(Regex program, string text, string replacement, int start):
+    return regex_replace_one(program, text, replacement, start, true)
+
+private string regex_replace_one(Regex program, string text, string replacement, int start, bool exact_start):
     if (start < 0 || start > text.length()):
         return text
     int match_start = -1
     int match_end = -1
     string expanded = ''
     if (__tb_regex_replacement_uses_captures(replacement)):
-        RegexCapture capture = regex_find_captures_from(program, text, start)
+        RegexCapture capture = regex_capture_search(program, text.split(''), start, false, exact_start)
+        if (regex_capture_is_depth_limit(capture)):
+            throw 'regex captures: repeat nesting exceeds 12'
         if (!capture.matched):
             return text
         match_start = capture.starts[0]
         match_end = capture.ends[0]
         expanded = __tb_regex_replacement_expand(replacement, capture, text)
     else:
-        RegexMatch match = regex_find_from(program, text, start)
+        RegexMatch match = regex_find_prepared(program, text.split(''), start, exact_start)
         if (!match.matched):
             return text
         match_start = match.start

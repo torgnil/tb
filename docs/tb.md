@@ -1153,6 +1153,7 @@ the same replacement syntax, original-text anchors, invalid-input behavior,
 and capture-search limits as the replace-all forms. An empty match inserts the
 replacement once at its boundary. For example,
 `regex_replace_first(regex_compile('a'), 'aba', 'X')` returns `'Xba'`.
+`pattern.regex_replace_at(text, replacement, start)` replaces a single match beginning exactly at the given byte offset. It uses the same capture substitutions and whole-input anchors as the other replacement functions. A miss or invalid offset returns the original text.
 `$0` expands to the whole match; `$1`, `$2`, and later decimal references
 expand captures numbered in opening-parenthesis order. References consume all
 following digits, so `$12` means group 12. A missing or nonparticipating group
