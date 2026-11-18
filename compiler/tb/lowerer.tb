@@ -1771,7 +1771,7 @@ BindingIR[] submit_lambda_captures(Node lambda_node, BindingIR[] bindings):
             int_array_capture_count += 1
     if (bool_array_capture_count > 0 && (lambda_node.kind != 'Lambda0' || captured.length() != 1)):
         throw 'thread_pool.submit zero-argument lambda can capture one bool[] value by itself'
-    if (lambda_node.kind == 'Lambda0' && string_array_capture_count > 0 && captured.length() != 1 && !submit_lambda_string_array_scalar_captures(captured)):
+    if (lambda_node.kind == 'Lambda0' && string_array_capture_count > 0 && captured.length() != 1 && !submit_lambda_string_array_scalar_captures(captured) && string_array_capture_count != captured.length()):
         throw 'thread_pool.submit zero-argument lambda can capture one string[] value with scalar captures only'
     bool explicit_string_array_string_captures = lambda_node.kind == 'Lambda' && string_array_task && submit_lambda_string_captures(captured)
     if (lambda_node.kind == 'Lambda' && string_array_task && string_capture_count > 0 && !explicit_string_array_string_captures):
@@ -2161,6 +2161,9 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
                 throw 'thread_pool.submit zero-argument lambda does not accept a task argument'
             captured = submit_lambda_captures(lambda_node, submit_bindings)
             worker_return_type = validate_submit_lambda(lambda_node, functions, captured)
+            if (captured.length() > 1 && submit_lambda_string_array_captures(captured)):
+                if (worker_return_type != 'int' && worker_return_type != 'bool' && worker_return_type != 'string'):
+                    throw 'thread_pool.submit zero-argument lambda with multiple string[] captures requires an int, bool, or string result'
             rewrite_worker = true
         else if (lambda_node.kind == 'Lambda' || lambda_node.kind == 'Lambda2'):
             if (node.children.length() != 3):
@@ -2420,6 +2423,7 @@ SubmitScopedRewrite rewrite_submit_expression(Node node, string[] used_names, in
                     rewritten_children[1] = lambda_node
                     rewritten_children.push(Node('Identifier', array_capture_name, []))
                 else:
+                    # Promote one string[] capture to the task parameter, including when other arrays remain.
                     int string_array_capture_index = submit_lambda_string_array_capture_index(captured)
                     if (string_array_capture_index >= 0):
                         string array_capture_name = captured[string_array_capture_index].name
