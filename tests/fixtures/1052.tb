@@ -2,25 +2,25 @@ import process;
 
 int main():
     ProcessResult exact = run_process_with_input_and_timeout(
-        ['/bin/cat'], 'hello\nworld\n', 1000)
+        ['python3', '-I', '-S', 'test-files/process_child.py', 'copy'], 'hello\nworld\n', 1000)
     print(exact.exit_code)
     print(exact.timed_out == false)
     print(exact.stdout == 'hello\nworld\n')
     print(exact.stderr == '')
 
-    ProcessResult empty = run_process_with_input_and_timeout(['/bin/cat'], '', 1000)
+    ProcessResult empty = run_process_with_input_and_timeout(['python3', '-I', '-S', 'test-files/process_child.py', 'copy'], '', 1000)
     print(empty.exit_code)
     print(empty.timed_out == false)
     print(empty.stdout == '')
 
-    ProcessResult legacy = run_process_with_input(['/bin/cat'], 'legacy')
+    ProcessResult legacy = run_process_with_input(['python3', '-I', '-S', 'test-files/process_child.py', 'copy'], 'legacy')
     print(legacy.timed_out == false)
     print(legacy.stdout)
 
     ProcessResult timeout = run_process_with_input_and_timeout(
-        ['/bin/sh', '-c', 'cat >/dev/null; printf started; sleep 2'],
-        'payload', 40)
+        ['python3', '-I', '-S', 'test-files/process_child.py', 'input-timeout'],
+        'payload', 1000)
     print(timeout.timed_out)
-    print(timeout.exit_code == -9)
+    print(timeout.exit_code != 0)
     print(timeout.stdout)
     return 0

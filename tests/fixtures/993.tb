@@ -16,17 +16,22 @@ int main():
     print(is_dir('missing-path'))
     print(path_exists(''))
     print(path_exists('path-check.txt/child'))
-    print(path_exists('/dev/null'))
-    print(is_file('/dev/null'))
-    print(is_dir('/dev/null'))
+    ProcessResult device = run_process(['python3', '-I', '-S', 'test-files/process_child.py', 'null-device'])
+    if (device.exit_code != 0):
+        throw device.stderr
+    if (device.stdout == '/dev/null'):
+        print(path_exists(device.stdout) && !is_file(device.stdout) && !is_dir(device.stdout))
+    else:
+        write_all(device.stdout, 'discarded')
+        print(read_file(device.stdout) == '')
 
-    ProcessResult file_link = run_process(['ln', '-s', 'path-check.txt', 'file-link'])
+    ProcessResult file_link = run_process(['python3', '-I', '-S', 'test-files/process_child.py', 'symlink', 'path-check.txt', 'file-link', 'file'])
     print(file_link.exit_code == 0)
     print(path_exists('file-link'))
     print(is_file('file-link'))
     print(is_dir('file-link'))
 
-    ProcessResult dir_link = run_process(['ln', '-s', '.', 'dir-link'])
+    ProcessResult dir_link = run_process(['python3', '-I', '-S', 'test-files/process_child.py', 'symlink', '.', 'dir-link', 'directory'])
     print(dir_link.exit_code == 0)
     print(path_exists('dir-link'))
     print(is_file('dir-link'))

@@ -12,9 +12,9 @@ int main():
         'test-files/walk-dir/zeta.txt'
     ]
     ensure_dir('test-files/walk-dir/empty')
-    ProcessResult link_result = run_process(['/bin/ln', '-s', 'nested', 'test-files/walk-dir/link'])
+    ProcessResult link_result = run_process(['python3', '-I', '-S', 'test-files/process_child.py', 'symlink', 'nested', 'test-files/walk-dir/link', 'directory'])
     if (link_result.exit_code != 0):
-        throw 'could not create symlink fixture'
+        throw 'could not create symlink fixture: ' + link_result.stderr
 
     for (string path : walk_dir('test-files/walk-dir////')):
         print(path)

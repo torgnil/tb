@@ -121,6 +121,9 @@ Run the native regression suite:
 ./verify_fixtures_tb.sh tests/fixtures --compiler bin/tb
 ```
 
+The process fixtures use `python3` for portable child commands. Symlink
+fixtures require permission to create symbolic links on the test filesystem.
+
 Each numbered `.tb` fixture has exactly one expectation: `.out` for executable
 stdout, or `.err` for a compile-time diagnostic. A rejection fixture must exit
 with status 1, match the `.err` text on compiler stdout, leave stderr empty, and

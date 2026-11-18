@@ -1,18 +1,33 @@
 import process;
 
-int main():
+int main(string[] args):
+    if (args.length() > 1):
+        if (args[1] == 'slow'):
+            int deadline = time_ms() + 2000
+            int now = time_ms()
+            while (now < deadline):
+                now = time_ms()
+            return 0
+        if (args[1] == 'marker'):
+            print(read_file('marker.txt').trim())
+            return 0
+        return 2
+
+    string directory = 'test-files/process-cwd'
+    if (!is_file('test-files/process-cwd/marker.txt')):
+        return 3
     ProcessResult timed = run_process_in_directory_with_timeout(
-        ['/bin/sleep', '2'], '/', 40)
+        [args[0], 'slow'], directory, 40)
     print(timed.timed_out)
-    print(timed.exit_code == -9)
+    print(timed.exit_code != 0)
 
     ProcessResult quick = run_process_in_directory_with_timeout(
-        ['/bin/pwd'], '/', 1000)
+        [args[0], 'marker'], directory, 1000)
     print(quick.exit_code)
     print(quick.timed_out == false)
-    print(quick.stdout == '/\n')
+    print(quick.stdout.trim() == 'cwd-marker')
 
-    ProcessResult legacy = run_process_in_directory(['/bin/pwd'], '/')
+    ProcessResult legacy = run_process_in_directory([args[0], 'marker'], directory)
     print(legacy.timed_out == false)
-    print(legacy.stdout == '/\n')
+    print(legacy.stdout.trim() == 'cwd-marker')
     return 0

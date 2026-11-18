@@ -1,37 +1,42 @@
 import process;
 
 int main():
-    ProcessResult quick = run_process_with_timeout(['/usr/bin/printf', 'done'], 1000)
+    ProcessResult timeout_code = run_process(['python3', '-I', '-S', 'test-files/process_child.py', 'timeout-code'])
+    if (timeout_code.exit_code != 0):
+        throw 'could not determine process timeout status'
+    int expected_timeout_code = timeout_code.stdout.to_int()
+
+    ProcessResult quick = run_process_with_timeout(['python3', '-I', '-S', 'test-files/process_child.py', 'print', 'done'], 1000)
     print(quick.exit_code)
     print(quick.timed_out == false)
     print(quick.stdout)
     print(quick.stderr == '')
 
-    ProcessResult legacy = run_process(['/usr/bin/printf', 'legacy'])
+    ProcessResult legacy = run_process(['python3', '-I', '-S', 'test-files/process_child.py', 'print', 'legacy'])
     print(legacy.timed_out == false)
 
     ProcessResult partial = run_process_with_timeout(
-        ['/bin/sh', '-c', 'printf partial; sleep 2'], 40)
+        ['python3', '-I', '-S', 'test-files/process_child.py', 'partial'], 1000)
     print(partial.timed_out)
-    print(partial.exit_code == -9)
+    print(partial.exit_code == expected_timeout_code)
     print(partial.stdout)
     print(partial.stderr == '')
 
-    ProcessResult immediate = run_process_with_timeout(['/bin/sleep', '2'], 0)
+    ProcessResult immediate = run_process_with_timeout(['python3', '-I', '-S', 'test-files/process_child.py', 'sleep'], 0)
     print(immediate.timed_out)
-    print(immediate.exit_code == -9)
+    print(immediate.exit_code == expected_timeout_code)
 
-    # The shell exits normally, but its background child keeps the capture
+    # The process exits normally, but its child keeps the capture
     # pipes open until the deadline kills the process group.
     ProcessResult held_pipe = run_process_with_timeout(
-        ['/bin/sh', '-c', 'sleep 2 &'], 40)
+        ['python3', '-I', '-S', 'test-files/process_child.py', 'held-pipes'], 1000)
     print(held_pipe.timed_out)
     print(held_pipe.exit_code == 0)
 
     ProcessResult closed_pipes = run_process_with_timeout(
-        ['/bin/sh', '-c', 'exec >/dev/null 2>&1; sleep 2'], 40)
+        ['python3', '-I', '-S', 'test-files/process_child.py', 'closed-pipes'], 1000)
     print(closed_pipes.timed_out)
-    print(closed_pipes.exit_code == -9)
+    print(closed_pipes.exit_code == expected_timeout_code)
 
     try:
         ProcessResult missing = run_process_with_timeout(
@@ -40,11 +45,11 @@ int main():
     catch (exception error):
         print(error)
 
-    ProcessResult recovered = run_process(['/usr/bin/printf', 'after'])
+    ProcessResult recovered = run_process(['python3', '-I', '-S', 'test-files/process_child.py', 'print', 'after'])
     print(recovered.stdout)
 
     try:
-        ProcessResult invalid = run_process_with_timeout(['/bin/true'], -1)
+        ProcessResult invalid = run_process_with_timeout(['python3', '-I', '-S', 'test-files/process_child.py', 'print', 'unused'], -1)
         print('unexpected-negative-timeout-success')
     catch (exception error):
         print(error)
