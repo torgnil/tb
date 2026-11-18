@@ -102,3 +102,27 @@ string[] byte_split_n(string text, string separator, int max_splits):
         max_splits -= 1
     fields.push(text.substring(start))
     return fields
+
+string[] byte_rsplit_n(string text, string separator, int max_splits):
+    if (separator.is_empty()):
+        throw 'byte_rsplit_n: empty separator'
+    if (max_splits < 0):
+        throw 'byte_rsplit_n: negative split limit'
+    int separator_length = separator.length()
+    int[] offsets = []
+    int end = text.length()
+    while (offsets.length() < max_splits):
+        int position = text.byte_last_index_of_before(separator, end)
+        if (position < 0):
+            break
+        offsets.push(position)
+        end = position
+
+    string[] fields = []
+    int start = 0
+    for (int index = offsets.length() - 1; index >= 0; index -= 1):
+        int position = offsets[index]
+        fields.push(text.substring(start, position))
+        start = position + separator_length
+    fields.push(text.substring(start))
+    return fields
