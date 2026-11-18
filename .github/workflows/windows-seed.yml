@@ -128,7 +128,7 @@ jobs:
           link smoke.ll smoke.exe
           test "$(./smoke.exe | tr -d '\r')" = 'Windows bootstrap smoke test passed'
           cp seed/source-commit.txt output/
-          (cd output && sha256sum tb-0.5.0-windows-x86_64.exe > SHA256SUMS)
+          (cd output && sha256sum --binary tb-0.5.0-windows-x86_64.exe > SHA256SUMS)
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -166,10 +166,15 @@ jobs:
         shell: pwsh
         run: |
           $binary = 'tb-0.5.0-windows-x86_64.exe'
-          $manifest = (Get-Content SHA256SUMS -Raw).Trim()
-          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $binary).Hash
-          if ($manifest -ne "$hash  $binary") {
-            throw 'Windows executable checksum mismatch'
+          $manifest = (Get-Content -LiteralPath SHA256SUMS -Raw).Trim()
+          $entry = [regex]::Match($manifest, '^([0-9a-fA-F]{64}) [ *]' + [regex]::Escape($binary) + '$')
+          if (!$entry.Success) {
+            throw "Invalid SHA256SUMS entry for $binary"
+          }
+          $expected = $entry.Groups[1].Value
+          $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $binary).Hash
+          if ($expected -ine $actual) {
+            throw "Windows executable checksum mismatch. Expected $expected. Got $actual."
           }
           $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
           $version = & ".\$binary" --version
