@@ -1,0 +1,138 @@
+name: tb 0.5.0 Windows seed
+
+on:
+  push:
+    branches: ['0.5.0-windows-seed']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generate-ir:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Select LLVM 19
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang-19
+          mkdir -p "$RUNNER_TEMP/tb-toolchain"
+          ln -s "$(command -v clang-19)" "$RUNNER_TEMP/tb-toolchain/clang"
+          printf '%s\n' "$RUNNER_TEMP/tb-toolchain" >> "$GITHUB_PATH"
+
+      - name: Build LLVM IR from the v0.5.0 release source
+        shell: bash
+        env:
+          TB_VERSION: '0.5.0'
+          SEED_ASSET: tb-0.4.0-linux-x86_64.tar.gz
+          SEED_SHA256: cb8b77d319676527beaaa72c3300bb7ef5a9e1bc4ba22000f64dc9b17c9ac118
+        run: |
+          set -euo pipefail
+          mkdir -p .build/windows-seed/source .build/windows-seed/artifact
+          git archive v0.5.0 | tar -x -C .build/windows-seed/source
+          curl --fail --location --retry 3 --proto '=https' --proto-redir '=https' \
+            "https://github.com/torgnil/tb/releases/download/v0.4.0/$SEED_ASSET" \
+            -o ".build/windows-seed/$SEED_ASSET"
+          (
+            cd .build/windows-seed
+            printf '%s  %s\n' "$SEED_SHA256" "$SEED_ASSET" | sha256sum --check
+            tar -xOf "$SEED_ASSET" tb-0.4.0-linux-x86_64/libexec/tb > native-seed
+            chmod +x native-seed
+            TB_BOOTSTRAP_COMPILER="$PWD/native-seed" ./source/build_tb.sh
+            test "$(source/bin/tb --version)" = "tb $TB_VERSION"
+            for extension in cflags csources linkflags; do
+              test -f "source/.build/stage2/tb_stage2.ll.$extension"
+              test ! -s "source/.build/stage2/tb_stage2.ll.$extension"
+            done
+          )
+          seed_dir=.build/windows-seed/artifact
+          python3 .github/windows-seed/target_ir.py \
+            .build/windows-seed/source/.build/stage2/tb_stage2.ll \
+            "$seed_dir/tb-0.5.0-windows-x86_64.ll"
+          cp .github/windows-seed/crt.c "$seed_dir/"
+          cp .build/windows-seed/source/compiler/tb/llvm_helpers_generated.tb "$seed_dir/"
+          git rev-parse 'v0.5.0^{commit}' > "$seed_dir/source-commit.txt"
+          (
+            cd "$seed_dir"
+            sha256sum tb-0.5.0-windows-x86_64.ll crt.c llvm_helpers_generated.tb source-commit.txt > SHA256SUMS
+          )
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tb-0.5.0-windows-x86_64-ir-seed
+          path: .build/windows-seed/artifact/*
+          if-no-files-found: error
+          include-hidden-files: true
+
+  bootstrap-windows:
+    needs: generate-ir
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: CLANG64
+          install: >-
+            git
+            mingw-w64-clang-x86_64-clang
+            mingw-w64-clang-x86_64-python
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tb-0.5.0-windows-x86_64-ir-seed
+          path: .build/windows-seed/seed
+
+      - name: Link the seed and verify self-hosting
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          mkdir -p .build/windows-seed/source .build/windows-seed/output
+          git archive v0.5.0 | tar -x -C .build/windows-seed/source
+          cp .github/windows-seed/{target_ir.py,smoke.tb} .build/windows-seed/
+          cd .build/windows-seed
+          (cd seed && sha256sum --check SHA256SUMS)
+          test "$(git rev-parse 'v0.5.0^{commit}')" = "$(cat seed/source-commit.txt)"
+          cp seed/llvm_helpers_generated.tb source/compiler/tb/
+          link() {
+            clang -O2 -Wl,--stack,16777216 "$1" seed/crt.c -o "$2"
+          }
+          check_version() {
+            test "$("$1" --version | tr -d '\r')" = 'tb 0.5.0'
+          }
+          rebuild() {
+            "$1" source/compiler/tb/tb.tb "$2.raw.ll"
+            for extension in cflags csources linkflags; do
+              test -f "$2.raw.ll.$extension"
+              test ! -s "$2.raw.ll.$extension"
+            done
+            python target_ir.py "$2.raw.ll" "$2.ll"
+          }
+          link seed/tb-0.5.0-windows-x86_64.ll seed/tb.exe
+          check_version seed/tb.exe
+          rebuild seed/tb.exe stage2
+          link stage2.ll output/tb-0.5.0-windows-x86_64.exe
+          check_version output/tb-0.5.0-windows-x86_64.exe
+          rebuild output/tb-0.5.0-windows-x86_64.exe stage3
+          cmp stage2.ll stage3.ll
+          output/tb-0.5.0-windows-x86_64.exe smoke.tb smoke.raw.ll
+          python target_ir.py smoke.raw.ll smoke.ll
+          link smoke.ll smoke.exe
+          test "$(./smoke.exe | tr -d '\r')" = 'Windows bootstrap smoke test passed'
+          cp seed/source-commit.txt output/
+          (cd output && sha256sum tb-0.5.0-windows-x86_64.exe > SHA256SUMS)
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tb-0.5.0-windows-x86_64
+          path: .build/windows-seed/output/*
+          if-no-files-found: error
+          include-hidden-files: true

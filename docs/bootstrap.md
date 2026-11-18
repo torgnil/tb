@@ -64,6 +64,20 @@ git worktree add ../tb-0.3.0-linux v0.3.0
 )
 ```
 
-Each seed must run on the host where it is used. For a new host such as
-Windows, first provide a native seed and adapt the build driver, Clang toolchain,
-and platform runtime as needed.
+## Windows x64 bootstrap for v0.5.0
+
+The **tb 0.5.0 Windows seed** GitHub Actions workflow runs on pushes to the
+`0.5.0-windows-seed` branch. Its Linux job builds the exact `v0.5.0` source
+with the checksum-pinned Linux v0.4.0 seed and adapts the resulting LLVM IR
+to the Windows x64 ABI. The IR artifact includes the C runtime shim,
+generated compiler helpers, source commit, and SHA-256 checksums.
+
+The Windows job links the IR with MSYS2 CLANG64, checks the compiler version,
+and rebuilds the tagged source through two generations. It compares the
+retargeted IR, then compiles and runs a smoke program. The workflow uploads
+the resulting compiler and its checksum as a separate Actions artifact.
+
+This bootstrap produces a Windows compiler executable. Its output still
+requires the workflow's IR adapter and runtime shim for the Windows x64
+ABI. Windows support for programs that use the POSIX runtime libraries
+requires additional work.
