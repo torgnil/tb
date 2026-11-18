@@ -1564,7 +1564,7 @@ bool is_native_query_receiver_type(string method_name, string base_type):
     if (method_name == 'length'):
         if (normalized_type == 'string' || normalized_type == 'int[]' || normalized_type == 'bool[]' || normalized_type == 'string[]' || normalized_type == 'int[][]' || normalized_type == 'string[][]' || normalized_type == 'bool[][]'):
             return true
-        if (normalized_type.starts_with('map<') || is_native_set_query_type(normalized_type) || is_native_record_array_query_type(normalized_type)):
+        if (normalized_type.starts_with('map<') || is_native_set_query_type(normalized_type) || is_native_record_array_query_type(normalized_type) || is_native_prio_q_query_type(normalized_type)):
             return true
         return false
     if (method_name == 'is_empty'):
@@ -1614,9 +1614,7 @@ private void validate_direct_native_query_receiver(LinearInstruction op, string 
         return
     string receiver_type = normalize_enum_type_name(normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1])), enum_types)
     if (!is_native_direct_query_receiver_type(query_name, receiver_type, record_names)):
-        string supported_receivers = 'string, native arrays, sets, maps, or declared record arrays'
-        if (query_name == 'is_empty'):
-            supported_receivers = 'string, native arrays, sets, maps, priority queues, or declared record arrays'
+        string supported_receivers = 'string, native arrays, sets, maps, priority queues, or declared record arrays'
         throw query_name + ' requires ' + supported_receivers + '; got ' + receiver_type
 
 string infer_method_call_type(string method_name, string base_type, FunctionSigIR[] functions):
@@ -2206,6 +2204,10 @@ private LinearInstruction refine_value_instruction(LinearInstruction op, Binding
         string query_method_name = op.args[0]
         if (query_method_name == 'length' || query_method_name == 'is_empty' || query_method_name == 'index_of' || query_method_name == 'hash'):
             string query_base_type = normalize_llvm_type_name(lookup_temp_type_slot(temp_types, op.args[1]))
+            if (query_method_name == 'length' && is_native_prio_q_query_type(query_base_type)):
+                if (has_matching_ufcs_signature(op, query_method_name, functions, enum_types, temp_types)):
+                    FunctionSigIR length_sig = lookup_function_sig(functions, query_method_name)
+                    return refined_value_op(op, length_sig.return_type, refine_ownership_mode(op, length_sig.return_type))
             validate_native_zero_argument_query_arity(op, query_method_name, query_base_type)
             string query_result_type = infer_method_call_type_cached(query_method_name, query_base_type, functions, TYPE_IR_FUNCTION_TYPE_CACHE_NAMES, TYPE_IR_FUNCTION_TYPE_CACHE_VALUES)
             return refined_value_op(op, query_result_type, refine_ownership_mode(op, query_result_type))

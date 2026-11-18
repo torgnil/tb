@@ -376,11 +376,16 @@ entry:
   %pq = call ptr @tb_bootstrap_create_prio_q_int_by(ptr %array, ptr @tb_bootstrap_cmp_int_desc)
   ret ptr %pq
 }
-define private i1 @tb_bootstrap_prio_q_int_is_empty(ptr %pq) {
+define private i32 @tb_bootstrap_prio_q_int_length(ptr %pq) {
 entry:
   %array.ptr = getelementptr inbounds %tb_bootstrap_prio_q_int, ptr %pq, i32 0, i32 0
   %array = load ptr, ptr %array.ptr
   %len = call i32 @tb_bootstrap_int_array_length(ptr %array)
+  ret i32 %len
+}
+define private i1 @tb_bootstrap_prio_q_int_is_empty(ptr %pq) {
+entry:
+  %len = call i32 @tb_bootstrap_prio_q_int_length(ptr %pq)
   %empty = icmp eq i32 %len, 0
   ret i1 %empty
 }

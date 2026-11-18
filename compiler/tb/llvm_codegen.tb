@@ -7768,6 +7768,13 @@ string emit_map_method_call_value_instruction(ParsedFunction function_ir, Linear
 
 string emit_prio_q_method_call_value_instruction(ProgramIR program, ParsedFunction function_ir, LinearInstruction op, string method_name, string method_base_type):
     string lhs = temp_ref(op.lhs)
+    if (method_name == 'length' && is_native_prio_q_query_type(method_base_type)):
+        if (direct_call_matches_named_function(program, function_ir, op, method_name)):
+            return ''
+        string helper_name = '@tb_bootstrap_prio_q_int_length'
+        if (method_base_type != 'prio_q<int>'):
+            helper_name = '@tb_bootstrap_prio_q_generic_' + record_name_from_type(prio_q_item_type(method_base_type)) + '_length'
+        return '  ' + lhs + '.len32 = call i32 ' + helper_name + '(ptr ' + temp_ref(op.args[1]) + ')\n  ' + lhs + ' = sext i32 ' + temp_ref(op.lhs + '.len32') + ' to i64'
     if (method_name == 'peek' && direct_call_matches_named_function(program, function_ir, op, method_name)):
         return ''
     if (method_base_type == 'prio_q<int>'):
@@ -11926,11 +11933,16 @@ string[] emit_record_array_helpers(string record_name):
     lines.push('  store ptr %cmp, ptr %cmp.ptr')
     lines.push('  ret ptr %pq')
     lines.push('}')
-    lines.push('define private i1 @tb_bootstrap_prio_q_generic_' + record_name + '_is_empty(ptr %pq) {')
+    lines.push('define private i32 @tb_bootstrap_prio_q_generic_' + record_name + '_length(ptr %pq) {')
     lines.push('entry:')
     lines.push('  %array.ptr = getelementptr inbounds %tb_bootstrap_prio_q_' + record_name + ', ptr %pq, i32 0, i32 0')
     lines.push('  %array = load ptr, ptr %array.ptr')
     lines.push('  %len = call i32 @tb_bootstrap_record_array_length_' + record_name + '(ptr %array)')
+    lines.push('  ret i32 %len')
+    lines.push('}')
+    lines.push('define private i1 @tb_bootstrap_prio_q_generic_' + record_name + '_is_empty(ptr %pq) {')
+    lines.push('entry:')
+    lines.push('  %len = call i32 @tb_bootstrap_prio_q_generic_' + record_name + '_length(ptr %pq)')
     lines.push('  %empty = icmp eq i32 %len, 0')
     lines.push('  ret i1 %empty')
     lines.push('}')
