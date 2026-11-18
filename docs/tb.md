@@ -1187,8 +1187,10 @@ positions are exclusive. A group that did not participate has start and end
 program or offset, or no match, returns `matched = false` and empty position
 arrays. `regex_group(capture, text, index)` extracts a group's bytes from the
 original text. It returns an empty string for a nonparticipating group, an
-invalid index, or invalid positions; inspect the offsets to distinguish these
-from a successfully captured empty string. Capture matching supports at most
+invalid index, or invalid positions. Use `capture.regex_group_matched(index)`
+to distinguish a participating empty group from an absent group. The predicate
+checks the stored span, while extraction also checks the supplied text length.
+Capture matching supports at most
 12 simultaneously active repetitions. If matching visits a path that enters a
 13th repetition, it raises `regex captures: repeat nesting exceeds 12`. A path
 discarded by match priority is not visited. The existing boolean and span APIs

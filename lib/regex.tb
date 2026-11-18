@@ -1703,14 +1703,19 @@ RegexCapture regex_match_captures(Regex program, string text):
         throw 'regex captures: repeat nesting exceeds 12'
     return result
 
-string regex_group(RegexCapture capture, string text, int index):
+bool regex_group_matched(RegexCapture capture, int index):
     if (!capture.matched || index < 0 || index >= capture.starts.length() || index >= capture.ends.length()):
-        return ''
+        return false
     int start = capture.starts[index]
-    int end = capture.ends[index]
-    if (start < 0 || end < start || end > text.length()):
+    return start >= 0 && capture.ends[index] >= start
+
+string regex_group(RegexCapture capture, string text, int index):
+    if (!capture.regex_group_matched(index)):
         return ''
-    return text.substring(start, end)
+    int end = capture.ends[index]
+    if (end > text.length()):
+        return ''
+    return text.substring(capture.starts[index], end)
 
 private string __tb_regex_replacement_expand(string replacement, RegexCapture capture, string text):
     string[] parts = []
