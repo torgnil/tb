@@ -1154,6 +1154,11 @@ specified byte offset and leaves all earlier bytes unchanged; offset validation
 and whole-text anchor rules match `regex_find_all_from`. An invalid offset,
 invalid program, or no matches returns the original text. `regex_replace` is
 equivalent to `regex_replace_from` with offset 0.
+`pattern.regex_replace_n(text, replacement, limit)` replaces at most `limit`
+matches from the left, following the same rules for captures and empty matches.
+Zero returns the original text. A negative limit raises
+`regex_replace_n: negative replacement limit`.
+
 `regex_replace_first(program, text, replacement)` replaces only the first
 prioritized match. `regex_replace_first_from(program, text, replacement, start)`
 starts at the given byte offset, preserving the text before the match. They use

@@ -1325,13 +1325,16 @@ private int regex_next_match_start(int match_start, int match_end, int text_leng
     return match_start + 1
 
 RegexMatch[] regex_find_all_from(Regex program, string text, int start):
+    return regex_find_all_limited(program, text, start, -1)
+
+private RegexMatch[] regex_find_all_limited(Regex program, string text, int start, int limit):
     RegexMatch[] matches = []
     int text_length = text.length()
     if (start < 0 || start > text_length):
         return matches
     string[] text_bytes = text.split('')
     int search_start = start
-    while (search_start <= text_length):
+    while (search_start <= text_length && (limit < 0 || matches.length() < limit)):
         RegexMatch match = regex_find_prepared(program, text_bytes, search_start, false)
         if (!match.matched):
             break
@@ -1425,11 +1428,21 @@ private string regex_replace_one(Regex program, string text, string replacement,
     return parts.join('')
 
 string regex_replace_from(Regex program, string text, string replacement, int start):
+    return regex_replace_limited(program, text, replacement, start, -1)
+
+string regex_replace_n(Regex program, string text, string replacement, int limit):
+    if (limit < 0):
+        throw 'regex_replace_n: negative replacement limit'
+    if (limit == 0):
+        return text
+    return regex_replace_limited(program, text, replacement, 0, limit)
+
+private string regex_replace_limited(Regex program, string text, string replacement, int start, int limit):
     if (start < 0 || start > text.length()):
         return text
     if (__tb_regex_replacement_uses_captures(replacement)):
-        return __tb_regex_replace_captures(program, text, replacement, start)
-    RegexMatch[] matches = regex_find_all_from(program, text, start)
+        return __tb_regex_replace_captures(program, text, replacement, start, limit)
+    RegexMatch[] matches = regex_find_all_limited(program, text, start, limit)
     if (matches.is_empty()):
         return text
     string[] parts = []
@@ -1751,14 +1764,14 @@ private string __tb_regex_replacement_expand(string replacement, RegexCapture ca
         index += 1
     return parts.join('')
 
-private string __tb_regex_replace_captures(Regex program, string text, string replacement, int start):
+private string __tb_regex_replace_captures(Regex program, string text, string replacement, int start, int remaining):
     string[] parts = []
     int text_length = text.length()
     string[] text_bytes = text.split('')
     int search_start = start
     int copied_until = 0
     bool found = false
-    while (search_start <= text_length):
+    while (search_start <= text_length && remaining != 0):
         RegexCapture capture = regex_capture_search(program, text_bytes, search_start, false, false)
         if (regex_capture_is_depth_limit(capture)):
             throw 'regex captures: repeat nesting exceeds 12'
@@ -1769,6 +1782,8 @@ private string __tb_regex_replace_captures(Regex program, string text, string re
         int match_end = capture.ends[0]
         parts.push(text.substring(copied_until, match_start))
         parts.push(__tb_regex_replacement_expand(replacement, capture, text))
+        if (remaining > 0):
+            remaining -= 1
         copied_until = match_end
         search_start = regex_next_match_start(match_start, match_end, text_length)
         if (search_start < 0):
