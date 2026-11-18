@@ -17,6 +17,13 @@ def normalized(data):
     return data.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
 
 
+def read_sidecar(ir, suffix):
+    path = ir.with_suffix(".ll." + suffix)
+    if not path.is_file():
+        return []
+    return [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
 def probe(source, compiler, shim, work, root):
     ir = work / "fixture.raw.ll"
     compiled = run([compiler, source.relative_to(root).as_posix(), ir.as_posix()], root)
@@ -29,15 +36,20 @@ def probe(source, compiler, shim, work, root):
     if compiled.returncode != 0 or not ir.is_file():
         return "compile", repr((compiled.returncode, compiled.stdout, compiled.stderr))
 
-    sidecars = [suffix for suffix in ("csources", "cflags", "linkflags")
-                if (path := ir.with_suffix(".ll." + suffix)).is_file() and path.read_bytes().strip()]
-    if sidecars:
-        return "skipped", "runtime C sources or link flags: " + ", ".join(sidecars)
-
     windows_ir = work / "fixture.ll"
     binary = work / "fixture.exe"
     target_ir(ir, windows_ir)
-    linked = run(["clang", windows_ir, shim, "-Wl,--stack,16777216", "-o", binary], root)
+    cflags = read_sidecar(ir, "cflags")
+    objects = []
+    for index, csource in enumerate(read_sidecar(ir, "csources")):
+        obj = work / f"runtime-{index}.o"
+        compiled_c = run(["clang", *cflags, "-c", csource, "-o", obj], root)
+        if compiled_c.returncode != 0:
+            return "runtime-compile", repr(compiled_c.stderr)
+        objects.append(obj)
+    linkflags = read_sidecar(ir, "linkflags")
+    linked = run(["clang", windows_ir, shim, *objects, *linkflags,
+                  "-Wl,--stack,16777216", "-o", binary], root)
     if linked.returncode != 0:
         return "link", repr(linked.stderr)
 
