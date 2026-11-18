@@ -569,14 +569,14 @@ private string submit_lambda_expression_type_context(Node node, SubmitLambdaScop
 string submit_lambda_expression_type(Node node, SubmitLambdaScope scope, Node[] functions):
     return submit_lambda_expression_type_context(node, scope, functions, false, '')
 
-private string submit_lambda_foreach_helper_type(Node node, SubmitLambdaScope scope, Node[] functions):
+private string submit_lambda_foreach_helper_type(Node node, SubmitLambdaScope scope, Node[] functions, bool allow_string_grid):
     if (node.kind != 'Call'):
         return ''
     Node function_node = submit_lambda_helper(functions, node.value)
     if (function_node.kind == ''):
         return ''
     BindingIR signature = ir_parse_binding_decl(function_node.value)
-    if (signature.type_name != 'bool[]' && signature.type_name != 'string[]' && signature.type_name != 'bool[][]' && signature.type_name != 'set<int>' && signature.type_name != 'set<string>'):
+    if (signature.type_name != 'bool[]' && signature.type_name != 'string[]' && signature.type_name != 'bool[][]' && signature.type_name != 'set<int>' && signature.type_name != 'set<string>' && !(allow_string_grid && signature.type_name == 'string[][]')):
         return ''
     int parameter_count = 0
     for (Node child : function_node.children):
@@ -709,7 +709,7 @@ private SubmitLambdaValidation validate_submit_lambda_foreach_statement(Node sta
                     is_grid_row_binding = true
                     iterator_element_type = 'string[]'
         else if (statement.children[0].kind == 'Call'):
-            string helper_result_type = submit_lambda_foreach_helper_type(statement.children[0], scope, functions)
+            string helper_result_type = submit_lambda_foreach_helper_type(statement.children[0], scope, functions, !callback_context)
             if (helper_result_type == 'bool[]'):
                 is_iterable = true
                 iterator_element_type = 'bool'
@@ -720,6 +720,10 @@ private SubmitLambdaValidation validate_submit_lambda_foreach_statement(Node sta
             else if (helper_result_type == 'string[]'):
                 is_iterable = true
                 iterator_element_type = 'string'
+            else if (helper_result_type == 'string[][]'):
+                is_iterable = true
+                is_grid_row_binding = true
+                iterator_element_type = 'string[]'
             else if (helper_result_type == 'set<int>'):
                 is_iterable = true
                 is_set_helper_result = true
@@ -753,7 +757,7 @@ private SubmitLambdaValidation validate_submit_lambda_foreach_statement(Node sta
         if (!is_iterable):
             if (callback_context):
                 throw 'thread_pool.submit lambda foreach iterable must be an int[], bool[], string[], int[][], or bool[][] binding, a declared int[], bool[], string[], int[][], bool[][], set<int>, or set<string> helper call, or a direct range call'
-            throw 'thread_pool.submit lambda foreach iterable must be an int[], bool[], string[], int[][], bool[][], or string[][] binding, a declared int[], bool[], string[], int[][], bool[][], set<int>, or set<string> helper call, an int[] literal, or a direct range call'
+            throw 'thread_pool.submit lambda foreach iterable must be an int[], bool[], string[], int[][], bool[][], or string[][] binding, a declared int[], bool[], string[], int[][], bool[][], string[][], set<int>, or set<string> helper call, an int[] literal, or a direct range call'
     BindingIR iterator = ir_parse_binding_decl(statement.value)
     string iterator_type = iterator.type_name
     bool iterator_is_const = iterator_type.starts_with('const ')
