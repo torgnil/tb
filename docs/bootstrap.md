@@ -77,6 +77,13 @@ and rebuilds the tagged source through two generations. It compares the
 retargeted IR, then compiles and runs a smoke program. The workflow uploads
 the resulting compiler and its checksum as a separate Actions artifact.
 
+A fresh Windows runner verifies the executable checksum and runs
+`tb.exe --version` from PowerShell with a system-only `PATH`.
+The bootstrap job also probes the numbered fixtures and uploads a per-fixture
+report. It checks compiler rejections and tries to link and run accepted
+fixtures whose IR has no C source or linker requirements. The report records
+skips and failures so the probe can establish a Windows baseline.
+
 This bootstrap produces a Windows compiler executable. Its output still
 requires the workflow's IR adapter and runtime shim for the Windows x64
 ABI. Windows support for programs that use the POSIX runtime libraries

@@ -72,7 +72,7 @@ jobs:
   bootstrap-windows:
     needs: generate-ir
     runs-on: windows-2022
-    timeout-minutes: 35
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -122,7 +122,7 @@ jobs:
           link stage2.ll output/tb-0.5.0-windows-x86_64.exe
           check_version output/tb-0.5.0-windows-x86_64.exe
           rebuild output/tb-0.5.0-windows-x86_64.exe stage3
-          cmp stage2.ll stage3.ll
+          python -c 'import filecmp, sys; sys.exit(0 if filecmp.cmp("stage2.ll", "stage3.ll", shallow=False) else "Stage 2 and stage 3 Windows LLVM IR differ")'
           output/tb-0.5.0-windows-x86_64.exe smoke.tb smoke.raw.ll
           python target_ir.py smoke.raw.ll smoke.ll
           link smoke.ll smoke.exe
@@ -136,3 +136,44 @@ jobs:
           path: .build/windows-seed/output/*
           if-no-files-found: error
           include-hidden-files: true
+
+      - name: Probe numbered fixtures on Windows
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          build=.build/windows-seed
+          python .github/windows-seed/probe_fixtures.py \
+            "$build/output/tb-0.5.0-windows-x86_64.exe" "$build/seed/crt.c" \
+            "$build/source" "$build/fixtures.txt" | tee -a "$(cygpath -u "$GITHUB_STEP_SUMMARY")"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: tb-0.5.0-windows-x86_64-fixtures
+          path: .build/windows-seed/fixtures.txt
+          include-hidden-files: true
+
+  verify-windows-executable:
+    needs: bootstrap-windows
+    runs-on: windows-2022
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tb-0.5.0-windows-x86_64
+
+      - name: Verify checksum and run from PowerShell
+        shell: pwsh
+        run: |
+          $binary = 'tb-0.5.0-windows-x86_64.exe'
+          $manifest = (Get-Content SHA256SUMS -Raw).Trim()
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $binary).Hash
+          if ($manifest -ne "$hash  $binary") {
+            throw 'Windows executable checksum mismatch'
+          }
+          $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
+          $version = & ".\$binary" --version
+          if ($LASTEXITCODE -ne 0 -or $version -cne 'tb 0.5.0') {
+            throw "Unexpected version output or exit status: $version ($LASTEXITCODE)"
+          }
+          $version
