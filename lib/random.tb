@@ -81,3 +81,30 @@ void random_shuffle_ints(RandomGenerator generator, int[] values):
         values[index] = values[other]
         values[other] = saved
         index -= 1
+
+# Draw distinct indices using a sparse partial Fisher-Yates permutation.
+int[] random_sample_indices(RandomGenerator generator, int population, int count):
+    if (count < 0 || count > population):
+        throw 'random: invalid sample size'
+    int[] sample = []
+    if (count == 0):
+        return sample
+
+    map<int, int> replacements = {}
+    int remaining = population
+    while (sample.length() < count):
+        int position = 0
+        if (remaining > 1):
+            position = generator.random_next_below(remaining)
+        int chosen = position
+        if (replacements.contains(position)):
+            chosen = replacements[position]
+        sample.push(chosen)
+
+        remaining -= 1
+        if (position != remaining):
+            int last = remaining
+            if (replacements.contains(remaining)):
+                last = replacements[remaining]
+            replacements[position] = last
+    return sample
