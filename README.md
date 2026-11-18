@@ -142,7 +142,8 @@ produce no LLVM file. Successful runtime fixtures also require Clang.
 - The current AoC sample set in `examples/aoc`
 - Stage 2 and stage 3 self-hosting on the current verified path
 - The bundled `raylib` demo path when its external raylib dependencies are
-  installed; those dependencies are not part of the standalone bundle
+  installed. Use the source checkout's `tb.sh` for raylib programs. On macOS,
+  `TB_RAYLIB_STATIC=1` opts into static raylib linking.
 
 ### Experimental
 
