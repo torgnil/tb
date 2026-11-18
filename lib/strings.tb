@@ -126,3 +126,24 @@ string[] byte_rsplit_n(string text, string separator, int max_splits):
         start = position + separator_length
     fields.push(text.substring(start))
     return fields
+
+int[] byte_find_all(string text, string needle):
+    return text.byte_find_all_from(needle, 0)
+
+int[] byte_find_all_from(string text, string needle, int start):
+    int[] matches = []
+    int text_length = text.length()
+    if (start < 0 || start > text_length):
+        return matches
+    int needle_length = needle.length()
+    if (needle_length == 0):
+        for (int position = start; position <= text_length; position += 1):
+            matches.push(position)
+        return matches
+    while (true):
+        int position = text.byte_index_of_from(needle, start)
+        if (position < 0):
+            return matches
+        matches.push(position)
+        start = position + needle_length
+    return matches
