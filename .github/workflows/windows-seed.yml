@@ -177,6 +177,15 @@ jobs:
           path: .build/windows-seed/fixtures.txt
           include-hidden-files: true
 
+      - name: Exercise native Windows process behavior
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          cd .build/windows-seed
+          clang -Wall -Wextra -Werror source/.github/windows-seed/process_smoke.c \
+            source/compiler/tb/runtime/process_runtime.c -o process-smoke.exe
+          ./process-smoke.exe
+
   verify-windows-executable:
     needs: bootstrap-windows
     runs-on: windows-2022

@@ -313,6 +313,12 @@ int tb_path_test(const char *path, int32_t kind, int32_t *matches_out) {
     struct stat metadata;
     if (stat(path, &metadata) != 0) {
         if (errno == ENOENT || errno == ENOTDIR) {
+#ifdef _WIN32
+            if (GetFullPathNameA(path, 0, NULL, NULL) > MAX_PATH) {
+                errno = ENAMETOOLONG;
+                return -1;
+            }
+#endif
             return 0;
         }
         return -1;
@@ -407,5 +413,13 @@ int tb_directory_rename_path(const char *source, const char *destination) {
         errno = EINVAL;
         return -1;
     }
+#ifdef _WIN32
+    if (!MoveFileExA(source, destination, MOVEFILE_REPLACE_EXISTING)) {
+        errno = EIO;
+        return -1;
+    }
+    return 0;
+#else
     return rename(source, destination);
+#endif
 }
