@@ -123,10 +123,30 @@ jobs:
           link seed/tb-0.5.0-windows-x86_64.ll seed/tb.exe
           check_version seed/tb.exe "tb 0.5.0"
           rebuild seed/tb.exe stage2
-          link stage2.ll output/tb-0.5.1-windows-x86_64.exe
+          link stage2.ll stage2.exe
+          check_version ./stage2.exe "tb 0.5.1"
+          # Stage 2 was emitted by the released seed. Stage 3 is the first
+          # executable whose own code was emitted by the candidate compiler.
+          rebuild ./stage2.exe stage3
+          link stage3.ll output/tb-0.5.1-windows-x86_64.exe
           check_version output/tb-0.5.1-windows-x86_64.exe "tb 0.5.1"
-          rebuild output/tb-0.5.1-windows-x86_64.exe stage3
-          python -c 'import filecmp, sys; sys.exit(0 if filecmp.cmp("stage2.ll", "stage3.ll", shallow=False) else "Stage 2 and stage 3 Windows LLVM IR differ")'
+          rebuild output/tb-0.5.1-windows-x86_64.exe stage4
+          python - <<'PY'
+          from filecmp import cmp
+          from itertools import zip_longest
+
+          if not cmp("stage3.ll", "stage4.ll", shallow=False):
+              with open("stage3.ll", "rb") as stage3, open("stage4.ll", "rb") as stage4:
+                  for number, (left, right) in enumerate(zip_longest(stage3, stage4, fillvalue=b""), 1):
+                      if left != right:
+                          offset = next((i for i, pair in enumerate(zip(left, right)) if pair[0] != pair[1]),
+                                        min(len(left), len(right)))
+                          print(f"First difference on line {number} at byte {offset + 1}")
+                          print(f"Stage 3: {left[offset:offset + 120]!r}")
+                          print(f"Stage 4: {right[offset:offset + 120]!r}")
+                          break
+              raise SystemExit("Stage 3 and stage 4 Windows LLVM IR differ")
+          PY
           output/tb-0.5.1-windows-x86_64.exe smoke.tb smoke.raw.ll
           python target_ir.py smoke.raw.ll smoke.ll
           link smoke.ll smoke.exe

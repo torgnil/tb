@@ -74,9 +74,10 @@ current branch for the Windows 0.5.1 candidate. The IR artifact records both
 source commits and checksums.
 
 The Windows job links the v0.5.0 IR with MSYS2 CLANG64 and uses that seed to
-build the current branch through two generations. It compares the retargeted
-IR, checks both compiler versions, then compiles and runs a smoke program.
-The workflow uploads the candidate executable and its checksum as an
+build stage 2 from the current branch. Stage 2 builds stage 3, the first
+executable built by the candidate compiler. CI checks that stage 3 and stage
+4 produce identical retargeted IR, then compiles and runs a smoke program
+with the stage 3 compiler. It uploads that executable and its checksum as an
 Actions artifact.
 
 A fresh Windows runner verifies the executable checksum and runs
