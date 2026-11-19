@@ -38,8 +38,23 @@ jobs:
 
       - name: Select LLVM 19
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends clang-19
+          set -euo pipefail
+          apt_options=(-o Acquire::Retries=1 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15)
+          if ! command -v clang-19 >/dev/null; then
+            for attempt in 1 2 3; do
+              if timeout --kill-after=10s 90s sudo apt-get "${apt_options[@]}" \
+                -o APT::Update::Error-Mode=any update; then
+                break
+              fi
+              if [[ "$attempt" == 3 ]]; then
+                echo "Ubuntu package indexes could not be refreshed after $attempt attempts" >&2
+                exit 1
+              fi
+              echo "Retrying Ubuntu package index refresh after attempt $attempt" >&2
+            done
+            timeout --kill-after=10s 240s sudo apt-get "${apt_options[@]}" \
+              install -y --no-install-recommends clang-19
+          fi
           mkdir -p "$RUNNER_TEMP/tb-toolchain"
           ln -s "$(command -v clang-19)" "$RUNNER_TEMP/tb-toolchain/clang"
           printf '%s\n' "$RUNNER_TEMP/tb-toolchain" >> "$GITHUB_PATH"
