@@ -314,7 +314,13 @@ int tb_path_test(const char *path, int32_t kind, int32_t *matches_out) {
     if (stat(path, &metadata) != 0) {
         if (errno == ENOENT || errno == ENOTDIR) {
 #ifdef _WIN32
-            if (GetFullPathNameA(path, 0, NULL, NULL) > MAX_PATH) {
+            char full_path[MAX_PATH];
+            DWORD length = GetFullPathNameA(path, MAX_PATH, full_path, NULL);
+            /* The CRT can report a long name as missing. Full-path
+               resolution can also fail before returning a required size. */
+            if (length >= MAX_PATH ||
+                (!length && (GetLastError() == ERROR_FILENAME_EXCED_RANGE ||
+                             strlen(path) >= MAX_PATH))) {
                 errno = ENAMETOOLONG;
                 return -1;
             }
