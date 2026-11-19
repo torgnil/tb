@@ -67,8 +67,8 @@ git worktree add ../tb-0.3.0-linux v0.3.0
 ## Windows x64 bootstrap
 
 The release workflow calls **tb Windows x64 bootstrap** for published
-releases and manual builds. The Windows workflow also runs on pushes to the
-`0.5.0-windows-seed` branch. Its Linux job builds the exact `v0.5.0` source
+releases and manual builds. You can also run the Windows workflow directly
+from the Actions tab. Its Linux job builds the exact `v0.5.0` source
 with the checksum-pinned Linux v0.4.0 seed and adapts the resulting LLVM IR to
 the Windows x64 ABI. It also generates the embedded compiler helpers from the
 selected source at the requested build version. The IR artifact records both
