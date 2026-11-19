@@ -66,11 +66,12 @@ git worktree add ../tb-0.3.0-linux v0.3.0
 
 ## Windows x64 bootstrap
 
-The **tb Windows x64 bootstrap** GitHub Actions workflow runs on pushes to the
+The release workflow calls **tb Windows x64 bootstrap** for published
+releases and manual builds. The Windows workflow also runs on pushes to the
 `0.5.0-windows-seed` branch. Its Linux job builds the exact `v0.5.0` source
 with the checksum-pinned Linux v0.4.0 seed and adapts the resulting LLVM IR to
 the Windows x64 ABI. It also generates the embedded compiler helpers from the
-current branch for the Windows 0.5.1 candidate. The IR artifact records both
+selected source at the requested build version. The IR artifact records both
 source commits and checksums.
 
 The Windows job links the v0.5.0 IR with MSYS2 CLANG64 and uses that seed to
@@ -80,9 +81,7 @@ executable built by the candidate compiler. CI checks that stage 3 and stage
 with the stage 3 compiler. It uploads that executable and its checksum as an
 Actions artifact.
 
-A fresh Windows runner verifies the executable checksum and runs
-`tb.exe --version` from PowerShell with a system-only `PATH`.
-The bootstrap job also probes the numbered fixtures and uploads a per-fixture
+The bootstrap job runs the numbered fixtures and uploads a per-fixture
 report. It checks compiler rejections, compiles any C sources listed by the
 compiler, then links and runs accepted fixtures. The report distinguishes C
 compilation, linking, execution, and output failures. Any fixture failure
@@ -93,8 +92,5 @@ candidate as a ZIP. A fresh Windows runner checks the archive SHA-256, runs
 the extracted compiler with a system-only `PATH`, and uses the bundled
 PowerShell launcher with the CLANG64 toolchain to compile and run a threaded
 program. The verified ZIP and checksum are available as an Actions artifact.
-
-This bootstrap produces a Windows compiler executable. Its output still
-requires the workflow's IR adapter and runtime shim for the Windows x64
-ABI. Windows support for programs that use the POSIX runtime libraries
-requires additional work.
+For a published release, CI waits for the Linux, macOS, and Windows jobs and
+checks all three archive checksums before attaching the assets.

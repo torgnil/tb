@@ -2,6 +2,20 @@
 
 All notable changes to tb will be documented in this file.
 
+## [0.5.1] - 2026-11-19
+
+### Added
+- Windows x86_64 release ZIP with a native compiler and a PowerShell launcher
+  for building executables with the MSYS2 CLANG64 toolchain.
+- Windows runtime support for subprocesses, thread pools, directory operations,
+  and secure random numbers.
+
+### Fixed
+- Native file writes preserve LF bytes, so files written on Windows round-trip
+  through `read_lines`.
+- On Windows, path inspection reports overlong paths as errors, and file
+  renames can replace an existing destination.
+
 ## [0.5.0] - 2026-11-18
 
 ### Added

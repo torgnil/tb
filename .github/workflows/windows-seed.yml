@@ -4,15 +4,36 @@ on:
   push:
     branches: ['0.5.0-windows-seed']
   workflow_dispatch:
+    inputs:
+      version:
+        description: Embedded tb version
+        type: string
+        default: '0.5.1'
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
 
 permissions:
   contents: read
+
+env:
+  CANDIDATE_VERSION: ${{ inputs.version || '0.5.1' }}
+  PACKAGE_NAME: tb-${{ inputs.version || '0.5.1' }}-windows-x86_64
 
 jobs:
   generate-ir:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
+      - name: Validate embedded version
+        run: |
+          if [[ "$CANDIDATE_VERSION" != dev && ! "$CANDIDATE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9][A-Za-z0-9.-]*)?$ ]]; then
+            echo "Unsupported embedded version: $CANDIDATE_VERSION" >&2
+            exit 1
+          fi
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -55,7 +76,7 @@ jobs:
             .build/windows-seed/source/.build/stage2/tb_stage2.ll \
             "$seed_dir/tb-0.5.0-windows-x86_64.ll"
           cp .github/windows-seed/crt.c "$seed_dir/"
-          TB_VERSION=0.5.1 TB_BOOTSTRAP_COMPILER="$PWD/.build/windows-seed/native-seed" ./build_tb.sh
+          TB_VERSION="$CANDIDATE_VERSION" TB_BOOTSTRAP_COMPILER="$PWD/.build/windows-seed/native-seed" ./build_tb.sh
           cp compiler/tb/llvm_helpers_generated.tb "$seed_dir/"
           git rev-parse HEAD > "$seed_dir/candidate-commit.txt"
           git rev-parse 'v0.5.0^{commit}' > "$seed_dir/source-commit.txt"
@@ -124,13 +145,13 @@ jobs:
           check_version seed/tb.exe "tb 0.5.0"
           rebuild seed/tb.exe stage2
           link stage2.ll stage2.exe
-          check_version ./stage2.exe "tb 0.5.1"
+          check_version ./stage2.exe "tb $CANDIDATE_VERSION"
           # Stage 2 was emitted by the released seed. Stage 3 is the first
           # executable whose own code was emitted by the candidate compiler.
           rebuild ./stage2.exe stage3
-          link stage3.ll output/tb-0.5.1-windows-x86_64.exe
-          check_version output/tb-0.5.1-windows-x86_64.exe "tb 0.5.1"
-          rebuild output/tb-0.5.1-windows-x86_64.exe stage4
+          link stage3.ll "output/$PACKAGE_NAME.exe"
+          check_version "output/$PACKAGE_NAME.exe" "tb $CANDIDATE_VERSION"
+          rebuild "output/$PACKAGE_NAME.exe" stage4
           python - <<'PY'
           from filecmp import cmp
           from itertools import zip_longest
@@ -147,16 +168,16 @@ jobs:
                           break
               raise SystemExit("Stage 3 and stage 4 Windows LLVM IR differ")
           PY
-          output/tb-0.5.1-windows-x86_64.exe smoke.tb smoke.raw.ll
+          "output/$PACKAGE_NAME.exe" smoke.tb smoke.raw.ll
           python target_ir.py smoke.raw.ll smoke.ll
           link smoke.ll smoke.exe
           test "$(./smoke.exe | tr -d '\r')" = 'Windows bootstrap smoke test passed'
           cp seed/{source-commit,candidate-commit}.txt output/
-          (cd output && sha256sum --binary tb-0.5.1-windows-x86_64.exe > SHA256SUMS)
+          (cd output && sha256sum --binary "$PACKAGE_NAME.exe" > SHA256SUMS)
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: tb-0.5.1-windows-x86_64
+          name: ${{ env.PACKAGE_NAME }}
           path: .build/windows-seed/output/*
           if-no-files-found: error
           include-hidden-files: true
@@ -167,13 +188,13 @@ jobs:
           set -euo pipefail
           build=.build/windows-seed
           python .github/windows-seed/probe_fixtures.py \
-            "$build/output/tb-0.5.1-windows-x86_64.exe" "$build/seed/crt.c" \
+            "$build/output/$PACKAGE_NAME.exe" "$build/seed/crt.c" \
             "$build/source" "$build/fixtures.txt" | tee -a "$(cygpath -u "$GITHUB_STEP_SUMMARY")"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
-          name: tb-0.5.1-windows-x86_64-fixtures
+          name: ${{ env.PACKAGE_NAME }}-fixtures
           path: .build/windows-seed/fixtures.txt
           include-hidden-files: true
 
@@ -193,10 +214,11 @@ jobs:
           cd .build/windows-seed
           mkdir release
           python - <<'PY'
+          from os import environ
           from pathlib import Path
           from zipfile import ZIP_DEFLATED, ZipFile
 
-          name = "tb-0.5.1-windows-x86_64"
+          name = environ["PACKAGE_NAME"]
           files = {
               f"output/{name}.exe": "tb.exe",
               "source/.github/windows-seed/tb.ps1": "tb.ps1",
@@ -214,11 +236,11 @@ jobs:
               changelog = changelog.replace("(docs/tb.md)", "(tb.md)")
               archive.writestr(f"{name}/CHANGELOG.md", changelog)
           PY
-          (cd release && sha256sum --binary tb-0.5.1-windows-x86_64.zip > tb-0.5.1-windows-x86_64.zip.sha256)
+          (cd release && sha256sum --binary "$PACKAGE_NAME.zip" > "$PACKAGE_NAME.zip.sha256")
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: tb-0.5.1-windows-x86_64-release-staging
+          name: ${{ env.PACKAGE_NAME }}-release-staging
           path: .build/windows-seed/release/*
           if-no-files-found: error
           include-hidden-files: true
@@ -230,12 +252,12 @@ jobs:
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: tb-0.5.1-windows-x86_64-release-staging
+          name: ${{ env.PACKAGE_NAME }}-release-staging
 
       - name: Verify ZIP checksum and run the extracted compiler
         shell: pwsh
         run: |
-          $name = 'tb-0.5.1-windows-x86_64'
+          $name = $env:PACKAGE_NAME
           $archive = "$name.zip"
           $manifest = (Get-Content -LiteralPath "$archive.sha256" -Raw).Trim()
           $entry = [regex]::Match($manifest, '^([0-9a-fA-F]{64}) [ *]' + [regex]::Escape($archive) + '$')
@@ -250,7 +272,7 @@ jobs:
           Expand-Archive -LiteralPath $archive -DestinationPath extracted
           $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
           $version = & ".\extracted\$name\tb.exe" --version
-          if ($LASTEXITCODE -ne 0 -or $version -cne 'tb 0.5.1') {
+          if ($LASTEXITCODE -ne 0 -or $version -cne "tb $env:CANDIDATE_VERSION") {
             throw "Unexpected version output or exit status: $version ($LASTEXITCODE)"
           }
           $version
@@ -277,13 +299,13 @@ jobs:
               return 0
           TB
           "/c/Program Files/PowerShell/7/pwsh.exe" -NoProfile -ExecutionPolicy Bypass \
-            -File extracted/tb-0.5.1-windows-x86_64/tb.ps1 release-smoke.tb
+            -File "extracted/$PACKAGE_NAME/tb.ps1" release-smoke.tb
           test "$(./release-smoke.exe | tr -d '\r')" = '42'
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: tb-0.5.1-windows-x86_64-release
+          name: tb-dist-windows-x86_64
           path: |
-            tb-0.5.1-windows-x86_64.zip
-            tb-0.5.1-windows-x86_64.zip.sha256
+            ${{ env.PACKAGE_NAME }}.zip
+            ${{ env.PACKAGE_NAME }}.zip.sha256
           if-no-files-found: error

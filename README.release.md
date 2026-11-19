@@ -7,8 +7,9 @@ IR launcher, language reference (`tb.md`), changelog, license, and version. The
 compiler reports its embedded version with `tb --version`. Python is not
 required to use a bundle. Clang is required to build native programs.
 
-The release provides macOS arm64 and Linux x86_64 bundles. The macOS bundle
-targets macOS 26.0 or newer. Linux builds target x86_64.
+These instructions cover the macOS arm64 and Linux x86_64 bundles. The macOS
+bundle targets macOS 26.0 or newer. The Windows x86_64 ZIP has its own
+PowerShell instructions in its bundled README.
 
 ## Download and Install
 

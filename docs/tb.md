@@ -19,6 +19,10 @@ Note: examples use single-quoted strings (tb requires single quotes). All `int` 
 
 1. Quick start
 
+On Windows x86_64, use the release bundle's `tb.ps1` launcher with MSYS2
+CLANG64 to compile and link a native executable. The bundled README lists
+the required tools and invocation.
+
 Example program (prints argument count and first user arg if present):
 
 ```tb
