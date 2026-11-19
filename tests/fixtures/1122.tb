@@ -10,15 +10,15 @@ int main(string[] args):
 
     ProcessResult piped = run_process([args[0], 'child'])
     print(piped.exit_code)
-    print(piped.stdout == 'stdout\n')
-    print(piped.stderr == 'first second\n')
+    print(piped.stdout.replace('\r\n', '\n') == 'stdout\n')
+    print(piped.stderr.replace('\r\n', '\n') == 'first second\n')
 
-    ProcessResult redirected = run_process(['/bin/sh', '-c', 'exec 2>stderr-capture.txt; printf prefix: >&2; exec "$1" child', 'redirect', args[0]])
+    ProcessResult redirected = run_process(['python3', '-I', '-S', 'test-files/process_child.py', 'redirect-stderr', args[0], 'child'])
     print(redirected.exit_code)
-    print(redirected.stdout == 'stdout\n')
-    print(read_file('stderr-capture.txt') == 'prefix:first second\n')
+    print(redirected.stdout.replace('\r\n', '\n') == 'stdout\n')
+    print(read_file('stderr-capture.txt').replace('\r\n', '\n') == 'prefix:first second\n')
 
-    ProcessResult closed = run_process(['/bin/sh', '-c', 'exec "$1" child 2>&-', 'redirect', args[0]])
+    ProcessResult closed = run_process(['python3', '-I', '-S', 'test-files/process_child.py', 'closed-stderr', args[0], 'child'])
     print(closed.exit_code)
-    print(closed.stdout == 'write_all: unable to write /dev/stderr\n')
+    print(closed.stdout.replace('\r\n', '\n') == 'write_all: unable to write /dev/stderr\n')
     return 0

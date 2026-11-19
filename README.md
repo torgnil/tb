@@ -17,6 +17,15 @@ Current highlights:
 
 ## Installation
 
+Release bundles are available for macOS arm64, Linux x86_64, and Windows
+x86_64. Download the bundle for your platform from
+[GitHub Releases](https://github.com/torgnil/tb/releases).
+
+On Windows, extract the ZIP and run `.\tb.exe --version` from PowerShell.
+To build native programs, install Clang in MSYS2 CLANG64, add its
+`bin` directory to your PowerShell `PATH`, then run
+`.\tb.ps1 .\program.tb`. The bundle README describes the launcher.
+
 Install on macOS with [Homebrew](https://brew.sh):
 
 ```bash
@@ -120,6 +129,9 @@ Run the native regression suite:
 ```bash
 ./verify_fixtures_tb.sh tests/fixtures --compiler bin/tb
 ```
+
+The process fixtures use `python3` for portable child commands. Symlink
+fixtures require permission to create symbolic links on the test filesystem.
 
 Each numbered `.tb` fixture has exactly one expectation: `.out` for executable
 stdout, or `.err` for a compile-time diagnostic. A rejection fixture must exit

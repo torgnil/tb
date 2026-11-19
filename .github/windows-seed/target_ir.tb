@@ -1,0 +1,136 @@
+const string NUM = '%tb_bootstrap_num'
+const string NUM_RESULT = 'ptr sret(%tb_bootstrap_num) align 8'
+const string SUBMIT = '@tb_thread_pool_submit_num'
+const string NUM_SUBMIT = '@tb_thread_pool_submit_num_num'
+
+string[] CALLBACK_KEYS = []
+string[] CALLBACKS = []
+
+string callback_body(string name, string symbol, string bridge):
+    string parameters = ''
+    string arguments = ''
+    string load = ''
+    if (name == NUM_SUBMIT):
+        parameters = ', ptr %arg'
+        arguments = NUM + ' %value'
+        load = '  %value = load ' + NUM + ', ptr %arg, align 8\n'
+    else if (name == SUBMIT + '_i64'):
+        parameters = ', i64 %arg'
+        arguments = 'i64 %arg'
+    else if (name == SUBMIT + '_int_array'):
+        parameters = ', ptr %arg'
+        arguments = 'ptr %arg'
+
+    # Windows C returns num through an output pointer. The tb callback
+    # retains the aggregate argument and result types used by the emitter.
+    string result = '\ndefine private void ' + bridge + '(' + NUM_RESULT + ' %out' + parameters + ') {\n'
+    result += load + '  %result = call ' + NUM + ' ' + symbol + '(' + arguments + ')\n'
+    result += '  store ' + NUM + ' %result, ptr %out, align 8\n'
+    result += '  ret void\n}'
+    return result
+
+string adapt_num_submit(string line, int start):
+    int call_start = line.index_of('(ptr ')
+    if (call_start <= start):
+        return line
+    string name = line.substring(start, call_start)
+    if (name != SUBMIT && name != NUM_SUBMIT &&
+        name != SUBMIT + '_i64' && name != SUBMIT + '_int_array'):
+        return line
+    int callback_start = line.index_of(', ptr @')
+    if (callback_start < call_start):
+        return line
+    callback_start += 6
+    int callback_end = callback_start
+    while (callback_end < line.length() && line[callback_end] != ',' &&
+        line[callback_end] != ')' && line[callback_end] != ' '):
+        callback_end += 1
+    string symbol = line.substring(callback_start, callback_end)
+    string key = name + ' ' + symbol
+    int index = CALLBACK_KEYS.index_of(key)
+    if (index < 0):
+        index = CALLBACK_KEYS.length()
+        CALLBACK_KEYS.push(key)
+        CALLBACKS.push(callback_body(name, symbol, '@tb.windows.num.callback.' + index))
+    string callee = name
+    if (name == NUM_SUBMIT):
+        callee = '@tb_windows_submit_num_num'
+    string result = line.substring(0, start) + callee + line.substring(call_start, callback_start)
+    result += '@tb.windows.num.callback.' + index + line.substring(callback_end)
+    return result
+
+string adapt_instruction(string line):
+    int jump = line.index_of('@setjmp(ptr ')
+    if (jump >= 0):
+        int argument = jump + '@setjmp(ptr '.length()
+        int end = argument
+        while (end < line.length() && line[end] != ')' && line[end] != ','):
+            end += 1
+        if (end > argument && end < line.length() && line[end] == ')'):
+            string rewritten = line.substring(0, jump) + '@_setjmp(ptr '
+            rewritten += line.substring(argument, end) + ', ptr null' + line.substring(end)
+            line = rewritten
+    if (line.contains('alloca [192 x i8]')):
+        int alignment = line.index_of(', align')
+        if (alignment >= 0):
+            line = line.substring(0, alignment)
+        line = line.replace('alloca [192 x i8]', 'alloca [256 x i8]') + ', align 16'
+    if (line.contains('getelementptr')):
+        line = line.replace('getelementptr [192 x i8]', 'getelementptr [256 x i8]')
+        line = line.replace('getelementptr inbounds [192 x i8]', 'getelementptr inbounds [256 x i8]')
+    int submit = line.index_of(SUBMIT)
+    if (submit >= 0):
+        line = adapt_num_submit(line, submit)
+    if (line.contains('@tb_future_num_await(')):
+        line = line.replace('call %tb_bootstrap_num @tb_future_num_await(',
+            'call %tb_bootstrap_num @tb_windows_future_num_await(')
+    return line
+
+string adapt_line(string line):
+    if (line.ends_with('\r')):
+        line = line.substring(0, line.length() - 1)
+    if (line.starts_with('target triple') || line.starts_with('target datalayout')):
+        throw 'Expected LLVM IR without target metadata'
+    if (line == 'declare i32 @setjmp(ptr) returns_twice'):
+        return 'declare i32 @_setjmp(ptr, ptr) returns_twice'
+    if (line == 'declare ptr @tb_thread_pool_submit_num_num(ptr, ptr, %tb_bootstrap_num)'):
+        string result = 'declare ptr @tb_thread_pool_submit_num_num(ptr, ptr, ptr)\n'
+        result += 'define private ptr @tb_windows_submit_num_num(ptr %pool, ptr %fn, %tb_bootstrap_num %arg) {\n'
+        result += '  %input = alloca %tb_bootstrap_num, align 8\n'
+        result += '  store %tb_bootstrap_num %arg, ptr %input, align 8\n'
+        result += '  %future = call ptr @tb_thread_pool_submit_num_num(ptr %pool, ptr %fn, ptr %input)\n'
+        result += '  ret ptr %future\n}'
+        return result
+    if (line == 'declare %tb_bootstrap_num @tb_future_num_await(ptr)'):
+        string result = 'declare void @tb_future_num_await(' + NUM_RESULT + ', ptr)\n'
+        result += 'define private %tb_bootstrap_num @tb_windows_future_num_await(ptr %future) {\n'
+        result += '  %output = alloca %tb_bootstrap_num, align 8\n'
+        result += '  call void @tb_future_num_await(' + NUM_RESULT + ' %output, ptr %future)\n'
+        result += '  %result = load %tb_bootstrap_num, ptr %output, align 8\n'
+        result += '  ret %tb_bootstrap_num %result\n}'
+        return result
+
+    # The compiler embeds IR templates in string constants. Only rewrite
+    # actual instructions and declarations, leaving those constants intact.
+    bool instruction = line.starts_with(' ') || line.starts_with('\t')
+    if (instruction):
+        line = adapt_instruction(line)
+    if (instruction || line.starts_with('declare ')):
+        if (line.contains('@gettimeofday(')):
+            line = line.replace('@gettimeofday(', '@tb_windows_gettimeofday(')
+        if (line.contains('@getline(')):
+            line = line.replace('@getline(', '@tb_windows_getline(')
+    return line
+
+int main(string[] args):
+    if (args.length() != 3):
+        print('Usage: tb-target-ir INPUT.ll OUTPUT.ll')
+        return 1
+    string[] lines = read_lines(args[1])
+    file output = open(args[2])
+    write_line(output, 'target triple = "x86_64-w64-windows-gnu"')
+    for (string line : lines):
+        write_line(output, adapt_line(line))
+    write_lines(output, CALLBACKS)
+    close(output)
+    return 0

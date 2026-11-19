@@ -1,10 +1,30 @@
+#if defined(_WIN32) && !defined(TB_RANDOM_TEST)
+#define _CRT_RAND_S
+#include <stdlib.h>
+#else
 #include <errno.h>
 #include <fcntl.h>
+#include <unistd.h>
+#endif
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
-#include <unistd.h>
 
+#if defined(_WIN32) && !defined(TB_RANDOM_TEST)
+static int tb_secure_random_bytes(unsigned char *buffer, size_t length) {
+    while (length > 0) {
+        unsigned int value;
+        if (rand_s(&value) != 0) {
+            return -1;
+        }
+        size_t count = length < sizeof(value) ? length : sizeof(value);
+        memcpy(buffer, &value, count);
+        buffer += count;
+        length -= count;
+    }
+    return 0;
+}
+#else
 #ifdef TB_RANDOM_TEST
 int tb_random_test_open(const char *path, int flags);
 ssize_t tb_random_test_read(int fd, void *buffer, size_t length);
@@ -43,6 +63,7 @@ static int tb_secure_random_bytes(unsigned char *buffer, size_t length) {
     }
     return failed ? -1 : 0;
 }
+#endif
 
 int tb_secure_random_i64(int64_t *result) {
     if (result == NULL) {

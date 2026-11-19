@@ -64,6 +64,36 @@ git worktree add ../tb-0.3.0-linux v0.3.0
 )
 ```
 
-Each seed must run on the host where it is used. For a new host such as
-Windows, first provide a native seed and adapt the build driver, Clang toolchain,
-and platform runtime as needed.
+## Windows x64 bootstrap
+
+The release workflow calls **tb Windows x64 bootstrap** for published
+releases and manual builds. You can also run the Windows workflow directly
+from the Actions tab. Its Linux job builds the exact `v0.5.0` source
+with the checksum-pinned Linux v0.4.0 seed and adapts the resulting LLVM IR to
+the Windows x64 ABI. It also generates the embedded compiler helpers from the
+selected source at the requested build version. The IR artifact records both
+source commits and checksums.
+
+The Windows job links the v0.5.0 IR with MSYS2 CLANG64 and uses that seed to
+build stage 2 from the current branch. Stage 2 builds stage 3, the first
+executable built by the candidate compiler. CI checks that stage 3 and stage
+4 produce identical retargeted IR, then compiles and runs a smoke program
+with the stage 3 compiler. It uploads that executable and its checksum as an
+Actions artifact.
+
+The bootstrap job runs the numbered fixtures and uploads a per-fixture
+report. It checks compiler rejections, compiles any C sources listed by the
+compiler, then links and runs accepted fixtures. The report distinguishes C
+compilation, linking, execution, and output failures. Any fixture failure
+fails the job, and CI still uploads the report.
+
+After the fixture suite and process smoke test pass, CI packages the Windows
+candidate as a ZIP. A fresh Windows runner checks the archive SHA-256, runs
+the extracted compiler with a system-only `PATH`, and uses the bundled
+PowerShell launcher with the CLANG64 toolchain to compile and run a threaded
+program. The verified ZIP and checksum are available as an Actions artifact.
+The ZIP bundles the native IR adapter. CI uses the Python adapter for the
+initial bootstrap and checks that the two adapters produce identical IR for
+the compiler and the numbered runtime fixtures.
+For a published release, CI waits for the Linux, macOS, and Windows jobs and
+checks all three archive checksums before attaching the assets.

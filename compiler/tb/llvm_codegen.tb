@@ -5311,12 +5311,12 @@ string emit_string_constant(StringConstIR constant):
 
 string[] emit_read_lines_helper():
     string[] lines = []
-    lines.push('@.mode.read_lines = private unnamed_addr constant [2 x i8] c"r\\00"')
+    lines.push('@.mode.read_lines = private unnamed_addr constant [3 x i8] c"rb\\00"')
     lines.push('@.fmt.read_lines.open.error = private unnamed_addr constant [6 x i8] c"%s%s\\0A\\00"')
     lines.push('@.prefix.read_lines.error = private unnamed_addr constant [28 x i8] c"read_lines: unable to read \\00"')
     lines.push('define private ptr @tb_bootstrap_read_lines(ptr %path) {')
     lines.push('entry:')
-    lines.push('  %mode = getelementptr inbounds [2 x i8], ptr @.mode.read_lines, i32 0, i32 0')
+    lines.push('  %mode = getelementptr inbounds [3 x i8], ptr @.mode.read_lines, i32 0, i32 0')
     lines.push('  %file = call ptr @fopen(ptr %path, ptr %mode)')
     lines.push('  %file.ok = icmp ne ptr %file, null')
     lines.push('  br i1 %file.ok, label %read.setup, label %open.fail')
@@ -5655,7 +5655,7 @@ string[] emit_getenv_helper():
 
 string[] emit_file_output_helpers():
     string[] lines = []
-    lines.push('@.mode.write = private unnamed_addr constant [2 x i8] c"w\\00"')
+    lines.push('@.mode.write = private unnamed_addr constant [3 x i8] c"wb\\00"')
     lines.push('@.fmt.open.error = private unnamed_addr constant [6 x i8] c"%s%s\\0A\\00"')
     lines.push('@.prefix.open.error = private unnamed_addr constant [22 x i8] c"open: unable to open \\00"')
     lines.push('@.fmt.file.output.error = private unnamed_addr constant [4 x i8] c"%s\\0A\\00"')
@@ -5680,7 +5680,7 @@ string[] emit_file_output_helpers():
     lines.push('}')
     lines.push('define private ptr @tb_bootstrap_open_write(ptr %path) {')
     lines.push('entry:')
-    lines.push('  %mode = getelementptr inbounds [2 x i8], ptr @.mode.write, i32 0, i32 0')
+    lines.push('  %mode = getelementptr inbounds [3 x i8], ptr @.mode.write, i32 0, i32 0')
     lines.push('  %file = call ptr @fopen(ptr %path, ptr %mode)')
     lines.push('  %file.ok = icmp ne ptr %file, null')
     lines.push('  br i1 %file.ok, label %open.success, label %open.fail')

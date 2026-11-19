@@ -1,12 +1,20 @@
 import process;
 
-int main():
-    ProcessResult result = run_process([
-        '/usr/bin/awk',
-        'BEGIN { for (i = 0; i < 40000; i++) { print "O"; print "E" > "/dev/stderr" } }'
-    ])
+int main(string[] args):
+    if (args.length() > 1 && args[1] == 'produce'):
+        string[] parts = []
+        for (int index = 0; index < 1999; index += 1):
+            parts.push('O')
+        string output_chunk = parts.join('')
+        string error_chunk = output_chunk.replace('O', 'E') + '\n'
+        for (int index = 0; index < 40; index += 1):
+            write_all('/dev/stderr', error_chunk)
+            print(output_chunk)
+        return 0
+
+    ProcessResult result = run_process([args[0], 'produce'])
     print(result.exit_code)
-    print(result.stdout.length())
-    print(result.stderr.length())
+    print(result.stdout.replace('\r\n', '\n').length())
+    print(result.stderr.replace('\r\n', '\n').length())
     print(result.stdout[0] == 'O' && result.stderr[0] == 'E')
     return 0

@@ -1,0 +1,329 @@
+name: tb Windows x64 bootstrap
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Embedded tb version
+        type: string
+        default: '0.5.1'
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  CANDIDATE_VERSION: ${{ inputs.version || '0.5.1' }}
+  PACKAGE_NAME: tb-${{ inputs.version || '0.5.1' }}-windows-x86_64
+
+jobs:
+  generate-ir:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Validate embedded version
+        run: |
+          if [[ "$CANDIDATE_VERSION" != dev && ! "$CANDIDATE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9][A-Za-z0-9.-]*)?$ ]]; then
+            echo "Unsupported embedded version: $CANDIDATE_VERSION" >&2
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Select LLVM 19
+        run: |
+          set -euo pipefail
+          apt_options=(-o Acquire::Retries=1 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15)
+          if ! command -v clang-19 >/dev/null; then
+            for attempt in 1 2 3; do
+              if timeout --kill-after=10s 90s sudo apt-get "${apt_options[@]}" \
+                -o APT::Update::Error-Mode=any update; then
+                break
+              fi
+              if [[ "$attempt" == 3 ]]; then
+                echo "Ubuntu package indexes could not be refreshed after $attempt attempts" >&2
+                exit 1
+              fi
+              echo "Retrying Ubuntu package index refresh after attempt $attempt" >&2
+            done
+            timeout --kill-after=10s 240s sudo apt-get "${apt_options[@]}" \
+              install -y --no-install-recommends clang-19
+          fi
+          mkdir -p "$RUNNER_TEMP/tb-toolchain"
+          ln -s "$(command -v clang-19)" "$RUNNER_TEMP/tb-toolchain/clang"
+          printf '%s\n' "$RUNNER_TEMP/tb-toolchain" >> "$GITHUB_PATH"
+
+      - name: Build LLVM IR from the v0.5.0 release source
+        shell: bash
+        env:
+          TB_VERSION: '0.5.0'
+          SEED_ASSET: tb-0.4.0-linux-x86_64.tar.gz
+          SEED_SHA256: cb8b77d319676527beaaa72c3300bb7ef5a9e1bc4ba22000f64dc9b17c9ac118
+        run: |
+          set -euo pipefail
+          mkdir -p .build/windows-seed/source .build/windows-seed/artifact
+          git archive v0.5.0 | tar -x -C .build/windows-seed/source
+          curl --fail --location --retry 3 --proto '=https' --proto-redir '=https' \
+            "https://github.com/torgnil/tb/releases/download/v0.4.0/$SEED_ASSET" \
+            -o ".build/windows-seed/$SEED_ASSET"
+          (
+            cd .build/windows-seed
+            printf '%s  %s\n' "$SEED_SHA256" "$SEED_ASSET" | sha256sum --check
+            tar -xOf "$SEED_ASSET" tb-0.4.0-linux-x86_64/libexec/tb > native-seed
+            chmod +x native-seed
+            TB_BOOTSTRAP_COMPILER="$PWD/native-seed" ./source/build_tb.sh
+            test "$(source/bin/tb --version)" = "tb $TB_VERSION"
+            for extension in cflags csources linkflags; do
+              test -f "source/.build/stage2/tb_stage2.ll.$extension"
+              test ! -s "source/.build/stage2/tb_stage2.ll.$extension"
+            done
+          )
+          seed_dir=.build/windows-seed/artifact
+          python3 .github/windows-seed/target_ir.py \
+            .build/windows-seed/source/.build/stage2/tb_stage2.ll \
+            "$seed_dir/tb-0.5.0-windows-x86_64.ll"
+          cp .github/windows-seed/crt.c "$seed_dir/"
+          TB_VERSION="$CANDIDATE_VERSION" TB_BOOTSTRAP_COMPILER="$PWD/.build/windows-seed/native-seed" ./build_tb.sh
+          cp compiler/tb/llvm_helpers_generated.tb "$seed_dir/"
+          git rev-parse HEAD > "$seed_dir/candidate-commit.txt"
+          git rev-parse 'v0.5.0^{commit}' > "$seed_dir/source-commit.txt"
+          (
+            cd "$seed_dir"
+            sha256sum tb-0.5.0-windows-x86_64.ll crt.c llvm_helpers_generated.tb source-commit.txt candidate-commit.txt > SHA256SUMS
+          )
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tb-0.5.0-windows-x86_64-ir-seed
+          path: .build/windows-seed/artifact/*
+          if-no-files-found: error
+          include-hidden-files: true
+
+  bootstrap-windows:
+    needs: generate-ir
+    runs-on: windows-2022
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: CLANG64
+          install: >-
+            git
+            mingw-w64-clang-x86_64-clang
+            mingw-w64-clang-x86_64-python
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tb-0.5.0-windows-x86_64-ir-seed
+          path: .build/windows-seed/seed
+
+      - name: Link the seed and verify self-hosting
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          mkdir -p .build/windows-seed/source .build/windows-seed/output
+          git archive HEAD | tar -x -C .build/windows-seed/source
+          cp .github/windows-seed/target_ir.py .build/windows-seed/
+          cp .build/windows-seed/source/.github/windows-seed/smoke.tb .build/windows-seed/
+          cd .build/windows-seed
+          (cd seed && sha256sum --check SHA256SUMS)
+          test "$(git rev-parse 'v0.5.0^{commit}')" = "$(cat seed/source-commit.txt)"
+          test "$(git rev-parse HEAD)" = "$(cat seed/candidate-commit.txt)"
+          cp seed/llvm_helpers_generated.tb source/compiler/tb/
+          link() {
+            clang -O2 -Wl,--stack,16777216 "$1" seed/crt.c -o "$2"
+          }
+          check_version() {
+            test "$("$1" --version | tr -d '\r')" = "$2"
+          }
+          rebuild() {
+            "$1" source/compiler/tb/tb.tb "$2.raw.ll"
+            for extension in cflags csources linkflags; do
+              test -f "$2.raw.ll.$extension"
+              test ! -s "$2.raw.ll.$extension"
+            done
+            "${@:3}" "$2.raw.ll" "$2.ll"
+          }
+          link seed/tb-0.5.0-windows-x86_64.ll seed/tb.exe
+          check_version seed/tb.exe "tb 0.5.0"
+          rebuild seed/tb.exe stage2 python target_ir.py
+          link stage2.ll stage2.exe
+          check_version ./stage2.exe "tb $CANDIDATE_VERSION"
+          # Stage 2 was emitted by the released seed. Stage 3 is the first
+          # executable whose own code was emitted by the candidate compiler.
+          rebuild ./stage2.exe stage3 python target_ir.py
+          link stage3.ll "output/$PACKAGE_NAME.exe"
+          check_version "output/$PACKAGE_NAME.exe" "tb $CANDIDATE_VERSION"
+          "output/$PACKAGE_NAME.exe" source/.github/windows-seed/target_ir.tb adapter.raw.ll
+          python target_ir.py adapter.raw.ll adapter.ll
+          link adapter.ll tb-target-ir.exe
+          ./tb-target-ir.exe stage3.raw.ll stage3.native.ll
+          rebuild "output/$PACKAGE_NAME.exe" stage4 ./tb-target-ir.exe
+          python - <<'PY'
+          from filecmp import cmp
+          from itertools import zip_longest
+
+          if not cmp("stage3.ll", "stage3.native.ll", shallow=False):
+              raise SystemExit("Native and Python adapters differ on the stage 3 LLVM IR")
+          if not cmp("stage3.ll", "stage4.ll", shallow=False):
+              with open("stage3.ll", "rb") as stage3, open("stage4.ll", "rb") as stage4:
+                  for number, (left, right) in enumerate(zip_longest(stage3, stage4, fillvalue=b""), 1):
+                      if left != right:
+                          offset = next((i for i, pair in enumerate(zip(left, right)) if pair[0] != pair[1]),
+                                        min(len(left), len(right)))
+                          print(f"First difference on line {number} at byte {offset + 1}")
+                          print(f"Stage 3: {left[offset:offset + 120]!r}")
+                          print(f"Stage 4: {right[offset:offset + 120]!r}")
+                          break
+              raise SystemExit("Stage 3 and stage 4 Windows LLVM IR differ")
+          PY
+          "output/$PACKAGE_NAME.exe" smoke.tb smoke.raw.ll
+          ./tb-target-ir.exe smoke.raw.ll smoke.ll
+          link smoke.ll smoke.exe
+          test "$(./smoke.exe | tr -d '\r')" = 'Windows bootstrap smoke test passed'
+          cp seed/{source-commit,candidate-commit}.txt output/
+          (cd output && sha256sum --binary "$PACKAGE_NAME.exe" > SHA256SUMS)
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ env.PACKAGE_NAME }}
+          path: .build/windows-seed/output/*
+          if-no-files-found: error
+          include-hidden-files: true
+
+      - name: Probe numbered fixtures on Windows
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          build=.build/windows-seed
+          python .github/windows-seed/probe_fixtures.py \
+            "$build/output/$PACKAGE_NAME.exe" "$build/tb-target-ir.exe" "$build/seed/crt.c" \
+            "$build/source" "$build/fixtures.txt" | tee -a "$(cygpath -u "$GITHUB_STEP_SUMMARY")"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: ${{ env.PACKAGE_NAME }}-fixtures
+          path: .build/windows-seed/fixtures.txt
+          include-hidden-files: true
+
+      - name: Exercise native Windows process behavior
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          cd .build/windows-seed
+          clang -Wall -Wextra -Werror source/.github/windows-seed/process_smoke.c \
+            source/compiler/tb/runtime/process_runtime.c -o process-smoke.exe
+          ./process-smoke.exe
+
+      - name: Package Windows release ZIP
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          cd .build/windows-seed
+          mkdir release
+          python - <<'PY'
+          from os import environ
+          from pathlib import Path
+          from zipfile import ZIP_DEFLATED, ZipFile
+
+          name = environ["PACKAGE_NAME"]
+          files = {
+              f"output/{name}.exe": "tb.exe",
+              "source/.github/windows-seed/tb.ps1": "tb.ps1",
+              "source/.github/windows-seed/README.md": "README.md",
+              "seed/crt.c": "crt.c",
+              "tb-target-ir.exe": "tb-target-ir.exe",
+              "source/docs/tb.md": "tb.md",
+              "source/LICENSE": "LICENSE",
+              "output/candidate-commit.txt": "source-commit.txt",
+          }
+          with ZipFile(f"release/{name}.zip", "w", ZIP_DEFLATED) as archive:
+              for path, member in files.items():
+                  archive.write(path, f"{name}/{member}")
+              changelog = Path("source/CHANGELOG.md").read_text(encoding="utf-8")
+              changelog = changelog.replace("(docs/tb.md)", "(tb.md)")
+              archive.writestr(f"{name}/CHANGELOG.md", changelog)
+          PY
+          (cd release && sha256sum --binary "$PACKAGE_NAME.zip" > "$PACKAGE_NAME.zip.sha256")
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ env.PACKAGE_NAME }}-release-staging
+          path: .build/windows-seed/release/*
+          if-no-files-found: error
+          include-hidden-files: true
+
+  verify-windows-release:
+    needs: bootstrap-windows
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ env.PACKAGE_NAME }}-release-staging
+
+      - name: Verify ZIP checksum and run the extracted compiler
+        shell: pwsh
+        run: |
+          $name = $env:PACKAGE_NAME
+          $archive = "$name.zip"
+          $manifest = (Get-Content -LiteralPath "$archive.sha256" -Raw).Trim()
+          $entry = [regex]::Match($manifest, '^([0-9a-fA-F]{64}) [ *]' + [regex]::Escape($archive) + '$')
+          if (!$entry.Success) {
+            throw "Invalid checksum entry for $archive"
+          }
+          $expected = $entry.Groups[1].Value
+          $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash
+          if ($expected -ine $actual) {
+            throw "Windows ZIP checksum mismatch. Expected $expected. Got $actual."
+          }
+          Expand-Archive -LiteralPath $archive -DestinationPath extracted
+          $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
+          $version = & ".\extracted\$name\tb.exe" --version
+          if ($LASTEXITCODE -ne 0 -or $version -cne "tb $env:CANDIDATE_VERSION") {
+            throw "Unexpected version output or exit status: $version ($LASTEXITCODE)"
+          }
+          $version
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: CLANG64
+          install: >-
+            mingw-w64-clang-x86_64-clang
+
+      - name: Compile and run a program using the extracted launcher
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          cat > release-smoke.tb <<'TB'
+          int answer():
+              return 42
+
+          int main():
+              thread_pool pool = thread_pool(1)
+              future<int> result = pool.submit(answer)
+              print(result.await())
+              return 0
+          TB
+          "/c/Program Files/PowerShell/7/pwsh.exe" -NoProfile -ExecutionPolicy Bypass \
+            -File "extracted/$PACKAGE_NAME/tb.ps1" release-smoke.tb
+          test "$(./release-smoke.exe | tr -d '\r')" = '42'
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tb-dist-windows-x86_64
+          path: |
+            ${{ env.PACKAGE_NAME }}.zip
+            ${{ env.PACKAGE_NAME }}.zip.sha256
+          if-no-files-found: error

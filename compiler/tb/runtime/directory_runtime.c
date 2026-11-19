@@ -7,6 +7,10 @@
 #include <limits.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#ifdef _WIN32
+#include <direct.h>
+#include <windows.h>
+#endif
 
 static int tb_directory_name_compare(const void *left, const void *right) {
     const char *const *left_name = (const char *const *)left;
@@ -243,12 +247,24 @@ int tb_directory_walk(const char *path, char ***paths_out, int64_t *count_out) {
                 goto failure;
             }
 
+#ifdef _WIN32
+            DWORD attributes = GetFileAttributesA(child_path);
+            if (attributes == INVALID_FILE_ATTRIBUTES) {
+                failure_errno = EIO;
+                free(child_path);
+                goto failure;
+            }
+            int descend = (attributes & FILE_ATTRIBUTE_DIRECTORY) &&
+                          !(attributes & FILE_ATTRIBUTE_REPARSE_POINT);
+#else
             struct stat metadata;
             if (lstat(child_path, &metadata) != 0) {
                 failure_errno = errno;
                 free(child_path);
                 goto failure;
             }
+            int descend = S_ISDIR(metadata.st_mode);
+#endif
 
             if (tb_directory_append_path(&paths, &path_count, &path_capacity,
                                          child_path) != 0) {
@@ -256,7 +272,7 @@ int tb_directory_walk(const char *path, char ***paths_out, int64_t *count_out) {
                 free(child_path);
                 goto failure;
             }
-            if (S_ISDIR(metadata.st_mode) &&
+            if (descend &&
                 tb_directory_push_pending(&pending_directories, &pending_count,
                                           &pending_capacity, child_path) != 0) {
                 failure_errno = errno;
@@ -297,6 +313,18 @@ int tb_path_test(const char *path, int32_t kind, int32_t *matches_out) {
     struct stat metadata;
     if (stat(path, &metadata) != 0) {
         if (errno == ENOENT || errno == ENOTDIR) {
+#ifdef _WIN32
+            char full_path[MAX_PATH];
+            DWORD length = GetFullPathNameA(path, MAX_PATH, full_path, NULL);
+            /* The CRT can report a long name as missing. Full-path
+               resolution can also fail before returning a required size. */
+            if (length >= MAX_PATH ||
+                (!length && (GetLastError() == ERROR_FILENAME_EXCED_RANGE ||
+                             strlen(path) >= MAX_PATH))) {
+                errno = ENAMETOOLONG;
+                return -1;
+            }
+#endif
             return 0;
         }
         return -1;
@@ -311,7 +339,12 @@ int tb_path_test(const char *path, int32_t kind, int32_t *matches_out) {
 }
 
 static int tb_directory_ensure_component(const char *path) {
-    if (mkdir(path, 0777) == 0) {
+#ifdef _WIN32
+    int status = _mkdir(path);
+#else
+    int status = mkdir(path, 0777);
+#endif
+    if (status == 0) {
         return 0;
     }
     if (errno != EEXIST) {
@@ -386,5 +419,13 @@ int tb_directory_rename_path(const char *source, const char *destination) {
         errno = EINVAL;
         return -1;
     }
+#ifdef _WIN32
+    if (!MoveFileExA(source, destination, MOVEFILE_REPLACE_EXISTING)) {
+        errno = EIO;
+        return -1;
+    }
+    return 0;
+#else
     return rename(source, destination);
+#endif
 }

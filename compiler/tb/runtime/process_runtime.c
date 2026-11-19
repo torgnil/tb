@@ -1,3 +1,4 @@
+#ifndef _WIN32
 #if defined(__linux__)
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
@@ -624,3 +625,401 @@ done:
     }
     return 0;
 }
+
+#else
+
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <errno.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
+#include <wchar.h>
+
+typedef struct {
+    char *data;
+    size_t length;
+    size_t capacity;
+    HANDLE read_end;
+    HANDLE write_end;
+    int eof;
+} tb_windows_capture;
+
+static wchar_t *tb_process_widen(const char *text) {
+    int size = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, -1, NULL, 0);
+    if (!size) {
+        errno = EINVAL;
+        return NULL;
+    }
+    wchar_t *wide = malloc((size_t)size * sizeof(*wide));
+    if (wide == NULL) {
+        return NULL;
+    }
+    if (!MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, -1, wide, size)) {
+        free(wide);
+        errno = EINVAL;
+        return NULL;
+    }
+    return wide;
+}
+
+static wchar_t *tb_process_directory(const char *path) {
+    wchar_t *relative = tb_process_widen(path);
+    if (!relative) {
+        return NULL;
+    }
+    DWORD size = GetFullPathNameW(relative, 0, NULL, NULL);
+    wchar_t *full = size ? malloc((size_t)size * sizeof(*full)) : NULL;
+    if (full) {
+        DWORD length = GetFullPathNameW(relative, size, full, NULL);
+        if (!length || length >= size) {
+            free(full);
+            full = NULL;
+        }
+    }
+    free(relative);
+    return full;
+}
+
+/* Quote each argument according to the Windows C runtime argv rules. */
+static wchar_t *tb_process_command(const char *const *arguments, int32_t count) {
+    const size_t capacity = 32767;
+    wchar_t *command = malloc(capacity * sizeof(*command));
+    if (!command) {
+        return NULL;
+    }
+    size_t used = 0;
+    for (int32_t i = 0; i < count; ++i) {
+        wchar_t *arg = tb_process_widen(arguments[i]);
+        if (!arg) {
+            free(command);
+            return NULL;
+        }
+        size_t length = wcslen(arg);
+        if (capacity - used < 4 || length > (capacity - used - 4) / 2) {
+            free(arg);
+            free(command);
+            errno = E2BIG;
+            return NULL;
+        }
+        if (i) {
+            command[used++] = L' ';
+        }
+        command[used++] = L'"';
+        size_t slashes = 0;
+        for (size_t j = 0; j <= length; ++j) {
+            wchar_t ch = arg[j];
+            if (ch == L'\\') {
+                ++slashes;
+                continue;
+            }
+            size_t escaped = (ch == L'"' || ch == L'\0') ? slashes * 2 : slashes;
+            for (size_t k = 0; k < escaped; ++k) {
+                command[used++] = L'\\';
+            }
+            slashes = 0;
+            if (ch == L'"') {
+                command[used++] = L'\\';
+            }
+            if (ch) {
+                command[used++] = ch;
+            }
+        }
+        command[used++] = L'"';
+        free(arg);
+    }
+    command[used] = 0;
+    return command;
+}
+
+static int tb_process_env_order(const void *a, const void *b) {
+    const wchar_t *left = *(const wchar_t *const *)a;
+    const wchar_t *right = *(const wchar_t *const *)b;
+    return CompareStringOrdinal(left, -1, right, -1, TRUE) - CSTR_EQUAL;
+}
+
+static wchar_t *tb_process_environment(const char *const *entries, int32_t count) {
+    wchar_t **values = calloc(count ? (size_t)count : 1, sizeof(*values));
+    if (!values) {
+        return NULL;
+    }
+    size_t length = 2;
+    wchar_t *block = NULL;
+    for (int32_t i = 0; i < count; ++i) {
+        values[i] = tb_process_widen(entries[i]);
+        if (!values[i]) {
+            goto done;
+        }
+        size_t entry_length = wcslen(values[i]) + 1;
+        if (entry_length > SIZE_MAX / sizeof(wchar_t) - length) {
+            errno = E2BIG;
+            goto done;
+        }
+        length += entry_length;
+    }
+    qsort(values, (size_t)count, sizeof(*values), tb_process_env_order);
+    block = calloc(length, sizeof(*block));
+    if (block) {
+        wchar_t *next = block;
+        for (int32_t i = 0; i < count; ++i) {
+            size_t entry_length = wcslen(values[i]) + 1;
+            memcpy(next, values[i], entry_length * sizeof(*next));
+            next += entry_length;
+        }
+    }
+done:
+    for (int32_t i = 0; i < count; ++i) {
+        free(values[i]);
+    }
+    free(values);
+    return block;
+}
+
+static int tb_process_open_capture(tb_windows_capture *capture, SECURITY_ATTRIBUTES *security) {
+    return CreatePipe(&capture->read_end, &capture->write_end, security, 0) &&
+           SetHandleInformation(capture->read_end, HANDLE_FLAG_INHERIT, 0);
+}
+
+static int tb_process_read_capture(tb_windows_capture *capture) {
+    if (capture->eof) {
+        return 1;
+    }
+    DWORD available = 0;
+    if (!PeekNamedPipe(capture->read_end, NULL, 0, NULL, &available, NULL)) {
+        capture->eof = GetLastError() == ERROR_BROKEN_PIPE;
+        return capture->eof;
+    }
+    if (!available) {
+        return 1;
+    }
+    DWORD amount = available > 65536 ? 65536 : available;
+    if (capture->length > SIZE_MAX - amount - 1) {
+        return 0;
+    }
+    size_t needed = capture->length + amount + 1;
+    if (needed > capture->capacity) {
+        size_t capacity = needed <= SIZE_MAX / 2 ? needed * 2 : needed;
+        char *grown = realloc(capture->data, capacity);
+        if (!grown) {
+            return 0;
+        }
+        capture->data = grown;
+        capture->capacity = capacity;
+    }
+    DWORD read = 0;
+    if (!ReadFile(capture->read_end, capture->data + capture->length, amount, &read, NULL)) {
+        return 0;
+    }
+    capture->length += read;
+    return 1;
+}
+
+static HANDLE tb_process_input(const char *input, SECURITY_ATTRIBUTES *security) {
+    if (input) {
+        wchar_t directory[MAX_PATH], path[MAX_PATH];
+        DWORD size = GetTempPathW(MAX_PATH, directory);
+        if (!size || size >= MAX_PATH || !GetTempFileNameW(directory, L"tb", 0, path)) {
+            return INVALID_HANDLE_VALUE;
+        }
+        HANDLE file = CreateFileW(path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_DELETE,
+                                  security, OPEN_EXISTING,
+                                  FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_DELETE_ON_CLOSE, NULL);
+        if (file == INVALID_HANDLE_VALUE) {
+            DeleteFileW(path);
+            return file;
+        }
+        size_t remaining = strlen(input);
+        while (remaining) {
+            DWORD amount = remaining > 65536 ? 65536 : (DWORD)remaining;
+            DWORD written = 0;
+            if (!WriteFile(file, input, amount, &written, NULL) || written != amount) {
+                CloseHandle(file);
+                return INVALID_HANDLE_VALUE;
+            }
+            input += written;
+            remaining -= written;
+        }
+        LARGE_INTEGER start = {0};
+        if (!SetFilePointerEx(file, start, NULL, FILE_BEGIN)) {
+            CloseHandle(file);
+            return INVALID_HANDLE_VALUE;
+        }
+        return file;
+    }
+    HANDLE source = GetStdHandle(STD_INPUT_HANDLE);
+    if (!source || source == INVALID_HANDLE_VALUE) {
+        return CreateFileW(L"NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                           security, OPEN_EXISTING, 0, NULL);
+    }
+    HANDLE duplicate = INVALID_HANDLE_VALUE;
+    if (!DuplicateHandle(GetCurrentProcess(), source, GetCurrentProcess(), &duplicate,
+                         0, TRUE, DUPLICATE_SAME_ACCESS)) {
+        return INVALID_HANDLE_VALUE;
+    }
+    return duplicate;
+}
+
+static void tb_process_close(HANDLE handle) {
+    if (handle && handle != INVALID_HANDLE_VALUE) {
+        CloseHandle(handle);
+    }
+}
+
+int tb_process_run(const char *const *arguments, int32_t argument_count,
+                   const char *input, const char *working_directory,
+                   int64_t timeout_ms, const char *const *environment, int32_t environment_count,
+                   int64_t *exit_code_out, int32_t *timed_out_out,
+                   char **stdout_out, char **stderr_out) {
+    if (!arguments || argument_count <= 0 || timeout_ms < -1 || environment_count < -1 ||
+        (environment_count > 0 && !environment) || !exit_code_out || !timed_out_out ||
+        !stdout_out || !stderr_out || !arguments[0] || !arguments[0][0]) {
+        return EINVAL;
+    }
+    *stdout_out = NULL;
+    *stderr_out = NULL;
+    *timed_out_out = 0;
+    for (int32_t i = 0; i < argument_count; ++i) {
+        if (!arguments[i]) {
+            return EINVAL;
+        }
+    }
+    for (int32_t i = 0; i < environment_count; ++i) {
+        if (!environment[i]) {
+            return EINVAL;
+        }
+    }
+
+    int status = EIO;
+    wchar_t *command = tb_process_command(arguments, argument_count);
+    wchar_t *directory = working_directory ? tb_process_directory(working_directory) : NULL;
+    wchar_t *env = environment_count >= 0 ? tb_process_environment(environment, environment_count) : NULL;
+    tb_windows_capture out = {0}, err = {0};
+    SECURITY_ATTRIBUTES security = {sizeof(security), NULL, TRUE};
+    STARTUPINFOEXW startup = {0};
+    startup.StartupInfo.cb = sizeof(startup);
+    PROCESS_INFORMATION child = {0};
+    HANDLE job = NULL;
+    HANDLE in = INVALID_HANDLE_VALUE;
+    SIZE_T bytes = 0;
+    LPPROC_THREAD_ATTRIBUTE_LIST attributes = NULL;
+    if (!command || (working_directory && !directory) || (environment_count >= 0 && !env)) {
+        status = errno ? errno : ENOMEM;
+        goto done;
+    }
+    in = tb_process_input(input, &security);
+    if (in == INVALID_HANDLE_VALUE || !tb_process_open_capture(&out, &security) ||
+        !tb_process_open_capture(&err, &security)) {
+        goto done;
+    }
+    HANDLE handles[] = {in, out.write_end, err.write_end};
+    InitializeProcThreadAttributeList(NULL, 1, 0, &bytes);
+    if (!bytes || !(attributes = malloc(bytes)) ||
+        !InitializeProcThreadAttributeList(attributes, 1, 0, &bytes)) {
+        goto done;
+    }
+    startup.lpAttributeList = attributes;
+    if (!UpdateProcThreadAttribute(attributes, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+                                   handles, sizeof(handles), NULL, NULL)) {
+        goto done;
+    }
+    startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+    startup.StartupInfo.hStdInput = in;
+    startup.StartupInfo.hStdOutput = out.write_end;
+    startup.StartupInfo.hStdError = err.write_end;
+    if (timeout_ms >= 0) {
+        job = CreateJobObjectW(NULL, NULL);
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION limit = {0};
+        limit.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        if (!job || !SetInformationJobObject(job, JobObjectExtendedLimitInformation,
+                                             &limit, sizeof(limit))) {
+            goto done;
+        }
+    }
+    DWORD flags = EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT | CREATE_SUSPENDED;
+    if (!CreateProcessW(NULL, command, NULL, NULL, TRUE, flags, env, directory,
+                        &startup.StartupInfo, &child)) {
+        goto done;
+    }
+    if ((job && !AssignProcessToJobObject(job, child.hProcess)) ||
+        ResumeThread(child.hThread) == (DWORD)-1) {
+        goto done;
+    }
+    tb_process_close(out.write_end);
+    out.write_end = NULL;
+    tb_process_close(err.write_end);
+    err.write_end = NULL;
+
+    ULONGLONG started = GetTickCount64();
+    for (;;) {
+        DWORD state = WaitForSingleObject(child.hProcess, 0);
+        if (state == WAIT_FAILED) {
+            goto done;
+        }
+        size_t before_out = out.length, before_err = err.length;
+        if (!tb_process_read_capture(&out) || !tb_process_read_capture(&err)) {
+            goto done;
+        }
+        if (state == WAIT_OBJECT_0 && out.eof && err.eof) {
+            break;
+        }
+        if (job && !*timed_out_out && GetTickCount64() - started >= (uint64_t)timeout_ms &&
+            (state != WAIT_OBJECT_0 || !out.eof || !err.eof)) {
+            if (!TerminateJobObject(job, 1)) {
+                goto done;
+            }
+            *timed_out_out = 1;
+        }
+        if (out.length == before_out && err.length == before_err) {
+            Sleep(1);
+        }
+    }
+
+    DWORD code;
+    if (!GetExitCodeProcess(child.hProcess, &code)) {
+        goto done;
+    }
+    if (!out.data) {
+        out.data = malloc(1);
+    }
+    if (!err.data) {
+        err.data = malloc(1);
+    }
+    if (!out.data || !err.data) {
+        status = ENOMEM;
+        goto done;
+    }
+    out.data[out.length] = 0;
+    err.data[err.length] = 0;
+    *exit_code_out = (int64_t)(int32_t)code;
+    *stdout_out = out.data;
+    *stderr_out = err.data;
+    out.data = NULL;
+    err.data = NULL;
+    status = 0;
+
+done:
+    if (status && child.hProcess) {
+        TerminateProcess(child.hProcess, 1);
+        WaitForSingleObject(child.hProcess, INFINITE);
+    }
+    if (startup.lpAttributeList) {
+        DeleteProcThreadAttributeList(startup.lpAttributeList);
+    }
+    free(attributes);
+    tb_process_close(child.hThread);
+    tb_process_close(child.hProcess);
+    tb_process_close(job);
+    tb_process_close(in);
+    tb_process_close(out.read_end);
+    tb_process_close(out.write_end);
+    tb_process_close(err.read_end);
+    tb_process_close(err.write_end);
+    free(out.data);
+    free(err.data);
+    free(command);
+    free(directory);
+    free(env);
+    return status;
+}
+
+#endif

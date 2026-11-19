@@ -1,16 +1,26 @@
 import process;
 
-int main():
-    ProcessResult arguments = run_process(['printf', '%s:%s', 'a b', '$HOME; echo bad'])
+int main(string[] args):
+    if (args.length() > 1):
+        if (args[1] == 'arguments' && args.length() == 6):
+            if (args[4] != '' || args[5] != 'a"b\\'):
+                return 2
+            print(args[2] + ':' + args[3])
+            return 0
+        if (args[1] == 'streams'):
+            print('out')
+            write_all('/dev/stderr', 'err')
+            return 7
+        return 3
+
+    ProcessResult arguments = run_process([args[0], 'arguments', 'a b', '$HOME; echo bad', '', 'a"b\\'])
     print(arguments.exit_code)
-    print(arguments.stdout)
+    print(arguments.stdout.trim())
     print(arguments.stderr == '')
 
-    ProcessResult streams = run_process(['/bin/sh', '-c', 'printf out; printf err >&2; exit 7'])
+    ProcessResult streams = run_process([args[0], 'streams'])
     print(streams.exit_code)
-    print(streams.stdout)
+    print(streams.stdout.trim())
     print(streams.stderr)
 
-    ProcessResult terminated = run_process(['/bin/sh', '-c', 'kill -TERM $$'])
-    print(terminated.exit_code < 0)
     return 0
