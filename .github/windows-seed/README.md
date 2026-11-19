@@ -4,8 +4,9 @@ Extract the ZIP and run `tb.exe --version` from PowerShell. The compiler
 emits LLVM IR and build metadata. This bundle also includes `tb.ps1` to
 compile, adapt, and link a native Windows program.
 
-Install Clang and Python from MSYS2 CLANG64 and add its `bin` directory
-to your PowerShell PATH. Run the launcher from the directory you want
+Install Clang from MSYS2 CLANG64 and add its `bin` directory to your
+PowerShell PATH. The bundle includes `tb-target-ir.exe`, the native LLVM IR
+adapter used by the launcher. Run the launcher from the directory you want
 to use for relative paths.
 
 ```powershell

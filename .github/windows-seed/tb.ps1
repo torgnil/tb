@@ -12,9 +12,8 @@ if (!$OutputPath) {
 }
 $outputFile = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputPath)
 $compiler = Join-Path $PSScriptRoot 'tb.exe'
-$adapter = Join-Path $PSScriptRoot 'target_ir.py'
+$adapter = Join-Path $PSScriptRoot 'tb-target-ir.exe'
 $shim = Join-Path $PSScriptRoot 'crt.c'
-$python = (Get-Command python -CommandType Application).Source | Select-Object -First 1
 $clang = (Get-Command clang -CommandType Application).Source | Select-Object -First 1
 $work = New-Item -ItemType Directory -Path (Join-Path ([IO.Path]::GetTempPath()) ('tb-' + [guid]::NewGuid()))
 try {
@@ -22,7 +21,7 @@ try {
     $ir = Join-Path $work.FullName 'program.ll'
     & $compiler $sourceFile.Replace('\', '/') $raw
     if ($LASTEXITCODE -ne 0) { throw "tb compilation failed ($LASTEXITCODE)" }
-    & $python $adapter $raw $ir
+    & $adapter $raw $ir.Replace('\', '/')
     if ($LASTEXITCODE -ne 0) { throw "Windows IR adaptation failed ($LASTEXITCODE)" }
 
     $objects = @()

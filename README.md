@@ -22,7 +22,7 @@ x86_64. Download the bundle for your platform from
 [GitHub Releases](https://github.com/torgnil/tb/releases).
 
 On Windows, extract the ZIP and run `.\tb.exe --version` from PowerShell.
-To build native programs, install Clang and Python in MSYS2 CLANG64, add its
+To build native programs, install Clang in MSYS2 CLANG64, add its
 `bin` directory to your PowerShell `PATH`, then run
 `.\tb.ps1 .\program.tb`. The bundle README describes the launcher.
 

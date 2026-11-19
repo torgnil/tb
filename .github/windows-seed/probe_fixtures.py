@@ -1,5 +1,6 @@
 import argparse
 from collections import Counter
+from filecmp import cmp
 from pathlib import Path
 import re
 import shutil
@@ -24,7 +25,7 @@ def read_sidecar(ir, suffix):
     return [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-def probe(source, compiler, shim, work, root):
+def probe(source, compiler, adapter, shim, work, root):
     ir = work / "fixture.raw.ll"
     compiled = run([compiler, source.relative_to(root).as_posix(), ir.as_posix()], root)
     error = source.with_suffix(".err")
@@ -38,7 +39,13 @@ def probe(source, compiler, shim, work, root):
 
     windows_ir = work / "fixture.ll"
     binary = work / "fixture.exe"
-    target_ir(ir, windows_ir)
+    adapted = run([adapter, ir.as_posix(), windows_ir.as_posix()], root)
+    if adapted.returncode != 0 or not windows_ir.is_file():
+        return "adapt", repr((adapted.returncode, adapted.stdout, adapted.stderr))
+    reference = work / "fixture.reference.ll"
+    target_ir(ir, reference)
+    if not cmp(windows_ir, reference, shallow=False):
+        return "adapt", "native and Python adapters emitted different LLVM IR"
     cflags = read_sidecar(ir, "cflags")
     objects = []
     for index, csource in enumerate(read_sidecar(ir, "csources")):
@@ -91,6 +98,7 @@ def probe(source, compiler, shim, work, root):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("compiler", type=Path)
+    parser.add_argument("adapter", type=Path)
     parser.add_argument("shim", type=Path)
     parser.add_argument("source_root", type=Path)
     parser.add_argument("report", type=Path)
@@ -102,9 +110,9 @@ def main():
     )
     if not sources:
         parser.error("no numbered fixtures found")
-    compiler, shim = args.compiler.resolve(), args.shim.resolve()
-    if not compiler.is_file() or not shim.is_file() or not shutil.which("clang"):
-        parser.error("the compiler, runtime shim and clang are required")
+    compiler, adapter, shim = args.compiler.resolve(), args.adapter.resolve(), args.shim.resolve()
+    if not all(path.is_file() for path in (compiler, adapter, shim)) or not shutil.which("clang"):
+        parser.error("the compiler, IR adapter, runtime shim and clang are required")
     totals = Counter()
     with args.report.open("w", encoding="utf-8") as report:
         for source in sources:
@@ -113,7 +121,7 @@ def main():
             else:
                 with TemporaryDirectory(prefix="fixture-", dir=args.report.resolve().parent) as temp:
                     try:
-                        result, details = probe(source, compiler, shim, Path(temp), root)
+                        result, details = probe(source, compiler, adapter, shim, Path(temp), root)
                     except subprocess.TimeoutExpired as error:
                         result, details = "timeout", repr(error)
                     except (OSError, ValueError) as error:

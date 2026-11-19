@@ -92,5 +92,8 @@ candidate as a ZIP. A fresh Windows runner checks the archive SHA-256, runs
 the extracted compiler with a system-only `PATH`, and uses the bundled
 PowerShell launcher with the CLANG64 toolchain to compile and run a threaded
 program. The verified ZIP and checksum are available as an Actions artifact.
+The ZIP bundles the native IR adapter. CI uses the Python adapter for the
+initial bootstrap and checks that the two adapters produce identical IR for
+the compiler and the numbered runtime fixtures.
 For a published release, CI waits for the Linux, macOS, and Windows jobs and
 checks all three archive checksums before attaching the assets.
