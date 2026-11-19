@@ -3,15 +3,15 @@
 ## Build the current checkout
 
 The compiler builds itself from a released native `tb` compiler. The current
-seed is `tb 0.4.0`; the release provides macOS and Linux binaries. Python 3.8+
+seed is `tb 0.5.1`; the release provides macOS, Linux, and Windows binaries. Python 3.8+
 is used for build utilities only. The host also needs Bash and Clang.
 
 On macOS, `build_tb.sh` uses the Homebrew compiler at
-`$(brew --cellar)/tb/0.4.0/libexec/libexec/tb`. On Linux or with another
+`$(brew --cellar)/tb/0.5.1/libexec/libexec/tb`. On Linux or with another
 installation, point `TB_BOOTSTRAP_COMPILER` at the native LLVM compiler binary:
 
 ```sh
-TB_BOOTSTRAP_COMPILER=/path/to/tb-0.4.0 \
+TB_BOOTSTRAP_COMPILER=/path/to/tb-0.5.1 \
 TB_BOOTSTRAP_SHA256='<sha256-of-that-binary>' \
 ./build_tb.sh
 ```
@@ -68,13 +68,12 @@ git worktree add ../tb-0.3.0-linux v0.3.0
 
 The release workflow calls **tb Windows x64 bootstrap** for published
 releases and manual builds. You can also run the Windows workflow directly
-from the Actions tab. Its Linux job builds the exact `v0.5.0` source
-with the checksum-pinned Linux v0.4.0 seed and adapts the resulting LLVM IR to
-the Windows x64 ABI. It also generates the embedded compiler helpers from the
-selected source at the requested build version. The IR artifact records both
-source commits and checksums.
+from the Actions tab. The Linux preparation job verifies the published
+v0.5.1 Linux and Windows archives against pinned SHA-256 hashes. It uses
+the Linux compiler to generate the embedded helpers for the requested build
+version and passes the published Windows `tb.exe` to the Windows job.
 
-The Windows job links the v0.5.0 IR with MSYS2 CLANG64 and uses that seed to
+The Windows job uses the released v0.5.1 executable as its seed to
 build stage 2 from the current branch. Stage 2 builds stage 3, the first
 executable built by the candidate compiler. CI checks that stage 3 and stage
 4 produce identical retargeted IR, then compiles and runs a smoke program

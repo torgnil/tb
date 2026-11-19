@@ -6,7 +6,7 @@ on:
       version:
         description: Embedded tb version
         type: string
-        default: '0.5.1'
+        default: 'dev'
   workflow_call:
     inputs:
       version:
@@ -17,11 +17,11 @@ permissions:
   contents: read
 
 env:
-  CANDIDATE_VERSION: ${{ inputs.version || '0.5.1' }}
-  PACKAGE_NAME: tb-${{ inputs.version || '0.5.1' }}-windows-x86_64
+  CANDIDATE_VERSION: ${{ inputs.version || 'dev' }}
+  PACKAGE_NAME: tb-${{ inputs.version || 'dev' }}-windows-x86_64
 
 jobs:
-  generate-ir:
+  prepare-seed:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -59,54 +59,50 @@ jobs:
           ln -s "$(command -v clang-19)" "$RUNNER_TEMP/tb-toolchain/clang"
           printf '%s\n' "$RUNNER_TEMP/tb-toolchain" >> "$GITHUB_PATH"
 
-      - name: Build LLVM IR from the v0.5.0 release source
+      - name: Prepare the published Windows seed and compiler helpers
         shell: bash
         env:
-          TB_VERSION: '0.5.0'
-          SEED_ASSET: tb-0.4.0-linux-x86_64.tar.gz
-          SEED_SHA256: cb8b77d319676527beaaa72c3300bb7ef5a9e1bc4ba22000f64dc9b17c9ac118
+          LINUX_SHA256: c8cd1b621d832038ca76d1f13026dd00b346584f0388f146ae72edb9c01556f5
+          WINDOWS_SHA256: 792f994e8f47b5d6b71d6a77f07e554a6514a1dfe650e35d735ec30c7ed0f182
         run: |
           set -euo pipefail
-          mkdir -p .build/windows-seed/source .build/windows-seed/artifact
-          git archive v0.5.0 | tar -x -C .build/windows-seed/source
-          curl --fail --location --retry 3 --proto '=https' --proto-redir '=https' \
-            "https://github.com/torgnil/tb/releases/download/v0.4.0/$SEED_ASSET" \
-            -o ".build/windows-seed/$SEED_ASSET"
+          mkdir -p .build/windows-seed/artifact
           (
             cd .build/windows-seed
-            printf '%s  %s\n' "$SEED_SHA256" "$SEED_ASSET" | sha256sum --check
-            tar -xOf "$SEED_ASSET" tb-0.4.0-linux-x86_64/libexec/tb > native-seed
+            download_seed() {
+              curl --fail --location --retry 3 --proto '=https' --proto-redir '=https' \
+                "https://github.com/torgnil/tb/releases/download/v0.5.1/$1" -o "$1"
+              printf '%s  %s\n' "$2" "$1" | sha256sum --check
+            }
+            linux_asset=tb-0.5.1-linux-x86_64.tar.gz
+            windows_asset=tb-0.5.1-windows-x86_64.zip
+            download_seed "$linux_asset" "$LINUX_SHA256"
+            download_seed "$windows_asset" "$WINDOWS_SHA256"
+            tar -xOf "$linux_asset" tb-0.5.1-linux-x86_64/libexec/tb > native-seed
             chmod +x native-seed
-            TB_BOOTSTRAP_COMPILER="$PWD/native-seed" ./source/build_tb.sh
-            test "$(source/bin/tb --version)" = "tb $TB_VERSION"
-            for extension in cflags csources linkflags; do
-              test -f "source/.build/stage2/tb_stage2.ll.$extension"
-              test ! -s "source/.build/stage2/tb_stage2.ll.$extension"
-            done
+            unzip -p "$windows_asset" tb-0.5.1-windows-x86_64/tb.exe > artifact/tb.exe
+            unzip -p "$windows_asset" tb-0.5.1-windows-x86_64/source-commit.txt > artifact/source-commit.txt
+            test "$(git rev-parse 'v0.5.1^{commit}')" = "$(cat artifact/source-commit.txt)"
           )
           seed_dir=.build/windows-seed/artifact
-          python3 .github/windows-seed/target_ir.py \
-            .build/windows-seed/source/.build/stage2/tb_stage2.ll \
-            "$seed_dir/tb-0.5.0-windows-x86_64.ll"
           cp .github/windows-seed/crt.c "$seed_dir/"
           TB_VERSION="$CANDIDATE_VERSION" TB_BOOTSTRAP_COMPILER="$PWD/.build/windows-seed/native-seed" ./build_tb.sh
           cp compiler/tb/llvm_helpers_generated.tb "$seed_dir/"
           git rev-parse HEAD > "$seed_dir/candidate-commit.txt"
-          git rev-parse 'v0.5.0^{commit}' > "$seed_dir/source-commit.txt"
           (
             cd "$seed_dir"
-            sha256sum tb-0.5.0-windows-x86_64.ll crt.c llvm_helpers_generated.tb source-commit.txt candidate-commit.txt > SHA256SUMS
+            sha256sum tb.exe crt.c llvm_helpers_generated.tb source-commit.txt candidate-commit.txt > SHA256SUMS
           )
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: tb-0.5.0-windows-x86_64-ir-seed
+          name: tb-0.5.1-windows-x86_64-seed-inputs
           path: .build/windows-seed/artifact/*
           if-no-files-found: error
           include-hidden-files: true
 
   bootstrap-windows:
-    needs: generate-ir
+    needs: prepare-seed
     runs-on: windows-2022
     timeout-minutes: 50
     steps:
@@ -124,10 +120,10 @@ jobs:
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: tb-0.5.0-windows-x86_64-ir-seed
+          name: tb-0.5.1-windows-x86_64-seed-inputs
           path: .build/windows-seed/seed
 
-      - name: Link the seed and verify self-hosting
+      - name: Build with the released seed and verify self-hosting
         shell: msys2 {0}
         run: |
           set -euo pipefail
@@ -137,7 +133,7 @@ jobs:
           cp .build/windows-seed/source/.github/windows-seed/smoke.tb .build/windows-seed/
           cd .build/windows-seed
           (cd seed && sha256sum --check SHA256SUMS)
-          test "$(git rev-parse 'v0.5.0^{commit}')" = "$(cat seed/source-commit.txt)"
+          test "$(git rev-parse 'v0.5.1^{commit}')" = "$(cat seed/source-commit.txt)"
           test "$(git rev-parse HEAD)" = "$(cat seed/candidate-commit.txt)"
           cp seed/llvm_helpers_generated.tb source/compiler/tb/
           link() {
@@ -154,8 +150,7 @@ jobs:
             done
             "${@:3}" "$2.raw.ll" "$2.ll"
           }
-          link seed/tb-0.5.0-windows-x86_64.ll seed/tb.exe
-          check_version seed/tb.exe "tb 0.5.0"
+          check_version seed/tb.exe "tb 0.5.1"
           rebuild seed/tb.exe stage2 python target_ir.py
           link stage2.ll stage2.exe
           check_version ./stage2.exe "tb $CANDIDATE_VERSION"
