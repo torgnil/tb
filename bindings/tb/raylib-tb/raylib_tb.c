@@ -288,6 +288,10 @@ bool __tb_foreign_raylib_IsKeyPressed(int64_t key) {
     return IsKeyPressed((int) key);
 }
 
+int64_t __tb_foreign_raylib_GetCharPressed(void) {
+    return GetCharPressed();
+}
+
 int64_t __tb_foreign_raylib_GetMouseX(void) {
     return GetMouseX();
 }
