@@ -186,32 +186,104 @@ jobs:
             source/compiler/tb/runtime/process_runtime.c -o process-smoke.exe
           ./process-smoke.exe
 
-  verify-windows-executable:
+      - name: Package Windows release ZIP
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          cd .build/windows-seed
+          mkdir release
+          python - <<'PY'
+          from pathlib import Path
+          from zipfile import ZIP_DEFLATED, ZipFile
+
+          name = "tb-0.5.1-windows-x86_64"
+          files = {
+              f"output/{name}.exe": "tb.exe",
+              "source/.github/windows-seed/tb.ps1": "tb.ps1",
+              "source/.github/windows-seed/README.md": "README.md",
+              "seed/crt.c": "crt.c",
+              "target_ir.py": "target_ir.py",
+              "source/docs/tb.md": "tb.md",
+              "source/LICENSE": "LICENSE",
+              "output/candidate-commit.txt": "source-commit.txt",
+          }
+          with ZipFile(f"release/{name}.zip", "w", ZIP_DEFLATED) as archive:
+              for path, member in files.items():
+                  archive.write(path, f"{name}/{member}")
+              changelog = Path("source/CHANGELOG.md").read_text(encoding="utf-8")
+              changelog = changelog.replace("(docs/tb.md)", "(tb.md)")
+              archive.writestr(f"{name}/CHANGELOG.md", changelog)
+          PY
+          (cd release && sha256sum --binary tb-0.5.1-windows-x86_64.zip > tb-0.5.1-windows-x86_64.zip.sha256)
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tb-0.5.1-windows-x86_64-release-staging
+          path: .build/windows-seed/release/*
+          if-no-files-found: error
+          include-hidden-files: true
+
+  verify-windows-release:
     needs: bootstrap-windows
     runs-on: windows-2022
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: tb-0.5.1-windows-x86_64
+          name: tb-0.5.1-windows-x86_64-release-staging
 
-      - name: Verify checksum and run from PowerShell
+      - name: Verify ZIP checksum and run the extracted compiler
         shell: pwsh
         run: |
-          $binary = 'tb-0.5.1-windows-x86_64.exe'
-          $manifest = (Get-Content -LiteralPath SHA256SUMS -Raw).Trim()
-          $entry = [regex]::Match($manifest, '^([0-9a-fA-F]{64}) [ *]' + [regex]::Escape($binary) + '$')
+          $name = 'tb-0.5.1-windows-x86_64'
+          $archive = "$name.zip"
+          $manifest = (Get-Content -LiteralPath "$archive.sha256" -Raw).Trim()
+          $entry = [regex]::Match($manifest, '^([0-9a-fA-F]{64}) [ *]' + [regex]::Escape($archive) + '$')
           if (!$entry.Success) {
-            throw "Invalid SHA256SUMS entry for $binary"
+            throw "Invalid checksum entry for $archive"
           }
           $expected = $entry.Groups[1].Value
-          $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $binary).Hash
+          $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash
           if ($expected -ine $actual) {
-            throw "Windows executable checksum mismatch. Expected $expected. Got $actual."
+            throw "Windows ZIP checksum mismatch. Expected $expected. Got $actual."
           }
+          Expand-Archive -LiteralPath $archive -DestinationPath extracted
           $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
-          $version = & ".\$binary" --version
+          $version = & ".\extracted\$name\tb.exe" --version
           if ($LASTEXITCODE -ne 0 -or $version -cne 'tb 0.5.1') {
             throw "Unexpected version output or exit status: $version ($LASTEXITCODE)"
           }
           $version
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: CLANG64
+          install: >-
+            mingw-w64-clang-x86_64-clang
+            mingw-w64-clang-x86_64-python
+
+      - name: Compile and run a program using the extracted launcher
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          cat > release-smoke.tb <<'TB'
+          int answer():
+              return 42
+
+          int main():
+              thread_pool pool = thread_pool(1)
+              future<int> result = pool.submit(answer)
+              print(result.await())
+              return 0
+          TB
+          "/c/Program Files/PowerShell/7/pwsh.exe" -NoProfile -ExecutionPolicy Bypass \
+            -File extracted/tb-0.5.1-windows-x86_64/tb.ps1 release-smoke.tb
+          test "$(./release-smoke.exe | tr -d '\r')" = '42'
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tb-0.5.1-windows-x86_64-release
+          path: |
+            tb-0.5.1-windows-x86_64.zip
+            tb-0.5.1-windows-x86_64.zip.sha256
+          if-no-files-found: error

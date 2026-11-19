@@ -85,7 +85,14 @@ A fresh Windows runner verifies the executable checksum and runs
 The bootstrap job also probes the numbered fixtures and uploads a per-fixture
 report. It checks compiler rejections, compiles any C sources listed by the
 compiler, then links and runs accepted fixtures. The report distinguishes C
-compilation, linking, execution, and output failures.
+compilation, linking, execution, and output failures. Any fixture failure
+fails the job, and CI still uploads the report.
+
+After the fixture suite and process smoke test pass, CI packages the Windows
+candidate as a ZIP. A fresh Windows runner checks the archive SHA-256, runs
+the extracted compiler with a system-only `PATH`, and uses the bundled
+PowerShell launcher with the CLANG64 toolchain to compile and run a threaded
+program. The verified ZIP and checksum are available as an Actions artifact.
 
 This bootstrap produces a Windows compiler executable. Its output still
 requires the workflow's IR adapter and runtime shim for the Windows x64

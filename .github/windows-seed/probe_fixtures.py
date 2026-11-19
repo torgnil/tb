@@ -123,7 +123,8 @@ def main():
         summary = " | ".join(f"{category}: {count}" for category, count in sorted(totals.items()))
         print(summary, file=report)
     print(summary)
+    return int(totals["pass"] != len(sources))
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
